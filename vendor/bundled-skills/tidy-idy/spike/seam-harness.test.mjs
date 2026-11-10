@@ -44,7 +44,7 @@ const skillRoot = path.resolve(__dirname, '..');
 const binDir = path.join(skillRoot, 'bin');
 
 const STAGE_MODULES = ['scanner.mjs', 'hygiene.mjs', 'analyze.mjs', 'debate.mjs', 'remove.mjs', 'compress.mjs'];
-const DRIVER_PATH_LITERAL = 'file:///C:/dev/trio/drivers/gemini-cli.mjs';
+const DRIVER_PATH_LITERAL = 'fil<path>';
 const CWD_STATE_LITERAL = "path.resolve('.tidy-idy'";
 const CLI_STATE_MODULES = ['scanner.mjs', 'hygiene.mjs', 'analyze.mjs', 'debate.mjs', 'compress.mjs'];
 const LEGACY_SUITE = ['analyze', 'compress', 'debate', 'hygiene', 'remove', 'scanner', 'tidy']

@@ -1,0 +1,81 @@
+{
+  "resources": [
+    {
+      "id": "scribe-mat-skill-md",
+      "title": "Scribe Agent & Execution Protocol (SKILL.md)",
+      "category": "material",
+      "path": "SKILL.md",
+      "description": "Canonical instructions, 5-stage correspondence workflow, invariants, and CLI manual."
+    },
+    {
+      "id": "scribe-mat-human-md",
+      "title": "Scribe Human Guide (HUMAN.md)",
+      "category": "material",
+      "path": "HUMAN.md",
+      "description": "Plain-English overview of voice learning, 5 tone/detail transforms, and priority memory."
+    },
+    {
+      "id": "scribe-mat-north-star-md",
+      "title": "Scribe Locked North Star (NORTH-STAR.md)",
+      "category": "material",
+      "path": "NORTH-STAR.md",
+      "description": "Locked mission objective, anti-drift contract, and acceptance criteria C1-C5."
+    },
+    {
+      "id": "scribe-tool-scripts-scribe-engine-py",
+      "title": "scribe_engine.py (scripts/scribe_engine.py)",
+      "category": "tools",
+      "path": "scripts/scribe_engine.py",
+      "description": "Executable .py module implementing mine_correspondence_history, synthesize_reply, transform_draft, apply_proper_name_lexicon, and record_interest_signal."
+    },
+    {
+      "id": "scribe-tool-tests-test-scribe-engine-py",
+      "title": "test_scribe_engine.py (tests/test_scribe_engine.py)",
+      "category": "tools",
+      "path": "tests/test_scribe_engine.py",
+      "description": "Executable .py test suite verifying idempotent mining, proper-name capitalization, 5 tone/detail transforms, and atomic memory persistence."
+    },
+    {
+      "id": "scribe-peer-aegis",
+      "title": "Aegis Read-Only Email Sandbox",
+      "category": "skills",
+      "skill": "aegis",
+      "description": "Enforces SANDBOXED_READ_ONLY_EMAIL_DATA taint isolation and prompt-injection stripping on untrusted email bodies"
+    },
+    {
+      "id": "scribe-peer-gandalf",
+      "title": "Gandalf Deep-Think Tone & Nuance Advisor",
+      "category": "skills",
+      "skill": "gandalf",
+      "description": "Reviews high-stakes executive, counsel, and trust correspondence for nuance and clarity"
+    },
+    {
+      "id": "scribe-peer-steward-portfolio",
+      "title": "Portfolio Steward (Cave of Wonders / High Seat)",
+      "category": "skills",
+      "skill": "steward-portfolio",
+      "description": "Routes focused inbox triage, Speed Racer drafts, and Direct Replies through Scribe inside Cave of Wonders"
+    },
+    {
+      "id": "scribe-ref-lessons",
+      "title": "Scribe LESSONS.md",
+      "category": "references",
+      "path": "LESSONS.md",
+      "description": "Operational lessons on anti-header-quote synthesis and proper-name capitalization."
+    },
+    {
+      "id": "scribe-ref-voice-tone-memory",
+      "title": "Reference: SCRIBE-VOICE-TONE-MEMORY-REFERENCE.md",
+      "category": "references",
+      "path": "references/SCRIBE-VOICE-TONE-MEMORY-REFERENCE.md",
+      "description": "Domain reference for relationship archetypes and .anchor/scribe-memory.json interest weights."
+    },
+    {
+      "id": "scribe-journal-0001",
+      "title": "Journal: 0001-scribe-v1-correspondence-intelligence",
+      "category": "references",
+      "path": "journal/0001-scribe-v1-correspondence-intelligence.md",
+      "description": "Recorded operational run receipt and field lesson."
+    }
+  ]
+}

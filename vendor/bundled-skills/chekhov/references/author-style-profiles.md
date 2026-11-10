@@ -32,7 +32,7 @@ Before running any drafting, linting, beta-reader, or prose-polish pass, Chekhov
 
 ## 2. Profile 1: `artificial-magi` (*Artificial Magi* — Canonical Writing Style, Locked Gold Standard `v9`/`v10`)
 
-- **Salvaged & Forged Source Lineage:** `C:/dev/Writing/Artificial Magi/.claude/skills/magi-voice/SKILL.md`, `expert-editor/SKILL.md`, `C:/dev/Writing/Artificial Magi/Book 1/editorial/EDITORIAL-LEARNING.md` (Laws 1–15), and `C:/dev/Writing/Artificial Magi/Book 1/editorial/CANONICAL-WRITING-STYLE-ARTIFICIAL-MAGI-v1.md`.
+- **Salvaged & Forged Source Lineage:** `<path> Magi/.claude/skills/magi-voice/SKILL.md`, `expert-editor/SKILL.md`, `<path> Magi/Book 1/editorial/EDITORIAL-LEARNING.md` (Laws 1–15), and `<path> Magi/Book 1/editorial/CANONICAL-WRITING-STYLE-ARTIFICIAL-MAGI-v1.md`.
 - **Core Voice Identity (The *Artificial Magi* Gold Standard):**
   Warm, fast-moving, sharp-witted, tactile YA/crossover sci-fi/fantasy (`Ages 10–14+ to Adult`) where a diverse six-kid crew (`Hackers for Peace—and Pizza`: `ct`, `el`, `Durgan`, `Remi`, `Anya`, and eleven-year-old `Jess`) approaches ancient-looking game mysteries and underground fiber vaults with hands-on builder ingenuity, crackling banter, and fierce loyalty—tested against the chilling institutional power of `Halcyon` and `Julian Thorne`'s Grey Hat Hackers (`GHH`).
 - **The Tonal Contrast Engine (Light, Witty Kid Comedy vs. Ice-Cold High Stakes):**
@@ -81,7 +81,7 @@ Before running any drafting, linting, beta-reader, or prose-polish pass, Chekhov
   3. **Deterministic Gate (`check_vN.py`):** Verify zero semicolons in revised ranges, paragraph word-count ceiling (`<= 165–175` words), exact preservation of John's line edits, prop economy (e.g., lanyard mention cap), and zero invented named extras.
   4. **Native Word Track Changes Compilation (`ft.py`):**
      ```bash
-     python "C:/dev/Skill Foundry/skills/chekhov/scripts/ft.py" docx-redline \
+     python "<path> Foundry/skills/chekhov/scripts/ft.py" docx-redline \
        "chapters/returns/CHAPTERS-01-TO-05-MANUSCRIPT-v4-jcl-accepted.docx" \
        ".ecgberht/v10_target_manuscript.md" \
        "chapters/CHAPTERS-01-TO-05-MANUSCRIPT-v10.docx" \
@@ -93,7 +93,7 @@ Before running any drafting, linting, beta-reader, or prose-polish pass, Chekhov
 
 ## 3. Profile 2: `bright-heart` (*Bright-Heart / Chronicles of the Dragon-Kept* — Upper-YA / Adult Epic SFF)
 
-- **Salvaged Source Lineage:** `C:/dev/Writing/BrightHeart/.claude/skills/brightheart-voice/SKILL.md` and `expert-editor/SKILL.md`.
+- **Salvaged Source Lineage:** `<path> and `expert-editor/SKILL.md`.
 - **Core Governing Doctrine — *"The Wound Before the Wonder"*:**
   In *Bright-Heart*, mythic grandeur, dragon-keeping awe, and incandescent *lyn* magic never arrive as free spectacle. Every moment of wonder is preceded and purchased by a concrete physical or psychological wound—grief, burned skin, clinical exhaustion, exile, or terror.
 - **Multi-POV & Multi-Setting Register Shifts:**
@@ -121,7 +121,7 @@ Before running any drafting, linting, beta-reader, or prose-polish pass, Chekhov
 
 ## 4. Profile 3: `sing-for-the-dead` (*Sing for the Dead* — Adult Literary Sacred Realism in Poetic Prose)
 
-- **Salvaged Source Lineage:** `C:/dev/Writing/Current Projects/Short Stories/.claude/skills/sing-voice/SKILL.md` and `collection-editor/SKILL.md`.
+- **Salvaged Source Lineage:** `<path> Projects/Short Stories/.claude/skills/sing-voice/SKILL.md` and `collection-editor/SKILL.md`.
 - **Literary Ancestors:** Gerard Manley Hopkins (sprung rhythm, compound forging, *inscape*), James Agee (*Let Us Now Praise Famous Men* sacramental attention to working-class detail), Marilynne Robinson (*Gilead* quiet domestic grace), Cormac McCarthy (elemental parataxis), and Dylan Thomas (cascading oral music).
 - **Core Voice Identity:** **Sacred Realism in Poetic Prose.** These stories inhabit the kitchens, hospital corridors, back porches, and weathered churches of ordinary, bruised people—where grief and divine grace occupy the exact same square foot of linoleum.
 
@@ -158,7 +158,7 @@ Before running any drafting, linting, beta-reader, or prose-polish pass, Chekhov
 
 ## 5. Profile 4: `essays` (*Essays Beyond* — Adult Analytical & Philosophical Nonfiction)
 
-- **Salvaged Source Lineage:** `C:/dev/Writing/Current Projects/Essays/.claude/skills/voice/SKILL.md`.
+- **Salvaged Source Lineage:** `<path> Projects/Essays/.claude/skills/voice/SKILL.md`.
 - **Literary Ancestors:** George Orwell, Christopher Hitchens, and appellate legal briefs.
 - **Core Architecture (`prosecution` pack):** Every essay and section moves through **`Claim -> Ground -> Illustrate -> Test`**:
   1. **Claim:** State the thesis or section proposition in one declarative sentence with zero throat-clearing.

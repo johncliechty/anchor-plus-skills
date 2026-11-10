@@ -11,11 +11,11 @@
 
 import {
   LIT_REVIEW_SAFETY_FLOOR,
-} from 'file:///C:/dev/Skill%20Foundry/foundry/triage/mapping.mjs';
+} from 'fil<path>';
 
 const TRIAGE_RP_WIRE =
-  'file:///C:/dev/Skill%20Foundry/foundry/triage/researchprime-wire.mjs';
-const GOVERNOR_URL = 'file:///C:/dev/trio/researchPrime/bin/governor.mjs';
+  'fil<path>';
+const GOVERNOR_URL = 'fil<path>';
 
 /**
  * Sole production entry for the literature-review final adversarial stage.

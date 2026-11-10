@@ -22,6 +22,7 @@
     { name: "zombie-hunter",    icon: "zombie-hunter-radar.jpg",  aliases: ["zombie hunter", "zombie-hunter"] },
     { name: "Ecgberht",         icon: "ecgberht-project-seal.jpg", aliases: ["ecgberht", "steward"] },
     { name: "chekhov",          icon: "chekhov-icon.svg",         aliases: ["chekhov", "writing skill"] },
+    { name: "Scribe",           icon: "scribe-icon.jpg",          aliases: ["scribe", "email scribe", "correspondence scribe"] },
     { name: "Skill Foundry",    icon: "skill-foundry-icon.jpg",   aliases: ["skill foundry"] }
   ];
   // 2026-10-07: always /vendor/brand/. The page shim rewrites /brand/ only inside HTML, never inside this separately

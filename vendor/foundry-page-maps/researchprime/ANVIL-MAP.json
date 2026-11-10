@@ -61,11 +61,11 @@
     ],
     "kb_reference_resources": [
       "README",
+      "0131-marketing-demand-moe-genai-parse-math-and-citation-sweep",
+      "0130-marketing-demand-moe-genai-review-findings-and-bbox-audit",
+      "0129-marketing-demand-moe-genai-stream-interruption-recovery",
       "0128-plan-gate-adjudicated-tier-and-replay-disclosure",
-      "0127-crossfit-60-64-open-skills-pmid-and-engine-gate",
-      "0126-nyu-viva-open-source-license-audit",
-      "0125-byu-econ388-midterm-prep",
-      "0124-utah-native-hawaiian-health-insurance"
+      "0127-crossfit-60-64-open-skills-pmid-and-engine-gate"
     ]
   },
   "orange_split": {
@@ -404,8 +404,8 @@
         ],
         "kb_sources": [
           "README",
-          "0128-plan-gate-adjudicated-tier-and-replay-disclosure",
-          "0127-crossfit-60-64-open-skills-pmid-and-engine-gate"
+          "0131-marketing-demand-moe-genai-parse-math-and-citation-sweep",
+          "0130-marketing-demand-moe-genai-review-findings-and-bbox-audit"
         ]
       },
       "level2_mechanics": {
@@ -461,7 +461,7 @@
           "SKILL.md",
           "HUMAN.md",
           "README",
-          "0128-plan-gate-adjudicated-tier-and-replay-disclosure"
+          "0131-marketing-demand-moe-genai-parse-math-and-citation-sweep"
         ]
       },
       "level2_mechanics": {
@@ -516,8 +516,8 @@
         ],
         "kb_sources": [
           "README",
-          "0128-plan-gate-adjudicated-tier-and-replay-disclosure",
-          "0127-crossfit-60-64-open-skills-pmid-and-engine-gate"
+          "0131-marketing-demand-moe-genai-parse-math-and-citation-sweep",
+          "0130-marketing-demand-moe-genai-review-findings-and-bbox-audit"
         ]
       },
       "level2_mechanics": {
@@ -569,11 +569,11 @@
         ],
         "kb_sources": [
           "README",
+          "0131-marketing-demand-moe-genai-parse-math-and-citation-sweep",
+          "0130-marketing-demand-moe-genai-review-findings-and-bbox-audit",
+          "0129-marketing-demand-moe-genai-stream-interruption-recovery",
           "0128-plan-gate-adjudicated-tier-and-replay-disclosure",
-          "0127-crossfit-60-64-open-skills-pmid-and-engine-gate",
-          "0126-nyu-viva-open-source-license-audit",
-          "0125-byu-econ388-midterm-prep",
-          "0124-utah-native-hawaiian-health-insurance"
+          "0127-crossfit-60-64-open-skills-pmid-and-engine-gate"
         ]
       },
       "level2_mechanics": {
@@ -634,8 +634,8 @@
       ],
       "librarian_kb_reads": [
         "README",
-        "0128-plan-gate-adjudicated-tier-and-replay-disclosure",
-        "0127-crossfit-60-64-open-skills-pmid-and-engine-gate"
+        "0131-marketing-demand-moe-genai-parse-math-and-citation-sweep",
+        "0130-marketing-demand-moe-genai-review-findings-and-bbox-audit"
       ],
       "librarian_kb_writes": [],
       "source_anchor": {
@@ -679,8 +679,8 @@
       ],
       "librarian_kb_reads": [
         "README",
-        "0128-plan-gate-adjudicated-tier-and-replay-disclosure",
-        "0127-crossfit-60-64-open-skills-pmid-and-engine-gate"
+        "0131-marketing-demand-moe-genai-parse-math-and-citation-sweep",
+        "0130-marketing-demand-moe-genai-review-findings-and-bbox-audit"
       ],
       "librarian_kb_writes": [],
       "source_anchor": {
@@ -725,8 +725,8 @@
       ],
       "librarian_kb_reads": [
         "README",
-        "0128-plan-gate-adjudicated-tier-and-replay-disclosure",
-        "0127-crossfit-60-64-open-skills-pmid-and-engine-gate"
+        "0131-marketing-demand-moe-genai-parse-math-and-citation-sweep",
+        "0130-marketing-demand-moe-genai-review-findings-and-bbox-audit"
       ],
       "librarian_kb_writes": [],
       "source_anchor": {
@@ -770,8 +770,8 @@
       ],
       "librarian_kb_reads": [
         "README",
-        "0128-plan-gate-adjudicated-tier-and-replay-disclosure",
-        "0127-crossfit-60-64-open-skills-pmid-and-engine-gate"
+        "0131-marketing-demand-moe-genai-parse-math-and-citation-sweep",
+        "0130-marketing-demand-moe-genai-review-findings-and-bbox-audit"
       ],
       "librarian_kb_writes": [],
       "source_anchor": {

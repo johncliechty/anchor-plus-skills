@@ -369,6 +369,12 @@ class ProviderService:
                 raise ValueError("Refresh native model capabilities before choosing an exact model or effort")
             model = catalog.get("selection", {}).get("model") if quality["model"] == "latest_supported" else quality["model"]
             row = next((r for r in catalog.get("rows") or [] if r["model"] == model), None)
+            if not row and candidate_family == "gemini":
+                m = model_policy._AGY_EFFORT_SUFFIX.match(str(model or ""))
+                if m:
+                    model = m.group(1)
+                    row = next((r for r in catalog.get("rows") or [] if r["model"] == model), None)
+                    quality["model"] = model
             if not row or quality["effort"] != "highest_supported" and quality["effort"] not in row["efforts"]:
                 raise ValueError("Model or reasoning effort is not advertised by this account's native CLI")
         # Store user choices in the existing settings transaction. Do not touch
@@ -689,6 +695,11 @@ def resolve_quality(family, settings, connection, *, surface="cockpit"):
     rows, _ = model_policy.discover(family, env=native.account_env(connection))
     model = selected["model"] if choice["model"] == "latest_supported" else choice["model"]
     row = next((r for r in rows if r["model"] == model), None)
+    if not row and family == "gemini":
+        m = model_policy._AGY_EFFORT_SUFFIX.match(str(model or ""))
+        if m:
+            model = m.group(1)
+            row = next((r for r in rows if r["model"] == model), None)
     if not row:
         raise ValueError("The explicitly selected model is no longer available")
     effort = model_policy.highest_effort(row["efforts"]) if choice["effort"] == "highest_supported" else choice["effort"]

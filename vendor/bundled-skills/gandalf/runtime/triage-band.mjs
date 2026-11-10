@@ -6,8 +6,8 @@ import {
   recommendForSkill,
   resolveSkillLock,
   knobsAfterLock,
-} from 'file:///C:/dev/Skill%20Foundry/foundry/triage/entry-points.mjs';
-import { knobsForSkill } from 'file:///C:/dev/Skill%20Foundry/foundry/triage/mapping.mjs';
+} from 'fil<path>';
+import { knobsForSkill } from 'fil<path>';
 
 /**
  * First non-empty string token (trim). Empty / whitespace → null.

@@ -98,7 +98,7 @@ export function sessionCommand(project) {
   const value = surfaceText(project) || 'project';
   return `chekhov ${/^[a-z0-9_-]+$/i.test(value) ? value : `"${value.replaceAll('"', '')}"`}`;
 }
-export const DEFAULT_ECGBERHT_MODULE = 'C:\Users\example/.agents/skills/ecgberht/bin/ecgberht.mjs';
+export const DEFAULT_ECGBERHT_MODULE = '<path>';
 /** An argv seam, never a shell command or a dependency on a PATH alias. */
 export function heartbeatCommand(command) {
   const argv = command ?? (process.env.CHEKHOV_ECGBERHT_COMMAND

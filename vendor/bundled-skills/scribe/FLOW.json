@@ -1,0 +1,127 @@
+{
+  "qualification": "Source-anchored Scribe execution walkthrough (Ingest & Sandbox \u2192 History & Memory Grounding \u2192 Voice Synthesis & 5-Mode Transform \u2192 Quality Gate \u2192 Draft & Memory Emission).",
+  "steps": [
+    {
+      "id": "step-1-ingest-triage",
+      "title": "1. Ingest, Aegis Sandbox & Header Quote Stripper (Scribe)",
+      "kind": "program",
+      "role": "Imperative Shell (Ingest & Taint-Sandbox Boundary)",
+      "description": "Sanitizes untrusted email headers/body via sanitize_email_text and strips quoted reply chains via strip_quoted_headers_and_history.",
+      "code": {
+        "path": "scripts/scribe_engine.py",
+        "symbol": "def sanitize_email_text"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "## The Elegance Law (locked by John \u2014 binding on this skill)"
+      },
+      "resource_ids": [
+        "scribe-mat-skill-md",
+        "scribe-tool-scripts-scribe-engine-py",
+        "scribe-peer-aegis"
+      ]
+    },
+    {
+      "id": "step-2-context-kb-load",
+      "title": "2. Correspondence History Miner & Memory Ledger Grounding",
+      "kind": "program",
+      "role": "Historical Style Miner & Priority Ledger Loader",
+      "description": "Loads .anchor/scribe-memory.json, mines sent/received history idempotently, and resolves the sender's relationship archetype and proper-name lexicon.",
+      "code": {
+        "path": "scripts/scribe_engine.py",
+        "symbol": "def mine_correspondence_history"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "# Scribe \u2014 Correspondence Intelligence, Voice-Faithful Drafting & Priority Memory Engine"
+      },
+      "resource_ids": [
+        "scribe-ref-lessons",
+        "scribe-ref-voice-tone-memory",
+        "scribe-tool-scripts-scribe-engine-py"
+      ]
+    },
+    {
+      "id": "step-3-core-execution",
+      "title": "3. Voice-Faithful Reply Synthesis & 5-Mode Transformation",
+      "kind": "model",
+      "role": "Primary Scribe Voice Engine",
+      "description": "Synthesizes context-grounded replies from the incoming email body + steering instruction and executes 1-click tone/detail transforms (warmer, more_formal, simpler, more_detail, redraft).",
+      "code": {
+        "path": "scripts/scribe_engine.py",
+        "symbol": "def synthesize_reply"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "## 1. Mission & Core Architecture"
+      },
+      "resource_ids": [
+        "scribe-tool-scripts-scribe-engine-py",
+        "scribe-tool-tests-test-scribe-engine-py",
+        "scribe-peer-gandalf"
+      ]
+    },
+    {
+      "id": "step-4-adversarial-verify",
+      "title": "4. Proper-Name Lexicon & Anti-Header-Quote Verification Gate",
+      "kind": "review",
+      "role": "Proper-Name & Anti-Echo Verifier",
+      "description": "Applies apply_proper_name_lexicon across greetings, subjects, and bodies while protecting URLs/emails, and verifies zero verbatim instruction echoes or header quotes.",
+      "code": {
+        "path": "scripts/scribe_engine.py",
+        "symbol": "def apply_proper_name_lexicon"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "## 2. Five Voice-Faithful Tone & Detail Transformation Modes"
+      },
+      "resource_ids": [
+        "scribe-peer-gandalf",
+        "scribe-peer-aegis",
+        "scribe-ref-lessons"
+      ]
+    },
+    {
+      "id": "step-5-emit-journal",
+      "title": "5. Atomic Memory Persistence & Cave of Wonders Surface Emission",
+      "kind": "terminal",
+      "role": "Imperative Shell (Atomic Ledger & UI Badge Boundary)",
+      "description": "Atomically persists updated sender/topic interest weights to .anchor/scribe-memory.json via temp+fsync+rename and emits the draft + Scribe voice badge.",
+      "code": {
+        "path": "scripts/scribe_engine.py",
+        "symbol": "def record_interest_signal"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "## 3. 5-Stage Correspondence Intelligence State Machine"
+      },
+      "resource_ids": [
+        "scribe-mat-north-star-md",
+        "scribe-peer-steward-portfolio",
+        "scribe-journal-0001"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "step-1-ingest-triage",
+      "to": "step-2-context-kb-load",
+      "label": "Sanitized email & headers stripped"
+    },
+    {
+      "from": "step-2-context-kb-load",
+      "to": "step-3-core-execution",
+      "label": "Sender archetype & voice profile loaded"
+    },
+    {
+      "from": "step-3-core-execution",
+      "to": "step-4-adversarial-verify",
+      "label": "Candidate draft synthesized"
+    },
+    {
+      "from": "step-4-adversarial-verify",
+      "to": "step-5-emit-journal",
+      "label": "Proper names & anti-quote gate passed"
+    }
+  ]
+}

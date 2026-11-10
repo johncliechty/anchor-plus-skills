@@ -1,0 +1,380 @@
+{
+  "nodes": [
+    {
+      "id": "scribe-root",
+      "name": "Scribe Knowledge & Execution Architecture",
+      "title": "Scribe Knowledge & Execution Architecture",
+      "parent_ids": [],
+      "ring": 0,
+      "resource_id": "scribe-mat-skill-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "scribe-branch-mission",
+      "name": "Core Mission, North Star & Protocol",
+      "title": "Core Mission, North Star & Protocol",
+      "parent_ids": [
+        "scribe-root"
+      ],
+      "ring": 1,
+      "resource_id": "scribe-mat-human-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "scribe-branch-tools",
+      "name": "Programmatic Tools & Engine Modules",
+      "title": "Programmatic Tools & Engine Modules",
+      "parent_ids": [
+        "scribe-root"
+      ],
+      "ring": 1,
+      "resource_id": "scribe-tool-scripts-scribe-engine-py",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "scribe-branch-skills",
+      "name": "Connected Peer Skills & Composition",
+      "title": "Connected Peer Skills & Composition",
+      "parent_ids": [
+        "scribe-root"
+      ],
+      "ring": 1,
+      "resource_id": "scribe-peer-aegis",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "scribe-branch-references",
+      "name": "Knowledge Base Sources, References & Journals",
+      "title": "Knowledge Base Sources, References & Journals",
+      "parent_ids": [
+        "scribe-root"
+      ],
+      "ring": 1,
+      "resource_id": "scribe-ref-lessons",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "scribe-leaf-mat-1",
+      "name": "Scribe Agent & Execution Protocol (SKILL.md)",
+      "title": "Scribe Agent & Execution Protocol (SKILL.md)",
+      "parent_ids": [
+        "scribe-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "scribe-mat-skill-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "scribe-leaf-mat-2",
+      "name": "Scribe Human Guide (HUMAN.md)",
+      "title": "Scribe Human Guide (HUMAN.md)",
+      "parent_ids": [
+        "scribe-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "scribe-mat-human-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "scribe-leaf-mat-3",
+      "name": "Scribe Locked North Star (NORTH-STAR.md)",
+      "title": "Scribe Locked North Star (NORTH-STAR.md)",
+      "parent_ids": [
+        "scribe-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "scribe-mat-north-star-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "scribe-leaf-tool-1",
+      "name": "scribe_engine.py (scripts/scribe_engine.py)",
+      "title": "scribe_engine.py (scripts/scribe_engine.py)",
+      "parent_ids": [
+        "scribe-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "scribe-tool-scripts-scribe-engine-py",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "scribe-leaf-tool-2",
+      "name": "test_scribe_engine.py (tests/test_scribe_engine.py)",
+      "title": "test_scribe_engine.py (tests/test_scribe_engine.py)",
+      "parent_ids": [
+        "scribe-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "scribe-tool-tests-test-scribe-engine-py",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "scribe-leaf-tool-3",
+      "name": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "title": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "parent_ids": [
+        "scribe-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "scribe-shared-tool-anvil-engine",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "scribe-leaf-tool-4",
+      "name": "Foundry Universal Triage & Model Seating Engine (mapping.mjs)",
+      "title": "Foundry Universal Triage & Model Seating Engine (mapping.mjs)",
+      "parent_ids": [
+        "scribe-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "scribe-shared-tool-mapping",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "scribe-leaf-tool-5",
+      "name": "Foreman Durability & Sub-Agent Driver Library (foreman-lib.mjs)",
+      "title": "Foreman Durability & Sub-Agent Driver Library (foreman-lib.mjs)",
+      "parent_ids": [
+        "scribe-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "scribe-shared-tool-foreman-lib",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "scribe-leaf-skill-1",
+      "name": "Aegis Read-Only Email Sandbox",
+      "title": "Aegis Read-Only Email Sandbox",
+      "parent_ids": [
+        "scribe-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "scribe-peer-aegis",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "scribe-leaf-skill-2",
+      "name": "Gandalf Deep-Think Tone & Nuance Advisor",
+      "title": "Gandalf Deep-Think Tone & Nuance Advisor",
+      "parent_ids": [
+        "scribe-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "scribe-peer-gandalf",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "scribe-leaf-skill-3",
+      "name": "Portfolio Steward (Cave of Wonders / High Seat)",
+      "title": "Portfolio Steward (Cave of Wonders / High Seat)",
+      "parent_ids": [
+        "scribe-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "scribe-peer-steward-portfolio",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "scribe-leaf-ref-1",
+      "name": "Scribe LESSONS.md",
+      "title": "Scribe LESSONS.md",
+      "parent_ids": [
+        "scribe-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "scribe-ref-lessons",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "scribe-leaf-ref-2",
+      "name": "Reference: SCRIBE-VOICE-TONE-MEMORY-REFERENCE.md",
+      "title": "Reference: SCRIBE-VOICE-TONE-MEMORY-REFERENCE.md",
+      "parent_ids": [
+        "scribe-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "scribe-ref-scribe-voice-tone-memory-reference",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "scribe-leaf-ref-3",
+      "name": "Journal: 0001-scribe-v1-correspondence-intelligence",
+      "title": "Journal: 0001-scribe-v1-correspondence-intelligence",
+      "parent_ids": [
+        "scribe-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "scribe-journal-0001-scribe-v1-correspondence-int",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "scribe-leaf-ref-4",
+      "name": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "title": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "parent_ids": [
+        "scribe-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "scribe-kb-portfolio-triage-and-band-eval",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "scribe-leaf-ref-5",
+      "name": "Knowledge Base: Lossless Code-Rewriting & Functional Core Patterns",
+      "title": "Knowledge Base: Lossless Code-Rewriting & Functional Core Patterns",
+      "parent_ids": [
+        "scribe-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "scribe-kb-researchprime-code-rewriting-tools",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    }
+  ]
+}

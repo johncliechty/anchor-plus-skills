@@ -388,6 +388,7 @@ git_safety.py
 anchor_next.py
 usage_index.py
 comms_connector.py
+scribe_engine.py
 usage_nightly_sync.py
 
 # ── Re-architecture 2026-07 C3 event-log spine (W12) ───────────────────────
@@ -487,6 +488,7 @@ vendor/brand/campaign-ecgberht-beacon.jpg
 vendor/brand/new-cockpit-icon.jpg
 vendor/brand/brainstorm-icon.jpg
 vendor/brand/crucible-icon.svg
+vendor/brand/scribe-icon.jpg
 
 # ── Vendored, dependency-free assets (KaTeX for the report viewer) ──────────
 vendor/katex/katex.min.js
@@ -529,6 +531,7 @@ starter/**
 # pillar_flags.py ships because anchor_gui.py now imports it at runtime
 # (the frontend off-switch flag); stdlib-only.
 static/**
+!static/downloads/**
 pillar_flags.py
 anchor_agent_protocol.py
 gwl_clearinghouse.py
@@ -575,6 +578,8 @@ tests/test_*.py
 !tests/test_setup_first_launch_browser.py
 !tests/test_star_chart_2026_10_03.py
 !tests/test_steward_deliverables_register.py
+!tests/test_scribe_skill_and_comms.py
+!tests/test_wave23_outlook_split_email_and_list_in_cos.py
 tests/fixtures/fake_stream.jsonl
 tests/fixtures/gate_stream.jsonl
 tests/fixtures/model-policy-v1.json

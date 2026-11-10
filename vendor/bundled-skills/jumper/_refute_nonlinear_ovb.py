@@ -2,7 +2,7 @@
 import numpy as np
 import pandas as pd
 
-x = pd.read_csv(r"C:\dev\Teaching\Econ 588\Student Summaries\data\week01-sim.csv")["x"].to_numpy(float)
+x = pd.read_csv(r"<path> 588\Student Summaries\data\week01-sim.csv")["x"].to_numpy(float)
 n = len(x)
 X = np.column_stack([np.ones(n), x])
 rng = np.random.default_rng(20260907)

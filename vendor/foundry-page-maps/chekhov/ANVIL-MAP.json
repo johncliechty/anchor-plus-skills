@@ -58,12 +58,12 @@
       "Project Steward (Lamp / Seal)"
     ],
     "kb_reference_resources": [
+      "0066-docx-open-error-root-cause-and-prevention",
+      "0065-canonical-writing-style-artificial-magi-and-law-15",
       "0064-scene-protocol-continuity-and-voice-vitality-gate",
       "0063-cold-reader-context-and-anti-compression-gate",
       "0062-head-tracked-deliverables-and-first-mention-character-gate",
-      "0061-ch14-consistency-audit-and-untracked-landing-hygiene",
-      "0060-implicit-approval-on-feedback-and-clean-deliverables-shelf",
-      "0059-canon-surname-and-geography-gate-before-staging"
+      "0061-ch14-consistency-audit-and-untracked-landing-hygiene"
     ]
   },
   "orange_split": {
@@ -392,9 +392,9 @@
           "researchPrime Historical & Domain Grounding"
         ],
         "kb_sources": [
-          "0064-scene-protocol-continuity-and-voice-vitality-gate",
-          "0063-cold-reader-context-and-anti-compression-gate",
-          "0062-head-tracked-deliverables-and-first-mention-character-gate"
+          "0066-docx-open-error-root-cause-and-prevention",
+          "0065-canonical-writing-style-artificial-magi-and-law-15",
+          "0064-scene-protocol-continuity-and-voice-vitality-gate"
         ]
       },
       "level2_mechanics": {
@@ -449,8 +449,8 @@
         "kb_sources": [
           "SKILL.md",
           "HUMAN.md",
-          "0064-scene-protocol-continuity-and-voice-vitality-gate",
-          "0063-cold-reader-context-and-anti-compression-gate"
+          "0066-docx-open-error-root-cause-and-prevention",
+          "0065-canonical-writing-style-artificial-magi-and-law-15"
         ]
       },
       "level2_mechanics": {
@@ -502,9 +502,9 @@
           "Project Steward (Lamp / Seal)"
         ],
         "kb_sources": [
-          "0064-scene-protocol-continuity-and-voice-vitality-gate",
-          "0063-cold-reader-context-and-anti-compression-gate",
-          "0062-head-tracked-deliverables-and-first-mention-character-gate"
+          "0066-docx-open-error-root-cause-and-prevention",
+          "0065-canonical-writing-style-artificial-magi-and-law-15",
+          "0064-scene-protocol-continuity-and-voice-vitality-gate"
         ]
       },
       "level2_mechanics": {
@@ -555,12 +555,12 @@
           "researchPrime Historical & Domain Grounding"
         ],
         "kb_sources": [
+          "0066-docx-open-error-root-cause-and-prevention",
+          "0065-canonical-writing-style-artificial-magi-and-law-15",
           "0064-scene-protocol-continuity-and-voice-vitality-gate",
           "0063-cold-reader-context-and-anti-compression-gate",
           "0062-head-tracked-deliverables-and-first-mention-character-gate",
-          "0061-ch14-consistency-audit-and-untracked-landing-hygiene",
-          "0060-implicit-approval-on-feedback-and-clean-deliverables-shelf",
-          "0059-canon-surname-and-geography-gate-before-staging"
+          "0061-ch14-consistency-audit-and-untracked-landing-hygiene"
         ]
       },
       "level2_mechanics": {
@@ -620,9 +620,9 @@
         "Gandalf Structural & Continuity Critic"
       ],
       "librarian_kb_reads": [
-        "0064-scene-protocol-continuity-and-voice-vitality-gate",
-        "0063-cold-reader-context-and-anti-compression-gate",
-        "0062-head-tracked-deliverables-and-first-mention-character-gate"
+        "0066-docx-open-error-root-cause-and-prevention",
+        "0065-canonical-writing-style-artificial-magi-and-law-15",
+        "0064-scene-protocol-continuity-and-voice-vitality-gate"
       ],
       "librarian_kb_writes": [],
       "source_anchor": {
@@ -665,9 +665,9 @@
         "Gandalf Structural & Continuity Critic"
       ],
       "librarian_kb_reads": [
-        "0064-scene-protocol-continuity-and-voice-vitality-gate",
-        "0063-cold-reader-context-and-anti-compression-gate",
-        "0062-head-tracked-deliverables-and-first-mention-character-gate"
+        "0066-docx-open-error-root-cause-and-prevention",
+        "0065-canonical-writing-style-artificial-magi-and-law-15",
+        "0064-scene-protocol-continuity-and-voice-vitality-gate"
       ],
       "librarian_kb_writes": [],
       "source_anchor": {
@@ -711,9 +711,9 @@
         "researchPrime Historical & Domain Grounding"
       ],
       "librarian_kb_reads": [
-        "0064-scene-protocol-continuity-and-voice-vitality-gate",
-        "0063-cold-reader-context-and-anti-compression-gate",
-        "0062-head-tracked-deliverables-and-first-mention-character-gate"
+        "0066-docx-open-error-root-cause-and-prevention",
+        "0065-canonical-writing-style-artificial-magi-and-law-15",
+        "0064-scene-protocol-continuity-and-voice-vitality-gate"
       ],
       "librarian_kb_writes": [],
       "source_anchor": {
@@ -756,9 +756,9 @@
         "researchPrime Historical & Domain Grounding"
       ],
       "librarian_kb_reads": [
-        "0064-scene-protocol-continuity-and-voice-vitality-gate",
-        "0063-cold-reader-context-and-anti-compression-gate",
-        "0062-head-tracked-deliverables-and-first-mention-character-gate"
+        "0066-docx-open-error-root-cause-and-prevention",
+        "0065-canonical-writing-style-artificial-magi-and-law-15",
+        "0064-scene-protocol-continuity-and-voice-vitality-gate"
       ],
       "librarian_kb_writes": [],
       "source_anchor": {
@@ -800,7 +800,7 @@
         "Gandalf Structural & Continuity Critic"
       ],
       "librarian_kb_reads": [
-        "0064-scene-protocol-continuity-and-voice-vitality-gate"
+        "0066-docx-open-error-root-cause-and-prevention"
       ],
       "librarian_kb_writes": [
         "journal/runs/chekhov-run-receipt.json",

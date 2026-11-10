@@ -1,6 +1,6 @@
 # North Star — zombie-hunter (BOTH substrates) — adapted in-folder 2026-07-25
 
-> The locked origin document is `C:\dev\Anchor\planning\zombie-hunter-safe-to-arm-2026-07-05\NORTH-STAR-LOCKED.md`
+> The locked origin document is `<path>
 > (Gandalf "NOT safe to ARM" remediation, locked 2026-07-05). This file brings the North
 > Star INTO the skill folder (it governed the skill from another repo's planning dir for
 > 3 weeks) and extends it to the second substrate the skill has since grown. Amending

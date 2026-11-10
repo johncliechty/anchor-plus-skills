@@ -11,9 +11,9 @@ export const W0_POLISH_STAMPS = Object.freeze({
   /** Pre-edit suite baseline handoff — GREEN only when orchestrator gate recorded exit 0. */
   baselineStatus: 'GREEN',
   baselineGateArtifact: '.foreman/wave-1-gate.json',
-  planBundle: 'C:/dev/plans/2026-07-tidy-idy-gui-polish/W0/README.md',
-  refreshTokenContract: 'C:/dev/plans/2026-07-tidy-idy-gui-polish/REFRESH-TOKEN-CONTRACT.md',
-  baselineNote: 'C:/dev/plans/2026-07-tidy-idy-gui-polish/journal/baseline/pre-edit-node-test-baseline.md',
+  planBundle: '<path>',
+  refreshTokenContract: '<path>',
+  baselineNote: '<path>',
   denyPaths: Object.freeze([
     'engine/apply/',
     'engine/launch/lock-authority.mjs',

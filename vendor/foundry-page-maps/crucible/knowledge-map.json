@@ -378,13 +378,13 @@
     },
     {
       "id": "crucible-leaf-ref-2",
-      "name": "Journal: 0108-parallel-study-matrix-and-bounded-single-pass-convergence",
-      "title": "Journal: 0108-parallel-study-matrix-and-bounded-single-pass-convergence",
+      "name": "Journal: 0109-agy-stream-json-elegance-non-exit-and-matrix-fast-track",
+      "title": "Journal: 0109-agy-stream-json-elegance-non-exit-and-matrix-fast-track",
       "parent_ids": [
         "crucible-branch-references"
       ],
       "ring": 2,
-      "resource_id": "crucible-journal-0108-parallel-study-matrix-and-",
+      "resource_id": "crucible-journal-0109-agy-stream-json-elegance-n",
       "facets": [
         "References",
         "knowledge-base"
@@ -396,13 +396,13 @@
     },
     {
       "id": "crucible-leaf-ref-3",
-      "name": "Journal: 0107-calculator-history-slim-delay",
-      "title": "Journal: 0107-calculator-history-slim-delay",
+      "name": "Journal: 0108-parallel-study-matrix-and-bounded-single-pass-convergence",
+      "title": "Journal: 0108-parallel-study-matrix-and-bounded-single-pass-convergence",
       "parent_ids": [
         "crucible-branch-references"
       ],
       "ring": 2,
-      "resource_id": "crucible-journal-0107-calculator-history-slim-de",
+      "resource_id": "crucible-journal-0108-parallel-study-matrix-and-",
       "facets": [
         "References",
         "knowledge-base"

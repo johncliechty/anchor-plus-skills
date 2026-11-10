@@ -18,7 +18,7 @@ For onboarding and a first working session, follow [Project onboarding](referenc
 
 The North Star below describes the complete planned skill. The first-writing release covers source-aware onboarding, idea checks, provisional work and session guidance; later voice validation, automatic drafting/rendering and cross-family lock events retain their separate implementation and author-use gates. The operator invokes the existing `bin/chekhov.mjs` entry from this canonical skill directory with Node; do not assume a bare `chekhov` command is installed on PATH.
 
-One writing skill that keeps ONE checkable ledger per project and checks every dictated idea, scene or change against it in seconds, reserving the cross-family adversarial pass for lock events; it always knows where he is and what comes next, and it renders his words in his own documented voice without normalising it. Markdown is the bible's source of truth; Word is rendered. Forms ship as shareable packs, voices as private profiles, projects hold the data. (Full text: `C:/dev/Writing/planning/writing-skill-2026-09-05/crucible/NORTH-STAR-LOCKED.md`.)
+One writing skill that keeps ONE checkable ledger per project and checks every dictated idea, scene or change against it in seconds, reserving the cross-family adversarial pass for lock events; it always knows where he is and what comes next, and it renders his words in his own documented voice without normalising it. Markdown is the bible's source of truth; Word is rendered. Forms ship as shareable packs, voices as private profiles, projects hold the data. (Full text: `<path>
 
 <!-- ELEGANCE-LAW v2 -->
 ## The Elegance Law (locked by John — binding on this skill)

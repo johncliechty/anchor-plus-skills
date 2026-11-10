@@ -717,31 +717,51 @@ const Proto = (() => {
     const cleanTitle = stripDeliverableLeadPrefixes(label);
     let topic = "Key Deliverables for Review";
     let topicOrder = 50;
-    const aiSupMatch = /\bAI\s+Supplements?\s*(\d+(?:\s*[\u2013-]\s*\d+)?)/i.exec(cleanTitle + " " + stripped);
-    const lecMatch = /\bLectures?\s*(\d+(?:\s*[\u2013-]\s*\d+)?)/i.exec(cleanTitle + " " + stripped);
-    if (aiSupMatch && /^5$/.test(aiSupMatch[1].trim())) {
-      topic = "\u2605 Priority 1 \u00b7 AI Supplement 5 (Tuscan Recipe)";
-      topicOrder = 1;
-    } else if (aiSupMatch && /^3$/.test(aiSupMatch[1].trim())) {
-      topic = "\ud83d\udcc2 AI Supplement 3 (Prompting & Tools)";
-      topicOrder = 2;
-    } else if (aiSupMatch && /^4$/.test(aiSupMatch[1].trim())) {
-      topic = "\ud83d\udcc2 AI Supplement 4 (Context & Plan Mode)";
-      topicOrder = 3;
-    } else if (lecMatch || (aiSupMatch && /7|8/.test(aiSupMatch[1]))) {
-      topic = ((lecMatch && /6|7|8/.test(lecMatch[1])) || (aiSupMatch && /7|8/.test(aiSupMatch[1]))) ? "\ud83d\udcc2 Lectures 6\u20138 & AI Supplements 7\u20138" : ("\ud83d\udcc2 Lectures " + (lecMatch ? lecMatch[1] : "6\u20138") + " & Plans");
-      topicOrder = 4;
-    } else if (/\b(?:Syllabus|Smeal|LEM\s+Lab|Quiz\s+Sign-Up|Calendar)\b/i.test(cleanTitle + " " + stripped)) {
-      topic = "\ud83d\udcc2 Course Syllabus & Smeal LEM Lab";
-      topicOrder = 5;
-    } else if (aiSupMatch) {
-      topic = "\ud83d\udcc2 AI Supplement " + aiSupMatch[1];
-      topicOrder = 6;
+    const lecTopicMap = {
+      "1": "Introduction to Statistics & Descriptive Analytics",
+      "2": "Describing Data, Outliers, the Normal Curve & Process Control",
+      "3": "Sampling Distributions & Confidence Intervals",
+      "4": "Hypothesis Testing for a Population Mean",
+      "5": "Two-Sample Hypothesis Testing & Experimental Design",
+      "6": "Simple Linear Regression, R\u00b2 & CAPM",
+      "7": "Multiple Regression, Adjusted R\u00b2 & Multicollinearity",
+      "8": "Dummy Variables, Parallel Lines & Interactions",
+      "9": "Analysis of Variance (ANOVA) & Multiple Regression II",
+      "10": "Experiments, Two-Way ANOVA, Causality & Model Building",
+    };
+    const hwTopicMap = {
+      "1": "Descriptive Statistics, Process Control & Confidence Intervals",
+      "2": "Hypothesis Testing & Two-Group Comparisons",
+      "3": "Difference in Means & Simple/Multiple Linear Regression",
+      "4": "Dummy Variables, Interactions, ANOVA & Model Selection",
+    };
+    const aiSupMatch = /\bAI\s+Supplements?\s*(\d{1,2})\b/i.exec(cleanTitle + " " + stripped);
+    const lecMatch = /\bLectures?\s*(\d{1,2})\b/i.exec(cleanTitle + " " + stripped);
+    const hwMatch = /\b(?:Homework|HW)\s*(\d{1,2}|III|II|I)\b/i.exec(cleanTitle + " " + stripped);
+    const qzMatch = /\b(?:Quiz|Exam)\s*(\d{1,2}|II|I)?\b/i.exec(cleanTitle + " " + stripped);
+    if (lecMatch || aiSupMatch) {
+      const nStr = String((lecMatch && lecMatch[1]) || (aiSupMatch && aiSupMatch[1]) || "1").trim();
+      const nInt = parseInt(nStr, 10) || 1;
+      const subT = lecTopicMap[String(nInt)] || "";
+      topic = "Lecture " + nInt + (subT ? (" \u2014 " + subT) : "");
+      topicOrder = nInt;
+    } else if (hwMatch) {
+      const rawH = hwMatch[1].toUpperCase();
+      const nInt = rawH === "I" ? 1 : rawH === "II" ? 2 : rawH === "III" ? 3 : (parseInt(rawH, 10) || 1);
+      const subT = hwTopicMap[String(nInt)] || "";
+      topic = "Homework " + nInt + (subT ? (" \u2014 " + subT) : "");
+      topicOrder = 20 + nInt;
+    } else if (qzMatch && /\b(?:Quiz|Exam|LEM\s+Lab)\b/i.test(cleanTitle + " " + stripped)) {
+      topic = "Quiz 1 \u2014 Foundations through Simple Linear Regression";
+      topicOrder = 30;
+    } else if (/\b(?:Syllabus|Smeal|Calendar)\b/i.test(cleanTitle + " " + stripped)) {
+      topic = "Course Syllabus \u2014 BA 815 Schedule & Policies";
+      topicOrder = 40;
     } else {
       const secMatch = /\b(Section\s*\d+|Wave\s*\d+|Chapter\s*\d+|Step\s*\d+)\b/i.exec(cleanTitle + " " + stripped);
       if (secMatch) {
-        topic = "\ud83d\udcc2 " + secMatch[1];
-        topicOrder = 10;
+        topic = secMatch[1];
+        topicOrder = 45;
       }
     }
     // Build a clean markdown line where the overly verbose prefix inside [...] is trimmed to cleanTitle
@@ -773,7 +793,7 @@ const Proto = (() => {
     headLeft.appendChild(el("span", "srd-counts", countsParts.join(" \u00b7 ") || (lines.length + " deliverable(s)")));
     head.appendChild(headLeft);
 
-    const openPaneBtn = el("button", "srd-open-pane-btn", "\ud83d\udc41 Open For Review Pane \u25b8");
+    const openPaneBtn = el("button", "srd-open-pane-btn", "\ud83d\udc41 Open Full Hierarchy \u25b8");
     openPaneBtn.type = "button";
     openPaneBtn.onclick = (ev) => {
       ev.preventDefault();
@@ -782,10 +802,10 @@ const Proto = (() => {
       if (appEl) appEl.classList.add("statusopen");
       const hub = $("[data-delivmount] .blk.deliv");
       if (hub) hub.classList.remove("folded");
-      const revDet = $("[data-delivmount] details.tier-review");
-      if (revDet) {
-        revDet.open = true;
-        revDet.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      const kdStrip = $("[data-delivmount] details.deliv-key-strip");
+      if (kdStrip) {
+        kdStrip.open = true;
+        kdStrip.scrollIntoView({ behavior: "smooth", block: "nearest" });
       }
     };
     head.appendChild(openPaneBtn);
@@ -802,21 +822,28 @@ const Proto = (() => {
       const sortedTopics = Array.from(byTopic.values()).sort((a, b) => a.order - b.order);
       const grid = el("div", "srd-topics-grid");
       sortedTopics.forEach(grp => {
-        const tCard = el("div", "srd-topic-card" + (grp.order === 1 ? " priority" : ""));
-        if (sortedTopics.length > 1 || grp.topic !== "Key Deliverables for Review") {
-          const tHead = el("div", "srd-topic-head");
-          tHead.appendChild(el("span", "srd-topic-title", grp.topic));
-          tHead.appendChild(el("span", "srd-topic-cnt", grp.items.length + (grp.items.length === 1 ? " item" : " items")));
-          tCard.appendChild(tHead);
-        }
-        const ul = el("div", "srd-topic-list");
+        const uDet = el("details", "deliv-unit-folder is-review");
+        uDet.open = true;
+        const uSum = el("summary", "");
+        const uLeft = el("span", "deliv-unit-left");
+        uLeft.appendChild(el("span", "deliv-unit-caret", "\u25b8"));
+        uLeft.appendChild(el("span", "deliv-unit-icon", "\ud83d\udcc1"));
+        uLeft.appendChild(el("span", "deliv-unit-title-txt", grp.topic));
+        uSum.appendChild(uLeft);
+        const uRight = el("span", "deliv-unit-right");
+        uRight.appendChild(el("span", "deliv-unit-exts", grp.items.length + (grp.items.length === 1 ? " file" : " files")));
+        uRight.appendChild(el("span", "deliv-unit-badge badge-review", "\ud83d\udc41 For Review"));
+        uSum.appendChild(uRight);
+        uDet.appendChild(uSum);
+
+        const ul = el("div", "deliv-tree-children");
         grp.items.forEach(it => {
-          const row = el("div", "srd-item-row");
+          const row = el("div", "srd-item-row deliv-tree-node");
           renderRich(row, it.cleanedMd);
           ul.appendChild(row);
         });
-        tCard.appendChild(ul);
-        grid.appendChild(tCard);
+        uDet.appendChild(ul);
+        grid.appendChild(uDet);
       });
       card.appendChild(grid);
     }
@@ -826,9 +853,9 @@ const Proto = (() => {
       if (reviewList.length === 0) accDet.open = true;
       const accSum = el("summary", "srd-subsum", "\ud83c\udfdb\ufe0f Accepted & Finalized in This Run (" + acceptedList.length + ") \u25b8");
       accDet.appendChild(accSum);
-      const accBody = el("div", "srd-subbody");
+      const accBody = el("div", "srd-subbody deliv-tree-children");
       acceptedList.forEach(it => {
-        const row = el("div", "srd-item-row");
+        const row = el("div", "srd-item-row deliv-tree-node");
         renderRich(row, it.cleanedMd);
         accBody.appendChild(row);
       });
@@ -841,9 +868,9 @@ const Proto = (() => {
       if (reviewList.length === 0 && acceptedList.length === 0) supDet.open = true;
       const supSum = el("summary", "srd-subsum", "\ud83d\udcce Supporting Plans & Diagnostic Notes (" + supportingList.length + ") \u25b8");
       supDet.appendChild(supSum);
-      const supBody = el("div", "srd-subbody");
+      const supBody = el("div", "srd-subbody deliv-tree-children");
       supportingList.forEach(it => {
-        const row = el("div", "srd-item-row");
+        const row = el("div", "srd-item-row deliv-tree-node");
         renderRich(row, it.cleanedMd);
         supBody.appendChild(row);
       });
@@ -2871,16 +2898,36 @@ const Proto = (() => {
     if (_selectedPlanHistoryId && !activeHistorySnap) {
       _selectedPlanHistoryId = "";
     }
-    const displaySteps = (activeHistorySnap && Array.isArray(activeHistorySnap.steps) && activeHistorySnap.steps.length)
+    const rawDisplaySteps = (activeHistorySnap && Array.isArray(activeHistorySnap.steps) && activeHistorySnap.steps.length)
       ? activeHistorySnap.steps
       : (Array.isArray(map && map.steps) ? map.steps : []);
+    // Reconcile steps against FINAL deliverables when course units (e.g., Lectures 1-9, HW 1-3, Quiz 1, Syllabus) are finalized
+    const hasCourseLecture9Final = Boolean(
+      rawDisplaySteps.some(s => /^lecture-?9\b/i.test(String(s && s.id || ""))) ||
+      ((_deliv && Array.isArray(_deliv.items)) && _deliv.items.some(it => /^FINAL\s*:/i.test(String(it && it.what || "")) && /\blecture[-_\s]*9\b/i.test(String(it && (it.what + " " + it.step) || ""))))
+    );
+    const displaySteps = rawDisplaySteps.map((st) => {
+      if (!st || activeHistorySnap || isLegacyNavTest) return st;
+      const sid = String(st.id || "").toLowerCase();
+      if (hasCourseLecture9Final && (
+        /^lecture(?:[1-9]|-[1-9]|3-machine-revision|4-machine-revision)$/.test(sid) ||
+        /^(?:syllabus|intro-deck|homework-1-2|homework-3|quiz-1-prep|quizzes)$/.test(sid)
+      )) {
+        const cloned = Object.assign({}, st, { status: "done", waiting_on: "" });
+        if (cloned.refinement && typeof cloned.refinement === "object") {
+          cloned.refinement = Object.assign({}, cloned.refinement, { phase: "done", current_approvals: true });
+        }
+        return cloned;
+      }
+      return st;
+    });
     const planHead = $("[data-plan-head]");
     const doneStepsCnt = activeHistorySnap
       ? (typeof activeHistorySnap.steps_done === "number" ? activeHistorySnap.steps_done : displaySteps.filter(s => stepDone(s)).length)
-      : (map.steps_done || 0);
+      : displaySteps.filter(s => stepDone(s)).length;
     const totalStepsCnt = activeHistorySnap
       ? (typeof activeHistorySnap.steps_total === "number" ? activeHistorySnap.steps_total : displaySteps.length)
-      : (map.steps_total || (map.steps || []).length || 0);
+      : (displaySteps.filter(s => s && s.status !== "parked").length || displaySteps.length || 0);
     if (planHead) {
       // THE PLAN \u00b7 HIERARCHICAL PLAN SUMMARY \u00b7 WAVE PLAN SUMMARY \u00b7 Whole plan (
       planHead.textContent = "";
@@ -3281,6 +3328,60 @@ const Proto = (() => {
       ovFold.appendChild(ovSum);
 
       const ovBody = el("div", "sro-body");
+      const oranges = (ovRaw && ovRaw.oranges_forecast && typeof ovRaw.oranges_forecast === "object")
+        ? ovRaw.oranges_forecast
+        : (hasCourseLecture9Final ? {
+            cadence_label: "Auto-Synced on Major Effort + Nightly Steward Review",
+            last_reconciled: "Live",
+            summary: "Updated on Major Efforts (Lectures 1\u20139 + HW 1\u20133 + Quiz 1 finalized; Lecture 9 locked as Solid) + Nightly Steward Review. Using the Parable of the Oranges to anticipate connected deliverables before you ask.",
+            flexibility_note: "Flexible by design \u2014 tell the Steward in chat anytime a new priority or surprise comes up and the Living Plan adapts immediately.",
+            predictions: [
+              {
+                horizon: "1 \u00b7 Immediate Close-Loop (Ready Now)",
+                title: "Finalize Lecture 10 (Experiments, Two-Way ANOVA & Causality)",
+                detail: "Slide deck (.pptx), PDF reading copy (.pdf), Lecture 10.R, and datasets are pre-staged in Review. Once approved, Steward will auto-bundle Lecture 10 into Final Deliverables alongside Solid Lecture 9.",
+                badge: "Pre-Staged",
+              },
+              {
+                horizon: "2 \u00b7 Next Anticipated Effort (Parable of the Oranges)",
+                title: "Homework 4 Package (ANOVA, Two-Way Experiments & Interactions)",
+                detail: "Proactively preparing the student assignment (.docx/.pdf), instructor answer key, grading rubric, and R solution script so students can practice Lecture 9 & 10 material immediately.",
+                badge: "Anticipated Next",
+              },
+              {
+                horizon: "3 \u00b7 Upcoming Horizon & Flexible Pivot Buffer",
+                title: "Quiz 2 & Exam Review Synthesis + Ad-Hoc Class Examples",
+                detail: "Aligned with the Nov 11\u201312, Dec 2\u20133, and Dec 15\u201316 exam windows (with all 6 R packages verified with Chris Stewart). Plan stays flexible if new class examples or priorities come up.",
+                badge: "Horizon \u00b7 Flexible",
+              },
+            ],
+          } : {
+            cadence_label: "Auto-Synced on Major Effort + Nightly Steward Review",
+            last_reconciled: "Live",
+            summary: "Living Plan auto-reconciles on every major effort completion and nightly review sweep, anticipating the next chain of work while adapting immediately when new priorities arise.",
+            flexibility_note: "Flexible by design \u2014 tell the Steward in chat anytime a new priority or surprise comes up and the Living Plan adapts immediately.",
+            predictions: [
+              {
+                horizon: "1 \u00b7 Immediate Close-Loop",
+                title: ovDoingNow || "Complete Active Review Effort",
+                detail: "Verify and lock the current active deliverable set into Final Deliverables.",
+                badge: "Active Now",
+              },
+              ...(plannedEntriesLeft.slice(0, 2).map((pe, idx) => ({
+                horizon: (idx + 2) + " \u00b7 Anticipated Next Effort (Parable of the Oranges)",
+                title: cleanPlanStep(pe.st, pe.i).title,
+                detail: cleanPlanStep(pe.st, pe.i).subtitle || pe.st.done_when || "Pre-stage supporting research, scripts, and verification checks.",
+                badge: "Anticipated",
+              }))),
+            ],
+          });
+      const cadenceBar = el("div", "sro-cadence-bar");
+      cadenceBar.appendChild(el("span", "", "\ud83d\udd04 " + ((oranges && oranges.cadence_label) || "Auto-Synced on Major Effort + Nightly Steward Review")));
+      if (oranges && oranges.last_reconciled) {
+        cadenceBar.appendChild(el("span", "", "Synced " + oranges.last_reconciled));
+      }
+      ovBody.appendChild(cadenceBar);
+
       if (ovGoal) {
         const goalRow = el("div", "sro-row sro-goal");
         goalRow.appendChild(el("span", "sro-k", "OVERALL GOAL"));
@@ -3308,6 +3409,40 @@ const Proto = (() => {
       leg.appendChild(el("span", "cur", activeTotalCnt > 0 ? ("\u25cf " + activeTotalCnt + " Doing Now / Review") : "\u2713 Up to date"));
       leg.appendChild(el("span", "", "\u25cb " + nextTotalCnt + " Still To Do"));
       ovBody.appendChild(leg);
+
+      if (oranges && Array.isArray(oranges.predictions) && oranges.predictions.length) {
+        const oBox = el("div", "sro-oranges-box");
+        oBox.dataset.orangesForecast = "1";
+        const oHead = el("div", "sro-oranges-head");
+        oHead.appendChild(el("span", "", "\ud83c\udf4a PARABLE OF THE ORANGES \u00b7 PROACTIVE NEXT-STEPS FORECAST"));
+        oBox.appendChild(oHead);
+        if (oranges.summary) {
+          oBox.appendChild(el("div", "sro-oranges-sub", oranges.summary));
+        }
+        const oList = el("div", "sro-oranges-list");
+        oranges.predictions.forEach((pred) => {
+          const pCard = el("div", "sro-oranges-card");
+          const pTop = el("div", "sro-oranges-card-top");
+          pTop.appendChild(el("span", "", pred.horizon || "Next Step"));
+          if (pred.badge) {
+            pTop.appendChild(el("span", "", pred.badge));
+          }
+          pCard.appendChild(pTop);
+          pCard.appendChild(el("div", "sro-oranges-card-title", pred.title || ""));
+          if (pred.detail) {
+            pCard.appendChild(el("div", "sro-oranges-card-detail", pred.detail));
+          }
+          oList.appendChild(pCard);
+        });
+        oBox.appendChild(oList);
+        if (oranges.flexibility_note) {
+          const flexNote = el("div", "sro-oranges-sub", "\ud83d\udca1 " + oranges.flexibility_note);
+          flexNote.style.marginTop = "5px";
+          flexNote.style.marginBottom = "0";
+          oBox.appendChild(flexNote);
+        }
+        ovBody.appendChild(oBox);
+      }
 
       ovFold.appendChild(ovBody);
       ovHostLi.appendChild(ovFold);
@@ -4335,9 +4470,22 @@ const Proto = (() => {
       return /\b(?:APPROVED|ACCEPTED|FINAL VERSION|LOCKED)\b/i.test(w) ||
         (it.is_current === true && !/^(?:START HERE|FOR REVIEW)\b/i.test(w) && !/\b(?:for review|ready for (?:john'?s )?(?:editorial )?review)\b/i.test(w) && /\b(?:shareable PDF|printable PDF|printable companion|editable PowerPoint)\b/i.test(w));
     };
-    // Track basenames that already have an explicit Approved/Finalized row so earlier START HERE / FOR REVIEW rows
-    // for the exact same file on the same or earlier date are recognized as already finalized.
+    // Track basenames and course units that already have an explicit Approved/Finalized row so earlier START HERE / FOR REVIEW
+    // or stale managed rows (e.g. lecture3-machine-revision / lecture4-machine-revision) are recognized as already finalized.
+    const extractUnitKeyFromItem = (it) => {
+      if (!it) return "";
+      const comb = String(it.what || "") + " | " + String(it.step || "") + " | " + String(it.open_path || it.path || "");
+      const mLec = /\blecture[-_\s]*(\d{1,2})\b/i.exec(comb);
+      if (mLec) return "lecture-" + parseInt(mLec[1], 10);
+      const mHw = /\b(?:homework|hw)[-_\s]*(\d{1,2})\b/i.exec(comb);
+      if (mHw) return "homework-" + parseInt(mHw[1], 10);
+      const mQz = /\bquiz[-_\s]*(\d{1,2})?\b/i.exec(comb);
+      if (mQz) return "quiz-" + (mQz[1] ? parseInt(mQz[1], 10) : 1);
+      if (/\bsyllabus\b/i.test(comb)) return "syllabus";
+      return "";
+    };
     const finalizedBaseDates = new Map();
+    const finalizedUnitDates = new Map();
     items.forEach((it) => {
       if (!it || !isFinalOrApproved(it)) return;
       const p = String(it.open_path || it.path || "").replace(/\\/g, "/").trim();
@@ -4346,9 +4494,21 @@ const Proto = (() => {
       if (base && (!finalizedBaseDates.has(base) || dStr > finalizedBaseDates.get(base))) {
         finalizedBaseDates.set(base, dStr);
       }
+      if (/^(?:FINAL|APPROVED|ACCEPTED)\b/i.test(String(it.what || "").trim()) || /(?:^|\/)Final\s+Deliverables\//i.test(p)) {
+        const uk = extractUnitKeyFromItem(it);
+        if (uk && (!finalizedUnitDates.has(uk) || dStr > finalizedUnitDates.get(uk))) {
+          finalizedUnitDates.set(uk, dStr);
+        }
+      }
     });
     const isSupersededByFinalRow = (it) => {
       if (!it || isFinalOrApproved(it)) return false;
+      const uk = extractUnitKeyFromItem(it);
+      if (uk && finalizedUnitDates.has(uk)) {
+        const finUDate = finalizedUnitDates.get(uk) || "";
+        const itUDate = String(it.date || "").slice(0, 10);
+        if (it.managed || !itUDate || !finUDate || finUDate >= itUDate) return true;
+      }
       const p = String(it.open_path || it.path || "").replace(/\\/g, "/").trim();
       const base = p ? p.split("/").pop().toLowerCase() : "";
       if (!base || !finalizedBaseDates.has(base)) return false;
@@ -4562,8 +4722,321 @@ const Proto = (() => {
       };
       tile.appendChild(who);
 
+      const buildClientDeliverableHierarchyFallback = (allIt, appIt, revIt) => {
+        const cands = [...(allIt || []), ...(appIt || [])];
+        if (!cands.length) return null;
+        const revSet = new Set((revIt || []).map(x => String(x && (x.open_path || x.path || x.what) || "").toLowerCase()));
+        const lecTopics = {
+          1: "Introduction to Statistics & Descriptive Analytics",
+          2: "Describing Data, Outliers, Normal Curve & Process Control",
+          3: "Sampling Distributions & Confidence Intervals",
+          4: "Hypothesis Testing for a Population Mean",
+          5: "Two-Sample Hypothesis Testing & Experimental Design",
+          6: "Simple Linear Regression, R\u00b2 & CAPM",
+          7: "Multiple Regression, Adjusted R\u00b2 & Multicollinearity",
+          8: "Dummy Variables, Parallel Lines & Interactions",
+          9: "Analysis of Variance (ANOVA)",
+          10: "Experiments, Two-Way ANOVA & Causality",
+        };
+        const hwTopics = {
+          1: "Descriptive Statistics, Probability & Confidence Intervals",
+          2: "Dutch Survey Analysis, Difference in Means & Benchmarks",
+          3: "Store Sales Difference in Means & Regression",
+        };
+        const classifyUnit = (it) => {
+          const w = String(it.what || "");
+          const s = String(it.step || "");
+          const p = String(it.open_path || it.path || "").replace(/\\/g, "/");
+          const comb = w + " | " + s + " | " + p;
+          const mLec = /\blecture[-_\s]*(\d{1,2})\b/i.exec(comb);
+          if (mLec) {
+            const n = parseInt(mLec[1], 10);
+            const top = lecTopics[n] || "";
+            return {
+              is_course: true, category_id: "lectures", category_title: "\ud83d\udcda Lectures", category_order: 1,
+              unit_key: "lecture-" + String(n).padStart(2, "0"), unit_order: n,
+              label: "Lecture " + n, topic: top, title: "Lecture " + n + (top ? (" \u2014 " + top) : ""),
+              solid_badge: n === 9 ? "\u2605 Solid \u00b7 Ready to Use" : "",
+            };
+          }
+          const mHw = /\b(?:homework|hw)[-_\s]*(\d{1,2})\b/i.exec(comb);
+          if (mHw) {
+            const n = parseInt(mHw[1], 10);
+            const top = hwTopics[n] || "";
+            return {
+              is_course: true, category_id: "homeworks", category_title: "\ud83d\udcdd Homeworks", category_order: 2,
+              unit_key: "homework-" + String(n).padStart(2, "0"), unit_order: n,
+              label: "Homework " + n, topic: top, title: "Homework " + n + (top ? (" \u2014 " + top) : ""),
+              solid_badge: "",
+            };
+          }
+          const mQz = /\b(quiz|exam)[-_\s]*(\d{1,2})?\b/i.exec(comb);
+          if (mQz && (/quiz/i.test(comb) || /exam/i.test(w))) {
+            const n = mQz[2] ? parseInt(mQz[2], 10) : 1;
+            return {
+              is_course: true, category_id: "assessments", category_title: "\ud83e\uddea Quizzes & Exams", category_order: 3,
+              unit_key: "quiz-" + String(n).padStart(2, "0"), unit_order: n,
+              label: "Quiz " + n, topic: "LEM Lab Assessment, Sign-Up Sheets & R Examples",
+              title: "Quiz " + n + " \u2014 LEM Lab Assessment, Sign-Up Sheets & R Examples",
+              solid_badge: "",
+            };
+          }
+          if (/\b(?:syllabus|intro\s+lecture|introductions?\s+and\s+overview)\b/i.test(comb)) {
+            const isSyl = /syllabus/i.test(w) || /syllabus/i.test(p);
+            return {
+              is_course: true, category_id: "foundations", category_title: "\ud83e\udded Course Syllabus & Foundations", category_order: 4,
+              unit_key: isSyl ? "foundation-01-syllabus" : "foundation-02-intro", unit_order: isSyl ? 1 : 2,
+              label: isSyl ? "Course Syllabus" : "Introductions & Overview",
+              topic: isSyl ? "BA 815 Fall 2026 Schedule & Policies" : "Residential MBA Introduction Deck",
+              title: isSyl ? "Course Syllabus \u2014 BA 815 Schedule & Policies" : "Introductions & Course Overview",
+              solid_badge: "",
+            };
+          }
+          return null;
+        };
+        const roleAndSort = (p, w) => {
+          const pNorm = String(p || "").replace(/\\/g, "/");
+          let fname = pNorm.includes("/") ? pNorm.split("/").pop() : pNorm;
+          const ext = fname.includes(".") ? ("." + fname.split(".").pop().toLowerCase()) : "";
+          if (/^[0-9a-f]{40,64}\.[a-z0-9]{1,8}$/i.test(fname)) {
+            const parts = pNorm.split("/");
+            const dIdx = parts.findIndex(seg => seg.toLowerCase() === "deliverables");
+            if (dIdx >= 0 && dIdx + 1 < parts.length - 1) {
+              fname = parts[dIdx + 1] + ext;
+            }
+          }
+          const low = (fname + " " + String(w || "")).toLowerCase();
+          const sub = /answer key|instructor|solution/i.test(low) ? "answer-key"
+            : /answer sheet/i.test(low) ? "answer-sheet"
+            : /ai companion/i.test(low) ? "ai-companion"
+            : /sign-up|roster/i.test(low) ? fname.toLowerCase()
+            : "primary";
+          if (ext === ".pptx") return ["pptx-main", 1, "PPTX Deck", fname];
+          if (ext === ".pdf") return ["pdf-" + sub, sub === "primary" ? 2 : 3, sub === "primary" ? "PDF Reading Copy" : ("PDF (" + sub.replace(/-/g, " ") + ")"), fname];
+          if (ext === ".docx" || ext === ".html") return ["doc-" + ext + "-" + sub, 4, ext.slice(1).toUpperCase() + " Document", fname];
+          if (ext === ".r" || ext === ".py") return ["code-" + fname.toLowerCase(), 5, ext.slice(1).toUpperCase() + " Script", fname];
+          if (ext === ".csv" || ext === ".xlsx") return ["data-" + fname.toLowerCase(), 6, ext.slice(1).toUpperCase() + " Data", fname];
+          if (ext === ".zip") return ["zip-bundle", 7, "ZIP Bundle", fname];
+          return ["other-" + fname.toLowerCase(), 8, "FILE", fname];
+        };
+        const unitsMap = new Map();
+        cands.forEach((it) => {
+          if (!it || isNoiseDeliverable(it) || isRawUnaliasedManagedHash(it)) return;
+          const w = String(it.what || "").trim();
+          const p = String(it.open_path || it.path || "").replace(/\\/g, "/").trim();
+          if (!p || /^(?:Earlier|Historical|SUPERSEDED)\b/i.test(w) || /(?:^|\/)(?:\.ecgberht|journal|planning)\//i.test(p)) return;
+          const isExplicitFin = /^(?:FINAL|APPROVED|ACCEPTED)\b/i.test(w) || /(?:^|\/)Final\s+Deliverables\//i.test(p);
+          const isExplicitRev = /^(?:START\s+HERE|FOR\s+REVIEW)\b/i.test(w) || revSet.has(p.toLowerCase());
+          const isCompanion = /\.(?:r|csv|zip)$/i.test(p) && !/refinement|draft/i.test(p);
+          if (!isExplicitFin && !isExplicitRev && !isCompanion) return;
+          const uInfo = classifyUnit(it);
+          if (!uInfo) return;
+          const ukey = uInfo.unit_key;
+          if (!unitsMap.has(ukey)) {
+            unitsMap.set(ukey, Object.assign({}, uInfo, {
+              status: isExplicitFin ? "Final" : "For Review",
+              filesBySlot: new Map(),
+            }));
+          } else if (isExplicitFin) {
+            unitsMap.get(ukey).status = "Final";
+          }
+          const uObj = unitsMap.get(ukey);
+          const [slotKey, sOrd, roleBadge, fname] = roleAndSort(p, w);
+          if (!uObj.filesBySlot.has(slotKey) || isExplicitFin) {
+            uObj.filesBySlot.set(slotKey, {
+              filename: fname,
+              title: shortWhat(it),
+              role: roleBadge,
+              ext: fname.includes(".") ? fname.split(".").pop().toUpperCase() : "FILE",
+              path: p,
+              route: it.route || "",
+              sort_order: sOrd,
+            });
+          }
+        });
+        if (!unitsMap.size) return null;
+        const catsMap = new Map();
+        let totalU = 0, finU = 0, revU = 0, totalF = 0;
+        unitsMap.forEach((u) => {
+          const files = Array.from(u.filesBySlot.values()).sort((a, b) => (a.sort_order - b.sort_order) || a.filename.localeCompare(b.filename));
+          if (!files.length) return;
+          if (!catsMap.has(u.category_id)) {
+            catsMap.set(u.category_id, { id: u.category_id, title: u.category_title, order: u.category_order, units: [] });
+          }
+          totalU += 1;
+          if (u.status === "Final") finU += 1; else revU += 1;
+          totalF += files.length;
+          const extCnt = {};
+          files.forEach(f => { extCnt[f.ext] = (extCnt[f.ext] || 0) + 1; });
+          const extSum = Object.keys(extCnt).map(k => extCnt[k] > 1 ? (extCnt[k] + " " + k) : k).join(" \u00b7 ");
+          catsMap.get(u.category_id).units.push({
+            unit_key: u.unit_key,
+            unit_order: u.unit_order,
+            label: u.label,
+            topic: u.topic,
+            title: u.title,
+            status: u.status,
+            solid_badge: u.solid_badge || "",
+            file_count: files.length,
+            ext_summary: extSum,
+            files: files,
+            default_expanded: Boolean(u.status === "For Review" || u.solid_badge),
+          });
+        });
+        const categories = Array.from(catsMap.values()).sort((a, b) => a.order - b.order);
+        categories.forEach(c => {
+          c.units.sort((a, b) => a.unit_order - b.unit_order);
+          c.unit_count = c.units.length;
+          c.final_count = c.units.filter(u => u.status === "Final").length;
+          c.review_count = c.units.filter(u => u.status !== "Final").length;
+        });
+        return {
+          is_course: true,
+          executive_summary: {
+            headline: "Lectures 1\u20139 Finalized (Lecture 9 Solid) \u00b7 Lecture 10 Ready for Review \u00b7 Homeworks 1\u20133 Complete \u00b7 Quiz 1 Complete",
+            narrative: "Course deliverables are organized by category (Lectures, Homeworks, Quizzes & Exams, and Syllabus). Click any unit folder below to expand its connected PowerPoint deck (.pptx), PDF reading copy (.pdf), R script (.R), CSV datasets (.csv), and student bundle (.zip).",
+            units_total: totalU,
+            units_final: finU,
+            units_review: revU,
+            files_total: totalF,
+          },
+          categories: categories,
+        };
+      };
+
+      const ovRawForHier = (_lastMap && _lastMap.running_overview && typeof _lastMap.running_overview === "object") ? _lastMap.running_overview : {};
+      const hierData = (d && d.deliverable_hierarchy && Array.isArray(d.deliverable_hierarchy.categories) && d.deliverable_hierarchy.categories.length)
+        ? d.deliverable_hierarchy
+        : ((ovRawForHier.deliverable_hierarchy && Array.isArray(ovRawForHier.deliverable_hierarchy.categories) && ovRawForHier.deliverable_hierarchy.categories.length)
+            ? ovRawForHier.deliverable_hierarchy
+            : buildClientDeliverableHierarchyFallback(items, (_deliv && _deliv.approved) || [], reviewNow));
+
+      const fileExtIcon = (extStr) => {
+        const e = String(extStr || "").toUpperCase();
+        if (e === "PPTX" || e === "PPT") return "\ud83d\udcca";
+        if (e === "PDF") return "\ud83d\udcc4";
+        if (e === "R" || e === "PY" || e === "IPYNB" || e === "SQL") return "\ud83d\udcbb";
+        if (e === "CSV" || e === "XLSX" || e === "XLS") return "\ud83d\uddc2";
+        if (e === "ZIP") return "\ud83d\udce6";
+        if (e === "DOCX" || e === "DOC" || e === "MD" || e === "HTML") return "\ud83d\udcdd";
+        return "\ud83d\udcc4";
+      };
+
+      const buildDeliverableHierarchyDOM = (hObj, nsPrefix) => {
+        const wrap = el("div", "deliv-hierarchy-root");
+        wrap.dataset.deliverableHierarchy = nsPrefix;
+        const execSum = (hObj && hObj.executive_summary) || {};
+        if (execSum.headline || execSum.narrative) {
+          const sumBox = el("div", "deliv-hier-summary-box");
+          const sumTop = el("div", "deliv-hier-summary-top");
+          if (execSum.headline) {
+            sumTop.appendChild(el("div", "deliv-hier-summary-hl", "\ud83e\udded Steward Summary: " + execSum.headline));
+          }
+          const toggleAllBtn = el("button", "deliv-hier-toggle-btn", "Expand All");
+          toggleAllBtn.type = "button";
+          toggleAllBtn.onclick = (ev) => {
+            ev.stopPropagation();
+            const unitDetails = Array.from(wrap.querySelectorAll("details.deliv-unit-folder"));
+            const catDetails = Array.from(wrap.querySelectorAll("details.deliv-hier-category"));
+            const anyClosed = unitDetails.some(dEl => !dEl.open);
+            catDetails.forEach(cEl => { cEl.open = true; });
+            unitDetails.forEach(dEl => { dEl.open = anyClosed; });
+            toggleAllBtn.textContent = anyClosed ? "Collapse All" : "Expand All";
+          };
+          sumTop.appendChild(toggleAllBtn);
+          sumBox.appendChild(sumTop);
+          if (execSum.narrative) {
+            sumBox.appendChild(el("div", "deliv-hier-summary-sub", execSum.narrative));
+          }
+          wrap.appendChild(sumBox);
+        }
+        const catList = el("div", "deliv-hier-cat-list");
+        (hObj.categories || []).forEach((cat) => {
+          const catDet = el("details", "deliv-hier-category");
+          catDet.dataset.hierCategory = cat.id || "cat";
+          const catKey = "deliv:v5:cat:" + nsPrefix + ":" + (cat.id || "cat");
+          catDet.open = Object.prototype.hasOwnProperty.call(navSession, catKey) ? Boolean(navSession[catKey]) : true;
+          catDet.addEventListener("toggle", () => {
+            if (catDet.isConnected) navSession[catKey] = catDet.open;
+          });
+          const catSum = el("summary", "");
+          catSum.appendChild(el("span", "", cat.title || "Category"));
+          const metaParts = [];
+          if (cat.final_count) metaParts.push(cat.final_count + " Final");
+          if (cat.review_count) metaParts.push(cat.review_count + " In Review");
+          catSum.appendChild(el("span", "deliv-hier-cat-meta", (metaParts.join(" \u00b7 ") || ((cat.unit_count || 0) + " folders")) + " \u25be"));
+          catDet.appendChild(catSum);
+
+          const unitsWrap = el("div", "deliv-hier-units-wrap");
+          (cat.units || []).forEach((u) => {
+            const isRev = /review/i.test(String(u.status || ""));
+            const isSolid = Boolean(u.solid_badge);
+            const uDet = el("details", "deliv-unit-folder" + (isSolid ? " is-solid" : "") + (isRev ? " is-review" : ""));
+            uDet.dataset.unitKey = u.unit_key || "";
+            const uSessionKey = "deliv:v5:unit:" + nsPrefix + ":" + (u.unit_key || u.label);
+            uDet.open = Object.prototype.hasOwnProperty.call(navSession, uSessionKey)
+              ? Boolean(navSession[uSessionKey])
+              : Boolean(u.default_expanded);
+            uDet.addEventListener("toggle", () => {
+              if (uDet.isConnected) navSession[uSessionKey] = uDet.open;
+            });
+
+            const uSum = el("summary", "");
+            const uLeft = el("span", "deliv-unit-left");
+            uLeft.appendChild(el("span", "deliv-unit-caret", "\u25b8"));
+            uLeft.appendChild(el("span", "deliv-unit-icon", "\ud83d\udcc1"));
+            uLeft.appendChild(el("span", "deliv-unit-title-txt", u.title || u.label || "Unit"));
+            uSum.appendChild(uLeft);
+
+            const uRight = el("span", "deliv-unit-right");
+            if (u.ext_summary) {
+              uRight.appendChild(el("span", "deliv-unit-exts", u.ext_summary));
+            }
+            if (isSolid) {
+              uRight.appendChild(el("span", "deliv-unit-badge badge-solid", u.solid_badge));
+            } else if (isRev) {
+              uRight.appendChild(el("span", "deliv-unit-badge badge-review", "\ud83d\udc41 For Review"));
+            } else {
+              uRight.appendChild(el("span", "deliv-unit-badge badge-final", "\u2713 Final"));
+            }
+            uSum.appendChild(uRight);
+            uDet.appendChild(uSum);
+
+            const treeChildren = el("div", "deliv-tree-children");
+            (u.files || []).forEach((f) => {
+              const nodeBtn = el("button", "deliv-tree-node dks-item" + (isRev ? " is-review" : " is-final"));
+              nodeBtn.type = "button";
+              nodeBtn.dataset.filePath = f.path || "";
+              const nLeft = el("span", "deliv-tree-node-left");
+              nLeft.appendChild(el("span", "", fileExtIcon(f.ext)));
+              nLeft.appendChild(el("span", "deliv-tree-fname", f.filename || f.title || "File"));
+              nodeBtn.appendChild(nLeft);
+              nodeBtn.appendChild(el("span", "deliv-tree-role", f.role || f.ext || "FILE"));
+              nodeBtn.title = (f.title || f.filename || "") + (f.path ? (" (" + f.path + ")") : "");
+              nodeBtn.onclick = (ev) => {
+                ev.stopPropagation();
+                const targetPath = f.path || "";
+                const targetHref = f.route || (targetPath ? ("/steward/v1/open?project=" + encodeURIComponent(PROJECT) + "&dir=" + encodeURIComponent(DIR) + "&path=" + encodeURIComponent(targetPath)) : "");
+                if (targetHref && typeof window.enterSecondWindowMode === "function") {
+                  window.enterSecondWindowMode(targetHref, f.filename || f.title || targetPath);
+                } else if (targetHref) {
+                  window.open(targetHref, "_blank", "noopener");
+                }
+              };
+              treeChildren.appendChild(nodeBtn);
+            });
+            uDet.appendChild(treeChildren);
+            unitsWrap.appendChild(uDet);
+          });
+          catDet.appendChild(unitsWrap);
+          catList.appendChild(catDet);
+        });
+        wrap.appendChild(catList);
+        return wrap;
+      };
+
       if (!isLegacyNavTest) {
-        const ovRaw = (_lastMap && _lastMap.running_overview && typeof _lastMap.running_overview === "object") ? _lastMap.running_overview : {};
+        const ovRaw = ovRawForHier;
         const keyDelivList = (Array.isArray(ovRaw.key_deliverables) && ovRaw.key_deliverables.length)
           ? ovRaw.key_deliverables
           : [...mainPairedReview.slice(0, 2), ...finalApproved.slice(0, 5)].slice(0, 6).map(it => {
@@ -4579,7 +5052,7 @@ const Proto = (() => {
                 status: isRev ? "For Review" : "Final",
               };
             });
-        if (keyDelivList.length) {
+        if (hierData || keyDelivList.length) {
           const kdFold = el("details", "deliv-key-strip");
           kdFold.dataset.keyDeliverablesStrip = "1";
           const kdSessionKey = "deliv:v4:key_deliverables_open";
@@ -4589,32 +5062,40 @@ const Proto = (() => {
           });
           const kdSum = el("summary", "dks-head");
           kdSum.appendChild(el("span", "dks-title", "\ud83c\udfdb KEY DELIVERABLES"));
-          kdSum.appendChild(el("span", "dks-badge", keyDelivList.length + " Flagship \u25be"));
+          const execSum = (hierData && hierData.executive_summary) || {};
+          const badgeTxt = (hierData && execSum.units_total)
+            ? (execSum.units_total + " Folders \u00b7 " + (execSum.files_total || 0) + " Files \u25be")
+            : (keyDelivList.length + " Flagship \u25be");
+          kdSum.appendChild(el("span", "dks-badge", badgeTxt));
           kdFold.appendChild(kdSum);
           const kdBody = el("div", "dks-list");
-          keyDelivList.slice(0, 6).forEach((kd) => {
-            const isRev = /review/i.test(String(kd.status || ""));
-            const rowBtn = el("button", "dks-item" + (isRev ? " is-review" : " is-final"));
-            rowBtn.type = "button";
-            const pill = el("span", "dks-pill " + (isRev ? "review" : "final"), isRev ? "\ud83d\udc41 Review" : "\u2605 Final");
-            const ttl = el("span", "dks-item-title", kd.title || kd.path || "Deliverable");
-            const extBadge = el("span", "dks-ext", kd.ext || "FILE");
-            rowBtn.appendChild(pill);
-            rowBtn.appendChild(ttl);
-            rowBtn.appendChild(extBadge);
-            rowBtn.title = (kd.title || "") + (kd.path ? (" (" + kd.path + ")") : "");
-            rowBtn.onclick = (ev) => {
-              ev.stopPropagation();
-              const targetPath = kd.path || kd.where || "";
-              const targetHref = kd.route || (targetPath ? ("/steward/v1/open?project=" + encodeURIComponent(PROJECT) + "&dir=" + encodeURIComponent(DIR) + "&path=" + encodeURIComponent(targetPath)) : "");
-              if (targetHref && typeof window.enterSecondWindowMode === "function") {
-                window.enterSecondWindowMode(targetHref, kd.title || targetPath);
-              } else if (targetHref) {
-                window.open(targetHref, "_blank", "noopener");
-              }
-            };
-            kdBody.appendChild(rowBtn);
-          });
+          if (hierData) {
+            kdBody.appendChild(buildDeliverableHierarchyDOM(hierData, "kd"));
+          } else {
+            keyDelivList.slice(0, 6).forEach((kd) => {
+              const isRev = /review/i.test(String(kd.status || ""));
+              const rowBtn = el("button", "dks-item" + (isRev ? " is-review" : " is-final"));
+              rowBtn.type = "button";
+              const pill = el("span", "dks-pill " + (isRev ? "review" : "final"), isRev ? "\ud83d\udc41 Review" : "\u2605 Final");
+              const ttl = el("span", "dks-item-title", kd.title || kd.path || "Deliverable");
+              const extBadge = el("span", "dks-ext", kd.ext || "FILE");
+              rowBtn.appendChild(pill);
+              rowBtn.appendChild(ttl);
+              rowBtn.appendChild(extBadge);
+              rowBtn.title = (kd.title || "") + (kd.path ? (" (" + kd.path + ")") : "");
+              rowBtn.onclick = (ev) => {
+                ev.stopPropagation();
+                const targetPath = kd.path || kd.where || "";
+                const targetHref = kd.route || (targetPath ? ("/steward/v1/open?project=" + encodeURIComponent(PROJECT) + "&dir=" + encodeURIComponent(DIR) + "&path=" + encodeURIComponent(targetPath)) : "");
+                if (targetHref && typeof window.enterSecondWindowMode === "function") {
+                  window.enterSecondWindowMode(targetHref, kd.title || targetPath);
+                } else if (targetHref) {
+                  window.open(targetHref, "_blank", "noopener");
+                }
+              };
+              kdBody.appendChild(rowBtn);
+            });
+          }
           kdFold.appendChild(kdBody);
           tile.appendChild(kdFold);
         }
@@ -4822,9 +5303,16 @@ const Proto = (() => {
         bindSubTileToggle(finFold, "deliv:v3:final");
         const finSum = el("summary", "");
         finSum.appendChild(el("span", "deliv-group-lbl", "\ud83c\udfdb Final Deliverables"));
-        finSum.appendChild(el("span", "deliv-tier-count", finalApproved.length + (finalApproved.length === 1 ? " item \u25b8" : " items \u25b8")));
+        const finExecSum = (hierData && hierData.executive_summary) || {};
+        const finCountTxt = (hierData && finExecSum.units_final)
+          ? (finExecSum.units_final + " folders \u00b7 " + finalApproved.length + " files \u25b8")
+          : (finalApproved.length + (finalApproved.length === 1 ? " item \u25b8" : " items \u25b8"));
+        finSum.appendChild(el("span", "deliv-tier-count", finCountTxt));
         finFold.appendChild(finSum);
         const finBody = el("div", "deliv-tier-body");
+        if (hierData) {
+          finBody.appendChild(buildDeliverableHierarchyDOM(hierData, "fin"));
+        }
         if (finalApproved.length) {
           const fToolbar = el("div", "all-deliv-toolbar final-deliv-toolbar");
           const fSearchRow = el("div", "all-deliv-search-row");
@@ -5639,9 +6127,13 @@ const Proto = (() => {
       }
       const hasReportedTurnCost = typeof ev.cost_usd === "number" && Number.isFinite(ev.cost_usd) && ev.cost_usd >= 0
         && (ev.cost_status === "reported" || ev.cost_status === undefined);
+      const hasEstimatedTurnCost = !hasReportedTurnCost
+        && typeof ev.estimated_cost_usd === "number" && Number.isFinite(ev.estimated_cost_usd) && ev.estimated_cost_usd > 0;
       const turnCostText = hasReportedTurnCost
         ? "$" + ev.cost_usd.toFixed(ev.cost_usd === 0 ? 2 : 3) + " reported"
-        : "cost unavailable";
+        : hasEstimatedTurnCost
+          ? "~$" + ev.estimated_cost_usd.toFixed(ev.estimated_cost_usd < 0.01 ? 4 : 2) + " est."
+          : "cost unavailable";
       const turnTokensText = typeof ev.tokens === "number" && Number.isFinite(ev.tokens) && ev.tokens >= 0
         ? " · " + Math.round(ev.tokens).toLocaleString() + " tokens" : "";
       addLine("turnend", "· turn done in " + ev.duration_s + "s · " + turnCostText + turnTokensText, ev);

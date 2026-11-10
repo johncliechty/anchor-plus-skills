@@ -7,7 +7,7 @@
 - You want **minimal, reversible defensive code patches** (`aegis remediate`) synthesized as clean unified diffs (`shell=False`, `ast.literal_eval`, `yaml.safe_load`, `.resolve().is_relative_to(base.resolve())`, `urlparse(u).scheme in ('https', 'http')`, `hmac.compare_digest`, `hashlib.sha256`, `os.environ.get`) before anything is modified on disk
 - You want to **apply fixes and prove zero regressions** (`aegis verify`) by re-running the target's ground-truth test suite (`pytest -q`) alongside a clean re-scan and cross-family adversarial review
 - You want to **sign off intentional, contained system patterns** (such as sandboxed job runners or test fixtures) in an auditable `.aegis/signed-off.json` ledger so reviewed boundaries never cause recurring alert fatigue
-- You are shipping a release or running a Foreman build and want to verify zero leaked API keys, tokens, or personal `C:\Users\<name>` paths (`AEG-06`)
+- You are shipping a release or running a Foreman build and want to verify zero leaked API keys, tokens, or personal `<path><name>` paths (`AEG-06`)
 
 ## Do not use this when
 - You are trying to comprehend general program architecture, map paper equations to software, or refactor non-security legacy modules (use Anvil)
@@ -27,7 +27,7 @@
 - Not an autonomous code mutator that edits production files during a read-only scan without human or worktree gate authorization
 
 ## How to start (human)
-1. Open the **Aegis Security Workbench** from your AI Cockpit (`Aegis` shield button or `/steward/aegis?project=<id>`) or run `python "C:/dev/Skill Foundry/skills/aegis/scripts/aegis_engine.py" scan --target <path>`.
+1. Open the **Aegis Security Workbench** from your AI Cockpit (`Aegis` shield button or `/steward/aegis?project=<id>`) or run `python "<path> Foundry/skills/aegis/scripts/aegis_engine.py" scan --target <path>`.
 2. Filter findings by CWE rule (`AEG-01` .. `AEG-06`) or severity (`CRITICAL`, `HIGH`, `MEDIUM`) and inspect the proposed unified diff for each finding.
 3. Click **Apply Fix** (or run `aegis_engine.py remediate --target <path> --apply`) to apply approved defensive patches, or **Sign Off** (with a brief rationale) for intentional contained boundaries.
 4. Click **Verify & Run Tests** (or run `aegis_engine.py verify --target <path> --test-cmd "pytest -q"`) to confirm `0` remaining active findings and `PASS ✓` on the test suite.

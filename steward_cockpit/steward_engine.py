@@ -37,8 +37,8 @@ from steward_cockpit.question_context import (save_question_context, normalize_q
                                                has_recommendation as _has_recommendation, question_line)
 
 HERE = Path(__file__).parent
-STATE_FILE = HERE / "proto-state.json"
-_RELOCATED_STATE_FILE = None   # the last ledger path relocate_state() set — its own move, as against a test/healthcheck swap
+STATE_FILE = globals().get("STATE_FILE") or (HERE / "proto-state.json")
+_RELOCATED_STATE_FILE = globals().get("_RELOCATED_STATE_FILE")   # the last ledger path relocate_state() set — its own move, as against a test/healthcheck swap
 
 
 def relocate_state(target):
@@ -820,7 +820,7 @@ def _usage_snapshot(usage):
             **({"spend": None, "cost_complete": False} if (_usage_visibility(_usage_original)["unpriced_inflight"] or _usage_visibility(_usage_original)["usage_attribution_error"]) else {})}
 
 
-def _backfill_usage_estimate(u, raw, model_policy=None):
+def _backfill_usage_estimate(u, raw, model_policy=None, *, include_inflight=True):
     """Backfill API list-price estimates for saved unpriced turns and active in-flight
     checkpoints when exact checkpoint counts or a priced model_policy exist on the record."""
     if not isinstance(u, dict) or (int(u.get("unpriced_turns") or 0) <= 0 and int(u.get("unpriced_inflight") or 0) <= 0):
@@ -844,6 +844,13 @@ def _backfill_usage_estimate(u, raw, model_policy=None):
         # Group finalized checkpoints by session_id sorted by updated_at so cumulative
         # session token counters (e.g. codex-cli-final) are de-cumulated per session
         # instead of re-summing cumulative totals on every invocation_id.
+        max_finalized_at_by_sess = {}
+        for ck_id, ck in checkpoints.items():
+            if isinstance(ck, dict) and not ck.get("invalid") and ck.get("finalized") is True:
+                sid = str(ck.get("session_id") or ck_id)
+                upd = str(ck.get("updated_at") or "")
+                if upd > max_finalized_at_by_sess.get(sid, ""):
+                    max_finalized_at_by_sess[sid] = upd
         by_sess = {}
         for ck_id, ck in checkpoints.items():
             if not isinstance(ck, dict) or ck.get("invalid"):
@@ -851,7 +858,14 @@ def _backfill_usage_estimate(u, raw, model_policy=None):
             counts = ck.get("counts")
             if not isinstance(counts, dict):
                 continue
+            sid = str(ck.get("session_id") or ck_id)
             if ck.get("finalized") is not True:
+                if not include_inflight:
+                    continue
+                ck_upd = str(ck.get("updated_at") or "")
+                fin_upd = max_finalized_at_by_sess.get(sid, "")
+                if fin_upd and ck_upd and fin_upd > ck_upd:
+                    continue
                 est_inf = estimate_list_price_usd(m_served, counts) if m_served else None
                 if est_inf is None and m_req:
                     est_inf = estimate_list_price_usd(m_req, counts)
@@ -865,7 +879,6 @@ def _backfill_usage_estimate(u, raw, model_policy=None):
                         + int(counts.get("cache_creation_input_tokens") or 0)
                     )
                 continue
-            sid = str(ck.get("session_id") or ck_id)
             by_sess.setdefault(sid, []).append(ck)
         for sid, ck_list in by_sess.items():
             ck_list.sort(key=lambda c: (str(c.get("updated_at") or ""), int((c.get("counts") or {}).get("input_tokens") or 0)))
@@ -873,7 +886,8 @@ def _backfill_usage_estimate(u, raw, model_policy=None):
             for ck in ck_list:
                 counts = ck["counts"]
                 eff_counts = counts
-                if prev_c is not None:
+                is_cumulative_ck = ck.get("source") == "codex-cli-final"
+                if is_cumulative_ck and prev_c is not None:
                     in_c = int(counts.get("input_tokens") or 0)
                     out_c = int(counts.get("output_tokens") or 0)
                     ca_c = int(counts.get("cached_input_tokens") or counts.get("cache_read_input_tokens") or 0)
@@ -887,7 +901,8 @@ def _backfill_usage_estimate(u, raw, model_policy=None):
                             "output_tokens": out_c - out_p,
                             ("cache_read_input_tokens" if has_add else "cached_input_tokens"): ca_c - ca_p,
                         }
-                prev_c = counts
+                if is_cumulative_ck:
+                    prev_c = counts
                 est = estimate_list_price_usd(m_served, eff_counts) if m_served else None
                 if est is None and m_req:
                     est = estimate_list_price_usd(m_req, eff_counts)
@@ -973,17 +988,36 @@ def _campaign_limit(text):
         return ""
 
 
+_STATE_MEM_CACHE = globals().get("_STATE_MEM_CACHE") if isinstance(globals().get("_STATE_MEM_CACHE"), dict) else {"sig": None, "data": None}
+
+
 def _load_state():
     # Missing file -> {} is fine (first run). A PRESENT-but-unreadable file is
     # NOT fine: returning {} there and then saving would wipe every session,
     # so we raise so callers under _update_state abort the write.
+    in_pytest = "PYTEST_CURRENT_TEST" in os.environ
     for attempt in range(6):
         try:
-            return json.loads(STATE_FILE.read_text(encoding="utf-8"))
+            if not in_pytest:
+                st = STATE_FILE.stat()
+                sig = (str(STATE_FILE), st.st_mtime_ns, st.st_size)
+                if _STATE_MEM_CACHE.get("sig") == sig and isinstance(_STATE_MEM_CACHE.get("data"), dict):
+                    return _STATE_MEM_CACHE["data"]
+            data = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+            if not in_pytest and isinstance(data, dict):
+                try:
+                    st2 = STATE_FILE.stat()
+                    _STATE_MEM_CACHE["sig"] = (str(STATE_FILE), st2.st_mtime_ns, st2.st_size)
+                    _STATE_MEM_CACHE["data"] = data
+                except Exception:
+                    pass
+            return data
         except FileNotFoundError:
             if attempt < 5 and STATE_FILE.with_name(STATE_FILE.name + ".bak-1").exists():
                 time.sleep(0.03)
                 continue
+            _STATE_MEM_CACHE["sig"] = None
+            _STATE_MEM_CACHE["data"] = None
             return {}
         except PermissionError:
             if attempt < 5:
@@ -1013,11 +1047,19 @@ def _save_state(state):
         for attempt in range(6):
             try:
                 os.replace(tmp, STATE_FILE)
+                try:
+                    st = STATE_FILE.stat()
+                    _STATE_MEM_CACHE["sig"] = (str(STATE_FILE), st.st_mtime_ns, st.st_size)
+                    _STATE_MEM_CACHE["data"] = state
+                except Exception:
+                    _STATE_MEM_CACHE["sig"] = None
                 return True
             except PermissionError:
                 time.sleep(0.05)
+        _STATE_MEM_CACHE["sig"] = None
         return False
     except Exception:
+        _STATE_MEM_CACHE["sig"] = None
         return False
     finally:
         if tmp is not None:
@@ -1032,7 +1074,7 @@ def _read_all_state():
     while sessions may be writing it (a bare read can hit a mid-replace gap)."""
     with _STATE_LOCK:
         try:
-            return _load_state()
+            return dict(_load_state())
         except Exception:
             return {}
 
@@ -1052,7 +1094,9 @@ def _update_state(key, patch):
             reconciled = bool(new_u.pop("_reconciled_from_ledger", False))
             old_turns = int(old_u.get("turns") or 0)
             new_turns = int(new_u.get("turns") or 0)
-            if not reconciled and old_turns > new_turns:
+            old_tokens = int(old_u.get("tokens") or 0)
+            new_tokens = int(new_u.get("tokens") or 0)
+            if not reconciled and (old_turns > new_turns or (old_turns == new_turns and old_tokens > new_tokens)):
                 for fld in ("turns", "unpriced_turns", "estimated_turns", "tokens", "cumulative_tokens", "secs"):
                     new_u[fld] = max(int(old_u.get(fld) or 0), int(new_u.get(fld) or 0))
                 for fld in ("reported_spend", "estimated_spend", "cumulative_estimated_spend"):
@@ -1421,7 +1465,7 @@ class Engine:
         # (re)creation and the turn-end write then REPLACED the durable usage with
         # the smaller in-memory total. Seed them from the record so the totals
         # carry the entire history of the effort.
-        _u = _backfill_usage_estimate(_usage_snapshot(stored_entry.get("usage")), stored_entry.get("usage"), stored_entry.get("model_policy"))
+        _u = _backfill_usage_estimate(_usage_snapshot(stored_entry.get("usage")), stored_entry.get("usage"), stored_entry.get("model_policy"), include_inflight=False)
         self.spend = _u["reported_spend"]
         self.unpriced_turns = _u["unpriced_turns"]
         self.estimated_spend, self.estimated_turns = _u["estimated_spend"], _u["estimated_turns"]
@@ -1637,9 +1681,17 @@ class Engine:
             served_or_model = "claude-fable-5-1"
         est_usd = 0.0
         est_turns = 0
+        all_ck = tuple(self._usage_checkpoints.values())
+        max_fin_at = ""
+        for r in all_ck:
+            if isinstance(r, dict) and not r.get("invalid") and r.get("finalized") is True:
+                u_at = str(r.get("updated_at") or "")
+                if u_at > max_fin_at:
+                    max_fin_at = u_at
         records = tuple(
-            record for record in tuple(self._usage_checkpoints.values())
+            record for record in all_ck
             if isinstance(record, dict) and not record.get("invalid") and record.get("finalized") is not True
+            and not (max_fin_at and str(record.get("updated_at") or "") and max_fin_at > str(record.get("updated_at") or ""))
         )
         for record in records:
             counts = record.get("counts")
@@ -2870,6 +2922,13 @@ class Engine:
             cur_sel = dict(self.model_selection or {"family": self.cli, "cli": self.cli})
             new_model = m_raw or str(cur_sel.get("model") or "opus")
             new_eff = e_raw or str(cur_sel.get("effort") or "high")
+            if self.cli == "gemini":
+                import model_policy as _mp
+                _m_match = _mp._AGY_EFFORT_SUFFIX.match(str(new_model or ""))
+                if _m_match:
+                    new_model = _m_match.group(1)
+                    if not e_raw:
+                        new_eff = _m_match.group(2)
             if e_raw:
                 self.effort_override = e_raw
                 state_patch["effort_override"] = e_raw
@@ -4193,6 +4252,23 @@ class Engine:
                 delta_counts = raw_counts
                 if self.session_id and isinstance(ev.get("session_cumulative_usage"), dict):
                     self._last_session_usage = {"session_id": self.session_id, **ev["session_cumulative_usage"]}
+                elif (
+                    self.session_id
+                    and self.cli == "gemini"
+                    and isinstance(self._last_session_usage, dict)
+                    and self._last_session_usage.get("session_id") == self.session_id
+                    and isinstance(raw_counts, dict)
+                ):
+                    in_t = int(raw_counts.get("input_tokens") or 0)
+                    ca_t = int(raw_counts.get("cached_input_tokens") or raw_counts.get("cache_read_input_tokens") or 0)
+                    out_t = int(raw_counts.get("output_tokens") or 0)
+                    in_add = in_t if ("cache_read_input_tokens" in raw_counts and "cached_input_tokens" not in raw_counts) else max(0, in_t - ca_t)
+                    self._last_session_usage = {
+                        "session_id": self.session_id,
+                        "input_tokens": int(self._last_session_usage.get("input_tokens") or 0) + in_add,
+                        "cache_read_input_tokens": int(self._last_session_usage.get("cache_read_input_tokens") or self._last_session_usage.get("cached_input_tokens") or 0) + ca_add,
+                        "output_tokens": int(self._last_session_usage.get("output_tokens") or 0) + out_t,
+                    }
             else:
                 usage = ev.get("usage")
                 usage = usage if isinstance(usage, dict) else {}
@@ -4235,6 +4311,7 @@ class Engine:
                 self._usage_source = "recorded-turn-results"
                 self._usage_updated_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
             cost = None if refused else _reported_cost(ev.get("total_cost_usd"))
+            estimated_cost = None
             duration = (_reported_cost(ev.get("duration_ms")) or 0) / 1000
             if not refused:
                 self.secs += duration
@@ -4253,6 +4330,7 @@ class Engine:
                         if estimate is not None:
                             self.estimated_spend += estimate
                             self.estimated_turns += 1
+                            estimated_cost = estimate
                         if raw_estimate is not None:
                             self.cumulative_estimated_spend += raw_estimate
                 else:
@@ -4265,7 +4343,7 @@ class Engine:
         self._warn_usage_persistence(warning)
         if attribution_warning:
             self._emit({"t": "sys", "text": "Usage could not be attributed to this session. The response is available, but its token and cost totals were not added."})
-        return {"cost": cost, "duration": duration, "turn_tokens": turn_tokens,
+        return {"cost": cost, "estimated_cost": estimated_cost, "duration": duration, "turn_tokens": turn_tokens,
                 "usage_persisted": saved, "accounted": not refused}
 
     def _attribution_ids(self):
@@ -4692,7 +4770,10 @@ class Engine:
             accounting = self._record_usage_result(ev)
             if not accounting:
                 return
-            cost, duration, turn_tokens = accounting["cost"], accounting["duration"], accounting["turn_tokens"]
+            cost, estimated_cost, duration, turn_tokens = (
+                accounting["cost"], accounting.get("estimated_cost"),
+                accounting["duration"], accounting["turn_tokens"],
+            )
             # pinned open question: scan the WHOLE final text for the last
             # question-bearing sentence (not just a trailing "?"), so a
             # question mid-paragraph still pins. Tick turns never pin.
@@ -4828,6 +4909,7 @@ class Engine:
                     self._stopped_mid_turn = False   # a turn that ended on its own: the tree is whole again
                 self._emit({"t": "turn_end",
                             "cost_usd": round(cost, 4) if cost is not None else None,
+                            "estimated_cost_usd": round(estimated_cost, 4) if estimated_cost is not None else None,
                             "cost_status": "reported" if cost is not None else "unavailable",
                             "tokens": turn_tokens,
                             "duration_s": round(duration),

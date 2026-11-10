@@ -31,20 +31,20 @@ description: Programmatic codebase comprehension, Parable-of-the-Oranges proacti
 
 ```powershell
 # 1. Full 5-Stage Orchestrator State Machine (writes .anvil/RUN-STATE.json & .anvil/manifest.json)
-python "C:\dev\Skill Foundry\skills\anvil\scripts\anvil_engine.py" orchestrate --old-repo "<path>" --new-repo "<path>"
+python "<path> Foundry\skills\anvil\scripts\anvil_engine.py" orchestrate --old-repo "<path>" --new-repo "<path>"
 
 # 2. Mode 1 + Anvil v2 3-Level Progressive Map, Beta-Reader Panel & Walkthrough Trace
-python "C:\dev\Skill Foundry\skills\anvil\scripts\anvil_engine.py" map --repo "<path>"
+python "<path> Foundry\skills\anvil\scripts\anvil_engine.py" map --repo "<path>"
 
 # 3. Live Polyglot Code Walkthrough (Claimed vs. Actual Runtime)
-python "C:\dev\Skill Foundry\skills\anvil\scripts\anvil_engine.py" walkthrough --repo "<path>"
-python "C:\dev\Skill Foundry\skills\anvil\scripts\anvil_engine.py" --walkthrough --repo "<path>"
+python "<path> Foundry\skills\anvil\scripts\anvil_engine.py" walkthrough --repo "<path>"
+python "<path> Foundry\skills\anvil\scripts\anvil_engine.py" --walkthrough --repo "<path>"
 
 # 4. 5-Seat Software Beta-Reader Panel
-python "C:\dev\Skill Foundry\skills\anvil\scripts\anvil_engine.py" beta-readers --repo "<path>"
+python "<path> Foundry\skills\anvil\scripts\anvil_engine.py" beta-readers --repo "<path>"
 
 # 5. Standalone Illustrated Markdown Report (with Inline SVGs, Beta-Readers & Walkthrough Table)
-python "C:\dev\Skill Foundry\skills\anvil\scripts\anvil_engine.py" render-report --repo "<path>" --output "<project>/ANVIL-REPORT.md"
+python "<path> Foundry\skills\anvil\scripts\anvil_engine.py" render-report --repo "<path>" --output "<project>/ANVIL-REPORT.md"
 ```
 
 ---

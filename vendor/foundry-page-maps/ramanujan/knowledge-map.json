@@ -432,13 +432,13 @@
     },
     {
       "id": "ramanujan-leaf-ref-4",
-      "name": "Journal: 0027-mba-homework-ta-revision1-audit",
-      "title": "Journal: 0027-mba-homework-ta-revision1-audit",
+      "name": "Journal: 0028-worktree-png-churn-and-venue-award-certifier",
+      "title": "Journal: 0028-worktree-png-churn-and-venue-award-certifier",
       "parent_ids": [
         "ramanujan-branch-references"
       ],
       "ring": 2,
-      "resource_id": "ramanujan-journal-0027-mba-homework-ta-revision1",
+      "resource_id": "ramanujan-journal-0028-worktree-png-churn-and-ve",
       "facets": [
         "References",
         "knowledge-base"
@@ -450,13 +450,13 @@
     },
     {
       "id": "ramanujan-leaf-ref-5",
-      "name": "Journal: 0026-all-souls-v33-conceptual-review",
-      "title": "Journal: 0026-all-souls-v33-conceptual-review",
+      "name": "Journal: 0027-mba-homework-ta-revision1-audit",
+      "title": "Journal: 0027-mba-homework-ta-revision1-audit",
       "parent_ids": [
         "ramanujan-branch-references"
       ],
       "ring": 2,
-      "resource_id": "ramanujan-journal-0026-all-souls-v33-conceptual-",
+      "resource_id": "ramanujan-journal-0027-mba-homework-ta-revision1",
       "facets": [
         "References",
         "knowledge-base"

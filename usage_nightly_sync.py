@@ -156,6 +156,10 @@ def sync_all_usage(*, write_snapshot: bool = True, brain_dir: Path | None = None
             base_dir = skey.split("||")[0]
             if "scratchpad" in base_dir or "anchor-hc-" in base_dir or ("Temp" in base_dir and "PYTEST_CURRENT_TEST" not in os.environ):
                 continue
+            live_eng = sr.ENGINES.get(skey)
+            if live_eng is not None and getattr(live_eng, "busy", False):
+                # Never race a busy engine mid-turn on disk; the running turn owns its state until completion.
+                continue
 
             mp = entry.get("model_policy") if isinstance(entry.get("model_policy"), dict) else {}
             cli = str(entry.get("cli") or mp.get("family") or "claude").lower()
@@ -176,9 +180,13 @@ def sync_all_usage(*, write_snapshot: bool = True, brain_dir: Path | None = None
                     max_l_in = 0
                     max_l_cache = 0
                     max_l_out = 0
+                    max_l_recorded_at = ""
                     for e in existing_entries.values():
                         if not isinstance(e, dict):
                             continue
+                        rec_at = str(e.get("recorded_at") or "")
+                        if rec_at > max_l_recorded_at:
+                            max_l_recorded_at = rec_at
                         eu = e.get("usage") if isinstance(e.get("usage"), dict) else {}
                         max_l_in = max(max_l_in, int(eu.get("input_tokens") or 0))
                         max_l_cache = max(max_l_cache, int(eu.get("cache_read_input_tokens") or eu.get("cached_input_tokens") or 0))
@@ -199,11 +207,14 @@ def sync_all_usage(*, write_snapshot: bool = True, brain_dir: Path | None = None
                         running_out = max(max_l_out, lsu_out)
                         new_turns_count = 0
                         for t_item in scan["turns"]:
-                            if t_item["cum_in"] <= max_l_in and t_item["cum_cache"] <= max_l_cache:
+                            t_rec_at = str(t_item.get("recorded_at") or "")
+                            if (t_item["cum_in"] <= watermark_in and t_item["cum_cache"] <= watermark_cache) or (
+                                max_l_recorded_at and t_rec_at and t_rec_at <= max_l_recorded_at
+                            ):
                                 continue
                             # Compute delta relative to max(previous turn, watermark)
-                            prev_in = max(max_l_in, t_item["cum_in"] - t_item["delta_in"])
-                            prev_ca = max(max_l_cache, t_item["cum_cache"] - t_item["delta_cache"])
+                            prev_in = max(watermark_in, t_item["cum_in"] - t_item["delta_in"])
+                            prev_ca = max(watermark_cache, t_item["cum_cache"] - t_item["delta_cache"])
                             d_in = max(0, t_item["cum_in"] - prev_in)
                             d_ca = max(0, t_item["cum_cache"] - prev_ca)
                             d_out = t_item["delta_out"]
@@ -240,6 +251,8 @@ def sync_all_usage(*, write_snapshot: bool = True, brain_dir: Path | None = None
                                 ledger_entries_added += 1
                             max_l_in = max(max_l_in, t_item["cum_in"])
                             max_l_cache = max(max_l_cache, t_item["cum_cache"])
+                            watermark_in = max(watermark_in, max_l_in)
+                            watermark_cache = max(watermark_cache, max_l_cache)
 
                         final_out = max(lsu_out + added_out, scan["cum_out"])
                         new_lsu = {
@@ -256,6 +269,11 @@ def sync_all_usage(*, write_snapshot: bool = True, brain_dir: Path | None = None
                         old_tokens = int(raw_u.get("tokens") or 0)
                         transcript_total_tokens = scan["cum_in"] + scan["cum_cache"] + final_out
                         new_tokens = max(old_tokens + (delta_total_tokens if lsu_in > 0 else 0), transcript_total_tokens)
+                        if isinstance(raw_u.get("usage_checkpoints"), dict):
+                            for ck_v in raw_u["usage_checkpoints"].values():
+                                if isinstance(ck_v, dict) and ck_v.get("session_id") == sid and ck_v.get("source") == "gemini-transcript" and ck_v.get("finalized") is not True:
+                                    ck_v["finalized"] = True
+                                    ck_v["token_status"] = "reported"
                         raw_u["last_session_usage"] = new_lsu
                         raw_u["tokens"] = new_tokens
                         raw_u["cumulative_tokens"] = max(int(raw_u.get("cumulative_tokens") or 0), new_tokens)
@@ -298,8 +316,16 @@ def sync_all_usage(*, write_snapshot: bool = True, brain_dir: Path | None = None
                             "estimated_spend": raw_u.get("estimated_spend"),
                         })
 
-            # 2. Ensure estimated_spend is backfilled on every state entry with unpriced tokens
-            snap = se._backfill_usage_estimate(se._usage_snapshot(raw_u), raw_u, mp)
+            # 2. Ensure estimated_spend is backfilled on every state entry with unpriced tokens.
+            # Strip unfinalized checkpoints when computing the persisted backfill so ephemeral
+            # inflight_spend is never compounded into raw_u["estimated_spend"] on every sync.
+            raw_u_completed = dict(raw_u)
+            if isinstance(raw_u.get("usage_checkpoints"), dict):
+                raw_u_completed["usage_checkpoints"] = {
+                    ck_k: ck_v for ck_k, ck_v in raw_u["usage_checkpoints"].items()
+                    if isinstance(ck_v, dict) and ck_v.get("finalized") is True
+                }
+            snap = se._backfill_usage_estimate(se._usage_snapshot(raw_u_completed), raw_u_completed, mp, include_inflight=False)
             if float(snap.get("estimated_spend") or 0.0) > float(raw_u.get("estimated_spend") or 0.0):
                 raw_u["estimated_spend"] = round(float(snap["estimated_spend"]), 4)
                 raw_u["estimated_turns"] = int(snap.get("estimated_turns") or raw_u.get("unpriced_turns") or 0)
@@ -328,12 +354,13 @@ def sync_all_usage(*, write_snapshot: bool = True, brain_dir: Path | None = None
                         if isinstance(raw_u.get("last_session_usage"), dict):
                             eng._last_session_usage = dict(raw_u["last_session_usage"])
 
-        # Clear all caches so the next UI read serves the freshly reconciled figures
-        with sr._ROLLUP_LOCK:
-            sr._ROLLUP_CACHE.clear()
-            sr._STATE_CACHE.clear()
-            sr._GLOBAL_USAGE_CACHE["ts"] = 0.0
-            sr._GLOBAL_USAGE_CACHE["data"] = None
+        if state_entries_updated > 0 or ledger_entries_added > 0:
+            # Clear caches when usage figures actually changed so the next UI read serves fresh figures
+            with sr._ROLLUP_LOCK:
+                sr._ROLLUP_CACHE.clear()
+                sr._STATE_CACHE.clear()
+                sr._GLOBAL_USAGE_CACHE["ts"] = 0.0
+                sr._GLOBAL_USAGE_CACHE["data"] = None
 
         summary_resp = sr.global_usage_summary()
         summary = summary_resp[0] if isinstance(summary_resp, tuple) else summary_resp
@@ -369,6 +396,9 @@ def sync_all_usage(*, write_snapshot: bool = True, brain_dir: Path | None = None
 def start_background_sync_daemon(interval_seconds: int = 300) -> threading.Thread:
     """Start a daemon thread in anchor_gui.py that reconciles usage every 5 minutes and at midnight."""
     def _loop() -> None:
+        # Defer first sync slightly after boot so throwaway healthcheck servers and
+        # immediate boot probes do not contend with a full transcript scan at t=0.
+        time.sleep(min(15, max(1, interval_seconds // 10)))
         last_date = ""
         while True:
             try:

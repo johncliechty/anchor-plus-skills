@@ -59,7 +59,7 @@ Aegis follows the **Functional Core / Imperative Shell** architecture and enforc
 | **`AEG-03`** | `CWE-22` | **Path Traversal & Unfenced File Access** | Detects dynamic path joins opened or served without `.resolve().is_relative_to(root)` or traversal segment validation. | Inject canonical `.resolve().is_relative_to(base.resolve())` containment guard. |
 | **`AEG-04`** | `CWE-918` | **SSRF & Unvalidated URL Schemes** | Detects `urllib.request.urlopen()` or HTTP client calls on dynamic URLs without scheme allowlisting (`https://`, `http://`). | Wrap URL in scheme allowlist guard (`urlparse(u).scheme in ("https", "http")`). |
 | **`AEG-05`** | `CWE-208` / `CWE-328` | **Timing Side-Channel & Weak Crypto** | Detects direct `==` / `!=` comparison on secret/token variables (`token == expected`) or `hashlib.md5`/`hashlib.sha1` security digests. | Rewrite token equality to `hmac.compare_digest(str(a), str(b))` and weak digest to `hashlib.sha256(`. |
-| **`AEG-06`** | `CWE-798` | **Hardcoded Secrets, Tokens & PII Leaks** | Pattern + entropy scan for hardcoded API keys (`sk-`, `ghp_`, `AKIA`), bearer secret literals, and personal user-profile paths (`C:\Users\<name>`). | Replace literal secret with `os.environ.get("AEGIS_REDACTED_SECRET", "")` and scrub PII paths. |
+| **`AEG-06`** | `CWE-798` | **Hardcoded Secrets, Tokens & PII Leaks** | Pattern + entropy scan for hardcoded API keys (`sk-`, `ghp_`, `AKIA`), bearer secret literals, and personal user-profile paths (`<path><name>`). | Replace literal secret with `os.environ.get("AEGIS_REDACTED_SECRET", "")` and scrub PII paths. |
 
 ---
 
@@ -78,15 +78,15 @@ When invoked on a repository or inside an Anchor AI Cockpit, Aegis executes a 5-
 
 1. **Scan a repository or file (`scan`):**
    ```bash
-   python "C:/dev/Skill Foundry/skills/aegis/scripts/aegis_engine.py" scan --target <path> [--output <report.json>]
+   python "<path> Foundry/skills/aegis/scripts/aegis_engine.py" scan --target <path> [--output <report.json>]
    ```
 2. **Synthesize (and optionally apply) defensive fixes (`remediate`):**
    ```bash
-   python "C:/dev/Skill Foundry/skills/aegis/scripts/aegis_engine.py" remediate --target <path> [--apply] [--rule AEG-01] [--output <fixes.json>]
+   python "<path> Foundry/skills/aegis/scripts/aegis_engine.py" remediate --target <path> [--apply] [--rule AEG-01] [--output <fixes.json>]
    ```
 3. **Verify zero regressions + clean re-scan (`verify`):**
    ```bash
-   python "C:/dev/Skill Foundry/skills/aegis/scripts/aegis_engine.py" verify --target <path> [--test-cmd "pytest -q"] [--output <verify.json>]
+   python "<path> Foundry/skills/aegis/scripts/aegis_engine.py" verify --target <path> [--test-cmd "pytest -q"] [--output <verify.json>]
    ```
 
 ---

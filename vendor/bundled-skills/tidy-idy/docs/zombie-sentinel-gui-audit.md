@@ -1,7 +1,7 @@
 # Zombie-Sentinel GUI server audit — safe-to-lift vs needs-redesign (Wave 6)
 
 **Status:** written from the Sentinel's ACTUAL source, not from its docs.
-**Sources read:** `C:\dev\Skill Foundry\skills\zombie-hunter\src\server.js` (395
+**Sources read:** `<path> Foundry\skills\zombie-hunter\src\server.js` (395
 lines) and `src\ipc.js` (78 lines), 2026-07-21.
 **Why this exists:** the Triage Panel is the second local-loopback GUI server in
 this portfolio. The first one already works and is proxied by an Anchor button,

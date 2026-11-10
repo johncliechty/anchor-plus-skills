@@ -31,12 +31,12 @@ ICON_NAMES = (
     ('financialanalyst', 'financial-analyst-icon.jpg'), ('jumper', 'jumper-icon.jpg'),
     ('legalbeagle', 'legal-beagle-icon.jpg'), ('literaturereview', 'literature-review-icon.jpg'),
     ('ramanujan', 'ramanujan-icon.jpg'), ('tidyidy', 'tidy-idy-icon.jpg'),
-    ('zombiehunter', 'zombie-hunter-radar.jpg'), ('superjump', 'superjump-icon.jpg'))
+    ('zombiehunter', 'zombie-hunter-radar.jpg'), ('superjump', 'superjump-icon.jpg'), ('scribe', 'scribe-icon.jpg'))
 DISPLAY_NAMES = {'aegis': 'Aegis', 'anvil': 'Anvil', 'researchprime': 'researchPrime', 'gandalf': 'Gandalf', 'crucible': 'Crucible',
                  'foreman': 'Foreman', 'chekhov': 'Chekhov', 'einstein': 'Einstein',
                  'financialanalyst': 'Financial-Analyst', 'jumper': 'Jumper', 'legalbeagle': 'Legal-Beagle',
                  'literaturereview': 'Literature-Review', 'ramanujan': 'Ramanujan',
-                 'tidyidy': 'Tidy-Idy', 'zombiehunter': 'Zombie-Hunter', 'superjump': 'Superjump'}
+                 'tidyidy': 'Tidy-Idy', 'zombiehunter': 'Zombie-Hunter', 'superjump': 'Superjump', 'scribe': 'Scribe'}
 
 # Content names are Foundry-owned; role identity and livery remain Anchor-owned.
 ROLE_CONTENT = {'steward-project': 'steward-lamp',

@@ -185,7 +185,7 @@ Cost saved: the identity collapse that made every spatial paint a prettier docke
 
 text = json.dumps(obj, ensure_ascii=True)
 json.loads(text)  # round-trip
-out = r"C:\dev\Skill Foundry\skills\jumper\_phase3_dirac.json"
+out = r"<path> Foundry\skills\jumper\_phase3_dirac.json"
 with open(out, "w", encoding="utf-8") as f:
     f.write(text)
 print("bytes", len(text))

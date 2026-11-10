@@ -10,13 +10,13 @@
 // No second depth→reaperPasses table; no silent Math.max clamp.
 // Safety overrides (requireProofOfDeath / abstainByDefault) are refuse-coded, never applied.
 
-import { getLockedBand } from 'file:///C:/dev/Skill%20Foundry/foundry/triage/lock.mjs';
+import { getLockedBand } from 'fil<path>';
 import {
   REAPER_PASSES_MIN,
   ZOMBIE_HUNTER_SAFETY_FLOOR,
   resolveZombieHunterDepthKnobs,
   zombieHunterKnobProfile,
-} from 'file:///C:/dev/Skill%20Foundry/foundry/triage/mapping.mjs';
+} from 'fil<path>';
 
 /** Named refuse when a caller tries to depth-write or override the safety floor. */
 export const ZOMBIE_HUNTER_SAFETY_OVERRIDE_REFUSED = 'ZOMBIE_HUNTER_SAFETY_OVERRIDE_REFUSED';

@@ -34,8 +34,8 @@ import {
 } from './triage-band.mjs';
 import { createCommissionLedger } from '../seam/commission-ledger.mjs';
 import { runLiveRefutation, buildLiveRefuterAgent, DEFAULT_REFUTER_ROUTES, DRAFTER_FAMILY, REFUTER_FAMILY } from './live-refuter.mjs';
-import { makeGeminiCliSeam, resolveGeminiModel } from 'file:///C:/dev/trio/drivers/gemini-cli.mjs';
-import { loadModelFamilies, familyToDriverName, runAgent } from 'file:///C:/dev/trio/drivers/index.mjs';
+import { makeGeminiCliSeam, resolveGeminiModel } from 'fil<path>';
+import { loadModelFamilies, familyToDriverName, runAgent } from 'fil<path>';
 
 const USAGE =
   'usage: node runtime/gandalf-run.mjs --live [--budget N] [--input <file>] [--output <file>] [--project <dir>]\n' +

@@ -95,7 +95,7 @@ export const GEMINI_HOST = 'generativelanguage.googleapis.com';
  * The pinned agy model LABELs (2026-07: the cross-family PRIMARY is the Antigravity CLI `agy`, NOT the
  * dead Gemini HTTP API). agy is addressed by human LABEL, NEVER an API-style id — an API-style id is
  * UNRECOGNIZED and agy SILENTLY serves Flash instead (the phantom-id degrade the served==requested
- * attestation catches). Mirrors KNOWN_AGY_LABELS in C:\dev\trio\drivers\gemini-cli.mjs.
+ * attestation catches). Mirrors KNOWN_AGY_LABELS in <path>
  */
 export const KNOWN_AGY_LABELS = Object.freeze(new Set(['Gemini 3.1 Pro (High)', 'Gemini 3.5 Flash (Medium)']));
 
@@ -490,7 +490,7 @@ export async function probeCrossFamilyModel(modelName, generate, { trials = CROS
 //
 // 2026-07 substrate move: the bare Gemini HTTP API (generativelanguage.googleapis.com) is DEAD on this
 // host ($0/429) and its API-style model id is a PHANTOM. The cross-family PRIMARY is now the
-// Antigravity CLI `agy`, reached through the PROVEN transport in C:\dev\trio\drivers\gemini-cli.mjs
+// Antigravity CLI `agy`, reached through the PROVEN transport in <path>
 // (pinned as tools.gemini.driver_ref): `agy -p` under the agy LOGIN (no API key), addressed by a real
 // LABEL ("Gemini 3.1 Pro (High)"), with SERVED-MODEL ATTESTATION (served==requested) so a silent Flash
 // substitution is caught, and a NO-SHELL steer so no PowerShell window pops.
@@ -560,7 +560,7 @@ export function agyStatusToFailClass(status) {
 
 /**
  * Build the agy-backed cross-family `generate(prompt) -> string` for the F0 probe / driver. The agy
- * transport (C:\dev\trio\drivers\gemini-cli.mjs, pinned as geminiSpec.driver_ref) is reached ONLY when
+ * transport (<path> pinned as geminiSpec.driver_ref) is reached ONLY when
  * the returned function is invoked; the FAST gate injects `runGemini` so NO agy process spawns and NO
  * cross-repo import happens. Fail-closed enumeration is preserved as typed PhaseFProbeError(failClass):
  * ATTESTATION (served!=requested — the silent-Flash tripwire), NETWORK (transport/timeout/cli error),

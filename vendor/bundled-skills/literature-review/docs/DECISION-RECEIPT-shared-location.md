@@ -13,15 +13,15 @@ The shared brownfield-intake front-end lives at:
 
 where `TRIO_ROOT` is researchPrime's single pinned external-dependency root, exported by
 `researchPrime/bin/contract.mjs` and overridable via the `RP_TRIO_ROOT` environment variable.
-On this host `TRIO_ROOT` resolves to `C:\dev\trio\` (the trio checkout containing
+On this host `TRIO_ROOT` resolves to `<path> (the trio checkout containing
 `crucible/`, `foreman/`, `researchPrime/`), so the concrete pinned path is:
 
 ```
-C:\dev\trio\trio-shared\brownfield-intake\index.mjs
+<path>
 ```
 
 **Why this home (empirical):**
-- The trio actually lives at `C:\dev\trio\` — the deployed `~/.claude/skills/{crucible,foreman,researchPrime}`
+- The trio actually lives at `<path> — the deployed `~/.claude/skills/{crucible,foreman,researchPrime}`
   entries are symlinks into it. `researchPrime/bin/contract.mjs` already pins exactly this root
   (`new URL('../../', import.meta.url)` from `bin/`, i.e. one convention, already committed, already
   `RP_TRIO_ROOT`-overridable for hermetic checkouts). Reusing that pin means literature-review adds
@@ -45,7 +45,7 @@ C:\dev\trio\trio-shared\brownfield-intake\index.mjs
 3. Use `contract.TRIO_ROOT` (which itself honors `RP_TRIO_ROOT`) to resolve
    `trio-shared/brownfield-intake/index.mjs`.
 
-**Repo note:** `C:\dev\trio` is its own git repository, separate from Skill Foundry. The shared
+**Repo note:** `<path> is its own git repository, separate from Skill Foundry. The shared
 module's commits land in the trio repo; literature-review's tests, receipts, and consumers land in
 Skill Foundry. This receipt records the cross-repo dependency explicitly.
 
@@ -90,7 +90,7 @@ Proven by `test/gate-contract-conformance.test.mjs` against `bin/plan-gate.mjs` 
 
 | Artifact | Role |
 | --- | --- |
-| `C:\dev\trio\trio-shared\brownfield-intake\index.mjs` | Wave-1 stub establishing the shared home (Wave 8 replaces it with the real ingest → grounded summary → derive entry) |
+| `<path> | Wave-1 stub establishing the shared home (Wave 8 replaces it with the real ingest → grounded summary → derive entry) |
 | `test/_wave1-trio-resolve.mjs` | The single resolution helper implementing the rules above |
 | `test/gate-contract-conformance.test.mjs` | Frozen-gate APPROVE/EDIT/ABORT conformance + byte-hash fence |
 | `test/gate-headless-approval.test.mjs` | Token / policy-grant / replay headless routes, no isTTY halt; non-Node prose-stamp pin |

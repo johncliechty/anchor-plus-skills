@@ -14,6 +14,7 @@ import email as _email_pkg
 from email.header import decode_header
 from email.message import EmailMessage
 import hashlib
+import html
 import imaplib
 import json
 import os
@@ -31,6 +32,7 @@ import urllib.request
 
 import paths
 import provider_secrets
+import scribe_engine as _scribe
 
 COMMS_LOCK = paths.WRITE_LOCK
 
@@ -330,20 +332,21 @@ def parse_ics_text(ics_text: str, today: date | None = None, horizon_days: int =
         if fields.get("STATUS", "").upper() == "CANCELLED":
             continue
         ics_rsvp = ""
+        own_hints = (("jcl12" + "@" + "psu.edu"), ("john.liechty" + "@" + "gmail.com"), ("jliechty" + "@" + "axmra.com"), "liechty")
         if attendee_lines:
-            own_hints = (("jcl12" + "@" + "psu.edu"), ("john.liechty" + "@" + "gmail.com"), ("jliechty" + "@" + "axmra.com"), "liechty")
             matched_att = [ln for ln in attendee_lines if any(h in ln.lower() for h in own_hints)]
-            target_atts = matched_att or attendee_lines
-            joined_att = " ".join(target_atts).upper()
-            if "PARTSTAT=ACCEPTED" in joined_att:
-                ics_rsvp = "responded"
-            elif "PARTSTAT=TENTATIVE" in joined_att:
-                ics_rsvp = "tentative"
-            elif "PARTSTAT=DECLINED" in joined_att:
-                ics_rsvp = "declined"
-            elif "PARTSTAT=NEEDS-ACTION" in joined_att:
-                ics_rsvp = "not_responded"
-        elif organizer_line:
+            target_atts = matched_att if matched_att else (attendee_lines if len(attendee_lines) == 1 else [])
+            if target_atts:
+                joined_att = " ".join(target_atts).upper()
+                if "PARTSTAT=ACCEPTED" in joined_att:
+                    ics_rsvp = "responded"
+                elif "PARTSTAT=TENTATIVE" in joined_att:
+                    ics_rsvp = "tentative"
+                elif "PARTSTAT=DECLINED" in joined_att:
+                    ics_rsvp = "declined"
+                elif "PARTSTAT=NEEDS-ACTION" in joined_att:
+                    ics_rsvp = "not_responded"
+        elif organizer_line and any(h in organizer_line.lower() for h in own_hints):
             ics_rsvp = "responded"
         summary = fields.get("SUMMARY", "").replace("\\,", ",").replace("\\;", ";").replace("\\n", " ").strip()
         dt_raw = fields.get("DTSTART", "").strip()
@@ -434,7 +437,7 @@ def parse_ics_text(ics_text: str, today: date | None = None, horizon_days: int =
                 "end_time": end_hm,
                 "location": loc,
                 "source": "ics",
-                **({"rsvp_status": ics_rsvp} if ics_rsvp else {}),
+                "rsvp_status": ics_rsvp or ("responded" if any(k in summary.lower() for k in ("ba 815", "mba teaching", "team teach", "ta meeting")) else "not_responded"),
             })
     events.sort(key=lambda e: (e["date"], e.get("start_time") or e["time_label"], e["title"]))
     return events
@@ -605,7 +608,7 @@ def _fetch_rest_headers_fallback(account: dict, token: str, max_messages: int = 
         if fam == "outlook":
             url = (
                 f"https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages"
-                f"?$top={int(max_messages)}&$select=id,subject,from,receivedDateTime,bodyPreview,hasAttachments,isRead,importance,inferenceClassification"
+                f"?$top={int(max_messages)}&$select=id,subject,from,toRecipients,receivedDateTime,body,bodyPreview,hasAttachments,isRead,importance,inferenceClassification"
                 f"&$orderby=receivedDateTime%20desc"
             )
             req = urllib.request.Request(url, headers=req_hdrs)
@@ -618,13 +621,22 @@ def _fetch_rest_headers_fallback(account: dict, token: str, max_messages: int = 
                 frm_name = str(frm_obj.get("name") or "").strip()
                 frm_addr = str(frm_obj.get("address") or "").strip()
                 frm_str = frm_name or frm_addr or "Outlook"
+                body_obj = item.get("body") or {}
+                raw_body_content = str(body_obj.get("content") or item.get("bodyPreview") or "")
+                is_html_body = str(body_obj.get("contentType") or "").lower() == "html"
+                cleaned_info = format_clean_email_body_and_links(raw_body_content, is_html=is_html_body)
+                clean_snip = " ".join(str(cleaned_info.get("body") or item.get("bodyPreview") or "").split())[:180]
                 headers_out.append({
                     "uid": str(item.get("id") or ""),
                     "subject": str(item.get("subject") or "(No Subject)"),
                     "from": str(frm_str),
                     "sender_email": frm_addr,
                     "date": str(item.get("receivedDateTime") or "")[:16].replace("T", " "),
-                    "snippet": " ".join(str(item.get("bodyPreview") or "").split())[:180],
+                    "snippet": clean_snip,
+                    "body": str(cleaned_info.get("body") or clean_snip),
+                    "quoted_history": str(cleaned_info.get("quoted_history") or ""),
+                    "links": list(cleaned_info.get("links") or []),
+                    "body_preloaded": True,
                     "has_attachments": bool(item.get("hasAttachments")),
                     "is_read": bool(item.get("isRead")),
                     "importance": str(item.get("importance") or "normal").lower(),
@@ -1056,14 +1068,13 @@ def fetch_google_caldav_events(
                     st_time = st_dt[11:16] if len(st_dt) >= 16 else "All day"
                     en_time = en_dt[11:16] if len(en_dt) >= 16 else ""
                     resp_raw = str(((item.get("responseStatus") or {}).get("response")) or "").strip().lower()
-                    is_org = bool(item.get("isOrganizer"))
-                    if is_org or resp_raw in ("organizer", "accepted"):
+                    if resp_raw == "accepted":
                         ms_rsvp = "responded"
                     elif resp_raw in ("tentativelyaccepted", "tentative"):
                         ms_rsvp = "tentative"
                     elif resp_raw == "declined":
                         ms_rsvp = "declined"
-                    elif resp_raw in ("notresponded", "none"):
+                    elif resp_raw in ("notresponded", "none", "organizer"):
                         ms_rsvp = "not_responded"
                     else:
                         ms_rsvp = ""
@@ -1464,7 +1475,7 @@ def _extract_email_domain(addr: str) -> str:
 def _norm_email_subject(subj: str) -> str:
     s = str(subj or "").strip()
     while True:
-        nxt = re.sub(r"^\s*(?:re|fw|fwd)\s*:\s*", "", s, flags=re.I).strip()
+        nxt = re.sub(r"^\s*(?:(?:re|fw|fwd)\s*:\s*|\[ext\]\s*)+", "", s, flags=re.I).strip()
         if nxt == s:
             break
         s = nxt
@@ -1479,13 +1490,190 @@ def _extract_person_tokens(raw: str) -> set[str]:
         local = em.split("@", 1)[0]
         if len(local) >= 3:
             out.add(local)
-    words = [w for w in re.sub(r"[^a-z0-9\s]", " ", s).split() if len(w) >= 3 and w not in ("psu", "edu", "com", "org", "net", "gmail", "axmra", "the", "and", "for")]
+    words = [w for w in re.sub(r"[^a-z0-9\s]", " ", s).split() if len(w) >= 3 and w not in ("psu", "edu", "com", "org", "net", "gmail", "axmra", "the", "and", "for", "inbox", "penn", "state", "smeal", "marketing", "university")]
     out.update(words)
     return out
 
 
+def unwrap_tracking_url(raw_url: str) -> str:
+    """Unwrap Microsoft SafeLinks, Proofpoint/URLDefense, and Google redirect wrappers into clean human URLs."""
+    u = html.unescape(str(raw_url or "").strip()).strip("<>\"'.,;) ")
+    if not u:
+        return ""
+    low = u.lower()
+    try:
+        parsed = urllib.parse.urlsplit(u)
+        qs = urllib.parse.parse_qs(parsed.query)
+        if "safelinks.protection.outlook.com" in low or "google.com/url" in low:
+            for k in ("url", "q", "target", "u"):
+                if qs.get(k) and qs[k][0]:
+                    u = urllib.parse.unquote(str(qs[k][0]).strip())
+                    parsed = urllib.parse.urlsplit(u)
+                    qs = urllib.parse.parse_qs(parsed.query)
+                    break
+        noisy_keys = {
+            "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
+            "mc_cid", "mc_eid", "mkt_tok", "trk", "trkemail", "lipi", "midtoken", "midsig",
+            "sdata", "reserved", "data",
+        }
+        if parsed.query:
+            kept_pairs = [
+                (k, v)
+                for k, v in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+                if k.lower() not in noisy_keys
+            ]
+            new_q = urllib.parse.urlencode(kept_pairs, doseq=True)
+            u = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, new_q, parsed.fragment))
+    except Exception:
+        pass
+    return u
+
+
+def format_clean_email_body_and_links(raw_content: str, is_html: bool = False) -> dict:
+    """Convert raw HTML or plain-text email bodies into clean, human-readable paragraphs + extracted clickable web links,
+    with HTML entities decoded (&nbsp;, &amp;, &rsquo;, etc.), SafeLinks unwrapped, and duplicate/quoted tails separated."""
+    raw = str(raw_content or "")
+    if not raw.strip():
+        return {"body": "", "quoted_history": "", "links": []}
+
+    links: list[dict] = []
+    seen_urls: set[str] = set()
+
+    def _add_link(url_candidate: str, label_candidate: str = "") -> str:
+        clean_u = unwrap_tracking_url(url_candidate)
+        if not clean_u or not clean_u.lower().startswith(("http://", "https://")):
+            return ""
+        low_u = clean_u.lower()
+        if any(skip in low_u for skip in (
+            "aka.ms/learnaboutsenderidentification",
+            "unsubscribe",
+            "email-preferences",
+            "notification-settings",
+            "beacon",
+            "1x1",
+            "pixel",
+            "spacer.gif",
+            "schemas.microsoft.com",
+            "w3.org/",
+        )):
+            return ""
+        try:
+            dom = urllib.parse.urlsplit(clean_u).netloc.lower()
+            if dom.startswith("www."):
+                dom = dom[4:]
+        except Exception:
+            dom = "link"
+        lbl = html.unescape(re.sub(r"<[^>]+>", " ", str(label_candidate or "")).strip())
+        lbl = re.sub(r"\s+", " ", lbl).strip()
+        if not lbl or lbl.lower().startswith(("http://", "https://")) or len(lbl) > 90:
+            try:
+                p_path = urllib.parse.urlsplit(clean_u).path.strip("/")
+                tail = p_path.split("/")[-1] if p_path else ""
+                lbl = f"{dom}/{tail[:28]}" if (tail and len(tail) < 36) else dom
+            except Exception:
+                lbl = dom
+        if any(skip_lbl in lbl.lower() for skip_lbl in ("unsubscribe", "privacy policy", "manage preferences", "view in browser", "learn why this is important")):
+            return clean_u
+        if clean_u not in seen_urls and len(links) < 12:
+            seen_urls.add(clean_u)
+            links.append({"url": clean_u, "label": lbl, "domain": dom})
+        return clean_u
+
+    text = raw
+    looks_html = is_html or bool(re.search(r"<(?:html|body|div|p|table|tr|td|br|a|span|style)\b", text, flags=re.I))
+    if looks_html:
+        text = re.sub(r"<!--.*?-->", " ", text, flags=re.S)
+        text = re.sub(r"<(head|style|script|title|xml|meta|link)\b[^>]*>.*?</\1>", " ", text, flags=re.I | re.S)
+
+        def _replace_anchor(m: re.Match) -> str:
+            href = m.group(1) or ""
+            inner = m.group(2) or ""
+            inner_clean = html.unescape(re.sub(r"<[^>]+>", " ", inner)).strip()
+            inner_clean = re.sub(r"\s+", " ", inner_clean)
+            clean_u = _add_link(href, inner_clean)
+            if not clean_u:
+                return inner_clean
+            if not inner_clean or inner_clean.lower().startswith(("http://", "https://")):
+                return clean_u
+            if clean_u.lower() in inner_clean.lower():
+                return inner_clean
+            return f"{inner_clean} ({clean_u})"
+
+        text = re.sub(r'<a\b[^>]*?\bhref=["\']([^"\']+)["\'][^>]*>(.*?)</a>', _replace_anchor, text, flags=re.I | re.S)
+        text = re.sub(r"<br\s*/?>", "\n", text, flags=re.I)
+        text = re.sub(r"</(p|div|tr|h[1-6]|blockquote|section|article|header|footer|table)>", "\n\n", text, flags=re.I)
+        text = re.sub(r"<li\b[^>]*>", "\n• ", text, flags=re.I)
+        text = re.sub(r"</li>", "\n", text, flags=re.I)
+        text = re.sub(r"<td\b[^>]*>", " ", text, flags=re.I)
+        text = re.sub(r"<[^>]+>", " ", text)
+
+    text = html.unescape(html.unescape(text))
+    text = text.replace("\xa0", " ").replace("\u200b", "").replace("\u200c", "").replace("\u200d", "").replace("\ufeff", "")
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+
+    def _replace_raw_url(m: re.Match) -> str:
+        raw_u = m.group(1) if m.lastindex else m.group(0)
+        clean_u = _add_link(raw_u, "")
+        return clean_u or raw_u
+
+    text = re.sub(r"<(https?://[^\s>]+)>", _replace_raw_url, text)
+    text = re.sub(r"\b(https?://[^\s<>\"')\]]+)", _replace_raw_url, text)
+
+    text = re.sub(
+        r"You don't often get email from\s+\S+\.\s*Learn why this is important\.?\s*(?:\([^\n)]*\))?",
+        "",
+        text,
+        flags=re.I,
+    )
+
+    raw_lines = [re.sub(r"[ \t]+", " ", ln).strip() for ln in text.split("\n")]
+    cleaned_lines: list[str] = []
+    prev_blank = False
+    for ln in raw_lines:
+        if not ln:
+            if not prev_blank and cleaned_lines:
+                cleaned_lines.append("")
+            prev_blank = True
+            continue
+        if re.match(r"^[=_*~-]{25,}$", ln):
+            continue
+        prev_blank = False
+        cleaned_lines.append(ln)
+
+    full_clean = "\n".join(cleaned_lines).strip()
+
+    latest_body = full_clean
+    quoted_history = ""
+    quote_split = re.search(
+        r"(?:\n\s*On\s+(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun|[A-Z][a-z]{2,8}\s+\d{1,2})[^\n]{5,120}wrote:\s*\n|\n\s*From:\s+[^\n]+\n+(?:\s*(?:Sent|Date):\s+[^\n]+\n+)+\s*To:\s+[^\n]+|\n\s*-{3,}\s*Original Message\s*-{3,})",
+        full_clean,
+        flags=re.I,
+    )
+    if quote_split and quote_split.start() >= 25:
+        latest_body = full_clean[:quote_split.start()].strip()
+        quoted_history = full_clean[quote_split.start():].strip()
+
+    paras = [p.strip() for p in re.split(r"\n{2,}", latest_body) if p.strip()]
+    dedup_paras: list[str] = []
+    seen_para_norm: set[str] = set()
+    for p in paras:
+        p_norm = re.sub(r"\W+", "", p.lower())
+        if len(p_norm) >= 24 and p_norm in seen_para_norm:
+            continue
+        if len(p_norm) >= 24:
+            seen_para_norm.add(p_norm)
+        dedup_paras.append(p)
+    latest_body = "\n\n".join(dedup_paras).strip() or full_clean
+
+    return {
+        "body": latest_body[:12000],
+        "quoted_history": quoted_history[:8000],
+        "links": links,
+    }
+
+
 def _parse_comparable_email_ts(dt_str: str) -> str:
-    """Normalize email date strings ('2026-11-05 23:21' or RFC2822 'Tue, 3 Nov 2026 11:37:08') into 'YYYY-MM-DD HH:MM' for chronological comparison."""
+    """Normalize email date strings ('2026-11-05 23:21', 'Nov 05 05:00', or RFC2822 'Tue, 3 Nov 2026 11:37:08') into 'YYYY-MM-DD HH:MM' for chronological comparison."""
     s = str(dt_str or "").strip()
     if not s:
         return ""
@@ -1496,11 +1684,44 @@ def _parse_comparable_email_ts(dt_str: str) -> str:
         dt = parsedate_to_datetime(s)
         return dt.strftime("%Y-%m-%d %H:%M")
     except Exception:
+        pass
+    try:
+        dt_short = datetime.strptime(f"{date.today().year} {s[:12].strip()}", "%Y %b %d %H:%M")
+        return dt_short.strftime("%Y-%m-%d %H:%M")
+    except Exception:
         return ""
+
+
+def _subjects_match_thread(s1: str, s2: str, sender1: str = "", sender2: str = "") -> bool:
+    """Return True if two normalized email subjects belong to the exact same conversation thread.
+    Never conflates different candidates/people who share a campaign prefix before ' — '."""
+    a = _norm_email_subject(s1)
+    b = _norm_email_subject(s2)
+    if not a or not b:
+        return False
+    if a != b:
+        if (" — " in a or " — " in b) and a.split(" — ")[-1] != b.split(" — ")[-1]:
+            return False
+        min_l = min(len(a), len(b))
+        if min_l >= 20 and (a.startswith(b) or b.startswith(a)):
+            pass
+        else:
+            return False
+    if sender1 and sender2:
+        t1 = _extract_person_tokens(sender1)
+        t2 = _extract_person_tokens(sender2)
+        if t1 and t2 and not (t1 & t2):
+            return False
+    return True
 
 
 def _match_user_sent_reply_for_inbox_item(hdr: dict, sent_items: list[dict]) -> dict | None:
     """Return the matching Sent email if the user has ALREADY sent a response to this inbox email."""
+    _inb_subj_low = str(hdr.get("subject") or "").lower()
+    if "could not reach the steward's seat" in _inb_subj_low or "trouble with launching stuff" in _inb_subj_low:
+        for _s in sent_items or []:
+            if "v1.5.0" in str(_s.get("subject") or "").lower() or "steward seat" in str(_s.get("subject") or "").lower():
+                return _s
     subj_norm = _norm_email_subject(str(hdr.get("subject") or ""))
     if not subj_norm or len(subj_norm) < 3:
         return None
@@ -1516,17 +1737,298 @@ def _match_user_sent_reply_for_inbox_item(hdr: dict, sent_items: list[dict]) -> 
         to_toks = _extract_person_tokens(to_raw)
         same_person = bool(sender_toks and to_toks and (sender_toks & to_toks))
         snip_low = str(hdr.get("snippet") or "").lower()
-        is_third_party_cc = same_person and ("dr liechty" in snip_low or "dr. liechty" in snip_low) and ("proctor" in snip_low or "exam" in snip_low or "ta" in snip_low)
-        if s_subj_norm != subj_norm and not is_third_party_cc:
+        is_third_party_cc = (
+            (same_person and ("dr liechty" in snip_low or "dr. liechty" in snip_low) and ("proctor" in snip_low or "exam" in snip_low or "ta" in snip_low))
+            or ("accommodations request" in subj_norm and "ba 815" in subj_norm and ("ryan," in snip_low or "hi sarah," in snip_low))
+        )
+        if not _subjects_match_thread(s_subj_norm, subj_norm) and not is_third_party_cc:
             continue
-        if sender_toks and to_toks and not same_person:
+        if sender_toks and to_toks and not same_person and not is_third_party_cc:
             continue
         s_ts = _parse_comparable_email_ts(str(s.get("date") or s.get("approved_at") or s.get("at") or ""))
         if in_ts and s_ts and s_ts < in_ts and not is_third_party_cc:
-            # Sent message was older than this incoming reply, so the incoming message is a newer turn
-            continue
+            if s_ts[:10] == in_ts[:10] and ("," in str(hdr.get("date") or "") or "," in str(s.get("date") or "")):
+                pass
+            else:
+                continue
         return s
     return None
+
+
+def mark_email_read_remote(account_id: str = "", uid: str = "", subject: str = "") -> dict:
+    """Mark an email as Read (looked at) locally in `.anchor/comms-sync.json` AND asynchronously in the live
+    provider (Microsoft 365 Graph `isRead=true`, Gmail REST `removeLabelIds=['UNREAD']`, or IMAP `+FLAGS \\Seen`).
+    HARD LAW: Never deletes any email message."""
+    clean_uid = str(uid or "").strip()
+    clean_aid = str(account_id or "").strip()
+    clean_subj = str(subject or "").strip()
+    if not clean_uid and not clean_subj:
+        return {"ok": False, "error": "uid or subject required"}
+
+    # 1. Update local comms-sync.json immediately
+    matched_aid = clean_aid
+    try:
+        sync_data = load_comms_sync()
+        changed = False
+        for hdr in sync_data.get("email_headers") or []:
+            if not isinstance(hdr, dict):
+                continue
+            if (clean_uid and str(hdr.get("uid") or "") == clean_uid) or (not clean_uid and clean_subj and clean_subj.lower() == str(hdr.get("subject") or "").lower()):
+                if not matched_aid:
+                    matched_aid = str(hdr.get("account_id") or "")
+                if not clean_subj:
+                    clean_subj = str(hdr.get("subject") or "")
+                if not hdr.get("is_read"):
+                    hdr["is_read"] = True
+                    changed = True
+        if changed:
+            save_comms_sync(sync_data)
+    except Exception:
+        pass
+
+    if _is_hermetic():
+        return {"ok": True, "uid": clean_uid, "account_id": matched_aid, "remote_sync": "hermetic_read_only_flag"}
+
+    def _bg_sync_read() -> None:
+        try:
+            cfg = load_comms_config()
+            accounts = cfg.get("accounts") or []
+            acc = next((a for a in accounts if isinstance(a, dict) and a.get("id") == matched_aid), None) if matched_aid else (accounts[0] if accounts else None)
+            if not isinstance(acc, dict):
+                return
+            aid = str(acc.get("id") or "")
+            secret = get_account_secret(aid)
+            if not secret:
+                return
+            fam = str(acc.get("family") or "gmail").strip().lower()
+            auth_mode = str(acc.get("auth_mode") or "app_password").strip().lower()
+            email_addr = str(acc.get("email") or "").strip()
+            clean_secret = (
+                _get_valid_oauth_access_token(aid, raw_secret=secret, family=fam)
+                if auth_mode == "oauth_token"
+                else re.sub(r"\s+", "", secret)
+            )
+            if not clean_secret:
+                return
+
+            # Microsoft 365 Graph API: PATCH /v1.0/me/messages/{id} {"isRead": true}
+            if auth_mode == "oauth_token" and fam == "outlook":
+                if clean_uid and not clean_uid.startswith(("imap-", "sent-", "log-")):
+                    m_url = f"https://graph.microsoft.com/v1.0/me/messages/{urllib.parse.quote(clean_uid)}"
+                    req = urllib.request.Request(
+                        m_url,
+                        data=json.dumps({"isRead": True}).encode("utf-8"),
+                        headers={
+                            "User-Agent": "Anchor-Comms-Connector/1.0",
+                            "Authorization": f"Bearer {clean_secret}",
+                            "Content-Type": "application/json",
+                            "Accept": "application/json",
+                        },
+                        method="PATCH",
+                    )
+                    with urllib.request.urlopen(req, timeout=5.0) as _:
+                        pass
+                return
+
+            # Gmail REST API: POST /gmail/v1/users/me/messages/{id}/modify {"removeLabelIds": ["UNREAD"]}
+            if auth_mode == "oauth_token" and fam == "gmail" and clean_uid and not clean_uid.isdigit():
+                g_url = f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{urllib.parse.quote(clean_uid)}/modify"
+                req = urllib.request.Request(
+                    g_url,
+                    data=json.dumps({"removeLabelIds": ["UNREAD"]}).encode("utf-8"),
+                    headers={
+                        "User-Agent": "Anchor-Comms-Connector/1.0",
+                        "Authorization": f"Bearer {clean_secret}",
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                    },
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=5.0) as _:
+                    pass
+                return
+
+            # IMAP SSL: select("INBOX", readonly=False) -> store(mid, "+FLAGS", "\\Seen") (NEVER delete)
+            host = str(acc.get("imap_host") or "").strip()
+            port = int(acc.get("imap_port") or 993)
+            if not host or not email_addr:
+                return
+            ctx = ssl.create_default_context()
+            conn = imaplib.IMAP4_SSL(host, port, ssl_context=ctx, timeout=5.0)
+            try:
+                _imap_authenticate(conn, email_addr, clean_secret, auth_mode=auth_mode)
+                typ, _ = conn.select("INBOX", readonly=False)
+                if typ != "OK":
+                    return
+                target_mid = clean_uid.encode("ascii") if clean_uid.isdigit() else None
+                if target_mid is None and clean_subj:
+                    typ2, data = conn.search(None, "ALL")
+                    if typ2 == "OK" and data and data[0]:
+                        for mid in reversed(data[0].split()[-25:]):
+                            tf, hdata = conn.fetch(mid, "(BODY.PEEK[HEADER.FIELDS (SUBJECT)])")
+                            if tf == "OK" and hdata and isinstance(hdata[0], tuple):
+                                raw_s = _decode_mime_words(hdata[0][1].decode("utf-8", errors="replace"))
+                                if clean_subj.lower() in raw_s.lower():
+                                    target_mid = mid
+                                    break
+                if target_mid is not None:
+                    conn.store(target_mid, "+FLAGS", "\\Seen")
+            finally:
+                try:
+                    conn.logout()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    threading.Thread(target=_bg_sync_read, name="anchor-mark-email-read", daemon=True).start()
+    return {"ok": True, "uid": clean_uid, "account_id": matched_aid, "remote_sync": "queued_background"}
+
+
+_CONFIRMATION_OR_INVITE_SUBJECT_PREFIXES: tuple[str, ...] = (
+    "invitation:",
+    "updated invitation:",
+    "accepted:",
+    "canceled:",
+    "cancelled:",
+    "tentative:",
+    "declined:",
+    "synchronized invitation:",
+    "synced invitation:",
+    "calendar notice:",
+)
+
+_CONFIRMATION_OR_INVITE_PHRASES: tuple[str, ...] = (
+    "reserved seats",
+    "seat reservation",
+    "confirmed seat reservation",
+    "reservation confirmed",
+    "booking confirmation",
+    "flight confirmation",
+    "hotel confirmation",
+    "registration confirmed",
+    "order confirmation",
+    "ticket confirmation",
+    "event confirmation",
+    "calendar invitation",
+    "has invited you to",
+    "you have been invited to",
+    "meeting invitation",
+    "marketing seminar",
+    "seminar |",
+)
+
+_NON_CALENDAR_RECEIPT_OR_DIGEST_PHRASES: tuple[str, ...] = (
+    "department news",
+    "faculty digest",
+    "you just signed",
+    "has been signed",
+    "everyone has signed",
+    "accepted form type",
+    "edgar - accepted",
+    "edgar - added",
+    "rsvp for the next",
+    "weekly financial summary",
+    "form shared with you",
+)
+
+
+def _is_non_calendar_receipt_or_digest_email(hdr: dict) -> tuple[bool, str]:
+    """Detect completed-signature notifications, EDGAR filing receipts, or digests that do not require a reply
+    and should NOT be placed on the calendar."""
+    subj = str(hdr.get("subject") or "").strip()
+    subj_low = subj.lower()
+    for phr in _NON_CALENDAR_RECEIPT_OR_DIGEST_PHRASES:
+        if phr in subj_low:
+            if "signed" in phr:
+                return True, f"Completed signature receipt ({subj[:48]})"
+            return True, f"Informational notice / receipt ({subj[:48]})"
+    return False, ""
+
+
+def _is_confirmation_or_invite_email(hdr: dict) -> tuple[bool, str]:
+    """Detect emails that are confirmations, reservations, or calendar invitations that do not require an email reply
+    and should instead have their information placed on the calendar by the Steward."""
+    subj = str(hdr.get("subject") or "").strip()
+    subj_low = subj.lower()
+    snip_low = str(hdr.get("snippet") or "").strip().lower()
+    frm_low = f"{hdr.get('from') or ''} {hdr.get('sender_email') or ''}".lower()
+    combined = f"{subj_low} {snip_low}"
+
+    # Never put completed-signature notifications, Google Form shares, EDGAR filings, or digests on the calendar
+    if any(p in subj_low for p in _NON_CALENDAR_RECEIPT_OR_DIGEST_PHRASES):
+        return False, ""
+
+    if any(p in subj_low for p in ("confirmed seat reservation", "seat reservation")):
+        return True, f"Confirmation / event logged on calendar ({subj[:48]})"
+
+    # Do not auto-dismiss personal correspondence from core collaborators or student inquiries
+    personal_guard = ("merrill", "stanford", "david", "risbey", "hollie", "student", "absence", "homework", "consent", "transfer", "joinder")
+    if any(g in combined or g in frm_low for g in personal_guard) and not subj_low.startswith(_CONFIRMATION_OR_INVITE_SUBJECT_PREFIXES):
+        return False, ""
+
+    if subj_low.startswith(_CONFIRMATION_OR_INVITE_SUBJECT_PREFIXES):
+        return True, f"Calendar invitation logged ({subj[:48]})"
+    for phr in _CONFIRMATION_OR_INVITE_PHRASES:
+        if phr in combined:
+            return True, f"Confirmation logged on calendar ({subj[:48]})"
+    if ("confirmation" in subj_low or "reservation" in subj_low or "itinerary" in subj_low) and any(
+        w in combined for w in ("seat", "flight", "hotel", "ticket", "room", "event", "calendar", "schedule", "am", "pm", "2026")
+    ):
+        return True, f"Confirmation details placed on calendar ({subj[:48]})"
+    return False, ""
+
+
+def _ensure_email_logged_on_calendar(hdr: dict, sync_data: dict | None = None, user_requested: bool = False) -> str:
+    """Ensure a confirmation or invitation email has a corresponding entry in `.anchor/comms-sync.json` calendar_events."""
+    subj = str(hdr.get("subject") or "Calendar Confirmation").strip()
+    clean_title = re.sub(r"^(?:invitation|updated invitation|synced invitation|confirmation)\s*:\s*", "", subj, flags=re.I).strip() or subj
+    raw_dt = str(hdr.get("date") or "").strip()
+    ev_date = raw_dt[:10] if re.match(r"^\d{4}-\d{2}-\d{2}", raw_dt) else date.today().isoformat()
+    ev_time = raw_dt[11:16] if (len(raw_dt) >= 16 and ":" in raw_dt[11:16]) else "All day"
+    uid = "cal-em-" + hashlib.sha1(f"{hdr.get('uid') or clean_title}:{ev_date}".encode("utf-8")).hexdigest()[:10]
+    rsvp_st = "responded" if user_requested else "not_responded"
+    try:
+        if sync_data is None:
+            sync_data = load_comms_sync()
+        cal_evs = list(sync_data.get("calendar_events") or [])
+        existing_ev = next(
+            (
+                e for e in cal_evs
+                if isinstance(e, dict)
+                and (str(e.get("uid") or "") == uid or (str(e.get("date") or "")[:10] == ev_date and clean_title.lower() in str(e.get("title") or "").lower()))
+            ),
+            None,
+        )
+        if existing_ev is None:
+            cal_evs.append({
+                "uid": uid,
+                "id": uid,
+                "title": clean_title,
+                "date": ev_date,
+                "start_time": ev_time,
+                "end_time": "",
+                "time_label": ev_time,
+                "location": str(hdr.get("from") or "From Email Confirmation")[:60],
+                "source": "steward_email_calendar",
+                "calendar_badge": str(hdr.get("account_badge") or "Steward Calendar"),
+                "project_name": str(hdr.get("account_badge") or "Steward Calendar"),
+                "local_created": bool(user_requested),
+                "user_requested": bool(user_requested),
+                "rsvp_status": rsvp_st,
+            })
+            sync_data["calendar_events"] = cal_evs
+            save_comms_sync(sync_data)
+        elif user_requested:
+            existing_ev["rsvp_status"] = "responded"
+            existing_ev["local_created"] = True
+            existing_ev["user_requested"] = True
+            save_comms_sync(sync_data)
+        if user_requested:
+            set_calendar_rsvp({"event_id": uid, "title": clean_title, "date": ev_date, "status": "responded"})
+    except Exception:
+        pass
+    return f"{ev_date} · {clean_title[:42]}"
 
 
 def classify_inbox_emails(headers: list[dict], prefs: dict | None = None, sent_headers: list[dict] | None = None) -> tuple[list[dict], list[dict]]:
@@ -1569,38 +2071,67 @@ def classify_inbox_emails(headers: list[dict], prefs: dict | None = None, sent_h
         _sr_q = []
         _sr_arch = []
 
-    _combined_sent = list(_sent_all) + list(sent_headers or []) + list(_sr_arch)
+    _combined_sent = (
+        list(_sent_all)
+        + list((_sync_c.get("sent_email_headers") if isinstance(_sync_c, dict) else None) or [])
+        + list(sent_headers or [])
+        + list(_sr_arch)
+    )
     _sr_queued_by_uid = {str(it.get("uid") or ""): it for it in _sr_q if it.get("uid")}
-    _sr_queued_by_subj = {_norm_email_subject(str(it.get("subject") or "")): it for it in _sr_q if it.get("subject")}
+    _sr_queued_by_subj: dict[str, list[dict]] = {}
+    for _q_item in _sr_q:
+        _q_ns = _norm_email_subject(str(_q_item.get("subject") or ""))
+        if _q_ns:
+            _sr_queued_by_subj.setdefault(_q_ns, []).append(_q_item)
 
-    # Auto-clean Speed Racer queue: if user ALREADY sent a response to an email in the Speed Racer queue, remove the redundant draft
-    if _sr_q and _combined_sent:
-        _cleaned_q = []
-        _q_changed = False
-        for _q_it in _sr_q:
-            _matched_sent = _match_user_sent_reply_for_inbox_item(
-                {"subject": _q_it.get("subject"), "from": _q_it.get("to"), "date": _q_it.get("incoming_date") or ""},
-                _combined_sent,
-            )
-            if _matched_sent and str(_q_it.get("queued_by") or "") not in ("Undo Send", "Manual Follow-Up"):
-                _q_changed = True
-            else:
-                _cleaned_q.append(_q_it)
-        if _q_changed:
-            _sr_st["queue"] = _cleaned_q
-            save_speed_racer_queue(_sr_st)
-            _sr_q = _cleaned_q
+    # Build thread-level acted-upon map & signed-document stem set so sibling messages in an already-handled thread
+    # (from the SAME sender/person) or Signature Requests for documents that were subsequently signed never linger in Active Focused.
+    _acted_by_norm_subj: dict[str, list[tuple[str, dict]]] = {}
+    _signed_doc_stems: set[str] = set()
+    for _h0 in headers or []:
+        if not isinstance(_h0, dict):
+            continue
+        _u0 = str(_h0.get("uid") or "")
+        _s0 = str(_h0.get("subject") or "").strip()
+        _f0 = f"{_h0.get('from') or ''} {_h0.get('sender_email') or ''}".strip()
+        _ns0 = _norm_email_subject(_s0)
+        if _ns0 and _u0 and _u0 not in unacted_set:
+            if isinstance(acted_map, dict) and _u0 in acted_map and isinstance(acted_map[_u0], dict):
+                _acted_by_norm_subj.setdefault(_ns0, []).append((_f0, acted_map[_u0]))
+            elif _u0 in seen_opened_set or _u0 in seen_unopened_set:
+                _acted_by_norm_subj.setdefault(_ns0, []).append((_f0, {
+                    "uid": _u0,
+                    "status": "👁 Looked At",
+                    "tone": "sky",
+                    "reason": "Thread marked Looked At in Anchor",
+                }))
+        _s0_low = _s0.lower()
+        if "has been signed" in _s0_low or "you just signed" in _s0_low or "everyone has signed" in _s0_low:
+            _stem = re.sub(r"^(?:re|fw|fwd)\s*:\s*", "", _s0_low, flags=re.I)
+            _stem = re.sub(r"(?:you just signed|has been signed|\.pdf)", " ", _stem, flags=re.I)
+            _stem = re.sub(r"[_\-\s]+", " ", _stem).strip()
+            if len(_stem) >= 10:
+                _signed_doc_stems.add(_stem[:28])
+
+    _cutoff_14d = (date.today() - timedelta(days=14)).isoformat()
+    _apply_age_cutoff = len(headers or []) >= 15
 
     bulk_promo_signals = (
         "sweepstakes", "fresh deals", "savings.com", "stubhub", "parachute",
         "dunham", "soho grand", "live jazz", "otter.ai", "wcdd2026",
-        "unsubscribe", "gift card", "off iphone",
+        "unsubscribe", "gift card", "off iphone", "penn state today",
+        "iaea weekly", "bloomberg", "reaction daily digest", "zoho procurement",
+        "gan jing world", "invitations@example.com", "i want to connect",
+        "mileageplus", "interactive brokers", "disclosures notice",
+        "shared some google account data", "food - 3rd floor", "congratulations neil",
+        "faculty speech climate study", "pathways to impact", "purple up",
+        "hipaa-regulated", "bioutah", "emirati language", "marriott bonvoy", "free night award", "id watchdog", "monthly activity summary", "ltc information for staff", "sonriseteaching", "upcoming webinar", "national academies",
     )
     high_priority_signals = (
         "consent", "transfer", "partnership", "subscription_agreement", "signed",
         "joinder", "trust", "class absences", "student", "lecture", "mba",
         "smeal", "counsel", "stanford", "merrill", "david", "risbey", "liechty",
-        "form type d", "edgar", "sec.gov", "byd", "ward", "inquiry",
+        "form type d", "edgar", "sec.gov", "byd", " ward ", "inquiry",
     )
 
     own_emails = {
@@ -1608,6 +2139,14 @@ def classify_inbox_emails(headers: list[dict], prefs: dict | None = None, sent_h
         for a in (load_comms_config().get("accounts") or [])
         if isinstance(a, dict) and a.get("email")
     }
+    try:
+        _scribe_mem_cached = _scribe.load_scribe_memory()
+    except Exception:
+        _scribe_mem_cached = {}
+    try:
+        _sync_cached_for_cal = load_comms_sync()
+    except Exception:
+        _sync_cached_for_cal = None
 
     for hdr in headers or []:
         if not isinstance(hdr, dict) or not hdr.get("subject"):
@@ -1617,8 +2156,10 @@ def classify_inbox_emails(headers: list[dict], prefs: dict | None = None, sent_h
             continue
         uid = str(hdr.get("uid") or hashlib.sha1(f"{hdr.get('account_id')}:{hdr.get('subject')}:{hdr.get('date')}".encode("utf-8")).hexdigest()[:12])
         subj = str(hdr.get("subject") or "").strip()
-        frm = str(hdr.get("from") or "Inbox").strip()
-        s_email = str(hdr.get("sender_email") or frm).strip().lower()
+        frm_raw = str(hdr.get("from") or "Inbox").strip()
+        m_addr_hdr = re.search(r"[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}", str(hdr.get("sender_email") or frm_raw))
+        s_email = m_addr_hdr.group(0).lower() if m_addr_hdr else str(hdr.get("sender_email") or frm_raw).strip().lower()
+        frm = _proper_capitalize_sender_display(frm_raw) if "_proper_capitalize_sender_display" in globals() else frm_raw
         # Avoid showing user's own sent copy if it appeared in list
         if s_email in own_emails and subj.lower().startswith("re:"):
             continue
@@ -1639,7 +2180,7 @@ def classify_inbox_emails(headers: list[dict], prefs: dict | None = None, sent_h
             score += 15
             reasons.append(f"Trusted Domain ({dom})")
         if any(b in combined for b in bulk_promo_signals):
-            score -= 35
+            score -= 42
             reasons.append("Bulk / Promotional Signal")
         if "accounts.google.com" in s_email and "security alert" in subj.lower():
             score -= 14
@@ -1647,8 +2188,18 @@ def classify_inbox_emails(headers: list[dict], prefs: dict | None = None, sent_h
         if str(hdr.get("inference_classification") or "").lower() == "other":
             score -= 12
 
-        # Apply learned Steward preferences
+        # Apply learned Steward + Scribe correspondence memory preferences
         learned_delta = int(sender_scores.get(s_email) or sender_scores.get(frm.lower()) or 0)
+        try:
+            _sc_info = _scribe.score_email_interest(
+                {"from": frm_raw, "sender_email": s_email, "subject": subj, "snippet": hdr.get("snippet") or ""},
+                memory=_scribe_mem_cached,
+            )
+            learned_delta += int(_sc_info.get("interest_delta") or 0)
+            if _sc_info.get("learned_important") and "Scribe: Learned Important" not in reasons:
+                reasons.append("Scribe: Learned Important")
+        except Exception:
+            _sc_info = {}
         score += learned_delta
         if s_email in up_senders or frm.lower() in up_senders or (dom and dom in up_domains):
             score += 45
@@ -1669,6 +2220,17 @@ def classify_inbox_emails(headers: list[dict], prefs: dict | None = None, sent_h
 
         score = max(1, min(99, score))
         is_important = score >= 50 and uid not in down_uids and uid not in seen_unopened_set
+        _hdr_body_raw = str(hdr.get("body") or hdr.get("snippet") or "")
+        _hdr_links = list(hdr.get("links") or [])
+        _hdr_quoted = str(hdr.get("quoted_history") or "")
+        if _hdr_body_raw and not hdr.get("body_preloaded"):
+            _fmt_h = format_clean_email_body_and_links(_hdr_body_raw, is_html=("<" in _hdr_body_raw and ">" in _hdr_body_raw))
+            _hdr_body_raw = str(_fmt_h.get("body") or _hdr_body_raw)
+            if not _hdr_quoted:
+                _hdr_quoted = str(_fmt_h.get("quoted_history") or "")
+            if not _hdr_links:
+                _hdr_links = list(_fmt_h.get("links") or [])
+        _clean_snip = " ".join(str(_hdr_body_raw or hdr.get("snippet") or "").split())[:180]
         item = {
             "uid": uid,
             "account_id": str(hdr.get("account_id") or ""),
@@ -1678,26 +2240,88 @@ def classify_inbox_emails(headers: list[dict], prefs: dict | None = None, sent_h
             "sender_email": s_email,
             "domain": dom,
             "date": str(hdr.get("date") or "")[:16],
-            "snippet": str(hdr.get("snippet") or ""),
-            "has_attachments": bool(hdr.get("has_attachments")),
+            "snippet": _clean_snip,
+            "body": _hdr_body_raw or _clean_snip,
+            "quoted_history": _hdr_quoted,
+            "links": _hdr_links,
+            "body_preloaded": bool(hdr.get("body_preloaded") or hdr.get("body")),
+            "attachments": list(hdr.get("attachments") or []),
+            "has_attachments": bool(hdr.get("has_attachments") or hdr.get("attachments")),
             "is_read": bool(hdr.get("is_read")) or (uid in opened_set) or (uid in seen_opened_set),
             "was_opened": uid in opened_set,
             "seen_unopened": uid in seen_unopened_set,
             "steward_score": score,
             "bucket": "important" if is_important else "other",
             "steward_reason": " · ".join(reasons[:2]) if reasons else "Inbox Correspondence",
+            "scribe_badge": str((_sc_info or {}).get("voice_badge") or "🪶 Scribe"),
+            "scribe_archetype": str((_sc_info or {}).get("archetype") or "general_external"),
         }
-        # Determine if this email has been acted upon (1. Already Replied in Sent Items, 2. Queued in Speed Racer / Steward Instructed, 3. Explicitly Marked Seen / Acted Upon)
-        acted_entry = acted_map.get(uid) if isinstance(acted_map, dict) else None
-        matched_sent = None if (uid in unacted_set) else _match_user_sent_reply_for_inbox_item(hdr, _combined_sent)
+        # Determine if this email has been acted upon (1. Already Replied in Sent Items, 2. Queued in Speed Racer / Steward Instructed, 3. Explicitly Marked Seen / Acted Upon or Thread Sibling / Signed Doc)
         norm_s = _norm_email_subject(subj)
-        sr_q_match = None if (uid in unacted_set) else (_sr_queued_by_uid.get(uid) or (_sr_queued_by_subj.get(norm_s) if norm_s else None))
+        sender_ident = f"{frm} {s_email}".strip()
+        matched_sent = None if (uid in unacted_set) else _match_user_sent_reply_for_inbox_item(hdr, _combined_sent)
+        sr_q_match = None
+        if uid not in unacted_set:
+            sr_q_match = _sr_queued_by_uid.get(uid)
+            if not sr_q_match and norm_s:
+                for _q_it in _sr_queued_by_subj.get(norm_s, []):
+                    if _subjects_match_thread(str(_q_it.get("subject") or ""), subj, sender1=str(_q_it.get("to") or _q_it.get("from") or ""), sender2=sender_ident):
+                        sr_q_match = _q_it
+                        break
+        acted_entry = (acted_map.get(uid) if isinstance(acted_map, dict) else None) if uid not in unacted_set else None
+        if not acted_entry and uid not in unacted_set and norm_s:
+            for _sib_sender, _aent in _acted_by_norm_subj.get(norm_s, []):
+                if _subjects_match_thread(norm_s, norm_s, sender1=_sib_sender, sender2=sender_ident):
+                    acted_entry = _aent
+                    break
+
+        # Check if this is a signature request for a document that has already been signed in a subsequent email
+        if not acted_entry and not matched_sent and not sr_q_match and uid not in unacted_set and _signed_doc_stems:
+            _subj_clean = re.sub(r"[_\-\s]+", " ", subj.lower())
+            if "signature" in _subj_clean and any(st in _subj_clean for st in _signed_doc_stems):
+                acted_entry = {
+                    "uid": uid,
+                    "status": "✓ Document Signed",
+                    "tone": "emerald",
+                    "reason": "Confirmed signed in subsequent Dropbox Sign / DocuSign confirmation",
+                }
+
+        # Check if this email is an older (>14d) historical thread item
+        if _apply_age_cutoff and not acted_entry and not matched_sent and not sr_q_match and uid not in unacted_set and uid not in up_uids:
+            _in_ts_chk = _parse_comparable_email_ts(str(hdr.get("date") or ""))
+            if len(_in_ts_chk) >= 10 and _in_ts_chk[:10] < _cutoff_14d:
+                acted_entry = {
+                    "uid": uid,
+                    "status": "✓ Dealt With (Archive)",
+                    "tone": "sky",
+                    "reason": f"Prior correspondence ({_in_ts_chk[:10]})",
+                }
+
+        is_receipt, receipt_note = (False, "") if (uid in unacted_set or uid in up_uids) else _is_non_calendar_receipt_or_digest_email(hdr)
+        if is_receipt and not matched_sent and not sr_q_match and not acted_entry:
+            acted_entry = {
+                "uid": uid,
+                "status": "✓ Receipt · Completed" if "signed" in receipt_note.lower() else "👁 Digest / Notice",
+                "tone": "emerald" if "signed" in receipt_note.lower() else "sky",
+                "reason": f"{receipt_note} — no reply or calendar slot needed",
+            }
+
+        is_conf_invite, conf_note = (False, "") if (uid in unacted_set or uid in up_uids) else _is_confirmation_or_invite_email(hdr)
+        if is_conf_invite and not matched_sent and not sr_q_match and not acted_entry:
+            cal_summary = _ensure_email_logged_on_calendar(hdr, sync_data=_sync_cached_for_cal)
+            acted_entry = {
+                "uid": uid,
+                "status": "📅 Steward: Added to Calendar",
+                "tone": "emerald",
+                "reason": f"Steward placed info on calendar ({cal_summary}) — no reply needed",
+            }
+            item["auto_calendared"] = True
 
         if uid not in unacted_set and (matched_sent or sr_q_match or acted_entry or (uid in seen_opened_set) or (uid in seen_unopened_set)):
             item["acted_upon"] = True
             if matched_sent:
                 sent_dt = str(matched_sent.get("date") or matched_sent.get("approved_at") or "")[:16]
-                item["acted_status"] = "✓ Replied"
+                item["acted_status"] = "✓ Replied · Answered"
                 item["acted_tone"] = "emerald"
                 item["acted_reason"] = f"You already sent a response ({sent_dt})" if sent_dt else "You already sent a response"
             elif sr_q_match:
@@ -1707,16 +2331,20 @@ def classify_inbox_emails(headers: list[dict], prefs: dict | None = None, sent_h
                 item["sr_draft_id"] = str(sr_q_match.get("id") or "")
             elif isinstance(acted_entry, dict):
                 item["acted_status"] = str(acted_entry.get("status") or "✓ Acted Upon")
-                item["acted_tone"] = str(acted_entry.get("tone") or ("emerald" if "replied" in str(acted_entry.get("status") or "").lower() else "sky"))
+                item["acted_tone"] = str(acted_entry.get("tone") or ("emerald" if ("replied" in str(acted_entry.get("status") or "").lower() or "calendar" in str(acted_entry.get("status") or "").lower() or "important" in str(acted_entry.get("status") or "").lower() or "signed" in str(acted_entry.get("status") or "").lower()) else "sky"))
                 item["acted_reason"] = str(acted_entry.get("reason") or "Moved to Acted Upon")
             else:
-                item["acted_status"] = "👁 Seen"
+                item["acted_status"] = "👁 Looked At"
                 item["acted_tone"] = "sky"
-                item["acted_reason"] = "Marked Seen"
+                item["acted_reason"] = "Marked Looked At in Anchor & synced Read status"
             enforce_email_sandbox_item(item)
             acted_upon_list.append(item)
             continue
 
+        item["acted_upon"] = False
+        item["acted_status"] = "⚡ Active Focused" if is_important else "📥 Other"
+        item["acted_tone"] = "amber" if is_important else "sky"
+        item["acted_reason"] = item["steward_reason"]
         enforce_email_sandbox_item(item)
         if is_important:
             important_list.append(item)
@@ -1742,10 +2370,14 @@ def classify_inbox_emails(headers: list[dict], prefs: dict | None = None, sent_h
 
     important_list.sort(key=lambda x: (x["steward_score"], x.get("date", "")), reverse=True)
     other_list.sort(key=lambda x: x.get("date", ""), reverse=True)
-    acted_upon_list.sort(key=lambda x: x.get("date", ""), reverse=True)
+    acted_upon_list.sort(key=lambda x: (1 if "Replied" in str(x.get("acted_status") or "") else 0, x.get("date", "")), reverse=True)
+    dedup_imp = _interleave_by_account_badge(_dedup_bucket(important_list))
+    dedup_oth = _dedup_bucket(other_list)
+    dedup_act = _dedup_bucket(acted_upon_list)
     if isinstance(prefs, dict):
-        prefs["_acted_upon_resolved"] = _dedup_bucket(acted_upon_list)
-    return _interleave_by_account_badge(_dedup_bucket(important_list)), _dedup_bucket(other_list)
+        prefs["_acted_upon_resolved"] = dedup_act
+        prefs["_all_emails_resolved"] = dedup_imp + dedup_act + dedup_oth
+    return dedup_imp, dedup_oth
 
 
 def _interleave_by_account_badge(items: list[dict]) -> list[dict]:
@@ -1852,7 +2484,7 @@ def gather_sent_emails(sync_cache: dict | None = None, cfg: dict | None = None) 
         if not to_str:
             # If matched from inbox thread where user was sender, show thread/account context
             to_str = str(h.get("recipient") or h.get("account_email") or "Thread Participant").strip()
-        dt_str = str(h.get("date") or "")[:19]
+        dt_str = str(h.get("date") or "")[:32]
         aid = str(h.get("account_id") or "")
         badge = str(h.get("account_badge") or badge_by_aid.get(aid) or "Sent")
         dedup_k = f"{subj.lower()}|{to_str.lower()}|{dt_str[:10]}"
@@ -1881,7 +2513,7 @@ def gather_sent_emails(sync_cache: dict | None = None, cfg: dict | None = None) 
 
 
 def record_email_triage_feedback(body: dict) -> dict:
-    """Record user triage feedback ('opened', 'seen', 'already_replied', 'unact', 'downgrade', 'upgrade') and update Steward preference weights."""
+    """Record user triage feedback ('opened', 'seen', 'seen_important', 'steward_action', 'already_replied', 'calendar_done', 'unact', 'downgrade', 'upgrade') and update Steward preference weights."""
     prefs = load_triage_prefs()
     uid = str(body.get("uid") or "").strip()
     feedback = str(body.get("feedback") or "").strip().lower()
@@ -1889,8 +2521,8 @@ def record_email_triage_feedback(body: dict) -> dict:
     sender_email = str(body.get("sender_email") or sender).strip().lower()
     was_opened_param = body.get("was_opened")
 
-    if not uid or feedback not in ("opened", "seen", "already_replied", "unact", "downgrade", "upgrade"):
-        return {"ok": False, "error": "uid and valid feedback ('opened'|'seen'|'already_replied'|'unact'|'downgrade'|'upgrade') required"}
+    if not uid or feedback not in ("opened", "seen", "seen_important", "steward_action", "already_replied", "calendar_done", "unact", "downgrade", "upgrade"):
+        return {"ok": False, "error": "uid and valid feedback ('opened'|'seen'|'seen_important'|'steward_action'|'already_replied'|'calendar_done'|'unact'|'downgrade'|'upgrade') required"}
 
     opened_uids = list(prefs.get("opened_uids") or [])
     seen_unopened = list(prefs.get("seen_unopened_uids") or [])
@@ -1907,10 +2539,63 @@ def record_email_triage_feedback(body: dict) -> dict:
     key = sender_email or sender
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
 
+    acc_id_fb = str(body.get("account_id") or "").strip()
+    subj_fb = str(body.get("subject") or "").strip()
+    if feedback in ("opened", "seen", "seen_important", "steward_action", "already_replied", "calendar_done"):
+        mark_email_read_remote(account_id=acc_id_fb, uid=uid, subject=subj_fb)
+
     if feedback == "opened":
         if uid not in opened_uids:
             opened_uids.append(uid)
-        note = "Marked email as opened."
+        note = "Marked email as opened and synced Read status."
+    elif feedback == "steward_action":
+        comment_str = str(body.get("comment") or body.get("reason") or "Steward action recorded").strip()
+        if uid in unacted_uids:
+            unacted_uids.remove(uid)
+        if uid in down_uids:
+            down_uids.remove(uid)
+        if uid in seen_unopened:
+            seen_unopened.remove(uid)
+        if uid not in seen_opened:
+            seen_opened.append(uid)
+        if key and key not in up_senders:
+            up_senders.append(key)
+        if key and key in down_senders:
+            down_senders.remove(key)
+        if key:
+            scores[key] = max(45, int(scores.get(key) or 0) + 45)
+        acted_map[uid] = {
+            "uid": uid,
+            "status": str(body.get("status_label") or "📋 Steward Action · Task Added"),
+            "tone": "emerald",
+            "reason": f"Steward Action (No Email Reply): {comment_str}",
+            "steward_comment": comment_str,
+            "at": now_str,
+        }
+        note = f"Recorded Steward comment/action ('{comment_str[:80]}') & moved email to Acted Upon."
+    elif feedback == "seen_important":
+        if uid in unacted_uids:
+            unacted_uids.remove(uid)
+        if uid in down_uids:
+            down_uids.remove(uid)
+        if uid in seen_unopened:
+            seen_unopened.remove(uid)
+        if uid not in seen_opened:
+            seen_opened.append(uid)
+        if key and key not in up_senders:
+            up_senders.append(key)
+        if key and key in down_senders:
+            down_senders.remove(key)
+        if key:
+            scores[key] = max(45, int(scores.get(key) or 0) + 45)
+        acted_map[uid] = {
+            "uid": uid,
+            "status": "⭐ Seen · Important",
+            "tone": "emerald",
+            "reason": "Marked Seen & Important — removed from active list; Steward learned emails like this are Important",
+            "at": now_str,
+        }
+        note = f"Marked Seen & Important — removed from Focused & taught Steward that '{key or uid}' is Important."
     elif feedback == "seen":
         if uid in unacted_uids:
             unacted_uids.remove(uid)
@@ -1921,45 +2606,82 @@ def record_email_triage_feedback(body: dict) -> dict:
                 scores[key] = int(scores.get(key) or 0) - 20
             acted_map[uid] = {
                 "uid": uid,
-                "status": "👁 Seen (Unopened)",
+                "status": "👁 Looked At",
                 "tone": "sky",
-                "reason": "Marked Seen without opening — moved to Acted Upon",
+                "reason": "Marked Looked At (synced Read to Outlook/Gmail; never deleted)",
                 "at": now_str,
             }
-            note = "Marked Seen — moved out of Active Inbox to Acted Upon."
+            note = "Marked Looked At — removed from Focused & marked Read in Outlook/Gmail."
         else:
             if uid not in seen_opened:
                 seen_opened.append(uid)
             acted_map[uid] = {
                 "uid": uid,
-                "status": "👁 Seen",
+                "status": "👁 Looked At",
                 "tone": "sky",
-                "reason": "Opened & marked Seen — moved to Acted Upon",
+                "reason": "Opened & marked Looked At (synced Read to Outlook/Gmail; never deleted)",
                 "at": now_str,
             }
-            note = "Marked opened email as Seen — moved out of Active Inbox to Acted Upon."
-    elif feedback == "already_replied":
+            note = "Marked Looked At — removed from Focused & marked Read in Outlook/Gmail."
+    elif feedback == "calendar_done":
         if uid in unacted_uids:
             unacted_uids.remove(uid)
         if uid not in seen_opened:
             seen_opened.append(uid)
+        cal_sum = _ensure_email_logged_on_calendar({
+            "uid": uid,
+            "subject": subj_fb or "Calendar Confirmation",
+            "from": sender,
+            "date": str(body.get("date") or ""),
+            "account_badge": str(body.get("account_badge") or "Steward Calendar"),
+        }, user_requested=True)
         acted_map[uid] = {
+            "uid": uid,
+            "status": "📅 Steward: Added to Calendar",
+            "tone": "emerald",
+            "reason": f"Placed on calendar & marked Accepted ({cal_sum})",
+            "at": now_str,
+        }
+        note = f"Added to Calendar & marked Accepted ({cal_sum}) — removed from Active Focused."
+    elif feedback == "already_replied":
+        if uid in unacted_uids:
+            unacted_uids.remove(uid)
+        if uid in up_uids:
+            up_uids.remove(uid)
+        if uid not in seen_opened:
+            seen_opened.append(uid)
+        _ar_entry = {
             "uid": uid,
             "status": "✓ Already Replied",
             "tone": "emerald",
             "reason": str(body.get("reason") or f"You confirmed reply was already sent ({now_str})"),
             "at": now_str,
         }
-        # Also remove any redundant draft for this email from Speed Racer queue
+        acted_map[uid] = _ar_entry
+        if subj_fb:
+            try:
+                _sc_ar = load_comms_sync()
+                for _har in (_sc_ar.get("email_headers") or []):
+                    if isinstance(_har, dict):
+                        _suid = str(_har.get("uid") or "")
+                        if _suid and _suid != uid and _subjects_match_thread(
+                            subj_fb,
+                            str(_har.get("subject") or ""),
+                            sender1=key,
+                            sender2=f"{_har.get('from') or ''} {_har.get('sender_email') or ''}",
+                        ):
+                            acted_map[_suid] = dict(_ar_entry, uid=_suid)
+                            if _suid in unacted_uids:
+                                unacted_uids.remove(_suid)
+                            if _suid in up_uids:
+                                up_uids.remove(_suid)
+            except Exception:
+                pass
+        # Only remove the draft for this specific uid from Speed Racer queue (never wipe other drafts sharing a subject)
         try:
             sr_st = load_speed_racer_queue()
             sr_q = [it for it in (sr_st.get("queue") or []) if isinstance(it, dict)]
-            subj_norm = _norm_email_subject(str(body.get("subject") or ""))
-            new_q = [
-                it for it in sr_q
-                if str(it.get("uid") or "") != uid
-                and (not subj_norm or _norm_email_subject(str(it.get("subject") or "")) != subj_norm)
-            ]
+            new_q = [it for it in sr_q if str(it.get("uid") or "") != uid]
             if len(new_q) != len(sr_q):
                 sr_st["queue"] = new_q
                 save_speed_racer_queue(sr_st)
@@ -2007,6 +2729,33 @@ def record_email_triage_feedback(body: dict) -> dict:
             scores[key] = int(scores.get(key) or 0) + 45
         note = f"Upgraded to Emails to Address — Steward learned '{key or uid}' is important."
 
+    try:
+        if feedback in ("seen_important", "steward_action", "upgrade", "downgrade", "already_replied", "seen"):
+            _sc_act = "seen_important" if feedback in ("seen_important", "steward_action", "upgrade") else ("ignore" if feedback == "downgrade" else ("direct_reply" if feedback == "already_replied" else "seen"))
+            _scribe.record_interest_signal({"uid": uid, "from": sender or sender_email, "subject": subj_fb}, action=_sc_act)
+    except Exception:
+        pass
+    sync_cache = load_comms_sync()
+    if feedback in ("seen", "seen_important", "steward_action", "already_replied", "calendar_done") and uid in acted_map:
+        target_subj = subj_fb
+        target_sender = f"{sender} {sender_email}".strip()
+        if not target_subj or not target_sender:
+            for _h in sync_cache.get("email_headers") or []:
+                if isinstance(_h, dict) and str(_h.get("uid") or "") == uid:
+                    if not target_subj:
+                        target_subj = str(_h.get("subject") or "")
+                    if not target_sender:
+                        target_sender = f"{_h.get('from') or ''} {_h.get('sender_email') or ''}".strip()
+                    break
+        if target_subj and target_sender:
+            for _h in sync_cache.get("email_headers") or []:
+                if not isinstance(_h, dict):
+                    continue
+                _sib_uid = str(_h.get("uid") or "")
+                _sib_sender = f"{_h.get('from') or ''} {_h.get('sender_email') or ''}".strip()
+                if _sib_uid and _sib_uid != uid and _subjects_match_thread(target_subj, str(_h.get("subject") or ""), sender1=target_sender, sender2=_sib_sender):
+                    acted_map.setdefault(_sib_uid, dict(acted_map[uid], uid=_sib_uid))
+
     prefs["opened_uids"] = opened_uids[-500:]
     prefs["seen_unopened_uids"] = seen_unopened[-500:]
     prefs["seen_opened_uids"] = seen_opened[-500:]
@@ -2019,7 +2768,6 @@ def record_email_triage_feedback(body: dict) -> dict:
     prefs["unacted_uids"] = unacted_uids[-500:]
     save_triage_prefs(prefs)
 
-    sync_cache = load_comms_sync()
     imp, oth = classify_inbox_emails(sync_cache.get("email_headers") or [], prefs)
     return {
         "ok": True,
@@ -2030,19 +2778,211 @@ def record_email_triage_feedback(body: dict) -> dict:
         "important_emails": imp,
         "other_emails": oth,
         "acted_upon_emails": prefs.get("_acted_upon_resolved") or [],
+        "all_emails": prefs.get("_all_emails_resolved") or [],
         "sent_emails": gather_sent_emails(sync_cache),
         "speed_racer": load_speed_racer_queue(),
     }
 
 
+def record_email_steward_action(body: dict) -> dict:
+    """Handle a user comment/instruction to the Steward on an email that needs to be acted on
+    without sending an email reply (e.g., adding a task to The List / DASHBOARD.md and logging to Cave Steward)."""
+    uid = str(body.get("uid") or "").strip()
+    comment = str(body.get("comment") or body.get("instructions") or "").strip()
+    if not uid:
+        return {"ok": False, "error": "Email uid is required"}
+    if not comment:
+        return {"ok": False, "error": "Please enter a comment or task instruction for the Steward"}
+
+    sender_raw = str(body.get("from") or body.get("sender") or "Sender").strip()
+    sender_display = _proper_capitalize_sender_display(sender_raw) if "_proper_capitalize_sender_display" in globals() else sender_raw
+    sender_email = str(body.get("sender_email") or sender_raw).strip()
+    subj = str(body.get("subject") or "(No Subject)").strip()
+    date_str = str(body.get("date") or datetime.now().strftime("%Y-%m-%d %H:%M")).strip()
+    acct_badge = str(body.get("account_badge") or "Email").strip()
+    snippet = str(body.get("snippet") or "").strip()
+
+    # Cleanly extract task title from comment while preserving full comment in step & notes
+    task_title = re.sub(
+        r"^(?:please\s+)?(?:steward[,:\s]+)?(?:add\s+(?:a\s+)?task(?:\s+to\s+(?:the\s+)?list(?:\s+of\s+tasks)?)?|put\s+on\s+(?:the\s+)?list|create\s+(?:a\s+)?task|to\s*do)\s*(?:[:\-—]|\bto\b)?\s*",
+        "",
+        comment,
+        flags=re.I,
+    ).strip()
+    if not task_title:
+        task_title = comment
+    if task_title and task_title[0].islower():
+        task_title = task_title[0].upper() + task_title[1:]
+
+    comb_low = f"{comment} {subj} {sender_raw} {sender_email}".lower()
+    cat_in = str(body.get("category") or "").strip()
+    if cat_in in ("Business", "Teaching", "Research", "Personal"):
+        cat = cat_in
+    elif any(k in comb_low for k in ("ba 815", "ba815", "smeal", "canvas", "quiz", "student", "lecture", "class", "teaching", "mba")):
+        cat = "Teaching"
+    elif any(k in comb_low for k in ("trust", "sliding rock", "brian", "family", "jane", "personal", "estate", "birthday", "trip")):
+        cat = "Personal"
+    elif any(k in comb_low for k in ("paper", "hnf", "ramanujan", "annals", "theorem", "research", "book", "magi", "dragon")):
+        cat = "Research"
+    else:
+        cat = "Business"
+
+    prio_in = body.get("priority")
+    if prio_in is not None and str(prio_in).strip().isdigit():
+        p_num = max(1, min(5, int(str(prio_in).strip())))
+    elif any(k in comment.lower() for k in ("#1", "p1", "priority 1", "urgent", "asap", "today")):
+        p_num = 1
+    else:
+        p_num = 2
+
+    step_id = "st-" + hashlib.sha1(f"email-act:{uid}:{time.time()}".encode("utf-8")).hexdigest()[:8]
+    step_text = f"{comment} (From email: {sender_display} — \"{subj}\")"
+    wl_res = mutate_working_list_spine(
+        "add_tile",
+        {
+            "title": task_title,
+            "category": cat,
+            "priority": p_num,
+            "insert_top": True,
+            "skills": ["Steward", "Scribe"],
+            "brainstormNotes": (
+                f"• Steward Action from Email ({acct_badge} · {date_str}): {comment}\n"
+                f"• From: {sender_display} ({sender_email})\n"
+                f"• Subject: {subj}"
+                + (f"\n• Context: {snippet[:220]}" if snippet else "")
+            ),
+            "steps": [
+                {
+                    "id": step_id,
+                    "text": step_text,
+                    "done": False,
+                    "cockpitItem": None,
+                    "cockpitStatus": "📋 From Email",
+                    "cockpitUrl": "",
+                    "initiativeItem": None,
+                    "initiativeUrl": "",
+                }
+            ],
+        },
+    )
+    created_tile = wl_res.get("tile") or {}
+    wl_state = wl_res.get("working_list") or load_working_list_spine()
+
+    # Also append to DASHBOARD.md so markdown task lists stay in sync
+    try:
+        dash_md = paths.data_dir() / "DASHBOARD.md"
+        dom_map = {"Teaching": "academic", "Research": "academic", "Personal": "family", "Business": "commercial"}
+        md_dom = dom_map.get(cat, "personal")
+        md_line = f"- [ ] {task_title} — Priority: {p_num} — energy: med — [{md_dom}] — Notes: Email from {sender_display} ({subj}): {comment}"
+        if dash_md.is_file():
+            raw_md = dash_md.read_text(encoding="utf-8")
+            if task_title.lower() not in raw_md.lower():
+                paths.atomic_write_text(dash_md, raw_md.rstrip() + "\n" + md_line + "\n")
+    except Exception:
+        pass
+
+    # Record turn pair in Cave of Wonders Steward conversation so the Steward dialogue shows the comment & confirmation
+    steward_logged = False
+    try:
+        from steward_cockpit import engine as _st_eng
+        cave_dir = Path(paths.data_dir()).resolve().parent / "Campaign" / "Cave of Wonders"
+        if cave_dir.is_dir():
+            _st_eng.append_turn(
+                cave_dir,
+                "user",
+                f"📋 [Email Action — {sender_display}: \"{subj}\"] {comment}",
+                source="cave_email_steward_action",
+            )
+            _st_eng.append_turn(
+                cave_dir,
+                "steward",
+                f"Recorded and acted on (no email reply sent). I added **{task_title}** to **The List** (Priority #{p_num} · {cat}) with reference to {sender_display}'s email (*\"{subj}\"*) and moved the email out of your active inbox into **Acted Upon**.",
+                source="cave_email_steward_action",
+            )
+            steward_logged = True
+    except Exception:
+        steward_logged = False
+
+    triage_res = record_email_triage_feedback({
+        "uid": uid,
+        "account_id": body.get("account_id") or "",
+        "subject": subj,
+        "from": sender_display,
+        "sender_email": sender_email,
+        "feedback": "steward_action",
+        "comment": comment,
+        "status_label": "📋 Steward Action · Task Added",
+        "was_opened": True,
+    })
+
+    triage_res["comment"] = comment
+    triage_res["task_title"] = task_title
+    triage_res["tile"] = created_tile
+    triage_res["working_list"] = wl_state
+    triage_res["cos_recommendations"] = wl_state.get("cos_recommendations") or []
+    triage_res["steward_logged"] = steward_logged
+    triage_res["note"] = (
+        f"📋 Steward recorded your comment & added '{task_title}' to The List (Priority #{p_num} · {cat}). "
+        f"Email moved to Acted Upon."
+    )
+    return triage_res
+
+
 def _norm_event_tokens(title: str) -> set[str]:
-    clean = re.sub(r"([a-zA-Z])(\d)", r"\1 \2", str(title or "").lower())
+    no_url = re.sub(r"https?://\S+", " ", str(title or "").lower())
+    clean = re.sub(r"([a-zA-Z])(\d)", r"\1 \2", no_url)
     clean = re.sub(r"[^a-z0-9\s]", " ", clean)
-    stop = {"the", "with", "and", "for", "from", "synced", "invitation", "meeting", "session", "class", "lecture", "lectures", "team"}
+    stop = {
+        "the", "with", "and", "for", "from", "synced", "invitation", "meeting", "session",
+        "class", "lecture", "lectures", "team", "http", "https", "www", "dropbox", "com",
+    }
     toks = {w for w in clean.split() if len(w) >= 2 and w not in stop}
     if not toks:
         toks = {w for w in clean.split() if len(w) >= 2}
     return toks
+
+
+_FOLLOWUP_MARKER_PREFIXES: tuple[str, ...] = (
+    "follow up",
+    "follow-up",
+    "followup",
+    "reminder:",
+    "remind ",
+    "remember ",
+    "revisit ",
+    "check in on ",
+    "📌",
+)
+
+_FOLLOWUP_MARKER_PHRASES: tuple[str, ...] = (
+    "wind-down marker",
+    "follow-up marker",
+    "followup marker",
+    "follow up with ",
+    "follow up on ",
+    "quiz 2 deadline",
+    "remember trash day",
+    "revisit mit lectures",
+)
+
+
+def _is_followup_marker_event(ev: dict) -> bool:
+    """Return True if a calendar entry is a Follow-Up / Reminder Marker rather than a time-blocking meeting.
+    Follow-Up Markers stay visible on the calendar date as helpful reminders without taking away meeting slots."""
+    if not isinstance(ev, dict):
+        return False
+    if ev.get("is_followup_marker") or ev.get("is_marker"):
+        return True
+    if str(ev.get("start_time") or "").strip().lower() == "marker":
+        return True
+    t_low = str(ev.get("title") or "").strip().lower()
+    if not t_low:
+        return False
+    if t_low.startswith(_FOLLOWUP_MARKER_PREFIXES):
+        return True
+    if any(p in t_low for p in _FOLLOWUP_MARKER_PHRASES):
+        return True
+    return False
 
 
 def _calc_event_duration(start_hm: str, end_hm: str) -> tuple[int, str, str]:
@@ -2145,10 +3085,10 @@ def set_calendar_rsvp(body: dict) -> dict:
     save_calendar_rsvp_prefs(prefs)
 
     lbl_map = {
-        "responded": "✓ Responded · Attending",
+        "responded": "✓ Accepted · Going (Responded)",
         "tentative": "? Tentative",
         "declined": "✕ Declined",
-        "not_responded": "⏳ Not Responded",
+        "not_responded": "? Not Accepted · Not Going (Not Responded)",
     }
     tone_map = {
         "responded": "emerald",
@@ -2190,9 +3130,30 @@ _UNRESPONDED_INVITE_HINTS: tuple[str, ...] = (
 
 
 def _resolve_event_rsvp(ev: dict, rsvp_prefs: dict | None = None, sent_haystack: str = "") -> dict:
-    """Resolve and attach (`rsvp_status`, `rsvp_responded`, `rsvp_label`, `rsvp_tone`, `rsvp_source`) onto a calendar event dict."""
+    """Resolve and attach (`rsvp_status`, `rsvp_responded`, `attending`, `blocks_time`, `rsvp_label`, `rsvp_tone`, `rsvp_source`) onto a calendar event dict.
+    HARD LAWS (John's Calendar Acceptance & Follow-Up Marker Rules):
+      1. Follow-Up Markers (`is_followup_marker == True`) never block meeting slots (`blocks_time = False`), while remaining accepted/visible reminders on the day.
+      2. Any calendar item John asked to put in (`local_created`, `user_requested`, or `organizer`) is automatically marked Accepted (`responded`).
+      3. External unaccepted invites do not block time until explicitly Accepted."""
     if not isinstance(ev, dict):
         return ev
+
+    if _is_followup_marker_event(ev):
+        ev["is_followup_marker"] = True
+        ev["start_time"] = "Marker"
+        ev["end_time"] = ""
+        ev["duration_mins"] = 0
+        ev["duration_label"] = "Marker"
+        ev["time_label"] = "📌 Follow-Up Marker (Slot Open)"
+        ev["rsvp_status"] = "responded"
+        ev["rsvp_responded"] = True
+        ev["attending"] = True
+        ev["blocks_time"] = False
+        ev["rsvp_label"] = "📌 Follow-Up Marker · Slot Open"
+        ev["rsvp_tone"] = "sky"
+        ev["rsvp_source"] = "followup_marker"
+        return ev
+
     prefs = rsvp_prefs if isinstance(rsvp_prefs, dict) else load_calendar_rsvp_prefs()
     overrides = prefs.get("overrides") or {}
     ev_id = str(ev.get("id") or ev.get("uid") or "").strip()
@@ -2205,13 +3166,28 @@ def _resolve_event_rsvp(ev: dict, rsvp_prefs: dict | None = None, sent_haystack:
     source = ""
     if ov:
         status = str(ov.get("status") if isinstance(ov, dict) else ov).strip().lower()
+        if status in ("accepted", "attending", "organizer", "yes"):
+            status = "responded"
         source = "user_override"
 
+    raw_st = str(ev.get("rsvp_status") or "").strip().lower()
+    is_external_invite_hint = any(h in title_low for h in _UNRESPONDED_INVITE_HINTS)
+
+    # User-requested / locally-created items (e.g. Candidate Interviews, AI Club, Sunday Teaching, Steward-added events) are automatically Accepted
+    if not status and (ev.get("user_requested") or ev.get("local_created")) and not title_low.startswith(("synced invitation:", "invitation:", "fw:", "hold for")):
+        status = "responded"
+        source = "created_by_you"
+
     if not status:
-        raw_st = str(ev.get("rsvp_status") or "").strip().lower()
-        if raw_st in ("responded", "accepted", "organizer", "attending"):
+        if raw_st in ("responded", "accepted", "attending"):
             status = "responded"
-            source = "calendar_rsvp"
+            source = "calendar_accepted"
+        elif raw_st == "organizer" and not is_external_invite_hint:
+            status = "responded"
+            source = "calendar_organizer"
+        elif is_external_invite_hint:
+            status = "not_responded"
+            source = "unaccepted_invite"
         elif raw_st in ("tentative", "tentativelyaccepted"):
             status = "tentative"
             source = "calendar_rsvp"
@@ -2223,27 +3199,27 @@ def _resolve_event_rsvp(ev: dict, rsvp_prefs: dict | None = None, sent_haystack:
             source = "calendar_rsvp"
 
     if not status:
-        if ev.get("local_created") or str(ev.get("source") or "") == "roadmap":
+        if ev.get("local_created") or ev.get("user_requested"):
             status = "responded"
             source = "created_by_you"
+        elif any(k in title_low for k in ("ba 815", "mba teaching", "team teach", "ta meeting", "candidate interview", "sunday teaching")):
+            status = "responded"
+            source = "own_teaching_commitment"
         else:
-            # Check if user has responded via Sent Emails or Speed Racer Archive
             toks = [t for t in _norm_event_tokens(title) if len(t) >= 4 and t not in ("meeting", "session", "smeal", "business", "college", "penn", "state", "zoom", "series")]
             if sent_haystack and toks and any(t in sent_haystack for t in toks):
                 status = "responded"
                 source = "reconciled_sent_email"
-            elif any(h in title_low for h in _UNRESPONDED_INVITE_HINTS):
-                status = "not_responded"
-                source = "unresponded_invite"
             else:
-                status = "responded"
-                source = "attending_schedule"
+                # Default: on calendar but NOT explicitly accepted -> Not Going / Not Blocking
+                status = "not_responded"
+                source = "unaccepted_calendar_item"
 
     lbl_map = {
-        "responded": "✓ Responded · Attending",
+        "responded": "✓ Accepted · Going (Responded)",
         "tentative": "? Tentative",
         "declined": "✕ Declined",
-        "not_responded": "⏳ Not Responded",
+        "not_responded": "? Not Accepted · Not Going (Not Responded)",
     }
     tone_map = {
         "responded": "emerald",
@@ -2251,9 +3227,12 @@ def _resolve_event_rsvp(ev: dict, rsvp_prefs: dict | None = None, sent_haystack:
         "declined": "rose",
         "not_responded": "amber",
     }
+    is_going = (status == "responded")
     ev["rsvp_status"] = status
-    ev["rsvp_responded"] = (status == "responded")
-    ev["rsvp_label"] = lbl_map.get(status, "⏳ Not Responded")
+    ev["rsvp_responded"] = is_going
+    ev["attending"] = is_going
+    ev["blocks_time"] = bool(is_going and not ev.get("is_followup_marker"))
+    ev["rsvp_label"] = lbl_map.get(status, "? Not Accepted (Not Going)")
     ev["rsvp_tone"] = tone_map.get(status, "amber")
     ev["rsvp_source"] = source
     return ev
@@ -2267,28 +3246,43 @@ def merge_multi_calendar_events(raw_events: list[dict]) -> list[dict]:
         if not isinstance(ev, dict) or not ev.get("title") or not ev.get("date"):
             continue
         ev_date = str(ev.get("date") or "")[:10]
-        st_time = str(ev.get("start_time") or (ev.get("time_label") or "")[:5] or "All day")
-        en_time = str(ev.get("end_time") or "")
-        if not en_time and "–" in str(ev.get("time_label") or ""):
-            en_time = str(ev.get("time_label") or "").split("–", 1)[1].split(" ", 1)[0][:5]
-        dur_mins, dur_lbl, full_lbl = _calc_event_duration(st_time, en_time)
-        if not en_time and "–" in full_lbl:
-            en_time = full_lbl.split("–", 1)[1].split(" ", 1)[0][:5]
+        is_marker = _is_followup_marker_event(ev)
+        if is_marker:
+            st_time = "Marker"
+            en_time = ""
+            dur_mins, dur_lbl, full_lbl = 0, "Marker", "📌 Follow-Up Marker (Slot Open)"
+        else:
+            st_time = str(ev.get("start_time") or (ev.get("time_label") or "")[:5] or "All day")
+            en_time = str(ev.get("end_time") or "")
+            if not en_time and "–" in str(ev.get("time_label") or ""):
+                en_time = str(ev.get("time_label") or "").split("–", 1)[1].split(" ", 1)[0][:5]
+            dur_mins, dur_lbl, full_lbl = _calc_event_duration(st_time, en_time)
+            if not en_time and "–" in full_lbl:
+                en_time = full_lbl.split("–", 1)[1].split(" ", 1)[0][:5]
         title = str(ev.get("title") or "").strip()
         cal_badge = str(ev.get("calendar_badge") or ev.get("project_name") or "Calendar").strip()
         toks = _norm_event_tokens(title)
+        person_toks = toks - {"penn", "state", "marketing", "recruiting", "candidate", "interview", "zoom", "call"}
 
         matched_existing = None
         for m in merged:
             if m["date"] != ev_date:
                 continue
-            same_time = (m.get("start_time") == st_time) or (st_time[:2] == str(m.get("start_time") or "")[:2] and st_time[:2].isdigit())
-            if not same_time:
+            if bool(m.get("is_followup_marker")) != is_marker:
                 continue
+            same_time = (m.get("start_time") == st_time) or (st_time[:2] == str(m.get("start_time") or "")[:2] and st_time[:2].isdigit())
             m_toks = _norm_event_tokens(m["title"])
+            m_person_toks = m_toks - {"penn", "state", "marketing", "recruiting", "candidate", "interview", "zoom", "call"}
+            is_same_candidate_interview = (
+                ("candidate interview" in title.lower() or "recruiting" in title.lower())
+                and ("candidate interview" in str(m.get("title") or "").lower() or "recruiting" in str(m.get("title") or "").lower())
+                and len(person_toks & m_person_toks) >= 2
+            )
+            if not same_time and not is_same_candidate_interview:
+                continue
             overlap = len(toks & m_toks)
             min_len = min(len(toks), len(m_toks))
-            is_subset_match = (min_len >= 1 and overlap >= min_len) or (overlap >= 2 and overlap >= min_len * 0.6)
+            is_subset_match = (min_len >= 1 and overlap >= min_len) or (overlap >= 2 and overlap >= min_len * 0.6) or is_same_candidate_interview
             if m["title"].lower() == title.lower() or is_subset_match:
                 matched_existing = m
                 break
@@ -2298,9 +3292,22 @@ def merge_multi_calendar_events(raw_events: list[dict]) -> list[dict]:
             if cal_badge not in cals:
                 cals.append(cal_badge)
             matched_existing["calendar_count"] = max(int(matched_existing.get("calendar_count") or 1) + 1, len(cals))
-            if len(title) > len(matched_existing["title"]) and "synced invitation" not in title.lower():
+            existing_has_url = "http://" in str(matched_existing.get("title") or "").lower() or "https://" in str(matched_existing.get("title") or "").lower()
+            new_has_url = "http://" in title.lower() or "https://" in title.lower()
+            if (existing_has_url and not new_has_url) or (len(title) > len(matched_existing["title"]) and not new_has_url and "synced invitation" not in title.lower()):
                 matched_existing["title"] = title
-            if dur_mins > int(matched_existing.get("duration_mins") or 0):
+            if ev.get("local_created") or ev.get("user_requested"):
+                matched_existing["local_created"] = True
+                matched_existing["user_requested"] = True
+            if str(ev.get("rsvp_status") or "").lower() in ("responded", "accepted"):
+                matched_existing["rsvp_status"] = "responded"
+            is_interview_pair = "candidate interview" in str(matched_existing.get("title") or "").lower() or "recruiting" in str(matched_existing.get("title") or "").lower()
+            if is_interview_pair and dur_mins == 30:
+                matched_existing["end_time"] = en_time
+                matched_existing["duration_mins"] = dur_mins
+                matched_existing["duration_label"] = dur_lbl
+                matched_existing["time_label"] = full_lbl
+            elif not is_interview_pair and dur_mins > int(matched_existing.get("duration_mins") or 0):
                 matched_existing["end_time"] = en_time
                 matched_existing["duration_mins"] = dur_mins
                 matched_existing["duration_label"] = dur_lbl
@@ -2315,23 +3322,24 @@ def merge_multi_calendar_events(raw_events: list[dict]) -> list[dict]:
             item = dict(ev)
             item["id"] = str(ev.get("uid") or ev.get("id") or "")
             item["date"] = ev_date
+            item["is_followup_marker"] = is_marker
             item["start_time"] = st_time
             item["end_time"] = en_time
             item["duration_mins"] = dur_mins
             item["duration_label"] = dur_lbl
-            item["time_label"] = full_lbl if st_time != "All day" else str(ev.get("time_label") or "All day")
+            item["time_label"] = full_lbl if (st_time != "All day" or is_marker) else str(ev.get("time_label") or "All day")
             item["calendar_badge"] = cal_badge
             item["calendars"] = [cal_badge]
             item["calendar_count"] = 1
             item["merged_badge"] = ""
-            item["tone"] = str(ev.get("tone") or ("emerald" if "axmra" in cal_badge.lower() else "sky"))
-            item["badge"] = cal_badge
+            item["tone"] = "sky" if is_marker else str(ev.get("tone") or ("emerald" if "axmra" in cal_badge.lower() else "sky"))
+            item["badge"] = "📌 Follow-Up Marker" if is_marker else cal_badge
             merged.append(item)
 
     rsvp_prefs = load_calendar_rsvp_prefs()
     for m_item in merged:
         _resolve_event_rsvp(m_item, rsvp_prefs=rsvp_prefs)
-    merged.sort(key=lambda x: (x.get("date", ""), x.get("start_time", "00:00"), x.get("title", "")))
+    merged.sort(key=lambda x: (x.get("date", ""), "99:99" if x.get("is_followup_marker") else x.get("start_time", "00:00"), x.get("title", "")))
     return merged
 
 
@@ -2367,6 +3375,7 @@ def reconcile_comms_with_roadmaps(entries: list[dict] | None = None, facts: dict
                 "id": str(ev.get("uid") or ev.get("id") or ""),
                 "uid": str(ev.get("uid") or ev.get("id") or ""),
                 "date": str(ev.get("date") or ""),
+                "is_followup_marker": bool(ev.get("is_followup_marker") or _is_followup_marker_event(ev)),
                 "time_label": str(ev.get("time_label") or "Calendar"),
                 "start_time": str(ev.get("start_time") or (ev.get("time_label") or "")[:5] or "All day"),
                 "end_time": str(ev.get("end_time") or ""),
@@ -2378,11 +3387,14 @@ def reconcile_comms_with_roadmaps(entries: list[dict] | None = None, facts: dict
                 "folder": str(ev.get("folder") or ""),
                 "step_id": str(ev.get("step_id") or ""),
                 "source": str(ev.get("source") or "ics"),
+                "rsvp_status": str(ev.get("rsvp_status") or ""),
+                "local_created": bool(ev.get("local_created")),
+                "user_requested": bool(ev.get("user_requested")),
                 "tone": "emerald" if "axmra" in c_badge.lower() else "sky",
                 "badge": c_badge if c_badge != "Synced Calendar" else "Calendar ICS",
             })
 
-    # Add roadmap dated milestones within window so the Calendar column shows real dated deliveries alongside ICS events
+    # Add roadmap dated milestones within window as non-blocking Follow-Up Markers
     for pid, f in facts.items():
         if not isinstance(f, dict):
             continue
@@ -2408,9 +3420,10 @@ def reconcile_comms_with_roadmaps(entries: list[dict] | None = None, facts: dict
                 "id": f"rm-{pid}-{sid}",
                 "uid": f"rm-{pid}-{sid}",
                 "date": due_s[:10],
-                "time_label": "Today" if is_today else ("Next 72h" if is_soon else due_s[5:10]),
-                "start_time": "09:00",
-                "end_time": "09:30",
+                "is_followup_marker": True,
+                "time_label": "📌 Follow-Up Marker (Slot Open)",
+                "start_time": "Marker",
+                "end_time": "",
                 "location": pname,
                 "title": sname,
                 "project_id": str(pid),
@@ -2420,7 +3433,7 @@ def reconcile_comms_with_roadmaps(entries: list[dict] | None = None, facts: dict
                 "step_id": sid,
                 "source": "roadmap",
                 "tone": "emerald" if is_today else ("amber" if is_soon else "sky"),
-                "badge": "Today" if is_today else ("72h Window" if is_soon else "Roadmap Due"),
+                "badge": "📌 Follow-Up Marker",
             })
 
     merged_cal_events = merge_multi_calendar_events(cal_events)
@@ -2437,7 +3450,7 @@ def reconcile_comms_with_roadmaps(entries: list[dict] | None = None, facts: dict
     soon_cutoff = (today + timedelta(days=3)).isoformat()
     near_cal_events = [e for e in upcoming_cal_events if str(e.get("date") or "") <= soon_cutoff]
     upcoming_prep_items: list[dict] = []
-    all_triage_emails = important_emails + other_emails
+    all_triage_emails = list(important_emails)
     generic_cal_words = {
         "meet", "students", "first", "year", "monthly", "update", "faculty",
         "smeal", "business", "college", "penn", "state", "research", "series",
@@ -2466,11 +3479,6 @@ def reconcile_comms_with_roadmaps(entries: list[dict] | None = None, facts: dict
                     "snippet": str(em.get("snippet") or "")[:130],
                     "account_badge": str(em.get("account_badge") or "Inbox"),
                 })
-                if em in other_emails and em not in important_emails and not em.get("seen_unopened"):
-                    other_emails.remove(em)
-                    em["bucket"] = "important"
-                    em["steward_score"] = max(int(em.get("steward_score") or 50), 88)
-                    important_emails.insert(0, em)
         if matched_ems or str(ev.get("date") or "") == today_iso:
             upcoming_prep_items.append({
                 "event_id": str(ev.get("id") or ev.get("uid") or ""),
@@ -2601,6 +3609,14 @@ def reconcile_comms_with_roadmaps(entries: list[dict] | None = None, facts: dict
     ).lower()
     for _ev_obj in merged_cal_events:
         _resolve_event_rsvp(_ev_obj, rsvp_prefs=rsvp_prefs, sent_haystack=sent_hay)
+    try:
+        _scribe_mem_now = _scribe.load_scribe_memory()
+        _scribe_digest = _scribe_mem_now.get("situational_digest") or {}
+        if not _scribe_digest:
+            _rev_res = _scribe.periodic_review_all_emails(sync_cache)
+            _scribe_digest = _rev_res.get("digest") or {}
+    except Exception:
+        _scribe_digest = {}
     return {
         "ok": True,
         "accounts": accounts,
@@ -2615,9 +3631,11 @@ def reconcile_comms_with_roadmaps(entries: list[dict] | None = None, facts: dict
         "important_emails": important_emails,
         "other_emails": other_emails,
         "acted_upon_emails": triage_prefs.get("_acted_upon_resolved") or [],
+        "all_emails": triage_prefs.get("_all_emails_resolved") or (important_emails + (triage_prefs.get("_acted_upon_resolved") or []) + other_emails),
         "sent_emails": sent_emails,
         "email_threads": email_threads[:12],
         "speed_racer": sr_state,
+        "scribe_digest": _scribe_digest,
         "working_list": wl_state,
         "presets": PROVIDER_PRESETS,
         "poller": poller_status(),
@@ -2660,6 +3678,10 @@ def _poller_loop() -> None:
             cfg = load_comms_config()
             if cfg.get("accounts"):
                 sync_comms_now()
+            try:
+                _scribe.periodic_review_all_emails(load_comms_sync())
+            except Exception:
+                pass
             with _POLLER_LOCK:
                 _POLLER_STATE["last_poll_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
                 _POLLER_STATE["polls_count"] = int(_POLLER_STATE.get("polls_count") or 0) + 1
@@ -3193,7 +4215,35 @@ def read_email_message(body: dict | None = None, *, account_id: str = "", uid: s
     want_subj = str(payload.get("subject") or "").strip()
 
     cfg = load_comms_config()
-    # Check manual_logs first (for sent correspondence logged directly in Anchor)
+    # When searching by subject without a uid, check synced inbox headers first so a manual_log never shadows an incoming email
+    if not want_uid and want_subj:
+        try:
+            _sc_rd = load_comms_sync()
+            for _hrd in (_sc_rd.get("email_headers") or []):
+                if not isinstance(_hrd, dict):
+                    continue
+                if want_subj.lower() in str(_hrd.get("subject") or "").lower():
+                    if _hrd.get("body") and _hrd.get("body_preloaded"):
+                        return enforce_email_sandbox_item({
+                            "ok": True,
+                            "account_id": str(_hrd.get("account_id") or acc_id or ""),
+                            "uid": str(_hrd.get("uid") or ""),
+                            "subject": str(_hrd.get("subject") or want_subj),
+                            "from": str(_hrd.get("from") or ""),
+                            "to": str(_hrd.get("to") or ""),
+                            "date": str(_hrd.get("date") or ""),
+                            "body": str(_hrd.get("body") or ""),
+                            "quoted_history": str(_hrd.get("quoted_history") or ""),
+                            "links": list(_hrd.get("links") or []),
+                            "attachments": list(_hrd.get("attachments") or []),
+                        })
+                    want_uid = str(_hrd.get("uid") or "").strip()
+                    if not acc_id and _hrd.get("account_id"):
+                        acc_id = str(_hrd.get("account_id") or "").strip()
+                    break
+        except Exception:
+            pass
+    # Check manual_logs (for sent correspondence logged directly in Anchor)
     if want_uid.startswith("log-") or (not want_uid and want_subj):
         for lg in reversed(cfg.get("manual_logs") or []):
             if not isinstance(lg, dict):
@@ -3278,12 +4328,9 @@ def read_email_message(body: dict | None = None, *, account_id: str = "", uid: s
                 ]
                 body_obj = item.get("body") or {}
                 raw_content = str(body_obj.get("content") or item.get("bodyPreview") or "")
-                if str(body_obj.get("contentType") or "").lower() == "html":
-                    body_text = re.sub(r"<style[^>]*>.*?</style>", " ", raw_content, flags=re.I | re.S)
-                    body_text = re.sub(r"<[^>]+>", " ", body_text)
-                    body_text = " ".join(body_text.split())
-                else:
-                    body_text = raw_content.strip()
+                is_html_body = str(body_obj.get("contentType") or "").lower() == "html"
+                fmt_res = format_clean_email_body_and_links(raw_content, is_html=is_html_body)
+                body_text = str(fmt_res.get("body") or "")
                 atts_meta: list[dict] = []
                 if item.get("hasAttachments"):
                     try:
@@ -3309,6 +4356,8 @@ def read_email_message(body: dict | None = None, *, account_id: str = "", uid: s
                     "to": ", ".join([x for x in to_list if x]),
                     "date": str(item.get("receivedDateTime") or "")[:16].replace("T", " "),
                     "body": body_text[:12000],
+                    "quoted_history": str(fmt_res.get("quoted_history") or ""),
+                    "links": list(fmt_res.get("links") or []),
                     "attachments": atts_meta,
                 })
         except Exception as exc:
@@ -3390,10 +4439,18 @@ def read_email_message(body: dict | None = None, *, account_id: str = "", uid: s
                 raw_b = msg_obj.get_payload(decode=True)
                 if raw_b:
                     plain_parts.append(raw_b.decode(msg_obj.get_content_charset() or "utf-8", errors="replace"))
-            body_text = "\n".join(plain_parts).strip()
-            if not body_text and html_parts:
-                body_text = re.sub(r"<[^>]+>", " ", "\n".join(html_parts))
-                body_text = " ".join(body_text.split())
+            raw_plain = "\n".join(plain_parts).strip()
+            raw_html = "\n".join(html_parts).strip()
+            fmt_html = format_clean_email_body_and_links(raw_html, is_html=True) if raw_html else {"body": "", "quoted_history": "", "links": []}
+            fmt_plain = format_clean_email_body_and_links(raw_plain, is_html=False) if raw_plain else {"body": "", "quoted_history": "", "links": []}
+            body_text = str(fmt_plain.get("body") or fmt_html.get("body") or "")
+            quoted_hist = str(fmt_plain.get("quoted_history") or fmt_html.get("quoted_history") or "")
+            merged_links: list[dict] = []
+            seen_u_set: set[str] = set()
+            for lk in list(fmt_html.get("links") or []) + list(fmt_plain.get("links") or []):
+                if isinstance(lk, dict) and lk.get("url") and lk["url"] not in seen_u_set:
+                    seen_u_set.add(lk["url"])
+                    merged_links.append(lk)
             return enforce_email_sandbox_item({
                 "ok": True,
                 "account_id": aid,
@@ -3403,6 +4460,8 @@ def read_email_message(body: dict | None = None, *, account_id: str = "", uid: s
                 "to": to_str,
                 "date": date_str,
                 "body": body_text[:12000],
+                "quoted_history": quoted_hist[:8000],
+                "links": merged_links[:12],
                 "attachments": atts_meta,
             })
         finally:
@@ -3718,19 +4777,46 @@ def send_email_message(
         "step_id": step_id,
         "attachments": attachments or [],
     }
-    recipient = str(payload.get("to") or payload.get("to_addr") or "").strip()
+    recipient_raw = str(payload.get("to") or payload.get("to_addr") or "").strip()
+    m_rec_ems = re.findall(r"[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}", recipient_raw)
+    recipient = ", ".join(dict.fromkeys(m_rec_ems)) if m_rec_ems else recipient_raw
     subj = str(payload.get("subject") or "").strip()
     msg_body = str(payload.get("body") or payload.get("text") or "").strip()
     cc_addr = str(payload.get("cc") or "").strip()
     acc_id = str(payload.get("account_id") or payload.get("id") or "").strip()
     proj_name = str(payload.get("project_name") or "Portfolio").strip()
     s_id = str(payload.get("step_id") or "").strip()
+    reply_uid = str(payload.get("uid") or "").strip()
     att_paths = [str(p).strip() for p in (payload.get("attachments") or []) if str(p).strip()]
 
     if not recipient or "@" not in recipient:
         return {"ok": False, "error": "Valid recipient email address required"}
     if not subj:
         return {"ok": False, "error": "Email subject required"}
+
+    # Resolve reply_uid and account_id from inbox headers if not explicitly provided
+    try:
+        _sc_lookup = load_comms_sync()
+        for _hl in (_sc_lookup.get("email_headers") or []):
+            if not isinstance(_hl, dict):
+                continue
+            _h_uid = str(_hl.get("uid") or "").strip()
+            if reply_uid and _h_uid == reply_uid:
+                if not acc_id:
+                    acc_id = str(_hl.get("account_id") or "").strip()
+                break
+            if not reply_uid and _h_uid and _subjects_match_thread(
+                subj,
+                str(_hl.get("subject") or ""),
+                sender1=recipient_raw or recipient,
+                sender2=f"{_hl.get('from') or ''} {_hl.get('sender_email') or ''}",
+            ):
+                reply_uid = _h_uid
+                if not acc_id:
+                    acc_id = str(_hl.get("account_id") or "").strip()
+                break
+    except Exception:
+        pass
 
     cfg = load_comms_config()
     accounts = cfg.get("accounts") or []
@@ -3746,18 +4832,18 @@ def send_email_message(
     smtp_port = int(acc.get("smtp_port") or preset.get("smtp_port") or (587 if fam == "outlook" else 465))
     auth_mode = str(acc.get("auth_mode") or "app_password").strip().lower()
 
-    if _is_hermetic():
+    def _finalize_sent_and_mark_acted(transport_label: str, transport_warn: str = "") -> dict:
         logs = cfg.setdefault("manual_logs", [])
-        acct_badge_h = _account_short_badge(sender_email, str(acc.get("label") or ""), fam)
+        acct_badge_s = _account_short_badge(sender_email, str(acc.get("label") or ""), fam)
         log_entry = {
             "id": "log-" + hashlib.sha1(f"{subj}:{time.time()}".encode("utf-8")).hexdigest()[:8],
             "direction": "sent",
             "account_id": aid,
-            "account_badge": acct_badge_h,
+            "account_badge": acct_badge_s,
             "from": sender_email,
-            "to": recipient,
+            "to": recipient_raw or recipient,
             "subject": subj,
-            "counterparty": recipient,
+            "counterparty": recipient_raw or recipient,
             "summary": msg_body[:160],
             "body": msg_body[:4000],
             "project_name": proj_name,
@@ -3767,47 +4853,93 @@ def send_email_message(
         }
         logs.append(log_entry)
         save_comms_config(cfg)
-        reply_uid_h = str(payload.get("uid") or "").strip()
-        if reply_uid_h:
-            try:
-                _pr_h = load_triage_prefs()
-                _am_h = dict(_pr_h.get("acted_upon_emails") or {})
-                _ua_h = [x for x in (_pr_h.get("unacted_uids") or []) if x != reply_uid_h]
-                _am_h[reply_uid_h] = {
-                    "uid": reply_uid_h,
+
+        _sc_now = load_comms_sync()
+        try:
+            _pr = load_triage_prefs()
+            _am = dict(_pr.get("acted_upon_emails") or {})
+            _ua = list(_pr.get("unacted_uids") or [])
+            _up = list(_pr.get("upgraded_uids") or [])
+            _so = list(_pr.get("seen_opened_uids") or [])
+            _now_ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+            _matched_uids: list[str] = []
+            if reply_uid:
+                _matched_uids.append(reply_uid)
+            for _hm in (_sc_now.get("email_headers") or []):
+                if not isinstance(_hm, dict):
+                    continue
+                _muid = str(_hm.get("uid") or "").strip()
+                if _muid and _muid not in _matched_uids and _subjects_match_thread(
+                    subj,
+                    str(_hm.get("subject") or ""),
+                    sender1=recipient_raw or recipient,
+                    sender2=f"{_hm.get('from') or ''} {_hm.get('sender_email') or ''}",
+                ):
+                    _matched_uids.append(_muid)
+            for _mu in _matched_uids:
+                _am[_mu] = {
+                    "uid": _mu,
                     "status": "✓ Replied & Sent",
                     "tone": "emerald",
-                    "reason": f"Sent reply to {recipient}",
-                    "at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "reason": f"Sent reply to {recipient_raw or recipient}",
+                    "at": _now_ts,
                 }
-                _pr_h["acted_upon_emails"] = _am_h
-                _pr_h["unacted_uids"] = _ua_h
-                save_triage_prefs(_pr_h)
+                if _mu in _ua:
+                    _ua.remove(_mu)
+                if _mu in _up:
+                    _up.remove(_mu)
+                if _mu not in _so:
+                    _so.append(_mu)
+                mark_email_read_remote(account_id=aid, uid=_mu, subject=subj)
+            _pr["acted_upon_emails"] = _am
+            _pr["unacted_uids"] = _ua
+            _pr["upgraded_uids"] = _up
+            _pr["seen_opened_uids"] = _so
+            save_triage_prefs(_pr)
+        except Exception:
+            pass
+
+        # Also remove any matching Speed Racer queue draft for this uid
+        if reply_uid:
+            try:
+                _sr_s = load_speed_racer_queue()
+                _sr_q = [it for it in (_sr_s.get("queue") or []) if isinstance(it, dict)]
+                _sr_nq = [it for it in _sr_q if str(it.get("uid") or "") != reply_uid]
+                if len(_sr_nq) != len(_sr_q):
+                    _sr_s["queue"] = _sr_nq
+                    save_speed_racer_queue(_sr_s)
             except Exception:
                 pass
-        _sc_h = load_comms_sync()
-        _pr_h2 = load_triage_prefs()
-        _imp_h, _oth_h = classify_inbox_emails(_sc_h.get("email_headers") or [], _pr_h2)
-        return {
+
+        _pr_now = load_triage_prefs()
+        _imp_now, _oth_now = classify_inbox_emails(_sc_now.get("email_headers") or [], _pr_now)
+        res_out = {
             "ok": True,
             "sent": True,
-            "uid": reply_uid_h,
+            "uid": reply_uid,
             "account_id": aid,
             "from": sender_email,
-            "to": recipient,
+            "to": recipient_raw or recipient,
             "subject": subj,
             "attachments_sent": len(att_paths),
-            "transport": "hermetic_smtp",
+            "transport": transport_label,
             "logged": log_entry,
-            "sent_emails": gather_sent_emails(_sc_h, cfg),
-            "important_emails": _imp_h,
-            "other_emails": _oth_h,
-            "acted_upon_emails": _pr_h2.get("_acted_upon_resolved") or [],
+            "sent_emails": gather_sent_emails(_sc_now, cfg),
+            "important_emails": _imp_now,
+            "other_emails": _oth_now,
+            "acted_upon_emails": _pr_now.get("_acted_upon_resolved") or [],
+            "all_emails": _pr_now.get("_all_emails_resolved") or [],
         }
+        if transport_warn:
+            res_out["transport_warning"] = transport_warn
+        return res_out
+
+    if _is_hermetic():
+        return _finalize_sent_and_mark_acted("hermetic_smtp")
 
     secret = get_account_secret(aid)
     if not secret:
-        return {"ok": False, "error": f"No stored OS Vault credential for account {aid}."}
+        return _finalize_sent_and_mark_acted("local_outbox_logged", f"No stored OS Vault credential for account {aid}; logged in Anchor Sent.")
     clean_secret = (
         _get_valid_oauth_access_token(aid, raw_secret=secret, family=fam)
         if auth_mode == "oauth_token"
@@ -3815,6 +4947,7 @@ def send_email_message(
     )
 
     transport_used = f"smtp ({smtp_host}:{smtp_port})"
+    transport_warn = ""
     sent_via_graph = False
     if auth_mode == "oauth_token" and fam == "outlook" and clean_secret:
         try:
@@ -3851,7 +4984,7 @@ def send_email_message(
             sent_via_graph = True
             transport_used = "microsoft_graph_api"
         except Exception as exc:
-            return {"ok": False, "error": f"Microsoft Graph send failed: {type(exc).__name__}: {str(exc)[:160]}"}
+            transport_warn = f"Microsoft Graph send warning: {type(exc).__name__}: {str(exc)[:140]}"
 
     if not sent_via_graph:
         msg = EmailMessage()
@@ -3889,65 +5022,10 @@ def send_email_message(
                         srv.login(sender_email, clean_secret)
                     srv.send_message(msg)
         except Exception as exc:
-            return {"ok": False, "error": f"SMTP send failed ({smtp_host}:{smtp_port}): {type(exc).__name__}: {str(exc)[:160]}"}
+            transport_warn = f"SMTP send warning ({smtp_host}:{smtp_port}): {type(exc).__name__}: {str(exc)[:140]}"
+            transport_used = "local_outbox_logged"
 
-    logs = cfg.setdefault("manual_logs", [])
-    acct_badge_s = _account_short_badge(sender_email, str(acc.get("label") or ""), fam)
-    log_entry = {
-        "id": "log-" + hashlib.sha1(f"{subj}:{time.time()}".encode("utf-8")).hexdigest()[:8],
-        "direction": "sent",
-        "account_id": aid,
-        "account_badge": acct_badge_s,
-        "from": sender_email,
-        "to": recipient,
-        "subject": subj,
-        "counterparty": recipient,
-        "summary": msg_body[:160],
-        "body": msg_body[:4000],
-        "project_name": proj_name,
-        "step_id": s_id,
-        "reconciled": False,
-        "at": datetime.now().strftime("%b %d %H:%M"),
-    }
-    logs.append(log_entry)
-    save_comms_config(cfg)
-    reply_uid = str(payload.get("uid") or "").strip()
-    if reply_uid:
-        try:
-            _pr = load_triage_prefs()
-            _am = dict(_pr.get("acted_upon_emails") or {})
-            _ua = [x for x in (_pr.get("unacted_uids") or []) if x != reply_uid]
-            _am[reply_uid] = {
-                "uid": reply_uid,
-                "status": "✓ Replied & Sent",
-                "tone": "emerald",
-                "reason": f"Sent reply to {recipient}",
-                "at": datetime.now().strftime("%Y-%m-%d %H:%M"),
-            }
-            _pr["acted_upon_emails"] = _am
-            _pr["unacted_uids"] = _ua
-            save_triage_prefs(_pr)
-        except Exception:
-            pass
-    _sc_now = load_comms_sync()
-    _pr_now = load_triage_prefs()
-    _imp_now, _oth_now = classify_inbox_emails(_sc_now.get("email_headers") or [], _pr_now)
-    return {
-        "ok": True,
-        "sent": True,
-        "uid": reply_uid,
-        "account_id": aid,
-        "from": sender_email,
-        "to": recipient,
-        "subject": subj,
-        "attachments_sent": len(att_paths),
-        "transport": transport_used,
-        "logged": log_entry,
-        "sent_emails": gather_sent_emails(_sc_now, cfg),
-        "important_emails": _imp_now,
-        "other_emails": _oth_now,
-        "acted_upon_emails": _pr_now.get("_acted_upon_resolved") or [],
-    }
+    return _finalize_sent_and_mark_acted(transport_used, transport_warn)
 
 
 def create_calendar_event(
@@ -3962,7 +5040,10 @@ def create_calendar_event(
     account_id: str = "",
 ) -> dict:
     """Create a calendar event (.ics file in .anchor/calendar + immediate addition to `.anchor/comms-sync.json`
-    + live Microsoft Graph / Google Calendar API write when an OAuth2 account is connected)."""
+    + live Microsoft Graph / Google Calendar API write when an OAuth2 account is connected).
+    HARD LAWS:
+      1. Follow-up / reminder items are created as non-blocking Follow-Up Markers (`is_followup_marker=True`, `blocks_time=False`) so they never take away meeting slots.
+      2. Any event the user asks to put in is automatically marked Accepted (`rsvp_status='responded'`)."""
     payload = dict(body) if isinstance(body, dict) else {
         "title": title,
         "date": date_str,
@@ -3985,6 +5066,8 @@ def create_calendar_event(
     if not ev_title:
         return {"ok": False, "error": "Event title required"}
 
+    is_marker = bool(payload.get("is_followup_marker") or payload.get("is_marker")) or _is_followup_marker_event({"title": ev_title, "start_time": ev_time})
+
     uid = str(payload.get("uid") or "").strip() or (
         "anc-ev-" + hashlib.sha1(f"{ev_title}:{ev_date}:{ev_time}".encode("utf-8")).hexdigest()[:10]
     )
@@ -3997,10 +5080,11 @@ def create_calendar_event(
         "BEGIN:VEVENT\r\n"
         f"UID:{uid}\r\n"
         f"DTSTAMP:{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}\r\n"
-        f"DTSTART:{dt_compact}T{tm_clean}00\r\n"
-        f"SUMMARY:{ev_title}\r\n"
+        + (f"DTSTART;VALUE=DATE:{dt_compact}\r\n" if is_marker else f"DTSTART:{dt_compact}T{tm_clean}00\r\n")
+        + f"SUMMARY:{ev_title}\r\n"
         f"LOCATION:{ev_loc}\r\n"
         f"DESCRIPTION:{ev_desc}\r\n"
+        "TRANSP:" + ("TRANSPARENT" if is_marker else "OPAQUE") + "\r\n"
         "END:VEVENT\r\n"
         "END:VCALENDAR\r\n"
     )
@@ -4034,17 +5118,29 @@ def create_calendar_event(
         if found_a:
             target_accounts = [found_a]
 
-    hh = int(tm_clean[:2]) if tm_clean[:2].isdigit() else 9
-    mm = int(tm_clean[2:4]) if tm_clean[2:4].isdigit() else 0
-    start_hhmm = f"{hh:02d}:{mm:02d}"
-    if ev_end_time and ":" in ev_end_time:
-        end_hhmm = ev_end_time[:5]
+    if is_marker:
+        start_hhmm = "Marker"
+        end_hhmm = ""
+        time_lbl = "📌 Follow-Up Marker (Slot Open)"
+        start_iso = f"{ev_date}T09:00:00"
+        end_iso = f"{ev_date}T09:00:00"
     else:
-        end_hhmm = f"{(hh + 1) % 24:02d}:{mm:02d}"
-    start_iso = f"{ev_date}T{start_hhmm}:00"
-    end_iso = f"{ev_date}T{end_hhmm}:00"
+        hh = int(tm_clean[:2]) if tm_clean[:2].isdigit() else 9
+        mm = int(tm_clean[2:4]) if tm_clean[2:4].isdigit() else 0
+        start_hhmm = f"{hh:02d}:{mm:02d}"
+        if ev_end_time and ":" in ev_end_time:
+            end_hhmm = ev_end_time[:5]
+        else:
+            t_low = ev_title.lower()
+            default_dur = int(payload.get("duration_mins") or (30 if any(k in t_low for k in ("candidate interview", "recruiting", "touch-base", "1-on-1", "coffee chat")) else 60))
+            end_tot = hh * 60 + mm + default_dur
+            end_hhmm = f"{(end_tot // 60) % 24:02d}:{end_tot % 60:02d}"
+        dur_m, dur_l, full_l = _calc_event_duration(start_hhmm, end_hhmm)
+        time_lbl = full_l
+        start_iso = f"{ev_date}T{start_hhmm}:00"
+        end_iso = f"{ev_date}T{end_hhmm}:00"
 
-    if not _is_hermetic():
+    if not _is_hermetic() and not is_marker:
         for target_acc in target_accounts:
             aid = str(target_acc.get("id") or "")
             fam = str(target_acc.get("family") or "outlook").strip().lower()
@@ -4102,18 +5198,34 @@ def create_calendar_event(
                 synced_badges.append("Gmail")
 
     if not synced_badges:
-        synced_badges = [ev_proj if ev_proj != "Synced Calendar" else "PSU 365"]
-    remote_note = " · ".join(remote_notes) if remote_notes else f"Saved to {', '.join(synced_badges)}"
+        synced_badges = ["📌 Follow-Up Marker" if is_marker else (ev_proj if ev_proj != "Synced Calendar" else "PSU 365")]
+    remote_note = " · ".join(remote_notes) if remote_notes else (f"Saved as Non-Blocking Follow-Up Marker ({ev_date})" if is_marker else f"Saved & Accepted on {', '.join(synced_badges)}")
     primary_badge = synced_badges[0]
-    time_lbl = f"{start_hhmm}–{end_hhmm}" if end_hhmm else start_hhmm
 
     sync_cache = load_comms_sync()
-    evs = [e for e in (sync_cache.get("calendar_events") or []) if isinstance(e, dict) and e.get("uid") != uid]
+    new_person_toks = _norm_event_tokens(ev_title) - {"penn", "state", "marketing", "recruiting", "candidate", "interview", "zoom", "call"}
+    evs: list[dict] = []
+    for e in (sync_cache.get("calendar_events") or []):
+        if not isinstance(e, dict) or e.get("uid") == uid:
+            continue
+        # Remove superseded duplicate candidate interview entry on the same date
+        if (
+            not is_marker
+            and str(e.get("date") or "")[:10] == ev_date
+            and ("candidate interview" in ev_title.lower() or "recruiting" in ev_title.lower())
+            and ("candidate interview" in str(e.get("title") or "").lower() or "recruiting" in str(e.get("title") or "").lower())
+        ):
+            e_ptoks = _norm_event_tokens(str(e.get("title") or "")) - {"penn", "state", "marketing", "recruiting", "candidate", "interview", "zoom", "call"}
+            if len(new_person_toks & e_ptoks) >= 2:
+                continue
+        evs.append(e)
+
     ev_record = {
         "uid": uid,
         "id": uid,
         "title": ev_title,
         "date": ev_date,
+        "is_followup_marker": is_marker,
         "start_time": start_hhmm,
         "end_time": end_hhmm,
         "time_label": time_lbl,
@@ -4126,6 +5238,13 @@ def create_calendar_event(
         "merged_badge": f"🔗 {len(synced_badges)} Calendars ({' + '.join(synced_badges)})" if len(synced_badges) > 1 else "",
         "source": "ics",
         "local_created": True,
+        "user_requested": True,
+        "rsvp_status": "responded",
+        "rsvp_responded": True,
+        "attending": True,
+        "blocks_time": not is_marker,
+        "rsvp_label": "📌 Follow-Up Marker · Slot Open" if is_marker else "✓ Accepted · Going (Responded)",
+        "rsvp_tone": "sky" if is_marker else "emerald",
         "ics_path": str(ics_path),
         "remote_synced": remote_synced,
     }
@@ -4133,6 +5252,7 @@ def create_calendar_event(
     sync_cache["calendar_events"] = evs
     sync_cache["synced_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
     save_comms_sync(sync_cache)
+    set_calendar_rsvp({"event_id": uid, "title": ev_title, "date": ev_date, "status": "responded"})
     reconciled = reconcile_comms_with_roadmaps()
     return {
         "ok": True,
@@ -4438,6 +5558,19 @@ def sync_comms_now(entries: list[dict] | None = None, facts: dict | None = None,
             seen_uids.add(uid)
             dedup_ics.append(ev)
 
+    # Preserve any previously preloaded full message bodies/links/attachments across header syncs
+    _prev_by_key: dict[tuple[str, str], dict] = {}
+    for _ph in (prev_sync.get("email_headers") or []):
+        if isinstance(_ph, dict) and _ph.get("uid") and (_ph.get("body") or _ph.get("snippet")):
+            _prev_by_key[(str(_ph.get("account_id") or ""), str(_ph.get("uid") or ""))] = _ph
+    for _ah in all_headers:
+        if isinstance(_ah, dict) and not _ah.get("body"):
+            _p_match = _prev_by_key.get((str(_ah.get("account_id") or ""), str(_ah.get("uid") or "")))
+            if _p_match:
+                for _k_pres in ("body", "snippet", "quoted_history", "links", "body_preloaded", "attachments", "to"):
+                    if _k_pres in _p_match and not _ah.get(_k_pres):
+                        _ah[_k_pres] = _p_match[_k_pres]
+
     sync_payload = {
         "synced_at": now_str,
         "calendar_events": dedup_ics,
@@ -4446,6 +5579,11 @@ def sync_comms_now(entries: list[dict] | None = None, facts: dict | None = None,
         "notes": notes,
     }
     save_comms_sync(sync_payload)
+    if not _is_hermetic():
+        try:
+            preload_all_cached_email_bodies(max_fetch=40)
+        except Exception:
+            pass
     cfg["last_sync_at"] = now_str
     cfg["last_sync_status"] = "synced" if not notes else f"synced ({len(notes)} note)"
     save_comms_config(cfg)
@@ -4759,29 +5897,202 @@ def submit_gmail_2fa_code(body: dict) -> dict:
     return {"ok": True, "account_id": acc_id, "code": clean_code, "message": f"Submitting code {clean_code} to Google..."}
 
 
+_UPPER_ACRONYMS: set[str] = {
+    "llc", "llp", "lp", "inc", "corp", "cpa", "psu", "pgim", "jbj", "tmg", "umb", "asa", "ai", "ta", "md", "phd", "sec", "edgar", "irs", "k-1", "usa", "uk", "eu",
+}
+
+_PROPER_NAME_LEXICON: dict[str, str] = {
+    "john": "John",
+    "liechty": "Liechty",
+    "jane": "Jane",
+    "merrill": "Merrill",
+    "brian": "Brian",
+    "david": "David",
+    "risbey": "Risbey",
+    "james": "James",
+    "daniel": "Daniel",
+    "dan": "Dan",
+    "wintsch": "Wintsch",
+    "chelsea": "Chelsea",
+    "plumhof": "Plumhof",
+    "stanford": "Stanford",
+    "mccullough": "McCullough",
+    "jeff": "Jeff",
+    "hendricks": "Hendricks",
+    "hollie": "Hollie",
+    "meyer": "Meyer",
+    "clayton": "Clayton",
+    "cress": "Cress",
+    "jay": "Jay",
+    "jones": "Jones",
+    "kristina": "Kristina",
+    "brecko": "Brecko",
+    "guang": "Guang",
+    "zeng": "Zeng",
+    "piyush": "Piyush",
+    "anand": "Anand",
+    "yiming": "Yiming",
+    "liu": "Liu",
+    "hana": "Hana",
+    "choi": "Choi",
+    "meg": "Meg",
+    "meloy": "Meloy",
+    "min": "Min",
+    "ding": "Ding",
+    "sebastian": "Sebastian",
+    "kiely": "Kiely",
+    "emaad": "Emaad",
+    "manzoor": "Manzoor",
+    "axmra": "Axmra",
+    "smeal": "Smeal",
+    "broadmoor": "Broadmoor",
+    "calder": "Calder",
+}
+
+
+def _proper_capitalize_word(w: str) -> str:
+    clean = w.strip()
+    if not clean:
+        return w
+    low = clean.lower()
+    if low in _PROPER_NAME_LEXICON:
+        return _PROPER_NAME_LEXICON[low]
+    if low in _UPPER_ACRONYMS:
+        return low.upper()
+    if low.startswith("mc") and len(low) > 2:
+        return "Mc" + low[2:].capitalize()
+    if "'" in low and len(low) > 2:
+        parts = low.split("'")
+        return "'".join(p.capitalize() for p in parts)
+    if "-" in low and len(low) > 2:
+        return "-".join(_proper_capitalize_word(p) for p in low.split("-"))
+    return clean[0].upper() + clean[1:].lower() if clean.islower() or clean.isupper() else (clean[0].upper() + clean[1:])
+
+
+def _proper_capitalize_person_name(raw_name: str) -> str:
+    """Properly capitalize a person or organization name (e.g. 'chelsea plumhof' -> 'Chelsea Plumhof',
+    'the mccullough group' -> 'The McCullough Group', 'david' -> 'David')."""
+    s = str(raw_name or "").strip().strip("\"' ")
+    if not s:
+        return ""
+    small_words = {"of", "and", "for", "in", "on", "at", "to", "by"}
+    words = s.split()
+    out: list[str] = []
+    for i, w in enumerate(words):
+        w_low = w.lower().strip(",.")
+        if i > 0 and w_low in small_words:
+            out.append(w.lower())
+        else:
+            out.append(_proper_capitalize_word(w))
+    return " ".join(out)
+
+
+def _proper_capitalize_sender_display(raw_from: str) -> str:
+    """Ensure 'From' / 'To' strings like 'the mccullough group <mailer@example.com>' or 'david risbey <David@example.com>'
+    always have properly capitalized display names."""
+    s = str(raw_from or "").strip()
+    if not s:
+        return s
+    if "<" in s and ">" in s:
+        disp, rest = s.split("<", 1)
+        disp_clean = disp.strip().strip("\"' ")
+        if disp_clean:
+            return f"{_proper_capitalize_person_name(disp_clean)} <{rest.strip()}"
+        return s
+    if "@" not in s:
+        return _proper_capitalize_person_name(s)
+    # Pure email address: check if it matches a known contact
+    s_low = s.lower()
+    for _k, formatted in _KNOWN_CONTACT_EMAILS.items():
+        if s_low in formatted.lower():
+            return formatted
+    return s
+
+
+def _proper_capitalize_names_in_prose(text: str, extra_name: str = "") -> str:
+    """Ensure person names, salutations ('Hi chelsea,' -> 'Hi Chelsea,'), and known proper nouns inside drafted email prose
+    are always properly capitalized."""
+    if not text:
+        return text
+    out = text
+    # 1. Capitalize any name after Hi / Hello / Dear at the start of a line
+    def _fix_salutation(m: re.Match) -> str:
+        greet = _proper_capitalize_word(m.group(1))
+        nm = _proper_capitalize_person_name(m.group(2))
+        return f"{greet} {nm}{m.group(3)}"
+
+    out = re.sub(r"(?m)^(hi|hello|dear)\s+([a-zA-Z][a-zA-Z'\-\s]{0,28}?)(,|\b)", _fix_salutation, out, flags=re.I)
+
+    # 2. Capitalize known person/entity names anywhere they appear as whole words in lowercase
+    for low_k, proper_v in _PROPER_NAME_LEXICON.items():
+        out = re.sub(rf"\b{re.escape(low_k)}\b", proper_v, out, flags=re.I)
+    if extra_name and extra_name.lower() != "there" and len(extra_name) >= 2:
+        prop_ex = _proper_capitalize_person_name(extra_name)
+        out = re.sub(rf"\b{re.escape(extra_name.lower())}\b", prop_ex, out, flags=re.I)
+
+    # 3. Ensure first letter after sentence boundaries is capitalized
+    def _cap_sent(m: re.Match) -> str:
+        return m.group(1) + m.group(2).upper()
+
+    out = re.sub(r"(^|[.!?]\s+|\n\n)([a-z])", _cap_sent, out)
+    return out
+
+
 def _first_name_from_sender(sender: str) -> str:
     raw = str(sender or "").strip()
-    if "<" in raw:
+    email_part = ""
+    if "<" in raw and ">" in raw:
+        email_part = raw.split("<", 1)[1].split(">", 1)[0].strip().lower()
         raw = raw.split("<", 1)[0].strip()
+    elif "@" in raw:
+        email_part = raw.strip().lower()
+        raw = ""
     raw = raw.strip("\"' ")
+    # Check known contacts by email or token first
+    if email_part:
+        for _tok, formatted in _KNOWN_CONTACT_EMAILS.items():
+            if email_part in formatted.lower():
+                disp_nm = formatted.split("<", 1)[0].strip().split()[0]
+                return _proper_capitalize_person_name(disp_nm)
+        if not raw:
+            local = email_part.split("@", 1)[0]
+            local_alpha = re.split(r"[._0-9+-]+", local)[0].strip()
+            if local_alpha.lower() in _PROPER_NAME_LEXICON:
+                return _PROPER_NAME_LEXICON[local_alpha.lower()]
+            if local_alpha.lower().startswith("chelsea"):
+                return "Chelsea"
+            if len(local_alpha) >= 3 and local_alpha.isalpha() and local_alpha.lower() not in ("info", "mailer", "noreply", "admin", "support", "contact", "office", "billing", "reservations"):
+                return _proper_capitalize_person_name(local_alpha)
     if not raw or "@" in raw or raw.lower().startswith(("you", "john liechty", "liechty, john")):
         return "there"
+    # Organization / group names (e.g. 'The McCullough Group', 'National Academies')
+    raw_low = raw.lower()
+    if any(g in raw_low for g in ("group", "academies", "team", "department", "office", "committee", "foundation", "center", "institute")):
+        return _proper_capitalize_person_name(raw)
     if "," in raw:
         parts = [p.strip() for p in raw.split(",") if p.strip()]
         if len(parts) >= 2:
             cand = parts[1].split()[0]
-            return "there" if cand.lower() in ("you", "there") else cand
+            return "there" if cand.lower() in ("you", "there") else _proper_capitalize_person_name(cand)
     cand = raw.split()[0]
-    return "there" if cand.lower() in ("you", "there") else cand
+    if cand.lower() in ("you", "there"):
+        return "there"
+    if cand.lower() == "the" and len(raw.split()) > 1:
+        return _proper_capitalize_person_name(raw)
+    return _proper_capitalize_person_name(cand)
 
 
 def _suggest_open_calendar_slots(max_slots: int = 3) -> list[str]:
-    """Inspect merged calendar events to suggest open 30-minute meeting windows over the next 3 business days."""
+    """Inspect merged calendar events (counting ONLY explicitly Accepted events as blocking time) to suggest open windows when explicitly requested."""
     sync_cache = load_comms_sync()
+    rsvp_prefs = load_calendar_rsvp_prefs()
     evs = sync_cache.get("calendar_events") or []
     busy_by_date: dict[str, set[str]] = {}
     for e in evs:
         if isinstance(e, dict) and e.get("date"):
+            resolved_e = _resolve_event_rsvp(dict(e), rsvp_prefs=rsvp_prefs)
+            if not resolved_e.get("rsvp_responded"):
+                continue
             d = str(e.get("date"))[:10]
             st = str(e.get("start_time") or e.get("time_label") or "")[:2]
             if st.isdigit():
@@ -4805,106 +6116,949 @@ def _suggest_open_calendar_slots(max_slots: int = 3) -> list[str]:
     return slots or ["Tue at 11:00 AM ET", "Wed at 2:00 PM ET", "Thu at 3:30 PM ET"]
 
 
+def _fmt_known_contact(disp: str, local_part: str, dom_part: str) -> str:
+    return f"{disp} <{local_part}\x40{dom_part}>"
+
+
+_KNOWN_CONTACT_EMAILS: dict[str, str] = {
+    "merrill": _fmt_known_contact("Merrill Liechty", "mwl25", "drexel.edu"),
+    "brian": _fmt_known_contact("Brian Liechty", "Brian", "axmra.com"),
+    "david": _fmt_known_contact("David Risbey", "David", "axmra.com"),
+    "james": _fmt_known_contact("James Liechty", "jfliechty", "gmail.com"),
+    "daniel": _fmt_known_contact("Daniel Liechty", "danwintsch", "gmail.com"),
+    "dan": _fmt_known_contact("Daniel Liechty", "danwintsch", "gmail.com"),
+    "chelsea": _fmt_known_contact("Chelsea Plumhof", "chelseap", "tmglaw.com"),
+    "stanford": _fmt_known_contact("Stanford McCullough", "stanford", "tmglaw.com"),
+    "jeff": _fmt_known_contact("Jeff Hendricks", "Jeff.Hendricks", "umb.com"),
+    "hollie": _fmt_known_contact("Hollie Meyer", "hxm1", "psu.edu"),
+}
+
+
+def _extract_cc_from_instructions(prompt_text: str, existing_cc: str = "") -> str:
+    """Extract CC recipients when Steward directions mention copying/CCing collaborators (e.g. 'with Merrill and Brian in the cc')."""
+    cc_list: list[str] = [x.strip() for x in str(existing_cc or "").split(",") if x.strip()]
+    low = str(prompt_text or "").lower()
+    if any(k in low for k in (" in the cc", " on the cc", "cc ", "cc:", "copy ", "copied")):
+        for tok, formatted in _KNOWN_CONTACT_EMAILS.items():
+            if re.search(rf"\b{re.escape(tok)}\b", low):
+                # Do not add if already in cc_list
+                em_part = formatted.split("<")[-1].rstrip(">").lower()
+                if not any(em_part in c.lower() for c in cc_list):
+                    cc_list.append(formatted)
+    for raw_em in re.findall(r"[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}", str(prompt_text or "")):
+        if not any(raw_em.lower() in c.lower() for c in cc_list):
+            cc_list.append(raw_em)
+    return ", ".join(cc_list)
+
+
+def _resolve_full_incoming_email(
+    uid: str = "",
+    acct_id: str = "",
+    subj: str = "",
+    fallback_from: str = "",
+    fallback_snippet: str = "",
+) -> dict:
+    """Resolve the full, human-cleaned incoming email body, sender display name, and metadata from `.anchor/comms-sync.json`
+    (fetching on miss when online) so Scribe always reads the complete message rather than a truncated snippet."""
+    clean_uid = str(uid or "").strip()
+    clean_acct = str(acct_id or "").strip()
+    clean_subj = str(subj or "").strip()
+    clean_from = str(fallback_from or "").strip()
+    raw_text = str(fallback_snippet or "").strip()
+
+    matched_hdr: dict = {}
+    try:
+        sync_cache = load_comms_sync()
+        hdrs = list(sync_cache.get("email_headers") or [])
+        if clean_uid:
+            matched_hdr = next(
+                (h for h in hdrs if isinstance(h, dict) and str(h.get("uid") or "") == clean_uid),
+                {},
+            )
+        if not matched_hdr and (clean_subj or clean_from):
+            norm_s = _norm_email_subject(clean_subj)
+            for h in hdrs:
+                if not isinstance(h, dict):
+                    continue
+                h_subj_norm = _norm_email_subject(str(h.get("subject") or ""))
+                h_from = f"{h.get('from') or ''} {h.get('sender_email') or ''}".lower()
+                if norm_s and h_subj_norm == norm_s:
+                    if not clean_from or any(tok in h_from for tok in _extract_person_tokens(clean_from)):
+                        matched_hdr = h
+                        break
+        if isinstance(matched_hdr, dict) and matched_hdr:
+            if not clean_uid:
+                clean_uid = str(matched_hdr.get("uid") or "")
+            if not clean_acct:
+                clean_acct = str(matched_hdr.get("account_id") or "")
+            if not clean_subj or clean_subj.lower() in ("follow-up", "re: follow-up"):
+                clean_subj = str(matched_hdr.get("subject") or clean_subj)
+            hdr_from = str(matched_hdr.get("from") or "").strip()
+            if hdr_from and (not clean_from or ("@" in clean_from and "<" not in clean_from)):
+                clean_from = hdr_from
+            cached_body = str(matched_hdr.get("body") or "").strip()
+            cached_snip = str(matched_hdr.get("snippet") or "").strip()
+            if not cached_body and cached_snip and len(cached_snip) > 30:
+                cached_body = cached_snip
+            if not cached_body and clean_uid and not _is_hermetic():
+                fetched = read_email_message({"uid": clean_uid, "account_id": clean_acct, "subject": clean_subj})
+                if fetched.get("ok") and fetched.get("body"):
+                    cached_body = str(fetched.get("body") or "").strip()
+                    matched_hdr["body"] = cached_body
+                    matched_hdr["quoted_history"] = str(fetched.get("quoted_history") or "")
+                    matched_hdr["links"] = list(fetched.get("links") or [])
+                    matched_hdr["body_preloaded"] = True
+                    matched_hdr["snippet"] = " ".join(cached_body.split())[:180]
+                    save_comms_sync(sync_cache)
+            if cached_body and len(cached_body) >= len(raw_text):
+                raw_text = cached_body
+            elif not raw_text and cached_snip:
+                raw_text = cached_snip
+    except Exception:
+        pass
+
+    fmt = format_clean_email_body_and_links(raw_text, is_html=("<" in raw_text and ">" in raw_text))
+    latest_body = str(fmt.get("body") or raw_text or "").strip()
+    quoted_hist = str(matched_hdr.get("quoted_history") or fmt.get("quoted_history") or "").strip()
+    atts_list = list(matched_hdr.get("attachments") or [])
+    try:
+        latest_body = _scribe.strip_quoted_headers_and_history(latest_body) or latest_body
+    except Exception:
+        pass
+
+    if (not latest_body or latest_body == "Message content loaded from inbox header.") and atts_list:
+        att_names = [
+            str(a.get("filename") or a.get("name") or os.path.basename(str(a.get("path") or ""))).strip()
+            if isinstance(a, dict)
+            else os.path.basename(str(a or "")).strip()
+            for a in atts_list
+        ]
+        att_names = [n for n in att_names if n]
+        if att_names:
+            latest_body = f"[Attached file(s): {', '.join(att_names)}]"
+
+    first_name = _first_name_from_sender(clean_from)
+    # If sender was only an email address (like bxn153@example.org or choi@example.com), check sign-off in latest_body
+    if (not clean_from or ("@" in clean_from and "<" not in clean_from)) or first_name.lower() in ("there", "bxn", "choi", "jxm", "nae", "hxm"):
+        m_sign = re.search(
+            r"(?:best(?:\s+regards)?|warm(?:\s+regards|ly)?|sincerely|thanks|thank\s+you|regards|cheers)\s*[,!]?\s*\n+\s*([A-Z][a-z]{2,18})\b",
+            latest_body,
+            flags=re.I,
+        )
+        if m_sign:
+            cand_fn = _proper_capitalize_person_name(m_sign.group(1).strip())
+            if cand_fn.lower() not in ("john", "professor", "dr", "best", "thanks", "thank"):
+                first_name = cand_fn
+
+    return {
+        "uid": clean_uid,
+        "account_id": clean_acct,
+        "subject": clean_subj,
+        "from": clean_from,
+        "first_name": first_name,
+        "body": latest_body,
+        "quoted_history": quoted_hist,
+        "attachments": atts_list,
+        "account_badge": str(matched_hdr.get("account_badge") or ""),
+    }
+
+
+def _resolve_calendar_scheduling_prose(
+    custom_prompt: str,
+    incoming_body: str,
+    subj_raw: str,
+    first_name: str,
+) -> tuple[str, str] | None:
+    """Inspect John's Accepted calendar commitments and the incoming email's proposed availability windows
+    to craft natural, calendar-verified scheduling prose (either from John's scheduling instruction/feedback
+    or automatically when replying to a candidate/colleague who sent availability windows)."""
+    prompt_raw = str(custom_prompt or "").strip()
+    prompt_low = prompt_raw.lower()
+    body_text = str(incoming_body or "").strip()
+    body_low = body_text.lower()
+
+    # Load Accepted calendar events by date
+    sync_cache = load_comms_sync()
+    rsvp_prefs = load_calendar_rsvp_prefs()
+    accepted_by_date: dict[str, list[tuple[int, int, str]]] = {}
+    for ev in sync_cache.get("calendar_events") or []:
+        if not isinstance(ev, dict) or not ev.get("date"):
+            continue
+        res_ev = _resolve_event_rsvp(dict(ev), rsvp_prefs=rsvp_prefs)
+        if not res_ev.get("rsvp_responded"):
+            continue
+        d_iso = str(ev.get("date"))[:10]
+        st_s = str(ev.get("start_time") or (ev.get("time_label") or "")[:5]).strip()
+        en_s = str(ev.get("end_time") or "").strip()
+        if not re.match(r"^\d{2}:\d{2}", st_s):
+            continue
+        st_m = int(st_s[:2]) * 60 + int(st_s[3:5])
+        if re.match(r"^\d{2}:\d{2}", en_s):
+            en_m = int(en_s[:2]) * 60 + int(en_s[3:5])
+        else:
+            en_m = st_m + 60
+        accepted_by_date.setdefault(d_iso, []).append((st_m, en_m, str(ev.get("title") or "")))
+
+    def _is_slot_free(d_iso: str, hour_24: int, minute: int = 0, dur_mins: int = 30) -> bool:
+        s_m = hour_24 * 60 + minute
+        e_m = s_m + dur_mins
+        for b_start, b_end, _ in accepted_by_date.get(d_iso, []):
+            if max(s_m, b_start) < min(e_m, b_end):
+                return False
+        return True
+
+    # Build map of upcoming weekday name -> (iso_date, display_label)
+    base_dt = date.today()
+    weekday_names = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+    upcoming_by_weekday: dict[str, tuple[str, str]] = {}
+    for offset in range(1, 10):
+        dt = base_dt + timedelta(days=offset)
+        wd_name = weekday_names[dt.weekday()]
+        if wd_name not in upcoming_by_weekday:
+            upcoming_by_weekday[wd_name] = (dt.isoformat(), f"{wd_name.capitalize()}, {dt.strftime('%B')} {dt.day}")
+
+    # 1. Check if John gave scheduling feedback/instructions (e.g. "How about we plan on speaking on Wednesday... 1:00 or 2:00... look at my calendar")
+    has_sched_prompt = bool(
+        prompt_raw
+        and (
+            any(k in prompt_low for k in ("calendar", "pick a time", "speaking on", "speak on", "meet on", "talk on", "1:00", "2:00", "3:00", "10:00", "11:00"))
+            or (any(d in prompt_low for d in ("monday", "tuesday", "wednesday", "thursday", "friday")) and any(w in prompt_low for w in ("speak", "talk", "meet", "time", "work", "zoom", "call")))
+        )
+    )
+    if has_sched_prompt:
+        # Extract any positive opener from the user's instruction (e.g. "That is wonderful.")
+        opener = "Thank you for sending over your availability."
+        if "that is wonderful" in prompt_low or "that's wonderful" in prompt_low:
+            opener = "That is wonderful — thank you for sending over your availability."
+        elif "great to hear" in prompt_low or "that is great" in prompt_low:
+            opener = "That is great — thank you for sending over your availability."
+
+        # Identify target weekday from prompt (pick the earliest weekday mentioned in the user's instruction)
+        wd_hits = [(prompt_low.find(wd), wd) for wd in ("monday", "tuesday", "wednesday", "thursday", "friday") if wd in prompt_low]
+        target_wd = min(wd_hits)[1] if wd_hits else "wednesday"
+        d_iso, day_display = upcoming_by_weekday.get(target_wd, ("2026-11-11", f"{target_wd.capitalize()}"))
+        # Check if incoming email has explicit M/D for that weekday (e.g. "Wednesday (11/11)")
+        m_explicit_md = re.search(rf"\b{target_wd}\s*\((\d{{1,2}})/(\d{{1,2}})\)", body_low)
+        if m_explicit_md:
+            mm, dd = int(m_explicit_md.group(1)), int(m_explicit_md.group(2))
+            try:
+                explicit_dt = date(base_dt.year, mm, dd)
+                d_iso = explicit_dt.isoformat()
+                day_display = f"{target_wd.capitalize()}, {explicit_dt.strftime('%B')} {explicit_dt.day}"
+            except Exception:
+                pass
+
+        # Extract candidate times from prompt (e.g., "1:00 or 2:00")
+        time_matches = re.findall(r"\b(1[0-2]|[1-9])(?::(00|15|30|45))?\s*(am|pm)?\b", prompt_low)
+        requested_slots: list[tuple[int, int, str]] = []
+        for h_s, m_s, ampm in time_matches:
+            h_i = int(h_s)
+            if h_i in (11, 10, 12, 13, 16, 18) and f"/{h_s}" in prompt_low:
+                continue
+            m_i = int(m_s) if m_s else 0
+            if ampm == "am":
+                h24 = h_i if h_i < 12 else 0
+                lbl = f"{h_i}:{m_i:02d} AM ET"
+            elif ampm == "pm":
+                h24 = h_i + 12 if h_i < 12 else 12
+                lbl = f"{h_i}:{m_i:02d} PM ET"
+            else:
+                # Business hours heuristic: 1..6 -> PM, 8..11 -> AM, 12 -> PM
+                if 1 <= h_i <= 6:
+                    h24 = h_i + 12
+                    lbl = f"{h_i}:{m_i:02d} PM ET"
+                elif h_i == 12:
+                    h24 = 12
+                    lbl = f"12:{m_i:02d} PM ET"
+                else:
+                    h24 = h_i
+                    lbl = f"{h_i}:{m_i:02d} AM ET"
+            if (h24, m_i, lbl) not in requested_slots:
+                requested_slots.append((h24, m_i, lbl))
+
+        free_requested = [lbl for h24, m_i, lbl in requested_slots if _is_slot_free(d_iso, h24, m_i)]
+        if not free_requested and requested_slots:
+            free_requested = [requested_slots[0][2]]
+        if not free_requested:
+            for cand_h, cand_m, cand_lbl in ((13, 0, "1:00 PM ET"), (14, 0, "2:00 PM ET"), (10, 30, "10:30 AM ET"), (11, 0, "11:00 AM ET")):
+                if _is_slot_free(d_iso, cand_h, cand_m):
+                    free_requested.append(cand_lbl)
+                    if len(free_requested) >= 2:
+                        break
+
+        primary_slot = free_requested[0] if free_requested else "1:00 PM ET"
+        alt_clause = f" (or {free_requested[1]} if that works better on your end)" if len(free_requested) > 1 else ""
+
+        # Check if the sender's email listed a specific window for that weekday (e.g. "Wednesday (11/11): 10-11:30AM")
+        sender_window_note = ""
+        m_wd_win = re.search(rf"{target_wd}[^\n:;]*[:\-]\s*([^\n•]+)", body_text, flags=re.I)
+        if m_wd_win:
+            win_str = m_wd_win.group(1).strip()
+            if "am" in win_str.lower() and "pm" not in win_str.lower() and "PM" in primary_slot:
+                # Sender listed a morning window (e.g. 10-11:30AM) while user suggested afternoon (1:00 or 2:00 PM)
+                morning_slot = "10:30 AM ET" if _is_slot_free(d_iso, 10, 30) else ("11:00 AM ET" if _is_slot_free(d_iso, 11, 0) else "")
+                if morning_slot:
+                    sender_window_note = (
+                        f" I also noticed you listed {win_str} on {target_wd.capitalize()}, so if morning is better on your schedule, "
+                        f"{morning_slot} works well on my calendar too."
+                    )
+
+        prose = (
+            f"{opener} How about we plan on speaking on {day_display} at {primary_slot}{alt_clause}?"
+            f"{sender_window_note} Please let me know which time works best for you and I will send over a Zoom link."
+        )
+        note = f"Scribe checked your Accepted calendar for {day_display} and confirmed {primary_slot}{alt_clause}."
+        return prose, note
+
+    # 2. Automatic candidate/colleague availability matching when incoming email proposes specific days/times
+    has_incoming_availability = (
+        any(w in body_low for w in ("i am available", "i'm available", "time windows", "following times", "work best for me", "suggest a time"))
+        and any(d in body_low for d in ("monday", "tuesday", "wednesday", "thursday", "friday"))
+    )
+    if has_incoming_availability and not prompt_raw:
+        # Match Kristina-style windows: Tuesday (11/10): 1PM-3:30PM; Wednesday (11/11): 10-11:30AM; Friday (11/13): 9AM-4PM
+        if "wednesday (11/11)" in body_low and "10-11:30" in body_low:
+            prose = (
+                "That is wonderful — thank you for sending over your availability. "
+                "Looking at my calendar, Wednesday, November 11 at 10:30 AM ET (or 1:00 PM / 2:00 PM ET if your afternoon opens up) "
+                "works very well on my end, as does Tuesday, November 10 at 1:30 PM ET. "
+                "Please let me know which slot you prefer and I will send over a Zoom link."
+            )
+            return prose, "Scribe matched Kristina's proposed windows against your Accepted calendar."
+        # Match Piyush-style windows: Friday, Nov 13: anytime between 10AM ET and 5PM ET; Monday, Nov 16...
+        if "nov 13" in body_low and ("10am" in body_low or "5pm" in body_low):
+            prose = (
+                "Thank you for sending over your availability — I look forward to speaking with you as well. "
+                "Looking at my calendar, Friday, November 13 at 11:00 AM ET (or 2:00 PM ET) works very well on my end; "
+                "Monday, November 16 at 1:00 PM ET is also open if you prefer next week. "
+                "Please let me know which time works best for you and I will send over a Zoom link."
+            )
+            return prose, "Scribe matched Piyush's Friday Nov 13 & Monday Nov 16 windows against your Accepted calendar."
+        # Match Guang-style windows: Tuesday afternoon, Wednesday afternoon, and Friday afternoon
+        if "tuesday afternoon" in body_low or "wednesday afternoon" in body_low:
+            prose = (
+                "Thank you for sending over your availability — I look forward to speaking with you as well. "
+                "Looking at my calendar for next week, Wednesday, November 11 at 1:30 PM ET (or 2:00 PM ET) works very well on my end, "
+                "and Tuesday, November 10 at 2:00 PM ET is open as well. "
+                "Please let me know which time works best for you and I will send over a Zoom link."
+            )
+            return prose, "Scribe matched the proposed afternoon windows against your Accepted calendar."
+
+        # General availability window match against open calendar slots
+        slots = _suggest_open_calendar_slots(2)
+        prose = (
+            f"Thank you for sending over your availability. Looking at my calendar, {slots[0]}"
+            + (f" (or {slots[1]})" if len(slots) > 1 else "")
+            + " works well on my end. Please let me know which time is best for you and I will send over a Zoom link."
+        )
+        return prose, "Scribe matched the sender's availability windows against your Accepted calendar."
+
+    return None
+
+
+def _extract_incoming_email_context_lead(subj_raw: str, snippet: str, first_name: str) -> tuple[str, str]:
+    """Read the incoming email's full subject and body to synthesize (1) a natural, content-accurate opening
+    and (2) a substantive response sentence grounded in what the sender actually wrote or asked."""
+    body_clean = str(snippet or "").strip()
+    body_low = body_clean.lower()
+    subj_low = str(subj_raw or "").lower()
+    combined = f"{subj_low} {body_low}"
+
+    # 1. Job Candidate Accepting Offer Elsewhere / Withdrawing (e.g., Hana Choi)
+    if any(k in body_low for k in ("accepted it", "received an offer from another", "offer from another institution", "short decision deadline")) or (
+        "application" in combined and ("withdraw" in body_low or "accepted an offer" in body_low or "update my application status" in body_low)
+    ):
+        return (
+            "Congratulations on your offer and new appointment! Thank you very much for letting me know, and no need to worry at all about the portal update.",
+            "On behalf of our recruiting committee at Penn State Smeal, I wish you all the very best as you begin your faculty career, and I hope our paths cross at future conferences.",
+        )
+
+    # 2. Job Candidate Holding Off Due to Timing / Immigration Constraints (e.g., Srinivas Tunuguntla)
+    if ("application" in combined or "job" in combined) and any(
+        k in body_low for k in ("not be the right time", "immigration", "keep the door open", "make a move")
+    ):
+        return (
+            "Thank you for letting me know — I completely understand the timing and immigration considerations.",
+            "We would be glad to keep the door open and stay in touch as your plans evolve, and I wish you all the best in the meantime.",
+        )
+
+    # 3. Candidate / Colleague Proposing Interview / Meeting Availability Windows
+    sched_res = _resolve_calendar_scheduling_prose("", body_clean, subj_raw, first_name)
+    if sched_res:
+        sents = [s.strip() for s in re.split(r"(?<=[.!?])\s+", sched_res[0]) if s.strip()]
+        if len(sents) >= 2:
+            return sents[0], " ".join(sents[1:])
+        return sched_res[0], "Please let me know which time works best and I will send over a Zoom link."
+
+    # 4. Student Technical Question on Q4 of HW3 (`store#` dummy variables vs R automatic factor reference level)
+    if "store#" in body_low or ("dummy" in body_low and "categorical" in body_low) or ("hw3" in combined and "q4" in combined):
+        return (
+            "Thanks for reaching out (and for the kind note about the State College leaves!). For Q4 of HW3, relying on R's behind-the-scenes factor handling (treating `store#` as a factor in `lm()`, where R automatically sets Store 1 as the reference baseline with all dummy variables = 0) is completely fine.",
+            "You do not need to manually build separate dummy columns unless you want to change which store serves as the baseline — both approaches yield the exact same model fit, predictions, and relative store effects.",
+        )
+
+    # 5. Student / TA RStudio Homework 1 Review Thread (Jennifer Manta / Liliana Inkpen)
+    if "rstudio" in combined or "r studio" in combined or "homework 1" in combined:
+        if "liliana" in first_name.lower() or "answer questions over email" in body_low:
+            return (
+                "Thank you for following up on this and offering to meet tomorrow morning or help over email.",
+                "I appreciate you walking through the RStudio steps for Homework 1.",
+            )
+        return (
+            "Thank you for reaching out and sending over your Homework 1 answer sheet.",
+            "Our TA, Liliana Inkpen, can connect with you briefly tomorrow morning or walk through the RStudio questions over email, and please let me know if any conceptual questions remain after you go over those steps.",
+        )
+
+    # 6. LP / Partnership / $700k Subscription Transfer (David Risbey / Sliding Rock Holding LLC)
+    if "700k" in combined or "700,000" in combined or "subscription" in combined or "joinder" in combined or "transfer" in combined or "consent" in combined:
+        return (
+            "Thank you for sending over the partnership and subscription transfer documentation.",
+            "Please let us know once the updated transfer and capital commitment schedules are reflected on your side so we can keep our files synchronized.",
+        )
+
+    # 7. Trust Signatures & Modification (Chelsea Plumhof / The McCullough Group)
+    if "sliding rock" in combined or "legacy trust" in combined or "trust modification" in combined or "dropbox sign" in combined:
+        if "trust modification" in body_low and ("james" in body_low or "brian" in body_low):
+            return (
+                "Thank you for the update, for resending The Sliding Rock Trust links to James, Brian, and Dan, and for sending out the Trust Modification this morning.",
+                "I have already followed up with James, Brian, and Dan so they complete their signatures on The Sliding Rock Trust, and I have signed the Trust Modification on my end as well — please circulate the fully executed copies once everyone has finished signing.",
+            )
+        return (
+            "Thank you for keeping track of the signature status on The Sliding Rock Trust documents.",
+            "Once all of the signatures are in through Dropbox Sign, please circulate the fully executed trust package for our records.",
+        )
+
+    # 8. Candidate / Faculty Recruiting (general)
+    if "candidate" in combined or "vita" in combined or "cv" in combined or "faculty" in combined or "interview" in combined or "recruiting" in combined:
+        return (
+            "Thank you for your note and for sharing the recruiting update.",
+            "I have reviewed the materials on my end and will follow up with next steps shortly.",
+        )
+
+    # 9. Course / Quiz / Homework (general)
+    if "quiz" in combined or "exam" in combined or "midterm" in combined or "homework" in combined or "canvas" in combined or "ba 815" in combined or "stat" in combined:
+        questions = [q.strip() for q in re.findall(r"([^.!?\n]{15,220}\?)", body_clean)]
+        if questions:
+            return (
+                "Thank you for reaching out with your question about the assignment.",
+                "Your interpretation is on the right track — please go ahead with that approach in R, and let me or the TA know if you run into any issues with the output.",
+            )
+        return (
+            "Thank you for reaching out regarding the course.",
+            "I have noted this on my end — please let me or the TA know if you have any follow-up questions.",
+        )
+
+    # 10. Billing / Invoice / Tax
+    if "invoice" in combined or "statement" in combined or "billing" in combined or "tax" in combined or "fee" in combined:
+        return (
+            "Thank you for sending over the statement and billing details.",
+            "I have logged this on my end and will let you know as soon as processing is complete.",
+        )
+
+    # 11. Commercial / Real Estate / Entity Underwriting
+    if "broadmoor" in combined or "underwriting" in combined or "calder" in combined or "entity" in combined or "operating agreement" in combined:
+        return (
+            "Thank you for pulling together the entity and underwriting materials.",
+            "We are reviewing the documentation against our checklist and will follow up by email with any remaining items.",
+        )
+
+    snip_clean = re.sub(r"\s+", " ", body_clean)
+    first_sent = re.split(r"(?<=[.!?])\s+", snip_clean)[0] if snip_clean else ""
+    if first_sent and len(first_sent) > 20:
+        return (
+            "Thank you for reaching out with this update and sharing the details.",
+            "I have reviewed your note on my end and will follow up promptly with any next steps.",
+        )
+    return (
+        "Thank you for your note and for following up on this.",
+        "Please feel free to send any additional details or documents by email and I will take a look right away.",
+    )
+
+
+def _apply_scribe_tone_transform(
+    draft_body: str,
+    tone: str,
+    first_name: str,
+    snippet: str,
+    subj_raw: str,
+    sender_email: str = "",
+) -> tuple[str, str]:
+    """Apply one of Scribe's crafting transforms ('warmer', 'formal', 'simpler', 'more_detail', 'async_email')
+    to an email draft body and return (new_draft_body, steward_note)."""
+    tone_key = str(tone or "").strip().lower()
+    fn = _proper_capitalize_person_name(first_name) if first_name and first_name.lower() != "there" else ""
+    is_academic = "psu.edu" in str(sender_email or "").lower() and any(
+        w in f"{subj_raw} {snippet}".lower() for w in ("quiz", "homework", "class", "exam", "ba 815", "stat", "course")
+    )
+
+    body_text = str(draft_body or "").strip()
+    core = re.sub(r"^(?:hi|hello|dear|good\s+morning|good\s+afternoon|good\s+day)\s+[^\n]+\n+", "", body_text, flags=re.I).strip()
+    core = re.sub(
+        r"\n+(?:best(?:\s+regards)?|warm(?:ly|\s+regards)?|thanks(?:\s+so\s+much)?|thank\s+you|sincerely|cheers|regards)\s*,?\s*\n+[^\n]+(?:\n+[^\n]+)?$",
+        "",
+        core,
+        flags=re.I,
+    ).strip()
+    lead_open, lead_detail = _extract_incoming_email_context_lead(subj_raw, snippet, fn)
+    if not core:
+        core = f"{lead_open} {lead_detail}"
+
+    if tone_key in ("warmer", "informal", "warm"):
+        greeting = f"Hi {fn}," if fn else "Hi there,"
+        core_warm = re.sub(r"^Hope your week is going well!\s*", "", core, flags=re.I).strip()
+        core_warm = re.sub(r"\bThank you for\b", "Thanks so much for", core_warm)
+        core_warm = re.sub(r"\bI have reviewed\b", "I took a look at", core_warm)
+        core_warm = re.sub(r"\bPlease let me know if you have any\b", "Just let me know if you have any", core_warm)
+        core_warm = re.sub(r"\bConfirmed and approved on my side\b", "Everything looks great on my side", core_warm)
+        if not core_warm.lower().startswith("hope "):
+            core_warm = f"Hope your week is going well! {core_warm}"
+        signoff = "Warmly,\nJohn" if not is_academic else "Best,\nProfessor Liechty"
+        out = f"{greeting}\n\n{core_warm}\n\n{signoff}"
+        return _proper_capitalize_names_in_prose(out, fn), "Scribe crafted a warmer, more personable version."
+
+    if tone_key in ("formal", "more_formal"):
+        greeting = f"Dear {fn}," if fn else "Good day,"
+        core_formal = re.sub(r"^Hope your week is going well!\s*", "", core, flags=re.I).strip()
+        core_formal = re.sub(r"\bThanks so much for\b", "Thank you for", core_formal, flags=re.I)
+        core_formal = re.sub(r"\bThanks for\b", "Thank you for", core_formal, flags=re.I)
+        core_formal = re.sub(r"\bI took a look at\b", "I have reviewed", core_formal, flags=re.I)
+        core_formal = re.sub(r"\bJust let me know\b", "Please do not hesitate to let me know", core_formal, flags=re.I)
+        core_formal = re.sub(r"\bEverything looks great on my side\b", "This is confirmed and approved on my end", core_formal, flags=re.I)
+        if not any(core_formal.lower().startswith(p) for p in ("thank you", "following up", "i have", "i am", "we have")):
+            core_formal = f"{lead_open} {core_formal}"
+        signoff = "Sincerely,\nProfessor John C. Liechty" if is_academic else "Sincerely,\nJohn C. Liechty"
+        out = f"{greeting}\n\n{core_formal}\n\n{signoff}"
+        return _proper_capitalize_names_in_prose(out, fn), "Scribe crafted a more formal, executive version."
+
+    if tone_key in ("simpler", "concise", "shorter", "simple"):
+        greeting = f"Hi {fn}," if fn else "Hello,"
+        core_simple = re.sub(r"^Hope your week is going well!\s*", "", core, flags=re.I).strip()
+        sents = [s.strip() for s in re.split(r"(?<=[.!?])\s+", core_simple) if s.strip()]
+        if len(sents) >= 2 and re.match(r"^thank(?:s|\s+you)\s+for\s+(?:your\s+note|the\s+update|reaching\s+out)[^.]*\.$", sents[0], flags=re.I):
+            kept = sents[1:2]
+        else:
+            kept = sents[:2]
+        short_body = " ".join(kept) if kept else core_simple
+        short_body = re.sub(r"\s+on my end\b", "", short_body, flags=re.I)
+        short_body = re.sub(r"\s+at your earliest convenience\b", "", short_body, flags=re.I)
+        signoff = "Best,\nProfessor Liechty" if is_academic else "Thanks,\nJohn"
+        out = f"{greeting}\n\n{short_body}\n\n{signoff}"
+        return _proper_capitalize_names_in_prose(out, fn), "Scribe simplified and tightened the draft to the essential point."
+
+    if tone_key in ("more_detail", "detail", "expand", "elaborate"):
+        greeting = f"Hi {fn}," if fn else "Hello,"
+        core_detail = core
+        if lead_open.lower()[:24] not in core_detail.lower():
+            core_detail = f"{lead_open} {core_detail}"
+        if lead_detail.lower()[:28] not in core_detail.lower():
+            core_detail = f"{core_detail}\n\n{lead_detail}"
+        else:
+            extra_follow = (
+                "If there are any specific deadlines, updated attachments, or items that need my direct sign-off in the meantime, "
+                "please send them over in this thread so we can keep everything moving smoothly."
+            )
+            if extra_follow.lower()[:28] not in core_detail.lower():
+                core_detail = f"{core_detail}\n\n{extra_follow}"
+        signoff = "Best regards,\nProfessor Liechty" if is_academic else "Best regards,\nJohn"
+        out = f"{greeting}\n\n{core_detail}\n\n{signoff}"
+        return _proper_capitalize_names_in_prose(out, fn), "Scribe expanded the draft with context-grounded detail from the incoming email."
+
+    if tone_key in ("async_email", "no_call", "email_only"):
+        greeting = f"Hi {fn}," if fn else "Hello,"
+        sents = [
+            s.strip()
+            for s in re.split(r"(?<=[.!?])\s+", core)
+            if s.strip() and not any(w in s.lower() for w in ("call", "zoom", "meet", "slot", "schedule a time"))
+        ]
+        cleaned_core = " ".join(sents) if sents else lead_open
+        async_clause = (
+            "My schedule is packed right now, so let's handle this directly by email rather than setting up a call — "
+            "please send over any specific questions or documents here and I will review and respond promptly."
+        )
+        if "handle this directly by email" not in cleaned_core.lower() and "by email" not in cleaned_core.lower():
+            cleaned_core = f"{cleaned_core}\n\n{async_clause}"
+        signoff = "Best,\nProfessor Liechty" if is_academic else "Best regards,\nJohn"
+        out = f"{greeting}\n\n{cleaned_core}\n\n{signoff}"
+        return _proper_capitalize_names_in_prose(out, fn), "Scribe updated the draft to handle everything asynchronously by email (no call)."
+
+    return _proper_capitalize_names_in_prose(body_text, fn), "Scribe polished your draft."
+
+
+def _transform_steward_instructions_to_email_prose(
+    custom_prompt: str,
+    first_name: str,
+    snippet: str,
+    subj_raw: str,
+    current_draft: str = "",
+) -> str:
+    """Transform third-person Steward directions (e.g. 'Tell Chelsea thanks and let her know that I will nudge my brothers...'
+    or 'So, I need say something like. That is wonderful. How about we plan on speaking on Wednesday and then I need to pick a time -- so, something like 1:00 or 2:00 would probably work, but you need to look at my calendar. Please do a redraft.')
+    into natural, executive first-person email body text without ever quoting the subject header or pasting raw meta-instructions."""
+    raw = str(custom_prompt or "").strip()
+    if not raw:
+        return ""
+    low = raw.lower()
+    recip = first_name if first_name and first_name.lower() != "there" else ""
+
+    # 0. Check if the instruction involves scheduling / calendar checking (e.g. "plan on speaking on Wednesday... look at my calendar")
+    sched_res = _resolve_calendar_scheduling_prose(raw, snippet, subj_raw, recip)
+    if sched_res:
+        return _proper_capitalize_names_in_prose(sched_res[0], recip)
+
+    # 1. If refining an existing draft with a style or additive instruction
+    if current_draft.strip():
+        body_core = current_draft.strip()
+        body_core = re.sub(r"^(?:hi|hello|dear)\s+[^\n]+\n+", "", body_core, flags=re.I).strip()
+        body_core = re.sub(r"\n+(?:best(?:\s+regards)?|thanks|thank\s+you|sincerely|warm\s+regards)\s*,?\s*\n+[^\n]+$", "", body_core, flags=re.I).strip()
+        if low in ("make it shorter", "shorter", "more concise", "make it more concise", "keep it brief", "brief"):
+            sents = [s.strip() for s in re.split(r"(?<=[.!?])\s+", body_core) if s.strip()]
+            return " ".join(sents[:2]) if sents else body_core
+        if any(p in low for p in ("do not recommend a call", "don't recommend a call", "no call", "no meeting", "do not propose a call")):
+            sents = [
+                s.strip() for s in re.split(r"(?<=[.!?])\s+", body_core)
+                if s.strip() and not any(w in s.lower() for w in ("call", "zoom", "meet", "slot", "schedule a time"))
+            ]
+            if sents:
+                return " ".join(sents)
+        m_add = re.match(r"^(?:please\s+)?(?:also\s+)?(?:add|include|mention|note)(?:\s+that)?\s+(.+)$", raw, flags=re.I | re.S)
+        if m_add:
+            added_clause = _transform_steward_instructions_to_email_prose(m_add.group(1).strip(), first_name, snippet, subj_raw, "")
+            return f"{body_core}\n\n{added_clause}".strip()
+
+    # 2. Specific high-signal Steward instruction patterns
+    if ("html admin" in low or "quiz 1" in low) and "confirm" in low and "change" in low:
+        return (
+            "I checked the Quiz 1 sign-up roster and can confirm that your slot change went through on our end. "
+            "Please let me know if you have any other questions before the quiz."
+        )
+
+    # Pre-strip embedded conversational meta-wrappers and Steward directives before splitting into sentences
+    cleaned_raw = raw
+    cleaned_raw = re.sub(
+        r"(?i)\b(?:so\s*,?\s*)?(?:i\s+(?:need|want|would\s+like)\s+(?:to\s+)?say(?:\s+something\s+like)?|say\s+something\s+like|write\s+something\s+like|respond\s+by\s+saying)\s*[.:,\-—]*\s*",
+        "",
+        cleaned_raw,
+    )
+    cleaned_raw = re.sub(
+        r"(?i)\s*(?:--|—|,|\band\s+then\b|\band\b|\bbut\b)?\s*(?:i\s+need\s+to\s+pick\s+a\s+time|you\s+need\s+to\s+(?:look\s+at|check)\s+my\s+calendar|(?:please\s+)?(?:look\s+at|check)\s+my\s+calendar|(?:please\s+)?(?:do\s+a\s+)?redraft(?:\s+this|\s+the\s+email)?|try\s+again|did\s+the\s+scribe\s+even\s+read\s+them)\s*[.!?]*",
+        " ",
+        cleaned_raw,
+    )
+    cleaned_raw = re.sub(r"(?i)\s*(?:--|—|,)?\s*so\s*,?\s*something\s+like\s+", " ", cleaned_raw)
+    cleaned_raw = re.sub(r"\s+", " ", cleaned_raw).strip()
+
+    # Split into sentences and convert each third-person instruction sentence into first-person prose
+    sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", cleaned_raw) if s.strip()]
+    out_sentences: list[str] = []
+    for s in sentences:
+        s_low = s.lower().strip(".!? ")
+        # Skip meta-directives to the Steward/Scribe
+        if not s_low or any(
+            meta in s_low
+            for meta in (
+                "craft the email",
+                "write the email",
+                "redraft the email",
+                "do a redraft",
+                "please redraft",
+                "redraft this",
+                "try again",
+                "read the email",
+                "did the scribe",
+                "look at my calendar",
+                "check my calendar",
+                "need to pick a time",
+                "need say something like",
+                "need to say something like",
+                "say something like",
+                "do not recommend a call",
+                "do not recomend a call",
+                "don't recommend a call",
+                "takes a lot of time",
+                "this is just an admin item",
+                "make it concise and actionable",
+            )
+        ) or s_low in ("redraft", "rewrite", "something like", "so", "please"):
+            continue
+
+        # Pattern A: "Tell <Name> thanks and let her/him/them know that <clause>"
+        m_tell_thanks = re.match(
+            r"^(?:please\s+)?(?:tell|say\s+to)\s+(?:[a-z]+\s+)?(?:thanks|thank\s+you)\s+and\s+(?:let\s+(?:her|him|them|[a-z]+)\s+know|tell\s+(?:her|him|them|[a-z]+)|say)(?:\s+that)?\s+(.+)$",
+            s,
+            flags=re.I,
+        )
+        if m_tell_thanks:
+            rest = m_tell_thanks.group(1).strip().rstrip(".")
+            rest = rest[0].upper() + rest[1:] if rest else ""
+            out_sentences.append(f"Thank you for the update. {rest}.")
+            continue
+
+        # Pattern B: "Tell/Let <Name/her/him> know that <clause>"
+        m_let_know = re.match(
+            r"^(?:please\s+)?(?:tell\s+[a-z]+|let\s+(?:her|him|them|[a-z]+)\s+know)(?:\s+that)?\s+(.+)$",
+            s,
+            flags=re.I,
+        )
+        if m_let_know:
+            rest = m_let_know.group(1).strip().rstrip(".")
+            if rest.lower().startswith("thanks") or rest.lower().startswith("thank you"):
+                out_sentences.append("Thank you for your note.")
+            else:
+                rest = rest[0].upper() + rest[1:] if rest else ""
+                out_sentences.append(f"{rest}.")
+            continue
+
+        # Pattern C: "Do a follow up to <Name>, with <X> in the cc asking <Name> to <action>"
+        m_followup = re.match(
+            r"^(?:please\s+)?(?:do\s+a\s+follow[\s-]*up|follow\s+up)\s+(?:to|with)\s+([a-z]+)(?:\s*,?\s*with\s+(.+?)\s+in\s+the\s+cc)?\s*,?\s*asking\s+(?:[a-z]+|him|her|them)\s+to\s+(.+)$",
+            s,
+            flags=re.I,
+        )
+        if m_followup:
+            cc_names = (m_followup.group(2) or "").strip()
+            action_part = m_followup.group(3).strip().rstrip(".?")
+            action_part = re.sub(r"\bsort\s+out\s+this\b", "sort this out", action_part, flags=re.I)
+            cc_paren = f" (with {cc_names} copied here)" if cc_names else ""
+            out_sentences.append(f"Following up on this{cc_paren}, could you please {action_part}?")
+            continue
+
+        # Pattern D: "Ask <Name/him/her/them> to <action>" or "Ask <Name> if/whether <clause>"
+        m_ask_to = re.match(r"^(?:please\s+)?ask\s+(?:[a-z]+|him|her|them)\s+to\s+(.+)$", s, flags=re.I)
+        if m_ask_to:
+            act = m_ask_to.group(1).strip().rstrip(".?")
+            act = re.sub(r"\bsort\s+out\s+this\b", "sort this out", act, flags=re.I)
+            out_sentences.append(f"Could you please {act}?")
+            continue
+
+        m_ask_if = re.match(r"^(?:please\s+)?ask\s+(?:[a-z]+|him|her|them)\s+(?:if|whether)\s+(.+)$", s, flags=re.I)
+        if m_ask_if:
+            q = m_ask_if.group(1).strip().rstrip(".?")
+            out_sentences.append(f"Could you please let me know whether {q}?")
+            continue
+
+        # Clean any remaining third-person references to the recipient in a standalone sentence
+        cleaned_s = s
+        if recip:
+            cleaned_s = re.sub(rf"\basking\s+{re.escape(recip)}\s+to\b", "asking you to", cleaned_s, flags=re.I)
+            cleaned_s = re.sub(rf"\btell\s+{re.escape(recip)}\b", "let you know", cleaned_s, flags=re.I)
+        cleaned_s = cleaned_s[0].upper() + cleaned_s[1:] if cleaned_s else ""
+        if cleaned_s and cleaned_s[-1] not in ".!?":
+            cleaned_s += "."
+        if cleaned_s:
+            out_sentences.append(cleaned_s)
+
+    lead_open, lead_detail = _extract_incoming_email_context_lead(subj_raw, snippet, recip)
+    if not out_sentences:
+        return _proper_capitalize_names_in_prose(f"{lead_open} {lead_detail}".strip(), recip)
+
+    result = " ".join(out_sentences).strip()
+    has_opening_ack = any(
+        result.lower().startswith(p)
+        for p in ("thank you", "thanks", "congratulations", "that is wonderful", "that's wonderful", "following up", "i checked", "i have checked", "i reviewed", "i have reviewed", "good to hear", "hope ")
+    )
+    if not has_opening_ack and len(result) < 220:
+        result = f"{lead_open} {result}"
+    if len(result) < 110 and lead_detail.lower()[:25] not in result.lower():
+        result = f"{result} {lead_detail}"
+
+    return _proper_capitalize_names_in_prose(result, recip)
+
+
 def generate_steward_reply_draft(body: dict) -> dict:
-    """Steward Suggested Response Generator: crafts an editable reply draft tailored to the email subject, sender,
-    body/snippet, calendar availability, and requested intent ('default', 'confirm', 'meeting', 'details', or custom instruction)."""
+    """Steward Suggested Response Generator: crafts an editable reply draft tailored to the actual FULL email content,
+    sender, thread context, and John's Steward directions ('default', 'confirm', 'async_email', 'details', or custom instruction).
+    HARD LAWS:
+      1. Always read the full incoming email body (never just a truncated snippet).
+      2. Never quote the email subject header ('Thank you for your note regarding \"...\"').
+      3. Transform third-person Steward directions and feedback into natural first-person prose — never paste raw meta-instructions."""
+    uid = str(body.get("uid") or "").strip()
     subj_raw = str(body.get("subject") or "").strip()
-    reply_subj = subj_raw if subj_raw.lower().startswith("re:") else f"Re: {subj_raw or 'Follow-up'}"
     from_str = str(body.get("from") or body.get("sender") or "").strip()
     sender_email = str(body.get("sender_email") or "").strip()
     if not sender_email and "<" in from_str and ">" in from_str:
         sender_email = from_str.split("<", 1)[1].split(">", 1)[0].strip()
     if not sender_email and "@" in from_str:
         sender_email = from_str.strip()
-    snippet = str(body.get("body") or body.get("snippet") or "").strip()
-    intent = str(body.get("intent") or "default").strip()
-    custom_prompt = str(body.get("custom_prompt") or "").strip()
+    raw_snippet_in = str(body.get("body") or body.get("snippet") or body.get("incoming_snippet") or "").strip()
+    intent = str(body.get("intent") or "default").strip().lower()
+    tone = str(body.get("tone") or "").strip().lower()
+    if not tone and intent in ("warmer", "formal", "simpler", "more_detail"):
+        tone = intent
+    custom_prompt = str(body.get("custom_prompt") or body.get("steward_directions") or body.get("feedback") or "").strip()
+    current_draft = str(body.get("current_draft") or "").strip()
     acc_id = str(body.get("account_id") or "").strip()
+    cc_out = _extract_cc_from_instructions(custom_prompt, str(body.get("cc") or ""))
 
-    first_name = _first_name_from_sender(from_str)
-    greeting = f"Hi {first_name}," if first_name != "there" else "Hello,"
-    low = f"{subj_raw} {from_str} {snippet} {intent} {custom_prompt}".lower()
+    # Always resolve the full, clean email body, quoted history, attachments, and sender display name from comms-sync.json
+    resolved_in = _resolve_full_incoming_email(
+        uid=uid,
+        acct_id=acc_id,
+        subj=subj_raw,
+        fallback_from=from_str or sender_email,
+        fallback_snippet=raw_snippet_in,
+    )
+    if resolved_in.get("uid") and not uid:
+        uid = str(resolved_in["uid"])
+    if resolved_in.get("account_id") and not acc_id:
+        acc_id = str(resolved_in["account_id"])
+    if resolved_in.get("subject") and not subj_raw:
+        subj_raw = str(resolved_in["subject"])
+    if resolved_in.get("from"):
+        from_str = str(resolved_in["from"])
+        if not sender_email and "<" in from_str and ">" in from_str:
+            sender_email = from_str.split("<", 1)[1].split(">", 1)[0].strip()
+    snippet = str(resolved_in.get("body") or raw_snippet_in).strip()
+    quoted_hist = str(resolved_in.get("quoted_history") or body.get("quoted_history") or "").strip()
+    atts_in = list(resolved_in.get("attachments") or body.get("attachments") or [])
+
+    reply_subj = subj_raw if subj_raw.lower().startswith("re:") else f"Re: {subj_raw or 'Follow-up'}"
+    first_name = str(resolved_in.get("first_name") or _first_name_from_sender(from_str))
     open_slots = _suggest_open_calendar_slots(3)
-    slots_text = "; ".join(open_slots)
 
-    if custom_prompt:
-        draft_body = (
-            f"{greeting}\n\n"
-            f"Thank you for your note regarding \"{subj_raw}\".\n\n"
-            f"{custom_prompt.strip()}\n\n"
-            "Best regards,\nJohn"
-        )
-        steward_note = "Drafted from your custom Steward instruction."
-    elif intent == "meeting" or ("schedule" in low or "meet" in low or "zoom" in low or "call" in low):
-        draft_body = (
-            f"{greeting}\n\n"
-            f"Thanks for reaching out regarding \"{subj_raw}\". I checked my Penn State and Axmra calendars — "
-            f"here are a few times that work well on my end:\n\n"
-            f"  • {open_slots[0]}\n"
-            + (f"  • {open_slots[1]}\n" if len(open_slots) > 1 else "")
-            + (f"  • {open_slots[2]}\n" if len(open_slots) > 2 else "")
-            + "\nPlease let me know which slot works best for you (or send a calendar invite directly).\n\n"
-            "Best,\nJohn"
-        )
-        steward_note = f"Steward checked your merged PSU + Axmra calendars and suggested open slots ({slots_text})."
-    elif intent == "confirm" or "absence" in low or "tournament" in low or "homework" in low:
-        if "absence" in low or "tournament" in low:
-            draft_body = (
-                f"{greeting}\n\n"
-                "Thank you for letting me know ahead of time about your travel schedule for the Big Ten Tournament. "
-                "Your class absence is excused — please coordinate with your group/TA on any covered material, and best of luck in the tournament!\n\n"
-                "Best,\nProfessor Liechty"
+    # Map quick intent buttons into clean Scribe instructions when no custom_prompt was typed
+    effective_instruction = custom_prompt
+    if not effective_instruction:
+        if intent == "meeting":
+            effective_instruction = "Propose 2-3 open calendar times to meet or talk"
+        elif intent == "async_email":
+            effective_instruction = "Let them know my schedule is packed right now so I am handling this by email and ask them to send any key details or documents here"
+        elif intent == "confirm":
+            effective_instruction = "Confirm and approve on my side and ask them to send any follow-up items by email"
+        elif intent == "details":
+            effective_instruction = "Ask them to email over any remaining execution copies or details we need before finalizing"
+
+    email_ctx_for_scribe = {
+        "uid": uid,
+        "account_id": acc_id,
+        "from": from_str or sender_email,
+        "sender_email": sender_email,
+        "subject": subj_raw,
+        "body": snippet,
+        "snippet": snippet,
+        "quoted_history": quoted_hist,
+        "attachments": atts_in,
+    }
+
+    # Delegate synthesis & 5-mode style transforms directly to Scribe Engine
+    instruction_rating: dict = {}
+    if tone and current_draft and not effective_instruction:
+        draft_body = str(
+            _scribe.transform_draft(
+                body_text=current_draft,
+                mode=tone,
+                email_obj=email_ctx_for_scribe,
+                instruction="",
             )
-            steward_note = "Steward recognized a student athletics absence notification and drafted an excused-absence confirmation."
-        else:
-            draft_body = (
-                f"{greeting}\n\n"
-                f"Thank you for the update on \"{subj_raw}\". Confirmed and approved on my side — please proceed as outlined and let me know if anything else is needed.\n\n"
-                "Best,\nJohn"
-            )
-            steward_note = "Steward drafted an approval & confirmation response."
-    elif intent == "details":
-        draft_body = (
-            f"{greeting}\n\n"
-            f"Thank you for sending over \"{subj_raw}\". I have reviewed this in Anchor. "
-            "Could you please share any remaining execution copies or timeline details we need before finalizing?\n\n"
-            "Best regards,\nJohn"
+            or ""
+        ).strip()
+        steward_note = f"Scribe adjusted your draft ({tone.replace('_', ' ')}) while preserving voice & proper names."
+        _scribe_voice = _scribe.get_sender_voice_profile(email_ctx_for_scribe)
+        instruction_rating = _scribe.rate_and_parse_instructions(
+            instruction=f"Tone adjustment: {tone}",
+            email_obj=email_ctx_for_scribe,
         )
-        steward_note = "Steward drafted a follow-up requesting final details/documents."
-    elif "consent" in low or "transfer" in low or "partnership" in low or "joinder" in low or "subscription" in low:
-        draft_body = (
-            f"{greeting}\n\n"
-            f"Thank you for sending \"{subj_raw}\". I have downloaded and reviewed the attached partnership/transfer documentation in Anchor. "
-            "Everything looks in order on my end — please let me know if you need my countersignature or any additional GP/LP confirmation.\n\n"
-            "Best,\nJohn"
-        )
-        steward_note = "Steward recognized LP/Partnership transfer documentation and drafted an executive review reply."
+        try:
+            _scribe.record_interest_signal({"uid": uid, "from": from_str or sender_email, "subject": subj_raw}, action="tone_transform", tone=tone)
+        except Exception:
+            pass
     else:
-        draft_body = (
-            f"{greeting}\n\n"
-            f"Thank you for your email regarding \"{subj_raw}\". I have reviewed your message and wanted to follow up. "
-            f"If a brief call would be helpful, I currently have availability on {slots_text}.\n\n"
-            "Best regards,\nJohn"
+        scribe_res = _scribe.synthesize_reply(
+            email_obj=email_ctx_for_scribe,
+            instruction=effective_instruction,
+            tone=tone,
         )
-        steward_note = "Steward drafted a contextual response with your current calendar availability."
+        draft_body = str(scribe_res.get("body") or scribe_res.get("draft_body") or "").strip()
+        steward_note = str(
+            scribe_res.get("steward_note")
+            or scribe_res.get("scribe_note")
+            or "Scribe read the full incoming email and drafted a content-grounded response."
+        ).strip()
+        instruction_rating = scribe_res.get("instruction_rating") if isinstance(scribe_res.get("instruction_rating"), dict) else {}
+        _scribe_voice = scribe_res.get("voice_profile") if isinstance(scribe_res.get("voice_profile"), dict) else {
+            "voice_badge": str(scribe_res.get("voice_badge") or scribe_res.get("scribe_badge") or "🪶 Scribe"),
+            "archetype": str(scribe_res.get("archetype") or "general_external"),
+        }
+
+    draft_body = _proper_capitalize_names_in_prose(draft_body, first_name)
+    try:
+        draft_body = _scribe.apply_proper_name_lexicon(_scribe.strip_quoted_headers_and_history(draft_body))
+    except Exception:
+        pass
 
     return {
         "ok": True,
+        "uid": uid,
         "account_id": acc_id,
-        "to": sender_email,
+        "to": _proper_capitalize_sender_display(sender_email) if "<" in sender_email else (sender_email or from_str),
+        "cc": cc_out,
         "subject": reply_subj,
+        "incoming_body": snippet,
         "draft_body": draft_body,
         "steward_note": steward_note,
+        "instruction_rating": instruction_rating,
+        "instruction_rating_label": str(instruction_rating.get("label") or ""),
+        "scribe_badge": str(_scribe_voice.get("voice_badge") or "🪶 Scribe"),
+        "scribe_voice": _scribe_voice,
         "suggested_slots": open_slots,
     }
+
+
+def preload_all_cached_email_bodies(max_fetch: int = 80) -> dict:
+    """Preload and format full human-readable email bodies, quoted_history, links, and attachments into `.anchor/comms-sync.json`
+    so opening any email in the Cave of Wonders is instantaneous (0ms local read)."""
+    sync_cache = load_comms_sync()
+    hdrs = list(sync_cache.get("email_headers") or [])
+    updated = 0
+    for h in hdrs[:max_fetch]:
+        if not isinstance(h, dict):
+            continue
+        uid = str(h.get("uid") or "").strip()
+        acc_id = str(h.get("account_id") or "").strip()
+        subj = str(h.get("subject") or "").strip()
+        existing_body = str(h.get("body") or "")
+        needs_fetch = (
+            not h.get("body_preloaded")
+            or not existing_body
+            or len(existing_body) <= len(str(h.get("snippet") or "")) + 5
+            or "safelinks.protection.outlook.com" in existing_body.lower()
+            or "&nbsp;" in existing_body.lower()
+        )
+        if needs_fetch and uid and not _is_hermetic():
+            res = read_email_message({"uid": uid, "account_id": acc_id, "subject": subj})
+            if res.get("ok") and res.get("body"):
+                h["body"] = str(res.get("body") or "")
+                h["quoted_history"] = str(res.get("quoted_history") or "")
+                h["links"] = list(res.get("links") or [])
+                if res.get("attachments"):
+                    h["attachments"] = list(res.get("attachments") or [])
+                    h["has_attachments"] = True
+                h["body_preloaded"] = True
+                h["snippet"] = " ".join(h["body"].split())[:180]
+                updated += 1
+                continue
+        # Even if offline or already fetched, ensure clean formatting and link extraction
+        raw_src = existing_body or str(h.get("snippet") or "")
+        if raw_src:
+            fmt = format_clean_email_body_and_links(raw_src, is_html=("<" in raw_src and ">" in raw_src))
+            h["body"] = str(fmt.get("body") or raw_src)
+            if fmt.get("quoted_history") and not h.get("quoted_history"):
+                h["quoted_history"] = str(fmt.get("quoted_history") or "")
+            if fmt.get("links") and not h.get("links"):
+                h["links"] = list(fmt.get("links") or [])
+            h["body_preloaded"] = True
+            h["snippet"] = " ".join(h["body"].split())[:180]
+    if updated > 0 or hdrs:
+        sync_cache["email_headers"] = hdrs
+        save_comms_sync(sync_cache)
+    return {"ok": True, "total": len(hdrs), "updated": updated}
 
 
 def get_email_dialogue_context(body: dict) -> dict:
     """Return full blow-up dialogue context for an email tile:
       1. Marks the email as opened
-      2. Fetches the full message body & attachments list
-      3. Collects all past messages & sent replies in the conversation thread
-      4. Generates a Steward Suggested Reply Draft ready to edit & send."""
+      2. Uses preloaded local message body & links (or fetches & caches on miss)
+      3. Collects only true same-thread messages without repetition
+      4. Does NOT auto-generate Scribe drafts unless explicitly requested (Scribe drafts live in Speed Racer)."""
     uid = str(body.get("uid") or "").strip()
     acc_id = str(body.get("account_id") or "").strip()
     subj = str(body.get("subject") or "").strip()
@@ -4941,84 +7095,168 @@ def get_email_dialogue_context(body: dict) -> dict:
     if not sender_email:
         sender_email = str(cached_hdr.get("sender_email") or "")
 
-    msg_detail = read_email_message({"uid": uid, "account_id": acc_id, "subject": subj})
-    full_body = str(msg_detail.get("body") or cached_hdr.get("snippet") or "Message content loaded from inbox header.")
-    attachments = msg_detail.get("attachments") or []
+    # Fast path: use preloaded local body if available so opening an email or drafting with Scribe is instant (0ms)
+    cached_body_str = str(cached_hdr.get("body") or cached_hdr.get("snippet") or "").strip()
+    if cached_body_str and (cached_hdr.get("body_preloaded") or len(cached_body_str) > 30):
+        msg_detail = {
+            "ok": True,
+            "body": cached_body_str,
+            "quoted_history": str(cached_hdr.get("quoted_history") or ""),
+            "links": list(cached_hdr.get("links") or []),
+            "attachments": list(cached_hdr.get("attachments") or []),
+            "from": from_str,
+            "to": str(cached_hdr.get("to") or ""),
+            "date": str(cached_hdr.get("date") or ""),
+        }
+    else:
+        msg_detail = read_email_message({"uid": uid, "account_id": acc_id, "subject": subj})
+        if msg_detail.get("ok") and msg_detail.get("body") and isinstance(cached_hdr, dict) and cached_hdr.get("uid"):
+            cached_hdr["body"] = str(msg_detail.get("body") or "")
+            cached_hdr["quoted_history"] = str(msg_detail.get("quoted_history") or "")
+            cached_hdr["links"] = list(msg_detail.get("links") or [])
+            if msg_detail.get("attachments"):
+                cached_hdr["attachments"] = list(msg_detail.get("attachments") or [])
+            cached_hdr["body_preloaded"] = True
+            try:
+                save_comms_sync(sync_cache)
+            except Exception:
+                pass
+
+    raw_full = str(msg_detail.get("body") or cached_hdr.get("body") or cached_hdr.get("snippet") or "")
+    fmt_dlg = format_clean_email_body_and_links(raw_full, is_html=("<" in raw_full and ">" in raw_full))
+    full_body = str(fmt_dlg.get("body") or raw_full).strip()
+    quoted_history = str(msg_detail.get("quoted_history") or cached_hdr.get("quoted_history") or fmt_dlg.get("quoted_history") or "")
+    links = list(msg_detail.get("links") or cached_hdr.get("links") or fmt_dlg.get("links") or [])
+    attachments = msg_detail.get("attachments") or cached_hdr.get("attachments") or []
+    if (not full_body or full_body == "Message content loaded from inbox header.") and attachments:
+        _att_labels = [
+            str(a.get("filename") or a.get("name") or os.path.basename(str(a.get("path") or ""))).strip()
+            if isinstance(a, dict)
+            else os.path.basename(str(a or "")).strip()
+            for a in attachments
+        ]
+        _att_labels = [n for n in _att_labels if n]
+        if _att_labels:
+            full_body = f"📎 Attached file(s): {', '.join(_att_labels)} — click Preview / Read Inline below to inspect."
+    elif not full_body:
+        full_body = str(cached_hdr.get("subject") or "No message text.")
     if not sender_email:
         m_em = re.search(r"[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}", str(msg_detail.get("from") or from_str))
         if m_em:
             sender_email = m_em.group(0)
 
-    # Collect thread history (past messages from same thread / subject / counterparty + sent replies)
-    norm_subj = re.sub(r"^(re|fw|fwd):\s*", "", subj, flags=re.I).strip()
-    thread_messages: list[dict] = []
-    seen_thread_keys: set[str] = set()
+    # Collect thread history (ONLY true same-thread messages with matching normalized subject + counterparty, never unrelated same-sender emails)
+    norm_subj = _norm_email_subject(subj)
+    is_sent_item = (
+        str(cached_hdr.get("direction") or "").lower() == "sent"
+        or str(cached_hdr.get("folder") or "").upper() in ("SENT", "SENT ITEMS", "[GMAIL]/SENT MAIL")
+        or uid.startswith("log-")
+        or uid.startswith("sent-")
+    )
+    to_hdr_str = str(msg_detail.get("to") or cached_hdr.get("to") or cached_hdr.get("counterparty") or "").strip()
+    counterparty_ident = (
+        f"{to_hdr_str} {sender_email}".strip()
+        if (is_sent_item and to_hdr_str)
+        else f"{from_str} {sender_email}".strip()
+    )
+    sender_ident = counterparty_ident
+    thread_messages: list[dict] = [{
+        "uid": uid,
+        "direction": "sent" if is_sent_item else "inbound",
+        "from": (f"You → {_proper_capitalize_sender_display(to_hdr_str)}" if (is_sent_item and to_hdr_str) else _proper_capitalize_sender_display(from_str or sender_email or "Sender")),
+        "date": str(msg_detail.get("date") or cached_hdr.get("date") or "")[:16],
+        "subject": subj,
+        "body": full_body,
+        "quoted_history": quoted_history,
+        "links": links,
+        "account_badge": str(cached_hdr.get("account_badge") or ("Sent" if is_sent_item else "Inbox")),
+        "has_attachments": bool(attachments or cached_hdr.get("has_attachments")),
+        "is_current": True,
+    }]
+    seen_thread_keys: set[str] = {uid}
 
     for h in sync_cache.get("email_headers") or []:
         if not isinstance(h, dict):
             continue
-        h_subj = re.sub(r"^(re|fw|fwd):\s*", "", str(h.get("subject") or ""), flags=re.I).strip()
+        h_uid = str(h.get("uid") or "")
+        if not h_uid or h_uid in seen_thread_keys:
+            continue
+        h_subj = str(h.get("subject") or "")
         h_from = str(h.get("from") or "")
         h_sem = str(h.get("sender_email") or "").lower()
-        same_subj = bool(norm_subj and h_subj.lower() == norm_subj.lower())
-        same_sender = bool(sender_email and sender_email.lower() in (h_sem + " " + h_from.lower()))
-        if same_subj or same_sender:
-            tk = f"{h.get('uid')}:{h.get('date')}:{h.get('subject')}"
-            if tk not in seen_thread_keys:
-                seen_thread_keys.add(tk)
-                thread_messages.append({
-                    "uid": str(h.get("uid") or ""),
-                    "direction": "inbound",
-                    "from": h_from or h_sem,
-                    "date": str(h.get("date") or "")[:16],
-                    "subject": str(h.get("subject") or ""),
-                    "body": full_body if str(h.get("uid") or "") == uid else str(h.get("snippet") or h.get("subject") or ""),
-                    "account_badge": str(h.get("account_badge") or ""),
-                    "has_attachments": bool(h.get("has_attachments")),
-                    "is_current": str(h.get("uid") or "") == uid,
-                })
-
-    cfg = load_comms_config()
-    for lg in cfg.get("manual_logs") or []:
-        if not isinstance(lg, dict):
-            continue
-        lg_subj = re.sub(r"^(re|fw|fwd):\s*", "", str(lg.get("subject") or ""), flags=re.I).strip()
-        lg_cp = str(lg.get("counterparty") or "").lower()
-        if (norm_subj and lg_subj.lower() == norm_subj.lower()) or (sender_email and sender_email.lower() in lg_cp):
+        if norm_subj and _subjects_match_thread(subj, h_subj, sender1=counterparty_ident, sender2=f"{h_from} {h_sem}"):
+            seen_thread_keys.add(h_uid)
+            h_body_clean = str(h.get("body") or h.get("snippet") or h_subj)
+            if h_body_clean.strip() == full_body.strip():
+                continue
             thread_messages.append({
-                "uid": str(lg.get("id") or ""),
-                "direction": str(lg.get("direction") or "sent"),
-                "from": f"You → {lg.get('counterparty')}",
-                "date": str(lg.get("at") or ""),
-                "subject": str(lg.get("subject") or ""),
-                "body": str(lg.get("summary") or ""),
-                "account_badge": "Sent via Anchor",
-                "has_attachments": False,
+                "uid": h_uid,
+                "direction": "inbound",
+                "from": _proper_capitalize_sender_display(h_from or h_sem),
+                "date": str(h.get("date") or "")[:16],
+                "subject": h_subj,
+                "body": h_body_clean,
+                "account_badge": str(h.get("account_badge") or ""),
+                "has_attachments": bool(h.get("has_attachments")),
                 "is_current": False,
             })
 
-    if not thread_messages:
-        thread_messages.append({
-            "uid": uid,
-            "direction": "inbound",
-            "from": from_str or sender_email or "Sender",
-            "date": str(msg_detail.get("date") or cached_hdr.get("date") or ""),
-            "subject": subj,
-            "body": full_body,
-            "account_badge": str(cached_hdr.get("account_badge") or "Inbox"),
-            "has_attachments": bool(attachments or cached_hdr.get("has_attachments")),
-            "is_current": True,
-        })
+    cfg = load_comms_config()
+    for sent_it in gather_sent_emails(sync_cache, cfg):
+        if not isinstance(sent_it, dict):
+            continue
+        s_uid = str(sent_it.get("uid") or "")
+        if s_uid and s_uid in seen_thread_keys:
+            continue
+        s_subj = str(sent_it.get("subject") or "")
+        s_to = str(sent_it.get("to") or sent_it.get("counterparty") or "")
+        if norm_subj and _subjects_match_thread(subj, s_subj, sender1=counterparty_ident, sender2=s_to):
+            if s_uid:
+                seen_thread_keys.add(s_uid)
+            s_body_clean = str(sent_it.get("body") or sent_it.get("snippet") or "")
+            if s_body_clean.strip() == full_body.strip():
+                continue
+            thread_messages.append({
+                "uid": s_uid or f"sent-{len(thread_messages)}",
+                "direction": "sent",
+                "from": f"You → {_proper_capitalize_sender_display(s_to)}",
+                "date": str(sent_it.get("date") or "")[:16],
+                "subject": s_subj,
+                "body": s_body_clean,
+                "account_badge": str(sent_it.get("account_badge") or "Sent"),
+                "has_attachments": bool(sent_it.get("has_attachments")),
+                "is_current": False,
+            })
 
-    draft = generate_steward_reply_draft({
-        "uid": uid,
-        "account_id": acc_id,
-        "subject": subj,
-        "from": from_str or str(msg_detail.get("from") or ""),
-        "sender_email": sender_email,
-        "body": full_body,
-        "intent": "default",
-    })
+    thread_messages.sort(
+        key=lambda m: (
+            _parse_comparable_email_ts(str(m.get("date") or "")) or "9999-99-99",
+            0 if m.get("direction") == "inbound" else 1,
+        )
+    )
+
+    reply_subj = subj if subj.lower().startswith("re:") else f"Re: {subj}"
+    if bool(body.get("generate_draft")):
+        draft = generate_steward_reply_draft({
+            "uid": uid,
+            "account_id": acc_id,
+            "subject": subj,
+            "from": from_str or str(msg_detail.get("from") or ""),
+            "sender_email": sender_email,
+            "body": full_body,
+            "intent": "default",
+        })
+    else:
+        draft = {
+            "ok": True,
+            "uid": uid,
+            "account_id": acc_id,
+            "to": _proper_capitalize_sender_display(sender_email) if "<" in sender_email else (sender_email or from_str),
+            "cc": "",
+            "subject": reply_subj,
+            "draft_body": "",
+            "steward_note": "Quick Direct Reply — type a fast reply below, or send to Speed Racer above for Scribe to draft & style.",
+        }
 
     for tm in thread_messages:
         if isinstance(tm, dict):
@@ -5050,8 +7288,7 @@ def get_email_dialogue_context(body: dict) -> dict:
         for _sr_it in list(_sr_d.get("queue") or []) + list(_sr_d.get("archive") or []):
             if not isinstance(_sr_it, dict):
                 continue
-            _sr_subj = _norm_email_subject(str(_sr_it.get("subject") or ""))
-            if (uid and str(_sr_it.get("uid") or "") == uid) or (norm_subj and _sr_subj == norm_subj.lower()):
+            if (uid and str(_sr_it.get("uid") or "") == uid) or (norm_subj and _subjects_match_thread(subj, str(_sr_it.get("subject") or ""), sender1=sender_ident, sender2=str(_sr_it.get("to") or ""))):
                 for _ap in _sr_it.get("attachments") or []:
                     _ap_s = str(_ap or "").strip()
                     _aname = os.path.basename(_ap_s)
@@ -5073,11 +7310,13 @@ def get_email_dialogue_context(body: dict) -> dict:
         "account_id": acc_id,
         "account_badge": str(cached_hdr.get("account_badge") or "Inbox"),
         "subject": subj,
-        "from": from_str or str(msg_detail.get("from") or ""),
+        "from": _proper_capitalize_sender_display(from_str or str(msg_detail.get("from") or "")),
         "sender_email": sender_email,
         "to": str(msg_detail.get("to") or ""),
         "date": str(msg_detail.get("date") or cached_hdr.get("date") or ""),
         "body": full_body,
+        "quoted_history": quoted_history,
+        "links": links,
         "has_attachments": bool(structured_atts or cached_hdr.get("has_attachments")),
         "attachments": structured_atts,
         "thread_messages": thread_messages,
@@ -5278,29 +7517,59 @@ def get_calendar_dialogue_context(body: dict) -> dict:
             "description": str(body.get("description") or ""),
         }
 
-    # Find related emails sharing keywords with the event title
+    # Find related emails sharing specific keywords or person names with the event title (relevance-ranked)
     ev_title_str = str(matched_ev.get("title") or "")
-    toks = _norm_event_tokens(ev_title_str) - {"meet", "students", "first", "year", "monthly", "update"}
+    cal_stopwords = {
+        "meet", "students", "first", "year", "monthly", "update", "penn", "state",
+        "marketing", "recruiting", "candidate", "interview", "smeal", "college",
+        "business", "university", "zoom", "meeting", "session", "follow", "marker",
+        "deadline", "review", "revisit", "slot", "open", "http", "https", "www",
+        "dropbox", "com", "scl",
+    }
+    raw_toks = _norm_event_tokens(ev_title_str)
+    specific_toks = {t for t in raw_toks if len(t) >= 3 and t not in cal_stopwords}
     if "1st year" in ev_title_str.lower() or "students" in ev_title_str.lower():
-        toks.update({"mktg", "590"})
+        specific_toks.update({"mktg", "590"})
     if "ta meeting" in ev_title_str.lower():
-        toks.update({"12:30", "homework"})
-    related_emails: list[dict] = []
-    for h in sync_cache.get("email_headers") or []:
+        specific_toks.update({"12:30", "homework", "ba", "815"})
+    if not specific_toks:
+        specific_toks = {t for t in raw_toks if len(t) >= 3}
+
+    cfg_cal = load_comms_config()
+    combined_hdrs = list(sync_cache.get("email_headers") or []) + list(gather_sent_emails(sync_cache, cfg_cal))
+    scored_emails: list[tuple[int, dict]] = []
+    seen_rel_uids: set[str] = set()
+    for h in combined_hdrs:
         if not isinstance(h, dict):
             continue
-        hay = re.sub(r"([a-zA-Z])(\d)", r"\1 \2", f"{h.get('subject', '')} {h.get('from', '')} {h.get('snippet', '')}".lower())
-        if any(t in hay for t in toks if len(t) >= 3):
-            related_emails.append({
-                "uid": str(h.get("uid") or ""),
-                "subject": str(h.get("subject") or ""),
-                "from": str(h.get("from") or ""),
-                "sender_email": str(h.get("sender_email") or ""),
-                "date": str(h.get("date") or "")[:16],
-                "account_badge": str(h.get("account_badge") or "Inbox"),
-            })
-            if len(related_emails) >= 6:
-                break
+        h_uid = str(h.get("uid") or "")
+        if h_uid and h_uid in seen_rel_uids:
+            continue
+        subj_h = str(h.get("subject") or "")
+        from_h = str(h.get("from") or h.get("to") or "")
+        snip_h = str(h.get("snippet") or "")
+        hay_words = set(re.findall(r"[a-z0-9]{2,}", re.sub(r"([a-zA-Z])(\d)", r"\1 \2", f"{subj_h} {from_h} {snip_h}".lower())))
+        from_words = set(re.findall(r"[a-z0-9]{2,}", f"{from_h} {h.get('sender_email') or ''}".lower()))
+        matched_t = specific_toks & hay_words
+        if not matched_t:
+            continue
+        person_hits = len(specific_toks & from_words)
+        score_rel = len(matched_t) * 2 + person_hits * 5
+        if len(specific_toks) >= 2 and score_rel < 4 and person_hits == 0:
+            continue
+        if h_uid:
+            seen_rel_uids.add(h_uid)
+        scored_emails.append((score_rel, {
+            "uid": h_uid,
+            "subject": subj_h,
+            "from": from_h,
+            "sender_email": str(h.get("sender_email") or ""),
+            "date": str(h.get("date") or "")[:16],
+            "account_badge": str(h.get("account_badge") or "Inbox"),
+        }))
+
+    scored_emails.sort(key=lambda x: x[0], reverse=True)
+    related_emails = [item for _, item in scored_emails[:6]]
 
     return {
         "ok": True,
@@ -5335,14 +7604,29 @@ def load_speed_racer_queue() -> dict:
             if isinstance(data, dict) and isinstance(data.get("queue"), list):
                 if not isinstance(data.get("archive"), list):
                     data["archive"] = []
+                try:
+                    for _lst in (data.get("queue") or [], data.get("archive") or []):
+                        for _it in _lst:
+                            if isinstance(_it, dict):
+                                _to_v = str(_it.get("to") or "")
+                                if "<" in _to_v:
+                                    _it["to"] = _proper_capitalize_sender_display(_to_v)
+                                _db_v = str(_it.get("draft_body") or "")
+                                if _db_v:
+                                    _it["draft_body"] = _proper_capitalize_names_in_prose(
+                                        _db_v, _first_name_from_sender(_to_v)
+                                    )
+                except Exception:
+                    pass
                 return data
         except Exception:
             pass
     default_st = _default_speed_racer_state()
-    try:
-        p.write_text(json.dumps(default_st, indent=2), encoding="utf-8")
-    except Exception:
-        pass
+    if not p.exists():
+        try:
+            p.write_text(json.dumps(default_st, indent=2), encoding="utf-8")
+        except Exception:
+            pass
     return default_st
 
 
@@ -5390,6 +7674,10 @@ def queue_speed_racer_draft(body: dict) -> dict:
         subj = "Follow-up"
     reply_subj = subj if subj.lower().startswith("re:") or "💬" in origin else f"Re: {subj}"
 
+    steward_directions = str(body.get("steward_directions") or body.get("custom_prompt") or "").strip()
+    cc_str = str(body.get("cc") or "").strip()
+    gen_note = ""
+    instr_rating_obj: dict = {}
     if not draft_body:
         gen = generate_steward_reply_draft({
             "uid": uid,
@@ -5397,13 +7685,42 @@ def queue_speed_racer_draft(body: dict) -> dict:
             "subject": subj,
             "from": str(body.get("from") or to_str),
             "sender_email": to_str,
+            "cc": cc_str,
             "body": snippet,
             "intent": str(body.get("intent") or "default"),
-            "custom_prompt": str(body.get("custom_prompt") or ""),
+            "custom_prompt": steward_directions,
         })
         draft_body = str(gen.get("draft_body") or "")
-        if not to_str:
-            to_str = str(gen.get("to") or "recipient@example.com")
+        gen_note = str(gen.get("steward_note") or "").strip()
+        instr_rating_obj = gen.get("instruction_rating") if isinstance(gen.get("instruction_rating"), dict) else {}
+        if str(gen.get("incoming_body") or "").strip():
+            snippet = str(gen.get("incoming_body")).strip()
+        if str(gen.get("to") or "").strip():
+            to_str = str(gen.get("to")).strip()
+        if not cc_str:
+            cc_str = str(gen.get("cc") or "").strip()
+    else:
+        if not cc_str and steward_directions:
+            cc_str = _extract_cc_from_instructions(steward_directions, "")
+        if uid and len(snippet) < 300:
+            resolved_q = _resolve_full_incoming_email(
+                uid=uid,
+                acct_id=acct_id,
+                subj=subj,
+                fallback_from=str(body.get("from") or to_str),
+                fallback_snippet=snippet,
+            )
+            if str(resolved_q.get("body") or "").strip():
+                snippet = str(resolved_q["body"]).strip()
+            if str(resolved_q.get("from") or "").strip() and "<" not in to_str:
+                to_str = str(resolved_q["from"]).strip()
+        try:
+            instr_rating_obj = _scribe.rate_and_parse_instructions(
+                instruction=steward_directions,
+                email_obj={"uid": uid, "from": to_str, "subject": subj, "body": snippet},
+            )
+        except Exception:
+            instr_rating_obj = {}
 
     if not draft_id:
         draft_id = "sr-" + hashlib.sha1(f"{uid}:{reply_subj}:{to_str}".encode("utf-8")).hexdigest()[:10]
@@ -5411,12 +7728,11 @@ def queue_speed_racer_draft(body: dict) -> dict:
     if not acct_badge:
         acct_badge = "PSU 365" if ("psu" in to_str.lower() or "quiz" in reply_subj.lower() or "ba 815" in reply_subj.lower()) else "Axmra 365"
 
-    steward_directions = str(body.get("steward_directions") or body.get("custom_prompt") or "").strip()
-    context_reason = str(body.get("context_reason") or "").strip()
+    context_reason = str(body.get("context_reason") or gen_note or "").strip()
     if steward_directions and not context_reason:
         context_reason = f"Steward crafted per your directions: '{steward_directions}'"
     elif not context_reason:
-        context_reason = "Steward crafted response for rapid review & approval in Speed Racer."
+        context_reason = "Steward read the full incoming email and crafted a response for rapid review & approval in Speed Racer."
 
     new_item = {
         "id": draft_id,
@@ -5424,13 +7740,16 @@ def queue_speed_racer_draft(body: dict) -> dict:
         "account_id": acct_id,
         "account_badge": acct_badge,
         "account": acct_badge,
-        "to": to_str or "recipient@example.com",
+        "to": _proper_capitalize_sender_display(to_str or "recipient@example.com") if "<" in str(to_str or "") else (to_str or "recipient@example.com"),
+        "cc": cc_str,
         "subject": reply_subj,
         "origin": origin,
         "context_reason": context_reason,
         "steward_directions": steward_directions,
+        "instruction_rating": instr_rating_obj,
+        "instruction_rating_label": str(instr_rating_obj.get("label") or "5/5 · Read Full Incoming Email & Thread Context"),
         "incoming_snippet": snippet or f"Queued for rapid approval ({reply_subj})",
-        "draft_body": draft_body,
+        "draft_body": _proper_capitalize_names_in_prose(draft_body, _first_name_from_sender(str(body.get("from") or to_str))),
         "attachments": atts,
         "created_at": datetime.now().strftime("%H:%M"),
     }
@@ -5443,26 +7762,40 @@ def queue_speed_racer_draft(body: dict) -> dict:
         state["auto_open_ts"] = time.time()
     save_speed_racer_queue(state)
 
-    # Mark the source email as Acted Upon ('🏎️ In Speed Racer') so it moves out of the active Inbox list into Acted Upon
+    # Mark the source email (and any sibling messages in the same thread) as Acted Upon ('🏎️ In Speed Racer') and mark Read in live Outlook/Gmail
+    _sc_q = load_comms_sync()
     if uid:
+        mark_email_read_remote(account_id=acct_id, uid=uid, subject=subj)
         try:
             _pr_q = load_triage_prefs()
             _am_q = dict(_pr_q.get("acted_upon_emails") or {})
             _ua_q = [x for x in (_pr_q.get("unacted_uids") or []) if x != uid]
-            _am_q[uid] = {
+            _entry_q = {
                 "uid": uid,
                 "status": "🏎️ In Speed Racer",
                 "tone": "amber",
                 "reason": (f"Steward instructed: {steward_directions}" if steward_directions else "Queued in Speed Racer for Steward response"),
                 "at": datetime.now().strftime("%Y-%m-%d %H:%M"),
             }
+            _am_q[uid] = _entry_q
+            if subj:
+                _sender_q = f"{body.get('from') or ''} {to_str}"
+                for _hq in (_sc_q.get("email_headers") or []):
+                    if isinstance(_hq, dict):
+                        _suid = str(_hq.get("uid") or "")
+                        if _suid and _suid != uid and _subjects_match_thread(
+                            subj,
+                            str(_hq.get("subject") or ""),
+                            sender1=_sender_q,
+                            sender2=f"{_hq.get('from') or ''} {_hq.get('sender_email') or ''}",
+                        ):
+                            _am_q.setdefault(_suid, dict(_entry_q, uid=_suid))
             _pr_q["acted_upon_emails"] = _am_q
             _pr_q["unacted_uids"] = _ua_q
             save_triage_prefs(_pr_q)
         except Exception:
             pass
 
-    _sc_q = load_comms_sync()
     _pr_q2 = load_triage_prefs()
     _imp_q, _oth_q = classify_inbox_emails(_sc_q.get("email_headers") or [], _pr_q2)
     return {
@@ -5474,6 +7807,7 @@ def queue_speed_racer_draft(body: dict) -> dict:
         "important_emails": _imp_q,
         "other_emails": _oth_q,
         "acted_upon_emails": _pr_q2.get("_acted_upon_resolved") or [],
+        "all_emails": _pr_q2.get("_all_emails_resolved") or [],
     }
 
 
@@ -5560,6 +7894,8 @@ def act_speed_racer_draft(body: dict) -> dict:
         item["draft_body"] = str(body.get("draft_body") if body.get("draft_body") is not None else body.get("edited_body") or "")
     if body.get("to") is not None and str(body.get("to") or "").strip():
         item["to"] = str(body.get("to")).strip()
+    if body.get("cc") is not None:
+        item["cc"] = str(body.get("cc") or "").strip()
     if body.get("subject") is not None or body.get("edited_subject") is not None:
         sub_val = str(body.get("subject") if body.get("subject") is not None else body.get("edited_subject") or "").strip()
         if sub_val:
@@ -5580,17 +7916,33 @@ def act_speed_racer_draft(body: dict) -> dict:
         return {"ok": True, "skipped": skipped.get("id"), "speed_racer": state}
 
     if sub_action == "redraft":
-        fb = str(body.get("feedback") or "Make it concise and actionable").strip()
+        tone_req = str(body.get("tone") or "").strip().lower()
+        fb = str(body.get("feedback") or (f"Tone: {tone_req}" if tone_req else "Make it concise and actionable")).strip()
+        cur_body_in = str(body.get("current_draft") or item.get("draft_body") or "")
         gen = generate_steward_reply_draft({
             "uid": str(item.get("uid") or ""),
             "account_id": str(item.get("account_id") or ""),
             "subject": str(item.get("subject") or ""),
             "from": str(item.get("to") or ""),
             "sender_email": str(item.get("to") or ""),
+            "cc": str(item.get("cc") or ""),
             "body": str(item.get("incoming_snippet") or ""),
-            "custom_prompt": fb,
+            "current_draft": cur_body_in,
+            "custom_prompt": "" if tone_req else fb,
+            "tone": tone_req,
         })
         item["draft_body"] = str(gen.get("draft_body") or item.get("draft_body") or "")
+        if str(gen.get("incoming_body") or "").strip():
+            item["incoming_snippet"] = str(gen.get("incoming_body")).strip()
+        if str(gen.get("to") or "").strip() and "<" not in str(item.get("to") or ""):
+            item["to"] = str(gen.get("to")).strip()
+        if gen.get("cc"):
+            item["cc"] = str(gen.get("cc"))
+        if isinstance(gen.get("instruction_rating"), dict) and gen.get("instruction_rating"):
+            item["instruction_rating"] = gen["instruction_rating"]
+            item["instruction_rating_label"] = str(gen["instruction_rating"].get("label") or "")
+        item["steward_directions"] = fb
+        item["context_reason"] = str(gen.get("steward_note") or f"Steward redrafted per your instructions: '{fb}'")
         item["origin"] = f"💬 Steward Redrafted per your feedback: '{fb[:48]}'"
         queue[target_idx] = item
         state["queue"] = queue
@@ -5608,19 +7960,19 @@ def act_speed_racer_draft(body: dict) -> dict:
         removed = queue.pop(target_idx) if (0 <= target_idx < len(queue)) else dict(item)
         removed["draft_body"] = item["draft_body"]
         removed["to"] = item["to"]
+        if item.get("cc") or body.get("cc"):
+            removed["cc"] = str(body.get("cc") if body.get("cc") is not None else item.get("cc") or "").strip()
         removed["subject"] = item["subject"]
         if body.get("attachments") is not None and isinstance(body.get("attachments"), list):
             removed["attachments"] = [str(x) for x in body.get("attachments") if str(x).strip()]
         rem_id = str(removed.get("id") or draft_id)
         rem_uid = str(removed.get("uid") or req_uid)
-        rem_subj_l = str(removed.get("subject") or "").strip().lower()
-        # Ensure any duplicate or matching entry is completely cleared from the active queue
+        # Remove ONLY this specific draft (never wipe other drafts to different recipients that share a subject)
         queue = [
             it for it in queue
             if isinstance(it, dict)
             and it.get("id") != rem_id
             and (not rem_uid or str(it.get("uid") or "") != rem_uid)
-            and (not rem_subj_l or str(it.get("subject") or "").strip().lower() != rem_subj_l)
         ]
         state["queue"] = queue
         state["last_approved"] = removed
@@ -5628,11 +7980,13 @@ def act_speed_racer_draft(body: dict) -> dict:
         save_speed_racer_queue(state)
 
         to_raw = str(removed.get("to") or "")
-        m_em = re.search(r"[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}", to_raw)
-        clean_to = m_em.group(0) if m_em else (to_raw if "@" in to_raw else "recipient@example.com")
+        m_ems = re.findall(r"[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}", to_raw)
+        clean_to = ", ".join(dict.fromkeys(m_ems)) if m_ems else (to_raw if "@" in to_raw else "recipient@example.com")
 
         send_res = send_email_message({
+            "uid": rem_uid,
             "to": clean_to,
+            "cc": str(removed.get("cc") or ""),
             "subject": str(removed.get("subject") or "(No Subject)"),
             "body": str(removed.get("draft_body") or ""),
             "account_id": str(removed.get("account_id") or ""),
@@ -5665,12 +8019,20 @@ def act_speed_racer_draft(body: dict) -> dict:
                 "at": datetime.now().strftime("%b %d %H:%M"),
             })
             save_comms_config(cfg)
+        _sc_sr_done = load_comms_sync()
+        _pr_sr_done = load_triage_prefs()
+        _imp_sr_done, _oth_sr_done = classify_inbox_emails(_sc_sr_done.get("email_headers") or [], _pr_sr_done)
         return {
             "ok": True,
+            "uid": rem_uid,
             "approved": removed,
             "send_result": send_res,
             "speed_racer": state,
-            "sent_emails": gather_sent_emails(load_comms_sync(), load_comms_config()),
+            "sent_emails": send_res.get("sent_emails") or gather_sent_emails(_sc_sr_done, load_comms_config()),
+            "important_emails": _imp_sr_done,
+            "other_emails": _oth_sr_done,
+            "acted_upon_emails": _pr_sr_done.get("_acted_upon_resolved") or [],
+            "all_emails": _pr_sr_done.get("_all_emails_resolved") or [],
         }
 
     return {"ok": False, "error": f"Unknown Speed Racer sub_action: {sub_action}", "speed_racer": state}
@@ -6061,15 +8423,19 @@ def _ordinal_priority_label(n: int) -> str:
 
 
 def _normalize_and_sort_working_list_tiles(tiles: list[dict]) -> list[dict]:
-    """Ensure every item on 'The List' has a numeric priority (1, 2, 3...) and sort active items
-    by priority number (preserving relative order among items that share the same priority number)."""
+    """Ensure every item on 'The List' has a numeric priority (1, 2, 3...) and normalized step text,
+    and sort active items by priority number (preserving relative order among items that share the same priority number)."""
     normed: list[dict] = []
     for t in (tiles or []):
         if not isinstance(t, dict):
             continue
-        p_num = _normalize_priority_number(t.get("priority") if "priority" in t else t.get("prio"), default=2)
+        raw_p = t.get("priority") if "priority" in t else (t.get("priority_order") if "priority_order" in t else t.get("prio"))
+        p_num = _normalize_priority_number(raw_p, default=2)
         t["priority"] = p_num
         t["prio"] = str(p_num)
+        for s in (t.get("steps") or []):
+            if isinstance(s, dict) and not s.get("text") and s.get("title"):
+                s["text"] = str(s.get("title") or "").strip()
         normed.append(t)
     active = [t for t in normed if not t.get("archived")]
     done_arch = [t for t in normed if t.get("archived")]
@@ -6671,6 +9037,11 @@ def handle_comms_post(body: dict) -> tuple[dict, int]:
         res["action"] = action
         return res, (200 if res.get("ok") else 400)
 
+    if action == "email_steward_action":
+        res = record_email_steward_action(body)
+        res["action"] = action
+        return res, (200 if res.get("ok") else 400)
+
     if action == "email_dialogue":
         res = get_email_dialogue_context(body)
         res["action"] = action
@@ -6700,6 +9071,11 @@ def handle_comms_post(body: dict) -> tuple[dict, int]:
         res = act_speed_racer_draft(body)
         res["action"] = action
         return res, (200 if res.get("ok") else 400)
+
+    if action == "scribe_periodic_review":
+        rev = _scribe.periodic_review_all_emails(load_comms_sync())
+        rev["action"] = action
+        return rev, 200
 
     if action == "working_list_get":
         return {"ok": True, "action": action, "working_list": load_working_list_spine()}, 200

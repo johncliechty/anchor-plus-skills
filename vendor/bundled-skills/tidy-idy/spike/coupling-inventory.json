@@ -12,7 +12,7 @@
       "kind": "hardcoded-path",
       "phase": "runtime (lazy default agentFn, not import-time)",
       "status": "resolved",
-      "evidence": "Default agentFn dynamically imported 'file:///C:/dev/trio/drivers/gemini-cli.mjs' (analyze.mjs:123) — an absolute machine-local path outside the package. Any run that did not inject options.agent failed on a machine without C:/dev/trio. Verified by static source scan in the seam harness.",
+      "evidence": "Default agentFn dynamically imported 'fil<path>' (analyze.mjs:123) — an absolute machine-local path outside the package. Any run that did not inject options.agent failed on a machine without <path> Verified by static source scan in the seam harness.",
       "proposed-fix": "Wave-1 stage(ctx): inject the LLM seam through ctx (ctx.agent / a driver registry); resolve the driver from configuration or an env var with a loud failure when absent — never an absolute hardcoded path.",
       "resolution": "Wave 1: bin/analyze.mjs builds its agent via engine/agent-seam.mjs resolveAgent({agent, driverPath, model, log}) — injected agent → config driverPath → TIDY_IDY_DRIVER/TRIO_DRIVER env var — and throws AgentSeamUnavailable LOUDLY at the call site when none resolves. The absolute path literal is absent from the source; engine/stages/analyze.stage.mjs passes ctx.agent."
     },
@@ -21,7 +21,7 @@
       "kind": "hardcoded-path",
       "phase": "runtime (lazy default agentFn, not import-time)",
       "status": "resolved",
-      "evidence": "Default agentFn dynamically imported 'file:///C:/dev/trio/drivers/gemini-cli.mjs' (debate.mjs:59) — same absolute machine-local driver path as analyze.mjs. Verified by static source scan.",
+      "evidence": "Default agentFn dynamically imported 'fil<path>' (debate.mjs:59) — same absolute machine-local driver path as analyze.mjs. Verified by static source scan.",
       "proposed-fix": "Same as analyze.mjs: ctx-injected agent seam with config/env-resolved driver, loud failure when unresolvable.",
       "resolution": "Wave 1: identical fix — resolveAgent() from engine/agent-seam.mjs; engine/stages/debate.stage.mjs supplies ctx.agent."
     },
@@ -30,7 +30,7 @@
       "kind": "hardcoded-path",
       "phase": "runtime (lazy default agentFn, not import-time)",
       "status": "resolved",
-      "evidence": "Default agentFn dynamically imported 'file:///C:/dev/trio/drivers/gemini-cli.mjs' (compress.mjs:61) — same absolute machine-local driver path. Verified by static source scan. (Runtime probe also shows compress is the ONLY LLM stage with no git or Foundry-marker assumption: it runs to completion on a plain non-git folder when an agent is injected.)",
+      "evidence": "Default agentFn dynamically imported 'fil<path>' (compress.mjs:61) — same absolute machine-local driver path. Verified by static source scan. (Runtime probe also shows compress is the ONLY LLM stage with no git or Foundry-marker assumption: it runs to completion on a plain non-git folder when an agent is injected.)",
       "proposed-fix": "Same ctx-injected agent seam. Additionally Wave-1 demotes compress to an in-memory proposal stage (diff finding), removing its direct writes from the analysis pass.",
       "resolution": "Wave 1: resolveAgent() replaces the hardcoded driver import, AND engine/stages/compress.stage.mjs demotes compression inside the staged pipeline to an in-memory PROPOSAL finding carrying a rendered diff — the analysis pass writes nothing. The legacy writing path in bin/compress.mjs remains only on the legacy CLI."
     },

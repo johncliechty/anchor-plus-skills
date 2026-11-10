@@ -11,7 +11,7 @@
 | Mapping tables (11 skills) | **Built** | `mapping.mjs` knobs by depth |
 | Crucible / Foreman / RP **wires** (package modules) | **Built** | Not proof every live entrypoint imports them |
 | Generated prose blocks (8 skills) | **Built** | `generated/*.triage-block.md` |
-| Live trio engines on disk (`C:\dev\trio`) | **Partially wired** | C/F band profiles live; full `@foundry/triage` import path needs verification per call site |
+| Live trio engines on disk (`<path> | **Partially wired** | C/F band profiles live; full `@foundry/triage` import path needs verification per call site |
 | Expanded package suite | **Incomplete** | Foreman DONE under-gated historically; re-prove suite after gate alignment |
 | All Foundry skills **runtime** lock | **Not done** | Entry-points exist; skills may not call them |
 

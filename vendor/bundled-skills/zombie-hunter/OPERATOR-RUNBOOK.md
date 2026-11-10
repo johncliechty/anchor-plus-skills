@@ -33,7 +33,7 @@ Supervision is **active session**, not mere host image on the parent chain:
 
 ## Long engines vs agent sessions (universal)
 
-Long Crucible/Foreman/foundry runs should launch **outside** the interactive agent’s process/Job tree when the chat host reaps tool children. This is **not Grok-only** — Claude Code, Cursor agents, and Gemini/agy tool shells can do the same. Canonical note: `C:\dev\trio\docs\LAUNCH-OUTSIDE-AGENT-JOB.md`.
+Long Crucible/Foreman/foundry runs should launch **outside** the interactive agent’s process/Job tree when the chat host reaps tool children. This is **not Grok-only** — Claude Code, Cursor agents, and Gemini/agy tool shells can do the same. Canonical note: `<path>
 
 ## Doctor vs Investigate
 

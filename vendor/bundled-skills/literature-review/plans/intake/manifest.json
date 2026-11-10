@@ -1,7 +1,7 @@
 {
   "tier": "tier2",
   "brownfield": true,
-  "projectDir": "C:\\dev\\Skill Foundry\\skills\\literature-review",
+  "projectDir": "<path> Foundry\\skills\\literature-review",
   "versions": [
     "planning/crucible/MASTER-PLAN-DRAFT.md",
     "planning/crucible/MASTER-PLAN.md",

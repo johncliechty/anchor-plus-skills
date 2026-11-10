@@ -6,24 +6,25 @@ extraction. The archived commit sha below is the honest provenance.
 
 | Skill | Source | Archived commit |
 |-------|--------|-----------------|
-| researchPrime | <path> | `536029b1122a5456c2be8c33916931fd76832518` |
-| crucible | <path> | `536029b1122a5456c2be8c33916931fd76832518` |
-| foreman | <path> | `536029b1122a5456c2be8c33916931fd76832518` |
-| gandalf | <path> Foundry\skills\gandalf | `b302f6a36bee682004f827c7e05e7a52752dd4fe` |
-| jumper | <path> Foundry | `b302f6a36bee682004f827c7e05e7a52752dd4fe` |
-| ramanujan | <path> Foundry | `b302f6a36bee682004f827c7e05e7a52752dd4fe` |
-| legal-beagle | <path> Foundry | `b302f6a36bee682004f827c7e05e7a52752dd4fe` |
-| literature-review | <path> Foundry | `b302f6a36bee682004f827c7e05e7a52752dd4fe` |
-| financial-analyst | <path> Foundry | `b302f6a36bee682004f827c7e05e7a52752dd4fe` |
-| tidy-idy | <path> Foundry | `b302f6a36bee682004f827c7e05e7a52752dd4fe` |
-| zombie-hunter | <path> Foundry | `b302f6a36bee682004f827c7e05e7a52752dd4fe` |
-| anvil | <path> Foundry | `b302f6a36bee682004f827c7e05e7a52752dd4fe` |
-| aegis | <path> Foundry | `b302f6a36bee682004f827c7e05e7a52752dd4fe` |
-| superjump | <path> Foundry | `b302f6a36bee682004f827c7e05e7a52752dd4fe` |
-| chekhov | <path> Foundry | `b302f6a36bee682004f827c7e05e7a52752dd4fe` |
-| einstein | <path> Foundry | `b302f6a36bee682004f827c7e05e7a52752dd4fe` |
-| figure-designer | <path> Foundry | `b302f6a36bee682004f827c7e05e7a52752dd4fe` |
-| agy-dispatch | <path> Foundry | `b302f6a36bee682004f827c7e05e7a52752dd4fe` |
-| ecgberht | <path> | `dd94b5f608f539cdcd6eaace1d5f1a799a99cd1b` |
-| drivers | <path> | `536029b1122a5456c2be8c33916931fd76832518` |
-| foundry-triage | <path> Foundry | `b302f6a36bee682004f827c7e05e7a52752dd4fe` |
+| researchPrime | <path> | `0dbcf31ad6f735a5d841137323c02aa59826fd01` |
+| crucible | <path> | `0dbcf31ad6f735a5d841137323c02aa59826fd01` |
+| foreman | <path> | `0dbcf31ad6f735a5d841137323c02aa59826fd01` |
+| gandalf | <path> Foundry | `14c5d029134405aa26b6517085f193d627861cbe` |
+| jumper | <path> Foundry | `14c5d029134405aa26b6517085f193d627861cbe` |
+| ramanujan | <path> Foundry | `14c5d029134405aa26b6517085f193d627861cbe` |
+| legal-beagle | <path> Foundry | `14c5d029134405aa26b6517085f193d627861cbe` |
+| literature-review | <path> Foundry | `14c5d029134405aa26b6517085f193d627861cbe` |
+| financial-analyst | <path> Foundry | `14c5d029134405aa26b6517085f193d627861cbe` |
+| tidy-idy | <path> Foundry | `14c5d029134405aa26b6517085f193d627861cbe` |
+| zombie-hunter | <path> Foundry | `14c5d029134405aa26b6517085f193d627861cbe` |
+| anvil | <path> Foundry | `14c5d029134405aa26b6517085f193d627861cbe` |
+| aegis | <path> Foundry | `14c5d029134405aa26b6517085f193d627861cbe` |
+| superjump | <path> Foundry | `14c5d029134405aa26b6517085f193d627861cbe` |
+| chekhov | <path> Foundry | `14c5d029134405aa26b6517085f193d627861cbe` |
+| einstein | <path> Foundry | `14c5d029134405aa26b6517085f193d627861cbe` |
+| figure-designer | <path> Foundry | `14c5d029134405aa26b6517085f193d627861cbe` |
+| agy-dispatch | <path> Foundry | `14c5d029134405aa26b6517085f193d627861cbe` |
+| scribe | <path> Foundry | `14c5d029134405aa26b6517085f193d627861cbe` |
+| ecgberht | <path> | `651d1ed85727a623ff57007e4aa736317c1d0a97` |
+| drivers | <path> | `0dbcf31ad6f735a5d841137323c02aa59826fd01` |
+| foundry-triage | <path> Foundry | `14c5d029134405aa26b6517085f193d627861cbe` |

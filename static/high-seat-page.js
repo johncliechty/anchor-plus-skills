@@ -2500,6 +2500,31 @@
     return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
+  function _sanitizeEmailSandboxText(rawText) {
+    var s = String(rawText || '');
+    if (!s) return '';
+    return s
+      .replace(/(?:ignore|disregard|override)\s+(?:all\s+)?(?:previous|prior|system)\s+instructions?/gi, '[SANDBOXED-EMAIL-TEXT: non-executable content]')
+      .replace(/(?:system\s+prompt|developer\s+instruction|execute\s+command|run\s+shell|powershell\s+-|cmd\.exe\s+\/c|bash\s+-c)/gi, '[SANDBOXED-EMAIL-TEXT: non-executable content]');
+  }
+
+  function _renderAttachmentButtonsHtml(attachments, uid, accountId, targetHostId) {
+    if (!Array.isArray(attachments) || !attachments.length) return '';
+    return attachments.map(function (att) {
+      var p = typeof att === 'string' ? att : ((att && (att.path || att.name)) || '');
+      var nm = typeof att === 'string' ? String(att).replace(/\\/g, '/').split('/').pop() : ((att && att.name) || String(p).replace(/\\/g, '/').split('/').pop() || 'Attachment');
+      var rawUrl = '/api/steward/comms/attachment?path=' + encodeURIComponent(p) + '&name=' + encodeURIComponent(nm) + '&uid=' + encodeURIComponent(uid || '') + '&account_id=' + encodeURIComponent(accountId || '');
+      return (
+        '<span style="display:inline-flex;align-items:center;gap:3px;margin-right:4px">' +
+          '<button type="button" class="tw-btn" data-cave-view-attachment="1" data-att-path="' + _escH(p) + '" data-att-name="' + _escH(nm) + '" data-att-uid="' + _escH(uid || '') + '" data-att-account="' + _escH(accountId || '') + '" data-att-host="' + _escH(targetHostId || 'caveSrAttachmentPreviewHost') + '" ' +
+          'style="border-color:rgba(245,158,11,0.65);background:rgba(245,158,11,0.18);color:#fef08a;font-weight:750;font-size:10.5px;padding:2px 8px" title="Click to preview ' + _escH(nm) + ' inline">' +
+          '&#128196; View: ' + _escH(nm) + '</button>' +
+          '<a class="tw-btn" href="' + _escH(rawUrl) + '" target="_blank" rel="noopener" style="font-size:10px;padding:2px 5px;text-decoration:none;color:#7dd3fc" title="Open or download attachment in a new tab">&#8599;</a>' +
+        '</span>'
+      );
+    }).join('');
+  }
+
   function _shiftIsoDate(iso, days) {
     var p = String(iso || '2026-11-02').split('-');
     var dt = new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10));
@@ -2547,8 +2572,82 @@
     return _matchesSourceKey(cals);
   }
 
-  function _applyCaveMailFolderMode(mode) {
-    var m = (mode === 'inbox' || mode === 'acted' || mode === 'sent' || mode === 'all') ? mode : 'all';
+  var _currentMailFolderMode = 'inbox';
+  var _pendingNextEmailSelection = null;
+
+  function _mergeStableEmailOrder(prevList, nextList) {
+    if (!Array.isArray(nextList)) return [];
+    if (!Array.isArray(prevList) || !prevList.length) return _interleaveEmailsByBadge(nextList.slice());
+    var byUid = {};
+    nextList.forEach(function (em) {
+      if (em && em.uid) byUid[String(em.uid)] = em;
+    });
+    var ordered = [];
+    var seen = {};
+    prevList.forEach(function (oldEm) {
+      var u = oldEm && String(oldEm.uid || '');
+      if (u && byUid[u] && !seen[u]) {
+        ordered.push(byUid[u]);
+        seen[u] = true;
+      }
+    });
+    nextList.forEach(function (em) {
+      var u = em && String(em.uid || '');
+      if (u && !seen[u]) {
+        ordered.push(em);
+        seen[u] = true;
+      }
+    });
+    return ordered;
+  }
+
+  function _getVisibleEmailListForMode(mode, d) {
+    if (!d) return [];
+    var m = mode || _currentMailFolderMode || 'inbox';
+    var filt = function (em) {
+      return em && _matchesSourceKey(em.account_badge || em.account_id || '');
+    };
+    if (Array.isArray(d.important_emails) && !d._interleavedOnce) {
+      d.important_emails = _interleaveEmailsByBadge(d.important_emails.slice());
+      d._interleavedOnce = true;
+    }
+    var imp = Array.isArray(d.important_emails) ? d.important_emails.slice(0, 30).filter(filt) : [];
+    var oth = Array.isArray(d.other_emails) ? d.other_emails.slice(0, 20).filter(filt) : [];
+    var act = Array.isArray(d.acted_upon_emails) ? d.acted_upon_emails.slice(0, 35).filter(filt) : [];
+    var snt = Array.isArray(d.sent_emails) ? d.sent_emails.slice(0, 25).filter(filt) : [];
+    if (m === 'other') return oth;
+    if (m === 'acted') return act;
+    if (m === 'sent') return snt;
+    if (m === 'all') return imp.concat(act, snt, oth);
+    return imp;
+  }
+
+  function _captureNextEmailInCurrentList(actedUid) {
+    var uidStr = String(actedUid || '');
+    var visibleCards = $$('#caveMailBucketsGrid .cave-mail-card').filter(function (c) {
+      var col = c.closest('.cave-mail-bucket-col');
+      return !c.hidden && (!col || !col.hidden);
+    });
+    var idx = -1;
+    for (var i = 0; i < visibleCards.length; i++) {
+      if (visibleCards[i].getAttribute('data-mail-uid') === uidStr) {
+        idx = i;
+        break;
+      }
+    }
+    var nextCard = (idx >= 0 && idx + 1 < visibleCards.length)
+      ? visibleCards[idx + 1]
+      : ((idx > 0) ? visibleCards[idx - 1] : null);
+    _pendingNextEmailSelection = {
+      folderMode: _currentMailFolderMode || 'inbox',
+      nextUid: nextCard ? (nextCard.getAttribute('data-mail-uid') || '') : '',
+      index: idx >= 0 ? idx : 0
+    };
+  }
+
+  function _applyCaveMailFolderMode(mode, autoSelectFirst) {
+    var m = (mode === 'inbox' || mode === 'other' || mode === 'acted' || mode === 'sent' || mode === 'all') ? mode : 'inbox';
+    _currentMailFolderMode = m;
     var grid = document.getElementById('caveMailBucketsGrid');
     if (grid) grid.setAttribute('data-mail-folder-mode', m);
     $$('[data-cave-mail-folder]').forEach(function (btn) {
@@ -2557,22 +2656,59 @@
     var impCol = document.getElementById('caveMailImportantCol');
     var othCol = document.getElementById('caveMailOtherCol');
     var actCol = document.getElementById('caveMailActedCol');
-    var actDet = document.getElementById('caveMailActedDetails');
     var sentCol = document.getElementById('caveMailSentCol');
-    if (impCol) impCol.hidden = (m === 'sent' || m === 'acted');
-    if (othCol) othCol.hidden = (m === 'sent' || m === 'acted');
+    if (impCol) impCol.hidden = !(m === 'inbox' || m === 'all');
+    if (othCol) {
+      othCol.hidden = !(m === 'other' || m === 'all');
+      othCol.style.marginTop = (m === 'other') ? '0px' : '8px';
+      othCol.style.paddingTop = (m === 'other') ? '0px' : '8px';
+      othCol.style.borderTop = (m === 'other') ? 'none' : '1px dashed var(--line)';
+    }
     if (actCol) {
-      actCol.hidden = (m === 'inbox' || m === 'sent');
-      if (m === 'acted' && actDet) actDet.open = true;
+      actCol.hidden = !(m === 'acted' || m === 'all');
+      actCol.style.marginTop = (m === 'acted') ? '0px' : '8px';
+      actCol.style.paddingTop = (m === 'acted') ? '0px' : '8px';
+      actCol.style.borderTop = (m === 'acted') ? 'none' : '1px solid rgba(56,189,248,0.35)';
     }
     if (sentCol) {
-      sentCol.hidden = (m === 'inbox' || m === 'acted');
+      sentCol.hidden = !(m === 'sent' || m === 'all');
       sentCol.style.marginTop = (m === 'sent') ? '0px' : '8px';
       sentCol.style.paddingTop = (m === 'sent') ? '0px' : '8px';
       sentCol.style.borderTop = (m === 'sent') ? 'none' : '1px solid rgba(16,185,129,0.35)';
     }
+    if (autoSelectFirst) {
+      if (_caveCommsData) {
+        var visList = _getVisibleEmailListForMode(m, _caveCommsData);
+        if (visList.length) {
+          var curStillHere = _activeEmailDialogue && visList.some(function (x) { return x && x.uid === _activeEmailDialogue.uid; });
+          if (!curStillHere) {
+            var firstInFolder = visList[0];
+            _openEmailDialogueTile(firstInFolder.uid, firstInFolder.subject, firstInFolder.sender_email || firstInFolder.from, firstInFolder.account_badge || 'Inbox', true);
+          } else if (typeof _setEmailDialogueOpen === 'function') {
+            _setEmailDialogueOpen(true);
+          }
+        } else if (typeof _setEmailDialogueOpen === 'function') {
+          _setEmailDialogueOpen(false);
+        }
+      } else {
+        var domCards = $$('#caveMailBucketsGrid .cave-mail-bucket-col:not([hidden]) .cave-mail-card:not([hidden])');
+        if (domCards.length) {
+          var firstCard = domCards[0];
+          var firstSubjEl = firstCard.querySelector('.comms-item-title, .cave-mail-subj');
+          _openEmailDialogueTile(
+            firstCard.getAttribute('data-mail-uid') || '',
+            firstCard.getAttribute('data-mail-subject') || (firstSubjEl && firstSubjEl.textContent) || '',
+            firstCard.getAttribute('data-mail-from') || firstCard.getAttribute('data-mail-sender') || '',
+            firstCard.getAttribute('data-mail-badge') || firstCard.getAttribute('data-mail-source') || 'Inbox',
+            true
+          );
+        } else if (typeof _setEmailDialogueOpen === 'function') {
+          _setEmailDialogueOpen(false);
+        }
+      }
+    }
   }
-  window._applyCaveMailFolderMode = _applyCaveMailFolderMode;
+  window._applyCaveMailFolderMode = function(m) { _applyCaveMailFolderMode(m, true); setTimeout(_syncCaveMailOvalScrollbar, 30); };
 
   function _applySourceFilterToDOM() {
     if (_caveCommsData && typeof _hydrateMailCardsFromCommsData === 'function') {
@@ -2732,6 +2868,25 @@
     var st = String(ev.start_time || '').trim();
     var et = String(ev.end_time || '').trim();
     var tLbl = String(ev.time_label || '').trim();
+    var isMarker = !!(
+      ev.is_followup_marker ||
+      ev.blocks_time === false ||
+      st.toLowerCase().indexOf('marker') >= 0 ||
+      tLbl.toLowerCase().indexOf('follow-up marker') >= 0
+    );
+    if (isMarker) {
+      return {
+        isAllDay: true,
+        isMarker: true,
+        startMins: 480,
+        endMins: 480,
+        durMins: 0,
+        startHm: 'Marker',
+        endHm: '',
+        durLabel: 'Slot Open',
+        rangeLabel: tLbl || '\ud83d\udccc Follow-Up Marker (Slot Open)'
+      };
+    }
     if ((!st || st === 'All day') && tLbl.indexOf(':') >= 0) {
       var matches = tLbl.match(/(\d{1,2}:\d{2})/g);
       if (matches && matches.length >= 1) st = matches[0];
@@ -2739,7 +2894,7 @@
     }
     var isAllDay = (!st || st.toLowerCase().indexOf('all') >= 0 || st.toLowerCase().indexOf('due') >= 0);
     if (isAllDay) {
-      return { isAllDay: true, startMins: 480, endMins: 540, durMins: 60, rangeLabel: tLbl || 'All day' };
+      return { isAllDay: true, isMarker: false, startMins: 480, endMins: 540, durMins: 60, rangeLabel: tLbl || 'All day' };
     }
     var sM = _parseHmMins(st, 540);
     var eM = _parseHmMins(et, sM + (parseInt(ev.duration_mins, 10) || 60));
@@ -2750,6 +2905,7 @@
     var durStr = dur >= 60 ? ((Math.round((dur / 60) * 10) / 10) + 'h') : (dur + 'm');
     return {
       isAllDay: false,
+      isMarker: false,
       startMins: sM,
       endMins: eM,
       durMins: dur,
@@ -2766,25 +2922,24 @@
     var st = String((ev && ev.rsvp_status) || '').toLowerCase();
     if (!st) {
       var tLow = String((ev && ev.title) || '').toLowerCase();
-      var unrespHints = ['ai@work', 'boodlebox', 'masterclass', 'seminar', 'workshop', 'roundtable', 'networking lunch', 'community zoom', 'pgp food', 'synced invitation:', 'hold for', 'fw:', 'all faculty', 'tt faculty', 'sandbox', 'agora', 'search committee'];
-      var isUnresp = unrespHints.some(function (h) { return tLow.indexOf(h) >= 0; });
-      st = isUnresp ? 'not_responded' : 'responded';
+      var ownTeaching = ['ba 815', 'mba teaching', 'team teach', 'ta meeting'].some(function (h) { return tLow.indexOf(h) >= 0; });
+      st = ownTeaching ? 'responded' : 'not_responded';
     }
-    if (st === 'accepted' || st === 'organizer' || st === 'attending') st = 'responded';
+    if (st === 'accepted' || st === 'attending') st = 'responded';
     if (st === 'responded') {
       return {
         status: 'responded',
         responded: true,
-        label: ev.rsvp_label || '\u2713 Responded \u00b7 Attending',
-        shortLabel: '\u2713 Responded',
+        label: (ev && ev.rsvp_label) || '\u2713 Accepted \u00b7 Going (Responded)',
+        shortLabel: '\u2713 Accepted \u00b7 Going',
         tone: 'emerald'
       };
     }
     if (st === 'tentative') {
       return {
         status: 'tentative',
-        responded: true,
-        label: ev.rsvp_label || '? Tentative',
+        responded: false,
+        label: (ev && ev.rsvp_label) || '? Tentative (Not Going Yet)',
         shortLabel: '? Tentative',
         tone: 'amber'
       };
@@ -2793,7 +2948,7 @@
       return {
         status: 'declined',
         responded: false,
-        label: ev.rsvp_label || '\u2715 Declined',
+        label: (ev && ev.rsvp_label) || '\u2715 Declined',
         shortLabel: '\u2715 Declined',
         tone: 'rose'
       };
@@ -2801,8 +2956,8 @@
     return {
       status: 'not_responded',
       responded: false,
-      label: ev.rsvp_label || '\u23f3 Not Responded',
-      shortLabel: '\u23f3 Not Responded',
+      label: (ev && ev.rsvp_label) || '? Not Accepted \u00b7 Not Going (Not Responded)',
+      shortLabel: '? Not Accepted',
       tone: 'amber'
     };
   }
@@ -2838,9 +2993,14 @@
       : '<span class="tw-proj">' + _escH(ev.calendar_badge || ev.project_name || 'Calendar') + '</span>';
     var locHtml = ev.location ? '<div class="comms-item-sub">\ud83d\udccd ' + _escH(String(ev.location).slice(0, 90)) + '</div>' : '';
     var calsJoined = (ev.calendars && ev.calendars.length) ? ev.calendars.join(' + ') : (ev.calendar_badge || ev.project_name || 'Calendar');
-    var rsvpBtn = _renderRsvpToggleBtnHtml(ev, false);
+    var rsvpBtn = sp.isMarker
+      ? '<span class="comms-badge" style="border-color:rgba(167,139,250,0.65);background:rgba(167,139,250,0.16);color:#ddd6fe;font-weight:750" title="Follow-Up Marker — does not block meeting slots">\ud83d\udccc Non-Blocking Marker \u00b7 Slot Open</span>'
+      : _renderRsvpToggleBtnHtml(ev, false);
+    var cardStyle = sp.isMarker
+      ? 'cursor:pointer;border-style:dashed;border-color:rgba(167,139,250,0.55);background:rgba(15,23,42,0.55);'
+      : ('cursor:pointer;' + (ri.status === 'not_responded' ? 'border-style:dashed;' : ''));
     return (
-      '<div class="comms-item ' + _escH(tone) + ' cave-cal-card" data-cave-cal-open="' + _escH(ev.id || ev.uid || '') + '" data-cal-title="' + _escH(ev.title || '') + '" data-cal-date="' + _escH(ev.date || '') + '" data-cal-start="' + _escH(sp.startHm || ev.start_time || '') + '" data-cal-end="' + _escH(sp.endHm || ev.end_time || '') + '" data-cal-loc="' + _escH(ev.location || '') + '" data-cal-source="' + _escH(calsJoined) + '" data-cal-rsvp="' + _escH(ri.status) + '" style="cursor:pointer;' + (ri.status === 'not_responded' ? 'border-style:dashed;' : '') + '" title="Click to blow up Calendar Event Dialogue Tile">' +
+      '<div class="comms-item ' + _escH(tone) + ' cave-cal-card" data-cave-cal-open="' + _escH(ev.id || ev.uid || '') + '" data-cal-title="' + _escH(ev.title || '') + '" data-cal-date="' + _escH(ev.date || '') + '" data-cal-start="' + _escH(sp.startHm || ev.start_time || '') + '" data-cal-end="' + _escH(sp.endHm || ev.end_time || '') + '" data-cal-loc="' + _escH(ev.location || '') + '" data-cal-source="' + _escH(calsJoined) + '" data-cal-rsvp="' + _escH(ri.status) + '" style="' + cardStyle + '" title="Click to blow up Calendar Event Dialogue Tile">' +
       '<div class="comms-item-top">' +
       '<span class="comms-badge ' + _escH(tone) + '">' + _escH(_fmtFriendlyDate(ev.date)) + ' \u00b7 ' + _escH(sp.rangeLabel) + '</span>' +
       rsvpBtn + projHtml + mergedHtml + doneHtml +
@@ -3031,6 +3191,14 @@
                 var sp = _eventSpanInfo(ev);
                 var t = ev.merged_badge ? 'amber' : (ev.tone || 'sky');
                 var calsJoined = (ev.calendars && ev.calendars.length) ? ev.calendars.join(' + ') : (ev.calendar_badge || 'Calendar');
+                if (sp.isMarker) {
+                  return (
+                    '<div class="cave-week-chip ' + _escH(t) + '" data-cave-cal-open="' + _escH(ev.id || ev.uid || '') + '" data-cal-title="' + _escH(ev.title || '') + '" data-cal-date="' + _escH(ev.date || '') + '" data-cal-start="Marker" data-cal-end="" data-cal-loc="' + _escH(ev.location || '') + '" data-cal-source="' + _escH(calsJoined) + '" style="min-height:28px;border-style:dashed;border-color:rgba(167,139,250,0.6);background:rgba(167,139,250,0.10);padding:3px 6px" title="Non-Blocking Follow-Up Marker (Slot Open) — ' + _escH(ev.title || '') + '">' +
+                      '<div style="font-weight:750;color:#ddd6fe;font-size:9.5px">\ud83d\udccc Follow-Up Marker \u00b7 Slot Open</div>' +
+                      '<div style="font-weight:650;color:#e2e8f0;font-size:10.5px;margin-top:1px;line-height:1.2">' + _escH(ev.title || '') + '</div>' +
+                    '</div>'
+                  );
+                }
                 var minH = Math.max(48, Math.min(180, Math.round(sp.durMins * 0.56)));
                 return (
                   '<div class="cave-week-chip ' + _escH(t) + '" data-cave-cal-open="' + _escH(ev.id || ev.uid || '') + '" data-cal-title="' + _escH(ev.title || '') + '" data-cal-date="' + _escH(ev.date || '') + '" data-cal-start="' + _escH(sp.startHm || ev.start_time || '') + '" data-cal-end="' + _escH(sp.endHm || ev.end_time || '') + '" data-cal-loc="' + _escH(ev.location || '') + '" data-cal-source="' + _escH(calsJoined) + '" style="min-height:' + minH + 'px;display:flex;flex-direction:column;justify-content:space-between;border-left-width:3px" title="Click to open Event Dialogue Tile (' + _escH(sp.rangeLabel) + ')">' +
@@ -3092,107 +3260,358 @@
 
   var _activeEmailDialogue = null;
 
-  function _openEmailDialogueTile(uid, fallbackSubj, fallbackSender, fallbackSource) {
-    var dlg = document.getElementById('caveCommsDialogueTile');
-    var mailPane = document.getElementById('caveEmailDialoguePane');
-    var calPane = document.getElementById('caveCalDialoguePane');
-    if (!dlg || !mailPane) return;
-    dlg.hidden = false;
-    mailPane.hidden = false;
-    if (calPane) calPane.hidden = true;
+  function _decodeEntitiesClient(rawStr) {
+    var s = String(rawStr || '');
+    if (!s) return '';
+    return s
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&')
+      .replace(/&rsquo;/gi, '\u2019')
+      .replace(/&lsquo;/gi, '\u2018')
+      .replace(/&rdquo;/gi, '\u201d')
+      .replace(/&ldquo;/gi, '\u201c')
+      .replace(/&mdash;/gi, '\u2014')
+      .replace(/&ndash;/gi, '\u2013')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;|&apos;/gi, "'")
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&#(\d+);/g, function (_, dec) {
+        var code = parseInt(dec, 10);
+        return (code >= 32 && code <= 65535) ? String.fromCharCode(code) : '';
+      })
+      .replace(/&#x([0-9a-fA-F]+);/g, function (_, hex) {
+        var code = parseInt(hex, 16);
+        return (code >= 32 && code <= 65535) ? String.fromCharCode(code) : '';
+      })
+      .replace(/[\u200b\u200c\u200d\ufeff\u00ad]/g, '');
+  }
 
+  function _unwrapSafeLinkClient(rawUrl) {
+    var u = String(rawUrl || '').trim();
+    if (!u) return '';
+    try {
+      if (u.toLowerCase().indexOf('safelinks.protection.outlook.com') >= 0 || u.toLowerCase().indexOf('urldefense.com') >= 0) {
+        var m = u.match(/[?&](?:url|u)=([^&]+)/i);
+        if (m && m[1]) {
+          var dec = decodeURIComponent(m[1]);
+          if (dec.indexOf('http') === 0) return dec;
+        }
+      }
+    } catch (e) {}
+    return u;
+  }
+
+  function _friendlyUrlLabel(urlStr) {
+    var u = _unwrapSafeLinkClient(urlStr);
+    try {
+      var m = u.match(/^https?:\/\/([^\/]+)(\/.*)?$/i);
+      if (m) {
+        var host = m[1].replace(/^www\./i, '');
+        var p = (m[2] || '').replace(/\/$/, '');
+        var shortP = p.length > 26 ? (p.slice(0, 24) + '\u2026') : p;
+        return host + shortP;
+      }
+    } catch (e) {}
+    return u.slice(0, 44);
+  }
+
+  function _renderCleanEmailBodyHtml(rawBody, explicitQuoted) {
+    var clean = _sanitizeEmailSandboxText(_decodeEntitiesClient(rawBody || ''));
+    var quoted = _sanitizeEmailSandboxText(_decodeEntitiesClient(explicitQuoted || ''));
+    if (!quoted && clean) {
+      var qPatterns = [
+        /\n\s*On\s+[^\n]{6,120}\s+wrote:\s*\n/i,
+        /\n\s*-{3,}\s*Original Message\s*-{3,}/i,
+        /\n\s*From:\s+[^\n]+\n\s*Sent:\s+[^\n]+/i
+      ];
+      for (var qp = 0; qp < qPatterns.length; qp++) {
+        var qm = clean.match(qPatterns[qp]);
+        if (qm && qm.index > 30) {
+          quoted = clean.slice(qm.index).trim();
+          clean = clean.slice(0, qm.index).trim();
+          break;
+        }
+      }
+    }
+    // Deduplicate identical consecutive paragraphs
+    var rawParas = clean.split(/\n{2,}/);
+    var dedupParas = [];
+    var seenParaNorm = {};
+    for (var i = 0; i < rawParas.length; i++) {
+      var pTxt = rawParas[i].trim();
+      if (!pTxt) continue;
+      var pNorm = pTxt.toLowerCase().replace(/\s+/g, ' ');
+      if (pNorm.length > 35 && seenParaNorm[pNorm]) continue;
+      seenParaNorm[pNorm] = true;
+      dedupParas.push(pTxt);
+    }
+    var linkifyText = function (plainText) {
+      var tokens = [];
+      var withPlaceholders = String(plainText || '').replace(/https?:\/\/[^\s<>"'\)]+/gi, function (matchedUrl) {
+        var cleanU = matchedUrl.replace(/[.,;:!?]+$/, '');
+        var trailing = matchedUrl.slice(cleanU.length);
+        var unwrapped = _unwrapSafeLinkClient(cleanU);
+        var lbl = _friendlyUrlLabel(unwrapped);
+        var idx = tokens.length;
+        tokens.push(
+          '<a href="' + _escH(unwrapped) + '" target="_blank" rel="noopener noreferrer" class="cave-email-inline-link" title="Open ' + _escH(unwrapped) + ' in browser">&#128279; ' + _escH(lbl) + ' &#8599;</a>' + _escH(trailing)
+        );
+        return '@@CAVE_LINK_' + idx + '@@';
+      });
+      var escaped = _escH(withPlaceholders);
+      return escaped.replace(/@@CAVE_LINK_(\d+)@@/g, function (_, n) {
+        return tokens[parseInt(n, 10)] || '';
+      });
+    };
+    var mainHtml = dedupParas.map(function (para) {
+      return '<div style="margin-bottom:10px;font-size:13.5px;line-height:1.62;color:#f1f5f9;white-space:pre-wrap;word-break:break-word">' + linkifyText(para) + '</div>';
+    }).join('');
+    if (!mainHtml) {
+      mainHtml = '<div style="font-size:13.5px;line-height:1.62;color:#f1f5f9;white-space:pre-wrap">' + linkifyText(clean || '(No message text)') + '</div>';
+    }
+    if (quoted) {
+      mainHtml +=
+        '<details style="margin-top:8px;padding-top:6px;border-top:1px dashed #334155;font-size:11.5px;color:#94a3b8">' +
+          '<summary style="cursor:pointer;color:#7dd3fc;font-weight:700;user-select:none">&#128220; Show Earlier Quoted Thread History</summary>' +
+          '<div style="margin-top:6px;padding:8px 10px;border-radius:6px;background:#070b12;color:#94a3b8;white-space:pre-wrap;line-height:1.5">' + linkifyText(quoted) + '</div>' +
+        '</details>';
+    }
+    return mainHtml;
+  }
+
+  function _populateEmailPaneFromItem(d, fallbackSubj, fallbackSender, fallbackSource) {
     var subjEl = document.getElementById('caveDlgMailSubject');
     var badgeEl = document.getElementById('caveDlgMailBadge');
     var metaEl = document.getElementById('caveDlgMailMeta');
     var thList = document.getElementById('caveDialogueThreadList');
     var noteEl = document.getElementById('caveDlgStewardNote');
-    var stMsg = document.getElementById('caveReplyStatusMsg');
-    if (subjEl) subjEl.textContent = fallbackSubj || 'Loading email conversation...';
-    if (badgeEl) badgeEl.textContent = fallbackSource || 'Inbox';
-    if (metaEl) metaEl.textContent = 'From: ' + (fallbackSender || 'Loading...');
-    if (thList) thList.innerHTML = '<div style="color:#94a3b8;padding:10px">\u23f3 Loading full message body, thread history &amp; Steward suggested reply\u2026</div>';
-    if (stMsg) stMsg.textContent = '';
-    try { dlg.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (err) {}
+    var preloadBadge = document.getElementById('caveDlgPreloadBadge');
+    if (subjEl) subjEl.textContent = _decodeEntitiesClient(_sanitizeEmailSandboxText(d.subject || fallbackSubj || '(No Subject)'));
+    if (badgeEl) badgeEl.textContent = (d.account_badge || fallbackSource || 'Inbox') + ' \u00b7 \ud83d\udd12 Sandboxed';
+    if (metaEl) metaEl.textContent = 'From: ' + _decodeEntitiesClient(d.from || d.sender_email || fallbackSender || '') + (d.date ? (' \u00b7 ' + d.date) : '');
+    if (preloadBadge) {
+      preloadBadge.textContent = d.body_preloaded ? '\u26a1 Preloaded Locally (0ms)' : '\u2713 Loaded & Cached Locally';
+    }
+    var attBtn = document.getElementById('btnCaveDlgDownloadAtt');
+    if (attBtn) {
+      attBtn.hidden = !d.has_attachments;
+      attBtn.setAttribute('data-comms-download-att', d.uid || '');
+      attBtn.setAttribute('data-comms-att-subject', d.subject || '');
+    }
+    var dirIn = document.getElementById('caveDlgStewardDirectionsInput');
+    if (dirIn) dirIn.value = '';
+    var actIn = document.getElementById('caveDlgStewardActionInput');
+    if (actIn) actIn.value = '';
+    var dlgPrevHost = document.getElementById('caveDlgAttachmentPreviewHost');
+    if (dlgPrevHost) { dlgPrevHost.hidden = true; dlgPrevHost.innerHTML = ''; }
+    var dlgAttBar = document.getElementById('caveDlgAttachmentsBar');
+    if (dlgAttBar) {
+      var allAtts = Array.isArray(d.attachments) ? d.attachments.slice() : [];
+      if (allAtts.length) {
+        dlgAttBar.hidden = false;
+        dlgAttBar.innerHTML = '<span style="font-size:11px;font-weight:800;color:#fde68a">&#128206; Attachments (' + allAtts.length + ' &mdash; click to view inline):</span> ' +
+          _renderAttachmentButtonsHtml(allAtts, d.uid || '', d.account_id || '', 'caveDlgAttachmentPreviewHost');
+      } else {
+        dlgAttBar.hidden = true;
+        dlgAttBar.innerHTML = '';
+      }
+    }
+    var linksBar = document.getElementById('caveDlgLinksBar');
+    if (linksBar) {
+      var linksArr = Array.isArray(d.links) ? d.links.slice() : [];
+      if (!linksArr.length && d.body) {
+        var rawMatches = String(d.body || '').match(/https?:\/\/[^\s<>"'\)]+/gi) || [];
+        var seenU = {};
+        rawMatches.forEach(function (u) {
+          var cleanU = _unwrapSafeLinkClient(u.replace(/[.,;:!?]+$/, ''));
+          if (cleanU && !seenU[cleanU]) {
+            seenU[cleanU] = true;
+            linksArr.push({ url: cleanU, label: _friendlyUrlLabel(cleanU) });
+          }
+        });
+      }
+      if (linksArr.length) {
+        linksBar.hidden = false;
+        linksBar.innerHTML =
+          '<span style="font-size:11px;font-weight:800;color:#7dd3fc">&#128279; Embedded Web Links (' + linksArr.length + ' &mdash; click to open website):</span> ' +
+          linksArr.slice(0, 8).map(function (lk) {
+            var u = _unwrapSafeLinkClient((lk && lk.url) || lk || '');
+            var lbl = (lk && lk.label) || _friendlyUrlLabel(u);
+            return '<a class="tw-btn cave-email-link-pill" href="' + _escH(u) + '" target="_blank" rel="noopener noreferrer" style="border-color:rgba(56,189,248,0.65);background:rgba(56,189,248,0.16);color:#e0f2fe;font-weight:750;font-size:11px;padding:2px 9px;text-decoration:none" title="Open ' + _escH(u) + ' in a new browser tab">&#128279; ' + _escH(lbl) + ' &#8599;</a>';
+          }).join(' ');
+      } else {
+        linksBar.hidden = true;
+        linksBar.innerHTML = '';
+      }
+    }
+    if (thList) {
+      var msgs = Array.isArray(d.thread_messages) && d.thread_messages.length
+        ? d.thread_messages
+        : [{
+            uid: d.uid,
+            from: d.from || d.sender_email || fallbackSender || 'Sender',
+            date: d.date || '',
+            direction: d.direction || 'inbound',
+            account_badge: d.account_badge || fallbackSource || 'Inbox',
+            body: d.body || d.snippet || '',
+            quoted_history: d.quoted_history || '',
+            is_current: true
+          }];
+      thList.innerHTML = msgs.map(function (m) {
+        var isSent = m.direction === 'sent';
+        var borderCol = isSent ? '#10b981' : (m.is_current ? '#38bdf8' : '#334155');
+        return (
+          '<div style="padding:11px 14px;border-radius:9px;background:' + (isSent ? 'rgba(16,185,129,0.08)' : '#111827') + ';border:1px solid #1e293b;border-left:4px solid ' + borderCol + '">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;font-size:11.5px;color:#94a3b8;margin-bottom:7px;padding-bottom:5px;border-bottom:1px solid rgba(51,65,85,0.45)">' +
+              '<b style="color:' + (isSent ? '#6ee7b7' : '#f8fafc') + ';font-size:12.5px">' + _escH(_decodeEntitiesClient(m.from || 'Message')) + '</b>' +
+              '<span>' + _escH(m.account_badge || '') + (m.date ? (' \u00b7 ' + _escH(m.date)) : '') + '</span>' +
+            '</div>' +
+            _renderCleanEmailBodyHtml(m.body || '', m.quoted_history || d.quoted_history || '') +
+          '</div>'
+        );
+      }).join('');
+    }
+    var toIn = document.getElementById('caveReplyTo');
+    var subIn = document.getElementById('caveReplySubject');
+    var bodyIn = document.getElementById('caveReplyBody');
+    var rawSubj = _decodeEntitiesClient(d.subject || fallbackSubj || '');
+    if (toIn) toIn.value = d.sender_email || d.from || fallbackSender || '';
+    if (subIn) subIn.value = /^re:/i.test(rawSubj) ? rawSubj : ('Re: ' + rawSubj);
+    if (bodyIn) bodyIn.value = '';
+    if (noteEl) noteEl.textContent = 'Type a quick direct reply below, or enter directions above and click Send to Speed Racer for Scribe to craft & style a draft.';
+    setTimeout(_syncCaveMailOvalScrollbar, 25);
+  }
 
+  function _setEmailDialogueOpen(open, reasonMsg) {
+    var mailPane = document.getElementById('caveEmailDialoguePane');
+    var splitEl = document.getElementById('caveOutlookMailSplit');
+    var barCloseBtn = document.getElementById('btnCaveMailBarCloseDlg');
+    var isOpen = !!open;
+    window._emailDlgClosed = !isOpen;
+    if (mailPane) mailPane.hidden = !isOpen;
+    if (splitEl) splitEl.classList.toggle('email-dlg-closed', !isOpen);
+    if (barCloseBtn) barCloseBtn.hidden = !isOpen;
+    if (!isOpen) {
+      _activeEmailDialogue = null;
+      $$('#caveMailBucketsGrid .cave-mail-card').forEach(function (c) {
+        c.classList.remove('is-selected');
+      });
+      if (reasonMsg) {
+        receipt(reasonMsg);
+      }
+    }
+    setTimeout(_syncCaveMailOvalScrollbar, 30);
+  }
+  window._setEmailDialogueOpen = _setEmailDialogueOpen;
+
+  function _openEmailDialogueTile(uid, fallbackSubj, fallbackSender, fallbackSource, quietAutoSelect) {
+    var mailPane = document.getElementById('caveEmailDialoguePane');
+    if (!mailPane) return;
+    var prevUid = (_activeEmailDialogue && _activeEmailDialogue.uid) ? String(_activeEmailDialogue.uid) : '';
+    var isSameUid = prevUid && prevUid === String(uid || '');
+    var savedReplyDraft = isSameUid ? ((document.getElementById('caveReplyBody') || {}).value || '') : '';
+    var savedDirs = isSameUid ? ((document.getElementById('caveDlgStewardDirectionsInput') || {}).value || '') : '';
+    var savedActComment = isSameUid ? ((document.getElementById('caveDlgStewardActionInput') || {}).value || '') : '';
+    _setEmailDialogueOpen(true);
+    $$('#caveMailBucketsGrid .cave-mail-card').forEach(function (c) {
+      c.classList.toggle('is-selected', c.getAttribute('data-mail-uid') === String(uid || ''));
+    });
+
+    var stMsg = document.getElementById('caveReplyStatusMsg');
+    if (stMsg && !isSameUid) stMsg.textContent = '';
+
+    // 1. Instant 0ms render from local preloaded cache if available
+    var cachedEm = null;
+    if (_caveCommsData) {
+      var pools = [].concat(
+        _caveCommsData.important_emails || [],
+        _caveCommsData.other_emails || [],
+        _caveCommsData.acted_upon_emails || [],
+        _caveCommsData.sent_emails || []
+      );
+      cachedEm = pools.find(function (x) { return x && String(x.uid || '') === String(uid || ''); });
+    }
+    if (cachedEm && (cachedEm.body || cachedEm.snippet)) {
+      _activeEmailDialogue = cachedEm;
+      _populateEmailPaneFromItem(cachedEm, fallbackSubj, fallbackSender, fallbackSource);
+      if (savedReplyDraft) { var rb0 = document.getElementById('caveReplyBody'); if (rb0) rb0.value = savedReplyDraft; }
+      if (savedDirs) { var di0 = document.getElementById('caveDlgStewardDirectionsInput'); if (di0) di0.value = savedDirs; }
+      if (savedActComment) { var ai0 = document.getElementById('caveDlgStewardActionInput'); if (ai0) ai0.value = savedActComment; }
+    } else {
+      _activeEmailDialogue = {
+        uid: String(uid || ''),
+        subject: fallbackSubj || '',
+        sender_email: fallbackSender || '',
+        from: fallbackSender || '',
+        account_badge: fallbackSource || 'Inbox'
+      };
+      var subjEl = document.getElementById('caveDlgMailSubject');
+      var badgeEl = document.getElementById('caveDlgMailBadge');
+      var metaEl = document.getElementById('caveDlgMailMeta');
+      var thList = document.getElementById('caveDialogueThreadList');
+      if (subjEl) subjEl.textContent = fallbackSubj || 'Loading email...';
+      if (badgeEl) badgeEl.textContent = fallbackSource || 'Inbox';
+      if (metaEl) metaEl.textContent = 'From: ' + (fallbackSender || 'Loading...');
+      if (thList) thList.innerHTML = '<div style="color:#94a3b8;padding:10px">\u23f3 Loading message body\u2026</div>';
+    }
+
+    if (!quietAutoSelect) {
+      try { mailPane.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (err) {}
+    }
+
+    // 2. Background sync of opened state (and full body only if not yet preloaded)
     fetch('/api/steward/comms', {
       method: 'POST',
       headers: headers(),
       body: JSON.stringify({
         action: 'email_dialogue',
         uid: uid,
-        subject: fallbackSubj || '',
-        sender_email: fallbackSender || ''
+        subject: fallbackSubj || (cachedEm && cachedEm.subject) || '',
+        sender_email: fallbackSender || (cachedEm && cachedEm.sender_email) || '',
+        generate_draft: false
       })
     })
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        if (!d || !d.ok) {
-          if (thList) thList.innerHTML = '<div style="color:#fda4af;padding:10px">\u26a0 Could not load email detail: ' + _escH((d && d.error) || 'Unknown error') + '</div>';
+        if (!d || !d.ok) return;
+        // Guard against stale response if user already clicked a different email
+        if (_activeEmailDialogue && _activeEmailDialogue.uid && String(_activeEmailDialogue.uid) !== String(uid || '')) {
           return;
         }
         _activeEmailDialogue = d;
-        if (subjEl) subjEl.textContent = _sanitizeEmailSandboxText(d.subject || fallbackSubj || '(No Subject)');
-        if (badgeEl) badgeEl.textContent = (d.account_badge || fallbackSource || 'Inbox') + ' \u00b7 \ud83d\udd12 Sandboxed (Read-Only / No Execution)';
-        if (metaEl) metaEl.textContent = 'From: ' + (d.from || d.sender_email || '') + (d.date ? (' \u00b7 ' + d.date) : '');
-        var attBtn = document.getElementById('btnCaveDlgDownloadAtt');
-        if (attBtn) {
-          attBtn.hidden = !d.has_attachments;
-          attBtn.setAttribute('data-comms-download-att', d.uid || uid);
-          attBtn.setAttribute('data-comms-att-subject', d.subject || '');
+        var wasPreloaded = !!(cachedEm && cachedEm.body_preloaded);
+        if (cachedEm) {
+          cachedEm.body = d.body || cachedEm.body;
+          cachedEm.quoted_history = d.quoted_history || cachedEm.quoted_history;
+          cachedEm.links = d.links || cachedEm.links;
+          cachedEm.attachments = d.attachments || cachedEm.attachments;
+          cachedEm.body_preloaded = true;
         }
-        var dirIn = document.getElementById('caveDlgStewardDirectionsInput');
-        if (dirIn) dirIn.value = '';
-        var dlgPrevHost = document.getElementById('caveDlgAttachmentPreviewHost');
-        if (dlgPrevHost) { dlgPrevHost.hidden = true; dlgPrevHost.innerHTML = ''; }
-        var dlgAttBar = document.getElementById('caveDlgAttachmentsBar');
-        if (dlgAttBar) {
-          var allAtts = [];
-          if (Array.isArray(d.attachments)) allAtts = allAtts.concat(d.attachments);
-          if (d.steward_draft && Array.isArray(d.steward_draft.attachments)) {
-            d.steward_draft.attachments.forEach(function (pa) {
-              var pStr = typeof pa === 'string' ? pa : (pa && (pa.path || pa.name) || '');
-              if (pStr && !allAtts.some(function (x) { return (typeof x === 'string' ? x : (x.path || x.name)) === pStr; })) {
-                allAtts.push(pa);
-              }
-            });
+        // Only re-render if it wasn't preloaded or if new attachments/thread messages arrived
+        if (!wasPreloaded || (Array.isArray(d.attachments) && d.attachments.length) || (Array.isArray(d.thread_messages) && d.thread_messages.length > 1)) {
+          var curReplyDraft = ((document.getElementById('caveReplyBody') || {}).value || '');
+          var curNoteText = ((document.getElementById('caveDlgStewardNote') || {}).textContent || '');
+          var curDirs = ((document.getElementById('caveDlgStewardDirectionsInput') || {}).value || '');
+          var curActComment = ((document.getElementById('caveDlgStewardActionInput') || {}).value || '');
+          _populateEmailPaneFromItem(d, fallbackSubj, fallbackSender, fallbackSource);
+          if (curReplyDraft) {
+            var rb = document.getElementById('caveReplyBody');
+            if (rb) rb.value = curReplyDraft;
+            var ne = document.getElementById('caveDlgStewardNote');
+            if (ne && curNoteText) ne.textContent = curNoteText;
           }
-          if (allAtts.length) {
-            dlgAttBar.hidden = false;
-            dlgAttBar.innerHTML = '<span style="font-size:11px;font-weight:800;color:#fde68a">&#128206; Attachments (' + allAtts.length + ' &mdash; click to view inline):</span> ' +
-              _renderAttachmentButtonsHtml(allAtts, d.uid || uid, d.account_id || '', 'caveDlgAttachmentPreviewHost');
-          } else {
-            dlgAttBar.hidden = true;
-            dlgAttBar.innerHTML = '';
+          if (curDirs) {
+            var di = document.getElementById('caveDlgStewardDirectionsInput');
+            if (di) di.value = curDirs;
+          }
+          if (curActComment) {
+            var ai = document.getElementById('caveDlgStewardActionInput');
+            if (ai) ai.value = curActComment;
           }
         }
-        var msgs = d.thread_messages || [];
-        if (thList) {
-          thList.innerHTML = msgs.map(function (m) {
-            var isSent = m.direction === 'sent';
-            var borderCol = isSent ? '#10b981' : (m.is_current ? '#38bdf8' : '#334155');
-            return (
-              '<div style="padding:9px 11px;border-radius:8px;background:' + (isSent ? 'rgba(16,185,129,0.08)' : '#111827') + ';border:1px solid #1e293b;border-left:4px solid ' + borderCol + '">' +
-                '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px;color:#94a3b8;margin-bottom:4px">' +
-                  '<b style="color:' + (isSent ? '#6ee7b7' : '#f8fafc') + '">' + _escH(m.from || 'Message') + '</b>' +
-                  '<span>' + _escH(m.account_badge || '') + (m.date ? (' \u00b7 ' + _escH(m.date)) : '') + '</span>' +
-                '</div>' +
-                '<div style="font-size:12px;color:#e2e8f0;white-space:pre-wrap;line-height:1.45">' + _escH(_sanitizeEmailSandboxText(m.body || '')) + '</div>' +
-              '</div>'
-            );
-          }).join('');
-        }
-        var sd = d.steward_draft || {};
-        var toIn = document.getElementById('caveReplyTo');
-        var subIn = document.getElementById('caveReplySubject');
-        var bodyIn = document.getElementById('caveReplyBody');
-        if (toIn) toIn.value = sd.to || d.sender_email || fallbackSender || '';
-        if (subIn) subIn.value = sd.subject || ('Re: ' + (d.subject || fallbackSubj || ''));
-        if (bodyIn) bodyIn.value = sd.draft_body || '';
-        if (noteEl) noteEl.textContent = (sd.steward_note || '\u2728 Steward suggested draft ready to edit & send') + ' (\ud83d\udd12 Email Sandbox: strictly information-only, zero command execution)';
       })
-      .catch(function () {
-        if (thList) thList.innerHTML = '<div style="color:#fda4af;padding:10px">Could not reach Anchor comms service.</div>';
-      });
+      .catch(function () {});
   }
 
   function _openCalDialogueTile(opts) {
@@ -3315,48 +3734,203 @@
     return out;
   }
 
+  function _shortMailDt(raw) {
+    var s = String(raw || '').trim();
+    if (s.length >= 10 && s.charAt(4) === '-' && s.charAt(7) === '-') return s.slice(5, 10);
+    if (s.indexOf(',') >= 0) {
+      var p = s.split(',')[1].trim().split(/\s+/);
+      if (p.length >= 2) return p[0] + ' ' + p[1].slice(0, 3);
+    }
+    return s.slice(0, 6);
+  }
+
+  function _shortAcctBadge(raw) {
+    var s = String(raw || 'Inbox').trim();
+    var sl = s.toLowerCase();
+    if (sl.indexOf('psu') >= 0) return 'PSU';
+    if (sl.indexOf('axmra') >= 0) return 'Axmra';
+    if (sl.indexOf('gmail') >= 0) return 'Gmail';
+    return s.slice(0, 6);
+  }
+
+  function _syncSingleOvalPair(listEl, trackEl, thumbEl) {
+    if (!listEl || !trackEl || !thumbEl) return;
+    var sh = listEl.scrollHeight || 0;
+    var ch = listEl.clientHeight || 0;
+    if (sh <= ch + 4 || ch <= 0) {
+      trackEl.hidden = true;
+      trackEl.style.display = 'none';
+      return;
+    }
+    trackEl.hidden = false;
+    trackEl.style.display = '';
+    var th = trackEl.clientHeight || ch || 180;
+    var ratio = ch / sh;
+    var ovalH = Math.max(24, Math.min(64, Math.round(th * ratio * 0.65)));
+    var maxTop = Math.max(4, th - ovalH - 6);
+    var scrollFrac = Math.max(0, Math.min(1, listEl.scrollTop / Math.max(1, sh - ch)));
+    thumbEl.style.height = ovalH + 'px';
+    thumbEl.style.top = (3 + Math.round(scrollFrac * maxTop)) + 'px';
+  }
+
+  function _syncCaveMailOvalScrollbar() {
+    var listEl = document.getElementById('caveMailBucketsGrid');
+    var trackEl = document.getElementById('caveMailOvalScrollbar');
+    var thumbEl = document.getElementById('caveMailOvalThumb');
+    _syncSingleOvalPair(listEl, trackEl, thumbEl);
+    $$('.cave-oval-scrollbar[data-oval-scroll-for]').forEach(function (tr) {
+      var targetId = tr.getAttribute('data-oval-scroll-for') || '';
+      var targetEl = targetId ? document.getElementById(targetId) : null;
+      var thEl = tr.querySelector('.cave-oval-thumb');
+      _syncSingleOvalPair(targetEl, tr, thEl);
+    });
+  }
+  window._syncCaveMailOvalScrollbar = _syncCaveMailOvalScrollbar;
+
+  (function _bindCaveMailOvalScrollbarOnce() {
+    if (window._caveMailOvalBound) return;
+    window._caveMailOvalBound = true;
+    var activeDrag = null;
+    document.addEventListener('scroll', function (ev) {
+      var t = ev && ev.target;
+      if (!t || !t.id) return;
+      if (t.id === 'caveMailBucketsGrid') {
+        _syncSingleOvalPair(t, document.getElementById('caveMailOvalScrollbar'), document.getElementById('caveMailOvalThumb'));
+        return;
+      }
+      var customTrack = document.querySelector('.cave-oval-scrollbar[data-oval-scroll-for="' + t.id + '"]');
+      if (customTrack) {
+        _syncSingleOvalPair(t, customTrack, customTrack.querySelector('.cave-oval-thumb'));
+      }
+    }, true);
+    document.addEventListener('mousedown', function (ev) {
+      var track = ev.target && ev.target.closest && ev.target.closest('.cave-oval-scrollbar');
+      if (!track) return;
+      var targetId = track.getAttribute('data-oval-scroll-for') || (track.id === 'caveMailOvalScrollbar' ? 'caveMailBucketsGrid' : '');
+      var listEl = targetId ? document.getElementById(targetId) : null;
+      var thumb = track.querySelector('.cave-oval-thumb');
+      if (!listEl || !thumb) return;
+      var clickedThumb = ev.target && ev.target.closest && ev.target.closest('.cave-oval-thumb');
+      if (clickedThumb) {
+        ev.preventDefault();
+        activeDrag = {
+          listEl: listEl,
+          trackEl: track,
+          thumbEl: thumb,
+          startY: ev.clientY,
+          startScroll: listEl.scrollTop
+        };
+        thumb.classList.add('is-dragging');
+        return;
+      }
+      ev.preventDefault();
+      var rect = track.getBoundingClientRect();
+      var frac = Math.max(0, Math.min(1, (ev.clientY - rect.top) / Math.max(1, rect.height)));
+      listEl.scrollTop = Math.round(frac * Math.max(0, listEl.scrollHeight - listEl.clientHeight));
+      _syncSingleOvalPair(listEl, track, thumb);
+    });
+    document.addEventListener('mousemove', function (ev) {
+      if (!activeDrag) return;
+      var dy = ev.clientY - activeDrag.startY;
+      var usableTrack = Math.max(1, activeDrag.trackEl.clientHeight - activeDrag.thumbEl.offsetHeight - 6);
+      var maxScroll = Math.max(1, activeDrag.listEl.scrollHeight - activeDrag.listEl.clientHeight);
+      activeDrag.listEl.scrollTop = Math.max(0, Math.min(maxScroll, activeDrag.startScroll + Math.round((dy / usableTrack) * maxScroll)));
+      _syncSingleOvalPair(activeDrag.listEl, activeDrag.trackEl, activeDrag.thumbEl);
+    });
+    document.addEventListener('mouseup', function () {
+      if (!activeDrag) return;
+      if (activeDrag.thumbEl) activeDrag.thumbEl.classList.remove('is-dragging');
+      activeDrag = null;
+    });
+    setTimeout(_syncCaveMailOvalScrollbar, 250);
+  })();
+
   function _renderImportantMailCardHtml(em) {
     var uid = _escH(em.uid || '');
     var frmRaw = String(em.from || 'Inbox');
-    var frmClean = _escH(frmRaw.split('<')[0].replace(/^["'\s]+|["'\s]+$/g, '') || frmRaw);
+    var frmClean = _escH((frmRaw.split('<')[0].replace(/^["'\s]+|["'\s]+$/g, '') || frmRaw).slice(0, 22));
     var sEmail = _escH(em.sender_email || frmRaw);
     var subj = _escH(em.subject || '(No Subject)');
     var acctB = _escH(em.account_badge || 'Inbox');
-    var score = parseInt(em.steward_score || 75, 10);
-    var attBadge = em.has_attachments ? '<span class="comms-badge amber">&#128206; Attachment</span>' : '';
-    var tCnt = parseInt(em.thread_count || 1, 10);
-    var cntBadge = tCnt > 1 ? ('<span class="comms-badge sky">' + tCnt + ' msgs</span>') : '';
-    var linkedEv = String(em.linked_calendar_event || '').trim();
-    var prepBadge = linkedEv
-      ? ('<span class="comms-badge emerald" title="Steward linked this email to upcoming calendar event: ' + _escH(linkedEv) + '">&#128197; Prep: ' + _escH(linkedEv.slice(0, 38)) + '</span>')
-      : '';
-    var dtShort = _escH(String(em.date || '').slice(0, 16));
+    var acctShort = _escH(_shortAcctBadge(em.account_badge || 'Inbox'));
+    var attBadge = em.has_attachments ? '<span class="comms-badge amber" style="font-size:8px;padding:0 2px;flex-shrink:0" title="Has attachment">&#128206;</span>' : '';
+    var dtShort = _escH(_shortMailDt(em.date || ''));
     var snip = _escH(em.snippet || 'Click to read full message body from account inbox.');
-    var rsn = _escH(em.steward_reason || 'Steward Priority');
+    var openedFlag = em.was_opened ? '1' : '0';
+    var isSel = (_activeEmailDialogue && _activeEmailDialogue.uid === em.uid) ? ' is-selected' : '';
+    return (
+      '<div class="comms-item amber cave-mail-card cave-mail-thin-row' + isSel + '" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" data-mail-source="' + acctB + '" data-mail-opened="' + openedFlag + '" data-cave-mail-open="' + uid + '" title="' + frmClean + ' — ' + subj + '">' +
+        '<div class="cave-mail-row-main">' +
+          '<span class="comms-badge sky cave-mail-mini-badge">' + acctShort + '</span>' +
+          '<b class="cave-mail-from" data-cave-mail-open="' + uid + '">' + frmClean + '</b>' +
+          '<span class="cave-mail-sep">&middot;</span>' +
+          '<span class="comms-item-title cave-mail-subj" data-cave-mail-open="' + uid + '">' + subj + '</span>' +
+          attBadge +
+        '</div>' +
+        '<div class="comms-acts cave-mail-row-acts">' +
+          '<span class="comms-meta cave-mail-date">' + dtShort + '</span>' +
+          '<button type="button" class="tw-btn cave-mail-act-pill sr-pill" data-speed-racer-queue="1" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" data-mail-from="' + frmClean + '" data-mail-subject="' + subj + '" data-mail-account="' + acctB + '" data-mail-source="' + acctB + '" data-mail-snippet="' + snip + '" title="Jump into Speed Racer and remove from active Focused list">&#127950;&#65039;</button>' +
+          '<button type="button" class="tw-btn done cave-mail-act-pill" data-cave-mail-triage="seen_important" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" title="Seen &amp; Important: remove from active Focused list, and teach Steward that emails like this are Important">&#11088;</button>' +
+          '<button type="button" class="tw-btn cave-mail-act-pill" data-cave-mail-triage="seen" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" title="Mark Looked At / Ignore (marks Read in Outlook/Gmail and removes from Focused)">&#128065;</button>' +
+          '<button type="button" class="tw-btn cave-mail-act-pill cal" data-cave-mail-triage="calendar_done" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" data-mail-subject="' + subj + '" title="Place confirmation/invitation info on Calendar and remove from Focused">&#128197;</button>' +
+        '</div>' +
+      '</div>'
+    );
+  }
+
+  function _renderOtherMailCardHtml(em) {
+    var uid = _escH(em.uid || '');
+    var frmRaw = String(em.from || 'Sender');
+    var frmClean = _escH((frmRaw.split('<')[0].replace(/^["'\s]+|["'\s]+$/g, '') || frmRaw).slice(0, 22));
+    var sEmail = _escH(em.sender_email || frmRaw);
+    var subj = _escH(em.subject || '(No Subject)');
+    var acctB = _escH(em.account_badge || 'Inbox');
+    var acctShort = _escH(_shortAcctBadge(em.account_badge || 'Inbox'));
+    var dtShort = _escH(_shortMailDt(em.date || ''));
+    var snip = _escH(em.snippet || 'Click to view full message body.');
     var openedFlag = em.was_opened ? '1' : '0';
     return (
-      '<div class="comms-item amber cave-mail-card" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" data-mail-source="' + acctB + '" data-mail-opened="' + openedFlag + '" data-cave-mail-open="' + uid + '" style="cursor:pointer" title="Click to blow up Email Interaction &amp; Steward Reply Dialogue Tile">' +
-        '<div class="comms-item-top">' +
-          '<span class="comms-badge sky">' + acctB + '</span>' +
-          '<b class="cave-mail-from" data-cave-mail-open="' + uid + '" style="cursor:pointer;color:#f8fafc">' + frmClean + '</b>' +
-          '<span class="comms-badge emerald" title="' + rsn + '">&#9733; ' + score + '</span>' +
-          prepBadge + attBadge + cntBadge +
-          '<span class="comms-meta" style="text-align:right">' + dtShort + '</span>' +
-          '<span class="comms-acts">' +
-            '<button type="button" class="tw-btn" data-speed-racer-queue="1" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" data-mail-from="' + frmClean + '" data-mail-subject="' + subj + '" data-mail-account="' + acctB + '" data-mail-snippet="' + snip + '" style="border-color:rgba(245,158,11,0.55);background:rgba(245,158,11,0.16);color:#fef08a;font-weight:700" title="Have Steward draft a response and put this email into the Speed Racer review &amp; approval queue">&#127950;&#65039; &rarr; Speed Racer</button>' +
-            '<button type="button" class="tw-btn" data-cave-mail-open="' + uid + '" title="Open Email Dialogue Tile (Thread History + Steward Suggested Reply)">&#128172; Open &amp; Reply</button>' +
-            '<button type="button" class="tw-btn" data-cave-mail-triage="seen" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" title="Tap Seen: if you have not opened this email, Steward learns it is Not Interesting and downgrades it">&#128065; Seen</button>' +
-            '<button type="button" class="tw-btn" data-cave-mail-triage="downgrade" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" title="Downgrade to Not Important &amp; teach Steward">&#11015; Not Interested</button>' +
-          '</span>' +
+      '<div class="comms-item sky cave-mail-card cave-mail-thin-row" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" data-mail-source="' + acctB + '" data-mail-opened="' + openedFlag + '" data-cave-mail-open="' + uid + '" style="opacity:0.88" title="' + frmClean + ' — ' + subj + '">' +
+        '<div class="cave-mail-row-main">' +
+          '<span class="comms-badge cave-mail-mini-badge">' + acctShort + '</span>' +
+          '<b class="cave-mail-from" data-cave-mail-open="' + uid + '">' + frmClean + '</b>' +
+          '<span class="cave-mail-sep">&middot;</span>' +
+          '<span class="comms-item-title cave-mail-subj" data-cave-mail-open="' + uid + '">' + subj + '</span>' +
         '</div>' +
-        '<div class="comms-item-title" data-cave-mail-open="' + uid + '" style="cursor:pointer">' + subj + '</div>' +
-        '<div class="cave-mail-body" id="caveMailBody-' + uid + '" hidden style="margin-top:6px;padding-top:6px;border-top:1px dashed #283548">' +
-          '<div class="comms-item-sub" style="white-space:pre-wrap;color:#cbd5e1">' + snip + '</div>' +
-          '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">' +
-            '<button type="button" class="tw-btn" data-comms-draft-reply="1" data-comms-draft-subject="' + subj + '" data-comms-draft-to="' + sEmail + '" data-comms-draft-project="' + acctB + '" data-comms-draft-step="">&#9998; Draft Reply</button>' +
-            '<button type="button" class="tw-btn" data-comms-download-att="' + uid + '" data-comms-att-subject="' + subj + '">&#11015; Save Attachment Locally</button>' +
-            '<button type="button" class="tw-btn" data-cave-mail-triage="downgrade" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '">&#11015; Downgrade / Not Interested</button>' +
-          '</div>' +
+        '<div class="comms-acts cave-mail-row-acts">' +
+          '<span class="comms-meta cave-mail-date">' + dtShort + '</span>' +
+          '<button type="button" class="tw-btn cave-mail-act-pill sr-pill" data-speed-racer-queue="1" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" data-mail-from="' + frmClean + '" data-mail-subject="' + subj + '" data-mail-account="' + acctB + '" data-mail-source="' + acctB + '" data-mail-snippet="' + snip + '" title="Send to Speed Racer (moves out of Active Inbox)">&#127950;&#65039;</button>' +
+          '<button type="button" class="tw-btn done cave-mail-act-pill" data-cave-mail-triage="seen_important" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" title="Seen &amp; Important: remove from active Inbox, and teach Steward that emails like this are Important">&#11088;</button>' +
+          '<button type="button" class="tw-btn cave-mail-act-pill" data-cave-mail-triage="seen" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" title="Mark Looked At / Seen">&#128065;</button>' +
+          '<button type="button" class="tw-btn done cave-mail-act-pill" data-cave-mail-triage="upgrade" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" title="Promote to Focused &amp; teach Steward">&#11014;</button>' +
+        '</div>' +
+      '</div>'
+    );
+  }
+
+  function _renderActedMailCardHtml(em) {
+    var uid = _escH(em.uid || '');
+    var frmRaw = String(em.from || 'Sender');
+    var frmClean = _escH((frmRaw.split('<')[0].replace(/^["'\s]+|["'\s]+$/g, '') || frmRaw).slice(0, 20));
+    var sEmail = _escH(em.sender_email || frmRaw);
+    var subj = _escH(em.subject || '(No Subject)');
+    var acctB = _escH(em.account_badge || 'Inbox');
+    var acctShort = _escH(_shortAcctBadge(em.account_badge || 'Inbox'));
+    var badgeLbl = _escH(em.acted_status || em.acted_badge || '\u2713 Acted');
+    var rsn = _escH(em.acted_reason || em.steward_reason || 'Resolved / Acted Upon');
+    var dtShort = _escH(_shortMailDt(em.acted_at || em.date || ''));
+    return (
+      '<div class="comms-item cave-mail-card cave-acted-card cave-mail-thin-row" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" data-mail-source="' + acctB + '" data-cave-mail-open="' + uid + '" style="border-left:3px solid #a78bfa;background:rgba(15,23,42,0.55)" title="' + rsn + ' — ' + subj + '">' +
+        '<div class="cave-mail-row-main">' +
+          '<span class="comms-badge cave-mail-mini-badge" style="border-color:rgba(167,139,250,0.5);background:rgba(167,139,250,0.16);color:#c4b5fd;font-weight:700">' + badgeLbl + '</span>' +
+          '<span class="comms-badge sky cave-mail-mini-badge">' + acctShort + '</span>' +
+          '<b class="cave-mail-from" data-cave-mail-open="' + uid + '">' + frmClean + '</b>' +
+          '<span class="cave-mail-sep">&middot;</span>' +
+          '<span class="comms-item-title cave-mail-subj" data-cave-mail-open="' + uid + '">' + subj + '</span>' +
+        '</div>' +
+        '<div class="comms-acts cave-mail-row-acts">' +
+          '<span class="comms-meta cave-mail-date">' + dtShort + '</span>' +
+          '<button type="button" class="tw-btn cave-mail-act-pill" data-cave-mail-triage="unact" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" title="Move back to Active Inbox">&#8617;</button>' +
         '</div>' +
       '</div>'
     );
@@ -3365,109 +3939,26 @@
   function _renderSentMailCardHtml(em) {
     var uid = _escH(em.uid || '');
     var toRaw = String(em.to || em.counterparty || 'Recipient');
-    var toClean = _escH(toRaw.split('<')[0].replace(/^["'\s]+|["'\s]+$/g, '') || toRaw);
+    var toClean = _escH((toRaw.split('<')[0].replace(/^["'\s]+|["'\s]+$/g, '') || toRaw).slice(0, 20));
     var toEmail = _escH(em.to || em.sender_email || toRaw);
     var subj = _escH(em.subject || '(No Subject)');
     var acctB = _escH(em.account_badge || 'Sent');
-    var attBadge = em.has_attachments ? '<span class="comms-badge amber">&#128206; Attachment</span>' : '';
-    var dtShort = _escH(String(em.date || '').slice(0, 16));
-    var snip = _escH(em.snippet || em.body || 'Click to view full sent email and thread history.');
+    var acctShort = _escH(_shortAcctBadge(em.account_badge || 'Sent'));
+    var attBadge = em.has_attachments ? '<span class="comms-badge amber" style="font-size:8px;padding:0 2px;flex-shrink:0">&#128206;</span>' : '';
+    var dtShort = _escH(_shortMailDt(em.date || ''));
     return (
-      '<div class="comms-item emerald cave-mail-card cave-sent-card" data-mail-uid="' + uid + '" data-mail-sender="' + toEmail + '" data-mail-source="' + acctB + '" data-mail-direction="sent" data-cave-mail-open="' + uid + '" style="cursor:pointer;border-left:3px solid #10b981" title="Click to open Sent Email &amp; Thread History">' +
-        '<div class="comms-item-top">' +
-          '<span class="comms-badge emerald">&#128228; ' + acctB + '</span>' +
-          '<b class="cave-mail-from" data-cave-mail-open="' + uid + '" style="cursor:pointer;color:#6ee7b7">To: ' + toClean + '</b>' +
+      '<div class="comms-item emerald cave-mail-card cave-sent-card cave-mail-thin-row" data-mail-uid="' + uid + '" data-mail-sender="' + toEmail + '" data-mail-source="' + acctB + '" data-mail-direction="sent" data-cave-mail-open="' + uid + '" style="border-left:3px solid #10b981" title="To: ' + toClean + ' — ' + subj + '">' +
+        '<div class="cave-mail-row-main">' +
+          '<span class="comms-badge emerald cave-mail-mini-badge">&#128228; ' + acctShort + '</span>' +
+          '<b class="cave-mail-from" data-cave-mail-open="' + uid + '" style="color:#6ee7b7">To: ' + toClean + '</b>' +
+          '<span class="cave-mail-sep">&middot;</span>' +
+          '<span class="comms-item-title cave-mail-subj" data-cave-mail-open="' + uid + '">' + subj + '</span>' +
           attBadge +
-          '<span class="comms-meta" style="text-align:right">' + dtShort + '</span>' +
-          '<span class="comms-acts">' +
-            '<button type="button" class="tw-btn" data-cave-mail-open="' + uid + '" title="Open Sent Email &amp; Thread History">&#128172; View / Follow Up</button>' +
-            '<button type="button" class="tw-btn" data-comms-draft-reply="1" data-comms-draft-subject="' + subj + '" data-comms-draft-to="' + toEmail + '" data-comms-draft-project="' + acctB + '" data-comms-draft-step="">&#9998; Follow-Up Draft</button>' +
-          '</span>' +
         '</div>' +
-        '<div class="comms-item-title" data-cave-mail-open="' + uid + '" style="cursor:pointer">' + subj + '</div>' +
-        '<div class="comms-item-sub" style="color:#cbd5e1">' + snip + '</div>' +
-      '</div>'
-    );
-  }
-
-  function _sanitizeEmailSandboxText(rawText) {
-    var s = String(rawText || '');
-    if (!s) return '';
-    return s
-      .replace(/(?:ignore|disregard|override)\s+(?:all\s+)?(?:previous|prior|system)\s+instructions?/gi, '[SANDBOXED-EMAIL-TEXT: non-executable content]')
-      .replace(/(?:system\s+prompt|developer\s+instruction|execute\s+command|run\s+shell|powershell\s+-|cmd\.exe\s+\/c|bash\s+-c)/gi, '[SANDBOXED-EMAIL-TEXT: non-executable content]');
-  }
-
-  function _renderAttachmentButtonsHtml(attachments, uid, accountId, targetHostId) {
-    if (!Array.isArray(attachments) || !attachments.length) return '';
-    return attachments.map(function (att) {
-      var p = typeof att === 'string' ? att : ((att && (att.path || att.name)) || '');
-      var nm = typeof att === 'string' ? String(att).replace(/\\/g, '/').split('/').pop() : ((att && att.name) || String(p).replace(/\\/g, '/').split('/').pop() || 'Attachment');
-      var rawUrl = '/api/steward/comms/attachment?path=' + encodeURIComponent(p) + '&name=' + encodeURIComponent(nm) + '&uid=' + encodeURIComponent(uid || '') + '&account_id=' + encodeURIComponent(accountId || '');
-      return (
-        '<span style="display:inline-flex;align-items:center;gap:3px;margin-right:4px">' +
-          '<button type="button" class="tw-btn" data-cave-view-attachment="1" data-att-path="' + _escH(p) + '" data-att-name="' + _escH(nm) + '" data-att-uid="' + _escH(uid || '') + '" data-att-account="' + _escH(accountId || '') + '" data-att-host="' + _escH(targetHostId || 'caveSrAttachmentPreviewHost') + '" ' +
-          'style="border-color:rgba(245,158,11,0.65);background:rgba(245,158,11,0.18);color:#fef08a;font-weight:750;font-size:10.5px;padding:2px 8px" title="Click to preview ' + _escH(nm) + ' inline">' +
-          '&#128196; View: ' + _escH(nm) + '</button>' +
-          '<a class="tw-btn" href="' + _escH(rawUrl) + '" target="_blank" rel="noopener" style="font-size:10px;padding:2px 5px;text-decoration:none;color:#7dd3fc" title="Open or download attachment in a new tab">&#8599;</a>' +
-        '</span>'
-      );
-    }).join('');
-  }
-
-  function _renderOtherMailCardHtml(em) {
-    var uid = _escH(em.uid || '');
-    var frmRaw = String(em.from || 'Sender');
-    var frmClean = _escH(frmRaw.split('<')[0].replace(/^["'\s]+|["'\s]+$/g, '').slice(0, 28) || frmRaw);
-    var sEmail = _escH(em.sender_email || frmRaw);
-    var subj = _escH(em.subject || '(No Subject)');
-    var acctB = _escH(em.account_badge || 'Inbox');
-    var dtShort = _escH(String(em.date || '').slice(0, 16));
-    var snip = _escH(em.snippet || 'Click to view full message body.');
-    var rsn = _escH(em.steward_reason || 'Filtered');
-    var openedFlag = em.was_opened ? '1' : '0';
-    return (
-      '<div class="comms-item cave-mail-card" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" data-mail-source="' + acctB + '" data-mail-opened="' + openedFlag + '" data-cave-mail-open="' + uid + '" style="padding:5px 8px;opacity:0.88;cursor:pointer" title="Click to blow up Email Interaction &amp; Steward Reply Dialogue Tile">' +
-        '<div class="comms-item-top">' +
-          '<span class="comms-badge">' + acctB + '</span>' +
-          '<b style="font-size:11.5px;color:#cbd5e1">' + frmClean + '</b>' +
-          '<span class="comms-meta">' + rsn + (dtShort ? (' &middot; ' + dtShort) : '') + '</span>' +
-          '<span class="comms-acts">' +
-            '<button type="button" class="tw-btn" data-speed-racer-queue="1" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" data-mail-from="' + frmClean + '" data-mail-subject="' + subj + '" data-mail-account="' + acctB + '" data-mail-snippet="' + snip + '" style="border-color:rgba(245,158,11,0.5);color:#fef08a" title="Send to Speed Racer (moves out of Active Inbox)">&#127950;&#65039; &rarr; Speed Racer</button>' +
-            '<button type="button" class="tw-btn" data-cave-mail-triage="seen" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" style="border-color:rgba(16,185,129,0.5);color:#6ee7b7" title="Mark Seen and move to Acted Upon">&#128065; Seen</button>' +
-            '<button type="button" class="tw-btn" data-cave-mail-open="' + uid + '">&#128172; Open</button>' +
-            '<button type="button" class="tw-btn" data-cave-mail-triage="upgrade" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" title="Promote to Important &amp; teach Steward">&#11014; Important</button>' +
-          '</span>' +
+        '<div class="comms-acts cave-mail-row-acts">' +
+          '<span class="comms-meta cave-mail-date">' + dtShort + '</span>' +
+          '<button type="button" class="tw-btn cave-mail-act-pill" data-comms-draft-reply="1" data-comms-draft-subject="' + subj + '" data-comms-draft-to="' + toEmail + '" data-comms-draft-project="' + acctB + '" data-comms-draft-step="" title="Follow-Up Draft">&#9998;</button>' +
         '</div>' +
-        '<div class="comms-item-sub" style="color:#e2e8f0">' + subj + '</div>' +
-      '</div>'
-    );
-  }
-
-  function _renderActedMailCardHtml(em) {
-    var uid = _escH(em.uid || '');
-    var frmRaw = String(em.from || 'Sender');
-    var frmClean = _escH(frmRaw.split('<')[0].replace(/^["'\s]+|["'\s]+$/g, '').slice(0, 32) || frmRaw);
-    var sEmail = _escH(em.sender_email || frmRaw);
-    var subj = _escH(em.subject || '(No Subject)');
-    var acctB = _escH(em.account_badge || 'Inbox');
-    var badgeLbl = _escH(em.acted_status || em.acted_badge || '\u2713 Acted Upon');
-    var rsn = _escH(em.acted_reason || em.steward_reason || 'Resolved / Acted Upon');
-    var dtShort = _escH(String(em.acted_at || em.date || '').slice(0, 16));
-    return (
-      '<div class="comms-item cave-mail-card cave-acted-card" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" data-mail-source="' + acctB + '" data-cave-mail-open="' + uid + '" style="padding:6px 9px;border-left:3px solid #a78bfa;background:rgba(15,23,42,0.55);cursor:pointer" title="Click to inspect email thread or give follow-up instructions">' +
-        '<div class="comms-item-top">' +
-          '<span class="comms-badge" style="border-color:rgba(167,139,250,0.5);background:rgba(167,139,250,0.16);color:#c4b5fd;font-weight:700">' + badgeLbl + '</span>' +
-          '<span class="comms-badge sky">' + acctB + '</span>' +
-          '<b style="font-size:11.5px;color:#e2e8f0">' + frmClean + '</b>' +
-          '<span class="comms-meta" style="text-align:right">' + dtShort + '</span>' +
-          '<span class="comms-acts">' +
-            '<button type="button" class="tw-btn" data-cave-mail-open="' + uid + '" title="Open email thread &amp; reply">' + '&#128172; View</button>' +
-            '<button type="button" class="tw-btn" data-cave-mail-triage="unact" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" title="Move back to Active Inbox">&#8617; Back to Inbox</button>' +
-          '</span>' +
-        '</div>' +
-        '<div class="comms-item-title" style="font-size:12px;color:#f1f5f9">' + subj + '</div>' +
-        '<div class="comms-item-sub" style="font-size:10.5px;color:#94a3b8">' + rsn + '</div>' +
       '</div>'
     );
   }
@@ -3476,9 +3967,12 @@
     if (!d || !d.ok) return;
     var impBox = document.getElementById('caveMailImportantList');
     if (impBox && Array.isArray(d.important_emails)) {
+      if (!d._interleavedOnce) {
+        d.important_emails = _interleaveEmailsByBadge(d.important_emails.slice());
+        d._interleavedOnce = true;
+      }
       if (d.important_emails.length) {
-        var interleaved = _interleaveEmailsByBadge(d.important_emails.slice());
-        impBox.innerHTML = interleaved.slice(0, 30).map(_renderImportantMailCardHtml).join('');
+        impBox.innerHTML = d.important_emails.slice(0, 30).map(_renderImportantMailCardHtml).join('');
       } else {
         impBox.innerHTML = '<div class="tw-empty">&#10003; Active Important Inbox is clear! All replied, seen, and Speed Racer emails have moved to Acted Upon.</div>';
       }
@@ -3504,19 +3998,16 @@
       if (actCntHdr) actCntHdr.innerHTML = '&#10003; ' + d.acted_upon_emails.length + ' Resolved / Replied / Seen';
     }
     var actInbBadge = document.getElementById('caveActiveInboxCountBadge');
-    if (actInbBadge && Array.isArray(d.important_emails) && Array.isArray(d.other_emails)) {
-      actInbBadge.textContent = String(d.important_emails.length + d.other_emails.length);
+    if (actInbBadge && Array.isArray(d.important_emails)) {
+      actInbBadge.textContent = String(d.important_emails.length);
     }
     var impBadge = document.getElementById('caveImpCountBadge');
     if (impBadge && Array.isArray(d.important_emails)) {
-      impBadge.innerHTML = '&#9889; ' + d.important_emails.length + ' to Address';
+      impBadge.innerHTML = '&#9889; ' + d.important_emails.length + ' Focused';
     }
     var othBadge = document.getElementById('caveOthCountBadge');
     if (othBadge && Array.isArray(d.other_emails)) {
-      othBadge.innerHTML = '&#128229; ' + d.other_emails.length + ' Not Important';
-    }
-    if (d.speed_racer && typeof _syncSpeedRacerFromServer === 'function') {
-      _syncSpeedRacerFromServer(d.speed_racer);
+      othBadge.innerHTML = '&#128229; ' + d.other_emails.length + ' Other';
     }
     var sentBox = document.getElementById('caveMailSentList');
     if (sentBox && Array.isArray(d.sent_emails)) {
@@ -3526,6 +4017,51 @@
       var sentCntB = document.getElementById('caveSentCountBadge');
       if (sentCntB) sentCntB.textContent = String(d.sent_emails.length);
     }
+    _applyCaveMailFolderMode(_currentMailFolderMode || 'inbox', false);
+    var curVisList = _getVisibleEmailListForMode(_currentMailFolderMode || 'inbox', d);
+    if (_pendingNextEmailSelection) {
+      var selNext = _pendingNextEmailSelection;
+      _pendingNextEmailSelection = null;
+      var targetList = _getVisibleEmailListForMode(selNext.folderMode || _currentMailFolderMode || 'inbox', d);
+      if (targetList.length) {
+        var nextEm = null;
+        if (selNext.nextUid) {
+          nextEm = targetList.find(function (x) { return x && String(x.uid || '') === String(selNext.nextUid); }) || null;
+        }
+        if (!nextEm) {
+          var clampIdx = Math.max(0, Math.min(selNext.index || 0, targetList.length - 1));
+          nextEm = targetList[clampIdx];
+        }
+        if (nextEm) {
+          _openEmailDialogueTile(nextEm.uid, nextEm.subject, nextEm.sender_email || nextEm.from, nextEm.account_badge || 'Inbox', true);
+        }
+      } else {
+        _setEmailDialogueOpen(false, '\u2713 All emails in this list have been handled \u2014 Email dialogue closed.');
+      }
+    } else if (curVisList.length) {
+      if (!window._emailDlgClosed) {
+        var curActiveStillInCurrentList = _activeEmailDialogue && curVisList.some(function (x) { return x && x.uid === _activeEmailDialogue.uid; });
+        if (!curActiveStillInCurrentList) {
+          var firstEm = curVisList[0];
+          _openEmailDialogueTile(firstEm.uid, firstEm.subject, firstEm.sender_email || firstEm.from, firstEm.account_badge || 'Inbox', true);
+        } else {
+          var fullActiveEm = curVisList.find(function (x) { return x && x.uid === _activeEmailDialogue.uid; });
+          if (fullActiveEm && !_activeEmailDialogue.body && (fullActiveEm.body || fullActiveEm.snippet)) {
+            _openEmailDialogueTile(fullActiveEm.uid, fullActiveEm.subject, fullActiveEm.sender_email || fullActiveEm.from, fullActiveEm.account_badge || 'Inbox', true);
+          } else {
+            $$('#caveMailBucketsGrid .cave-mail-card').forEach(function (c) {
+              c.classList.toggle('is-selected', c.getAttribute('data-mail-uid') === String(_activeEmailDialogue.uid || ''));
+            });
+          }
+        }
+      }
+    } else {
+      _setEmailDialogueOpen(false);
+    }
+    if (d.speed_racer && typeof _syncSpeedRacerFromServer === 'function') {
+      _syncSpeedRacerFromServer(d.speed_racer);
+    }
+    setTimeout(_syncCaveMailOvalScrollbar, 35);
     var accBar = document.getElementById('caveConnectedAccountsBar');
     var syncBtnToolbar = document.getElementById('btnCaveCommsSync');
     if (syncBtnToolbar && syncBtnToolbar.parentElement && !document.getElementById('btnCaveToolbarChangePw')) {
@@ -3592,6 +4128,7 @@
       }
     }
   }
+  window._hydrateMailCardsFromCommsData = _hydrateMailCardsFromCommsData;
 
   function _ensureCaveCommsDataLoaded(force) {
     if (_caveCommsData && !force) return Promise.resolve(_caveCommsData);
@@ -3614,6 +4151,63 @@
       .catch(function () { return null; });
   }
   window._ensureCaveCommsDataLoaded = _ensureCaveCommsDataLoaded;
+
+  function _resolveRightPaneEmailCtx() {
+    if (_activeEmailDialogue && _activeEmailDialogue.uid) return _activeEmailDialogue;
+    var selCard = document.querySelector('#caveMailBucketsGrid .cave-mail-card.is-selected')
+      || document.querySelector('#caveMailBucketsGrid .cave-mail-bucket-col:not([hidden]) .cave-mail-card:not([hidden])')
+      || document.querySelector('#caveMailImportantList .cave-mail-card');
+    if (!selCard) return null;
+    var cUid = selCard.getAttribute('data-mail-uid') || '';
+    var cSender = selCard.getAttribute('data-mail-sender') || '';
+    var cBadge = selCard.getAttribute('data-mail-source') || 'PSU 365';
+    var tEl = selCard.querySelector('.comms-item-title, .cave-mail-subj');
+    var cSubj = (tEl && tEl.textContent) || ((document.getElementById('caveDlgMailSubject') || {}).textContent || '');
+    return {
+      uid: cUid,
+      sender_email: cSender,
+      from: cSender,
+      subject: cSubj,
+      account_badge: cBadge,
+      body: ((document.getElementById('caveDialogueThreadList') || {}).innerText || '').slice(0, 1200)
+    };
+  }
+  window._resolveRightPaneEmailCtx = _resolveRightPaneEmailCtx;
+
+  function _optimisticallyRemoveEmailFromLists(uid, actedStatus, actedReason) {
+    var u = String(uid || '').trim();
+    if (!u || !_caveCommsData) return;
+    _captureNextEmailInCurrentList(u);
+    var removedItem = null;
+    if (Array.isArray(_caveCommsData.important_emails)) {
+      _caveCommsData.important_emails = _caveCommsData.important_emails.filter(function (em) {
+        if (em && String(em.uid || '') === u) { removedItem = em; return false; }
+        return true;
+      });
+    }
+    if (Array.isArray(_caveCommsData.other_emails)) {
+      _caveCommsData.other_emails = _caveCommsData.other_emails.filter(function (em) {
+        if (em && String(em.uid || '') === u) { if (!removedItem) removedItem = em; return false; }
+        return true;
+      });
+    }
+    if (removedItem) {
+      var actedCopy = Object.assign({}, removedItem, {
+        acted_status: actedStatus || '\u2713 Acted',
+        acted_reason: actedReason || 'Resolved / Acted Upon',
+        acted_at: new Date().toISOString().slice(0, 16).replace('T', ' ')
+      });
+      if (!Array.isArray(_caveCommsData.acted_upon_emails)) _caveCommsData.acted_upon_emails = [];
+      _caveCommsData.acted_upon_emails = [actedCopy].concat(
+        _caveCommsData.acted_upon_emails.filter(function (em) { return em && String(em.uid || '') !== u; })
+      );
+    }
+    if (_activeEmailDialogue && String(_activeEmailDialogue.uid || '') === u) {
+      _activeEmailDialogue = null;
+    }
+    _hydrateMailCardsFromCommsData(_caveCommsData);
+  }
+  window._optimisticallyRemoveEmailFromLists = _optimisticallyRemoveEmailFromLists;
 
   document.addEventListener('change', function (e) {
     var srcCb = e.target.closest && e.target.closest('[data-comms-source-filter]');
@@ -3758,15 +4352,52 @@
         });
       return;
     }
-    var stIntentBtn = e.target.closest && e.target.closest('[data-steward-draft-intent], #btnCaveStewardCustomDraft');
+    var toggleFloatBtn = e.target.closest && e.target.closest('[data-toggle-mail-float]');
+    if (toggleFloatBtn) {
+      e.preventDefault(); e.stopPropagation();
+      var splitEl = document.getElementById('caveOutlookMailSplit');
+      var srEl = document.getElementById('caveSpeedRacerTile');
+      var willDock = splitEl ? !splitEl.classList.contains('is-docked') : false;
+      if (splitEl) splitEl.classList.toggle('is-docked', willDock);
+      if (srEl) srEl.classList.toggle('is-docked', willDock);
+      $$('[data-toggle-mail-float]').forEach(function (b) {
+        b.classList.toggle('on', !willDock);
+        b.innerHTML = willDock ? '&#8644; Float Over Steward' : '&#8644; Floating Over Steward &#10003;';
+      });
+      setTimeout(_syncCaveMailOvalScrollbar, 40);
+      return;
+    }
+
+    var quickReplyFocusBtn = e.target.closest && e.target.closest('#btnCaveDlgQuickReplyFocus');
+    if (quickReplyFocusBtn) {
+      e.preventDefault(); e.stopPropagation();
+      var drw = document.getElementById('caveDlgDirectReplyDrawer');
+      if (drw) drw.open = true;
+      var repBody = document.getElementById('caveReplyBody');
+      if (repBody) {
+        try { repBody.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (err) {}
+        repBody.focus();
+      }
+      return;
+    }
+    var stIntentBtn = e.target.closest && e.target.closest('[data-steward-draft-intent], #btnCaveStewardCustomDraft, [data-dlg-scribe-action], #btnCaveDlgScribeApply');
     if (stIntentBtn) {
       e.preventDefault(); e.stopPropagation();
-      var intent = stIntentBtn.getAttribute('data-steward-draft-intent') || 'default';
-      var custIn = document.getElementById('caveStewardCustomPrompt');
-      var customPrompt = (stIntentBtn.id === 'btnCaveStewardCustomDraft' && custIn) ? custIn.value.trim() : '';
-      var curD = _activeEmailDialogue || {};
+      var dlgScribeAct = stIntentBtn.getAttribute('data-dlg-scribe-action') || '';
+      var intent = dlgScribeAct || stIntentBtn.getAttribute('data-steward-draft-intent') || 'default';
+      if (intent === 'draft') intent = 'default';
+      var custIn = document.getElementById('caveDlgScribeInstructionInput') || document.getElementById('caveStewardCustomPrompt');
+      var customPrompt = ((stIntentBtn.id === 'btnCaveDlgScribeApply' || dlgScribeAct === 'custom' || stIntentBtn.id === 'btnCaveStewardCustomDraft') && custIn)
+        ? custIn.value.trim()
+        : '';
+      var curD = _resolveRightPaneEmailCtx() || _activeEmailDialogue || {};
+      var curReplyVal = ((document.getElementById('caveReplyBody') || {}).value || '').trim();
+      var isTone = (intent === 'warmer' || intent === 'formal' || intent === 'simpler' || intent === 'more_detail' || intent === 'async_email');
       var noteEl = document.getElementById('caveDlgStewardNote');
-      if (noteEl) noteEl.textContent = '\u23f3 Steward is drafting response\u2026';
+      var stMsgS = document.getElementById('caveReplyStatusMsg');
+      if (noteEl) noteEl.textContent = '\ud83e\udeb6 Scribe is reading thread & crafting response\u2026';
+      if (stMsgS) stMsgS.textContent = '\ud83e\udeb6 Scribe is crafting draft\u2026';
+      stIntentBtn.disabled = true;
       fetch('/api/steward/comms', {
         method: 'POST',
         headers: headers(),
@@ -3778,24 +4409,39 @@
           from: curD.from || '',
           sender_email: curD.sender_email || ((document.getElementById('caveReplyTo') || {}).value || ''),
           body: curD.body || '',
+          current_draft: curReplyVal,
           intent: intent,
+          tone: isTone ? intent : '',
           custom_prompt: customPrompt
         })
       })
         .then(function (r) { return r.json(); })
         .then(function (d) {
+          stIntentBtn.disabled = false;
           if (d && d.ok) {
+            var drwS = document.getElementById('caveDlgDirectReplyDrawer');
+            if (drwS) drwS.open = true;
             var bIn = document.getElementById('caveReplyBody');
-            if (bIn) bIn.value = d.draft_body || '';
-            if (noteEl) noteEl.textContent = '\u2728 ' + (d.steward_note || 'Draft updated');
+            if (bIn) {
+              bIn.value = d.draft_body || '';
+              bIn.focus();
+            }
+            if (custIn && (dlgScribeAct === 'custom' || stIntentBtn.id === 'btnCaveDlgScribeApply')) {
+              custIn.value = '';
+            }
+            if (noteEl) noteEl.textContent = '\ud83e\udeb6 ' + (d.steward_note || 'Scribe updated draft');
+            if (stMsgS) stMsgS.innerHTML = '<span style="color:#c4b5fd">\ud83e\udeb6 ' + _escH(d.steward_note || 'Scribe updated draft') + '</span>';
           }
+        })
+        .catch(function () {
+          stIntentBtn.disabled = false;
         });
       return;
     }
     var sendReplyBtn = e.target.closest && e.target.closest('#btnCaveSendReplyNow');
     if (sendReplyBtn) {
       e.preventDefault(); e.stopPropagation();
-      var curM = _activeEmailDialogue || {};
+      var curM = _resolveRightPaneEmailCtx() || _activeEmailDialogue || {};
       var toVal = ((document.getElementById('caveReplyTo') || {}).value || '').trim();
       var ccVal = ((document.getElementById('caveReplyCc') || {}).value || '').trim();
       var subVal = ((document.getElementById('caveReplySubject') || {}).value || '').trim();
@@ -3806,14 +4452,17 @@
         return;
       }
       sendReplyBtn.disabled = true;
+      var sendingUid = curM.uid || '';
+      var sendingAcctId = curM.account_id || '';
       if (stMsg) stMsg.textContent = '\u23f3 Sending reply\u2026';
+      _optimisticallyRemoveEmailFromLists(sendingUid, '\u21a9 Replied', 'Answered directly via Quick Reply to ' + toVal);
       fetch('/api/steward/comms', {
         method: 'POST',
         headers: headers(),
         body: JSON.stringify({
           action: 'send_email',
-          uid: curM.uid || '',
-          account_id: curM.account_id || '',
+          uid: sendingUid,
+          account_id: sendingAcctId,
           to: toVal,
           cc: ccVal,
           subject: subVal,
@@ -3825,27 +4474,15 @@
           sendReplyBtn.disabled = false;
           if (d && d.ok) {
             if (stMsg) stMsg.innerHTML = '<b style="color:#6ee7b7">\u2713 Sent via ' + _escH(d.transport || d.from || 'Account') + '!</b>';
-            var thList = document.getElementById('caveDialogueThreadList');
-            if (thList) {
-              var sentCard = document.createElement('div');
-              sentCard.style.cssText = 'padding:9px 11px;border-radius:8px;background:rgba(16,185,129,0.12);border:1px solid #10b981;border-left:4px solid #10b981';
-              sentCard.innerHTML =
-                '<div style="display:flex;justify-content:space-between;font-size:11px;color:#6ee7b7;margin-bottom:4px"><b>You \u2192 ' + _escH(toVal) + '</b><span>Just Sent</span></div>' +
-                '<div style="font-size:12px;color:#f8fafc;white-space:pre-wrap">' + _escH(bodyVal) + '</div>';
-              thList.appendChild(sentCard);
-              thList.scrollTop = thList.scrollHeight;
-            }
             if (!_caveCommsData) _caveCommsData = { ok: true };
             if (Array.isArray(d.sent_emails)) _caveCommsData.sent_emails = d.sent_emails;
-            if (Array.isArray(d.important_emails)) _caveCommsData.important_emails = d.important_emails;
+            if (Array.isArray(d.important_emails)) _caveCommsData.important_emails = _mergeStableEmailOrder(_caveCommsData.important_emails, d.important_emails);
             if (Array.isArray(d.other_emails)) _caveCommsData.other_emails = d.other_emails;
             if (Array.isArray(d.acted_upon_emails)) _caveCommsData.acted_upon_emails = d.acted_upon_emails;
+            _caveCommsData._interleavedOnce = true;
+            if (d.speed_racer) _caveCommsData.speed_racer = d.speed_racer;
             _hydrateMailCardsFromCommsData(_caveCommsData);
-            setTimeout(function () {
-              var dlgHide = document.getElementById('caveCommsDialogueTile');
-              if (dlgHide) dlgHide.hidden = true;
-            }, 650);
-            receipt('\u2713 Reply sent to ' + toVal + ' (' + subVal + ') — moved out of Active Inbox to Acted Upon & Sent!');
+            receipt('\u2713 Reply sent directly to ' + toVal + ' (' + subVal + ') — moved out of Active Focused Inbox to Acted Upon & Sent!');
           } else {
             if (stMsg) stMsg.textContent = '\u26a0 ' + ((d && d.error) || 'Send failed.');
           }
@@ -3948,27 +4585,102 @@
       if (hEl) { hEl.hidden = true; hEl.innerHTML = ''; }
       return;
     }
-    var dlgSrBtn = e.target.closest && e.target.closest('#btnCaveDlgToSpeedRacer, #btnCaveDlgSendDirectionsToSr');
-    if (dlgSrBtn && _activeEmailDialogue) {
+    var closeEmailDlgBtn = e.target.closest && e.target.closest('[data-cave-close-email-dlg]');
+    if (closeEmailDlgBtn) {
       e.preventDefault(); e.stopPropagation();
-      var curE = _activeEmailDialogue;
+      _setEmailDialogueOpen(false, 'Closed Email dialogue.');
+      return;
+    }
+    var dlgStewardActionBtn = e.target.closest && e.target.closest('#btnCaveDlgSendStewardAction');
+    if (dlgStewardActionBtn) {
+      var curActE = _resolveRightPaneEmailCtx();
+      if (!curActE) return;
+      e.preventDefault(); e.stopPropagation();
+      var actInput = document.getElementById('caveDlgStewardActionInput');
+      var commentTxt = actInput ? actInput.value.trim() : '';
+      if (!commentTxt) {
+        receipt('Please enter a comment or task instruction for the Steward first.', true);
+        if (actInput) actInput.focus();
+        return;
+      }
+      var actUid = curActE.uid || '';
+      _optimisticallyRemoveEmailFromLists(actUid, '\ud83d\udccb Steward Action', commentTxt);
+      dlgStewardActionBtn.disabled = true;
+      fetch('/api/steward/comms', {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({
+          action: 'email_steward_action',
+          uid: actUid,
+          account_id: curActE.account_id || '',
+          account_badge: curActE.account_badge || 'PSU 365',
+          from: curActE.from || curActE.sender_email || '',
+          sender_email: curActE.sender_email || curActE.from || '',
+          subject: curActE.subject || '',
+          date: curActE.date || '',
+          snippet: (curActE.body || curActE.snippet || '').slice(0, 320),
+          comment: commentTxt
+        })
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          dlgStewardActionBtn.disabled = false;
+          if (d && d.ok) {
+            if (actInput) actInput.value = '';
+            if (d.working_list && typeof _renderWorkingListSpine === 'function') {
+              _wlState = d.working_list;
+              _renderWorkingListSpine();
+            }
+            if (!_caveCommsData) _caveCommsData = { ok: true };
+            if (Array.isArray(d.important_emails)) _caveCommsData.important_emails = _mergeStableEmailOrder(_caveCommsData.important_emails, d.important_emails);
+            if (Array.isArray(d.other_emails)) _caveCommsData.other_emails = d.other_emails;
+            if (Array.isArray(d.acted_upon_emails)) _caveCommsData.acted_upon_emails = d.acted_upon_emails;
+            if (Array.isArray(d.all_emails)) _caveCommsData.all_emails = d.all_emails;
+            _caveCommsData._interleavedOnce = true;
+            _hydrateMailCardsFromCommsData(_caveCommsData);
+            if (dlg && typeof dlg.reload === 'function') {
+              try { dlg.reload(); } catch (err) {}
+            }
+            receipt(d.note || '\ud83d\udccb Sent comment to Steward & added task to The List!');
+          } else {
+            receipt((d && d.error) || 'Could not record Steward action.', true);
+          }
+        })
+        .catch(function () {
+          dlgStewardActionBtn.disabled = false;
+          receipt('Steward action request did not reach Anchor.', true);
+        });
+      return;
+    }
+    var dlgSrBtn = e.target.closest && e.target.closest('#btnCaveDlgToSpeedRacer, #btnCaveDlgSendDirectionsToSr');
+    if (dlgSrBtn) {
+      var curE = _resolveRightPaneEmailCtx();
+      if (!curE) return;
+      e.preventDefault(); e.stopPropagation();
       var dirInput = document.getElementById('caveDlgStewardDirectionsInput');
       var userDirs = dirInput ? dirInput.value.trim() : '';
       var replyBodyEl = document.getElementById('caveReplyBody');
       var curDraftBody = replyBodyEl ? replyBodyEl.value.trim() : '';
       var sdAtts = (curE.steward_draft && Array.isArray(curE.steward_draft.attachments)) ? curE.steward_draft.attachments : [];
+      var srUid = curE.uid || '';
+      var srTo = ((document.getElementById('caveReplyTo') || {}).value || curE.sender_email || curE.from || '').trim();
+      var srSubj = ((document.getElementById('caveReplySubject') || {}).value || ('Re: ' + (curE.subject || ''))).trim();
+      var srBody = curE.body || '';
+      var srAcctId = curE.account_id || '';
+      var srAcctBadge = curE.account_badge || 'PSU 365';
+      _optimisticallyRemoveEmailFromLists(srUid, '\ud83c\udfce\ufe0f Speed Racer', 'Queued in Speed Racer for review');
       dlgSrBtn.disabled = true;
       fetch('/api/steward/comms', {
         method: 'POST',
         headers: headers(),
         body: JSON.stringify({
           action: 'speed_racer_queue',
-          uid: curE.uid || '',
-          account_id: curE.account_id || '',
-          account: curE.account_badge || 'PSU 365',
-          to: ((document.getElementById('caveReplyTo') || {}).value || curE.sender_email || curE.from || '').trim(),
-          subject: ((document.getElementById('caveReplySubject') || {}).value || ('Re: ' + (curE.subject || ''))).trim(),
-          incoming_snippet: (curE.body || '').slice(0, 360),
+          uid: srUid,
+          account_id: srAcctId,
+          account: srAcctBadge,
+          to: srTo,
+          subject: srSubj,
+          incoming_snippet: srBody.slice(0, 360),
           steward_directions: userDirs,
           draft_body: userDirs ? '' : curDraftBody,
           attachments: sdAtts,
@@ -3979,13 +4691,13 @@
         .then(function (d) {
           dlgSrBtn.disabled = false;
           if (d && d.ok) {
-            var dlg = document.getElementById('caveCommsDialogueTile');
-            if (dlg) dlg.hidden = true;
+            if (dirInput) dirInput.value = '';
             if (!_caveCommsData) _caveCommsData = { ok: true };
-            if (Array.isArray(d.important_emails)) _caveCommsData.important_emails = d.important_emails;
+            if (Array.isArray(d.important_emails)) _caveCommsData.important_emails = _mergeStableEmailOrder(_caveCommsData.important_emails, d.important_emails);
             if (Array.isArray(d.other_emails)) _caveCommsData.other_emails = d.other_emails;
             if (Array.isArray(d.acted_upon_emails)) _caveCommsData.acted_upon_emails = d.acted_upon_emails;
             if (d.speed_racer) _caveCommsData.speed_racer = d.speed_racer;
+            _caveCommsData._interleavedOnce = true;
             _hydrateMailCardsFromCommsData(_caveCommsData);
             if (d.speed_racer) {
               _srState = d.speed_racer;
@@ -4001,25 +4713,34 @@
         .catch(function () { dlgSrBtn.disabled = false; });
       return;
     }
-    var dlgTriageBtn = e.target.closest && e.target.closest('#btnCaveDlgSeen, #btnCaveDlgAlreadyReplied, #btnCaveDlgDowngrade, #btnCaveDlgUpgrade');
-    if (dlgTriageBtn && _activeEmailDialogue) {
+    var dlgTriageBtn = e.target.closest && e.target.closest('#btnCaveDlgSeen, #btnCaveDlgSeenImportant, #btnCaveDlgCalendarDone, #btnCaveDlgAlreadyReplied, #btnCaveDlgDowngrade, #btnCaveDlgUpgrade');
+    if (dlgTriageBtn) {
+      var curTriageE = _resolveRightPaneEmailCtx();
+      if (!curTriageE) return;
       e.preventDefault(); e.stopPropagation();
       var actMap = {
         btnCaveDlgSeen: 'seen',
+        btnCaveDlgSeenImportant: 'seen_important',
+        btnCaveDlgCalendarDone: 'calendar_done',
         btnCaveDlgAlreadyReplied: 'already_replied',
         btnCaveDlgDowngrade: 'downgrade',
         btnCaveDlgUpgrade: 'upgrade'
       };
       var fb = actMap[dlgTriageBtn.id] || 'seen';
+      var curUid = curTriageE.uid || '';
+      var curSender = curTriageE.sender_email || curTriageE.from || '';
+      var curSubj = curTriageE.subject || '';
+      var curBadge = curTriageE.account_badge || '';
+      _optimisticallyRemoveEmailFromLists(curUid, fb === 'already_replied' ? '\u2713 Answered' : '\u2713 Acted', 'Marked ' + fb);
       fetch('/api/steward/comms', {
         method: 'POST',
         headers: headers(),
         body: JSON.stringify({
           action: 'email_triage_feedback',
-          uid: _activeEmailDialogue.uid || '',
-          sender_email: _activeEmailDialogue.sender_email || _activeEmailDialogue.from || '',
-          subject: _activeEmailDialogue.subject || '',
-          account_badge: _activeEmailDialogue.account_badge || '',
+          uid: curUid,
+          sender_email: curSender,
+          subject: curSubj,
+          account_badge: curBadge,
           feedback: fb,
           was_opened: true
         })
@@ -4027,14 +4748,13 @@
         .then(function (r) { return r.json(); })
         .then(function (d) {
           if (d && d.ok) {
-            var dlg = document.getElementById('caveCommsDialogueTile');
-            if (dlg) dlg.hidden = true;
             if (!_caveCommsData) _caveCommsData = { ok: true };
-            if (Array.isArray(d.important_emails)) _caveCommsData.important_emails = d.important_emails;
+            if (Array.isArray(d.important_emails)) _caveCommsData.important_emails = _mergeStableEmailOrder(_caveCommsData.important_emails, d.important_emails);
             if (Array.isArray(d.other_emails)) _caveCommsData.other_emails = d.other_emails;
             if (Array.isArray(d.acted_upon_emails)) _caveCommsData.acted_upon_emails = d.acted_upon_emails;
+            _caveCommsData._interleavedOnce = true;
             _hydrateMailCardsFromCommsData(_caveCommsData);
-            receipt(d.note || 'Email moved out of Active Inbox to Acted Upon.');
+            receipt(d.note || 'Email moved out of Focused Inbox to Acted Upon.');
           }
         });
       return;
@@ -4043,7 +4763,8 @@
     if (mailFolderBtn) {
       e.preventDefault(); e.stopPropagation();
       var fMode = mailFolderBtn.getAttribute('data-cave-mail-folder') || 'all';
-      _applyCaveMailFolderMode(fMode);
+      _applyCaveMailFolderMode(fMode, true);
+      setTimeout(_syncCaveMailOvalScrollbar, 30);
       return;
     }
     var layoutBtn = e.target.closest && e.target.closest('#calBody [data-comms-layout]');
@@ -4105,6 +4826,10 @@
       var uid = openMailEl.getAttribute('data-cave-mail-open') || '';
       if (!uid) return;
       var card = openMailEl.closest('.cave-mail-card');
+      if (card && card.classList.contains('is-selected') && !window._emailDlgClosed) {
+        _setEmailDialogueOpen(false, 'Closed Email dialogue.');
+        return;
+      }
       var fSubj = '';
       var fSender = '';
       var fSrc = '';
@@ -4127,6 +4852,13 @@
       var mCard = triageBtn.closest('.cave-mail-card');
       var wasOpened = mCard ? (mCard.getAttribute('data-mail-opened') === '1') : false;
       triageBtn.disabled = true;
+      var tSubj = triageBtn.getAttribute('data-mail-subject') || '';
+      if (tAct !== 'unact' && window._optimisticallyRemoveEmailFromLists) {
+        window._optimisticallyRemoveEmailFromLists(tUid, '\u2713 Acted', 'Marked ' + tAct);
+      } else {
+        _captureNextEmailInCurrentList(tUid);
+        if (_activeEmailDialogue && _activeEmailDialogue.uid === tUid) _activeEmailDialogue = null;
+      }
       fetch('/api/steward/comms', {
         method: 'POST',
         headers: headers(),
@@ -4134,6 +4866,7 @@
           action: 'email_triage_feedback',
           uid: tUid,
           sender_email: tSender,
+          subject: tSubj,
           feedback: tAct,
           was_opened: wasOpened
         })
@@ -4143,9 +4876,10 @@
           triageBtn.disabled = false;
           if (d && d.ok) {
             if (!_caveCommsData) _caveCommsData = { ok: true };
-            if (Array.isArray(d.important_emails)) _caveCommsData.important_emails = d.important_emails;
+            if (Array.isArray(d.important_emails)) _caveCommsData.important_emails = _mergeStableEmailOrder(_caveCommsData.important_emails, d.important_emails);
             if (Array.isArray(d.other_emails)) _caveCommsData.other_emails = d.other_emails;
             if (Array.isArray(d.acted_upon_emails)) _caveCommsData.acted_upon_emails = d.acted_upon_emails;
+            _caveCommsData._interleavedOnce = true;
             _hydrateMailCardsFromCommsData(_caveCommsData);
             receipt(d.note || 'Updated Steward email triage preference.');
           } else {
@@ -4441,7 +5175,10 @@
       host.innerHTML =
         '<div style="padding:12px;border-radius:8px;border:1px dashed rgba(16,185,129,0.5);background:rgba(16,185,129,0.08);color:#6ee7b7;font-size:12px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">' +
           '<span>&#127881; <b>Speed Racer Queue Clear!</b> Zero pending Steward email drafts. Click <code>[&#127950;&#65039; &rarr; Speed Racer]</code> on any Inbox email below or ask the Steward to draft a reply.</span>' +
-          '<button type="button" class="tw-btn" data-sr-archive-toggle="1" style="border-color:rgba(16,185,129,0.65);background:rgba(16,185,129,0.18);color:#6ee7b7;font-weight:800">&#128220; View Speed Racer Archive (' + arch.length + ')</button>' +
+          '<div style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap">' +
+            '<button type="button" class="tw-btn" data-sr-archive-toggle="1" style="border-color:rgba(16,185,129,0.65);background:rgba(16,185,129,0.18);color:#6ee7b7;font-weight:800">&#128220; View Speed Racer Archive (' + arch.length + ')</button>' +
+            '<button type="button" class="tw-btn" data-cave-close-speed-racer="1" style="border-color:rgba(244,63,94,0.55);background:rgba(244,63,94,0.14);color:#fda4af;font-weight:750" title="Close the Speed Racer dialogue">&#10005; Close Speed Racer</button>' +
+          '</div>' +
         '</div>';
       return;
     }
@@ -4458,6 +5195,7 @@
       );
     }).join('');
 
+    var ratingLbl = String(item.instruction_rating_label || '5/5 \u00b7 Read Full Email & Thread');
     host.innerHTML =
       '<div class="sr-card" data-sr-active-id="' + _escH(item.id || '') + '">' +
         '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding-bottom:7px;border-bottom:1px solid #1e293b">' +
@@ -4465,12 +5203,14 @@
             '<span class="comms-badge amber" style="font-weight:800">Draft ' + (_srIdx + 1) + ' of ' + q.length + '</span>' +
             '<span class="comms-badge sky">' + _escH(item.account || 'PSU 365') + '</span>' +
             '<span class="comms-badge emerald">' + _escH(item.urgency || 'Steward Staged') + '</span>' +
+            '<span class="comms-badge emerald" id="caveSrInstructionRatingBadge" style="border:1px solid rgba(16,185,129,0.55);background:rgba(16,185,129,0.22);color:#ecfdf5;font-weight:800" title="Scribe reads the full incoming email, past correspondence, and rates/executes every instruction before creating a draft">&#127919; Instruction &amp; Email Check: ' + _escH(ratingLbl) + '</span>' +
             (item.queued_by ? '<span style="font-size:10.5px;color:#c4b5fd">Queued via ' + _escH(item.queued_by) + '</span>' : '') +
           '</div>' +
           '<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">' +
             '<button type="button" class="tw-btn" data-sr-nav="-1" title="Previous Draft">&larr; Prev</button>' +
             navPills +
             '<button type="button" class="tw-btn" data-sr-nav="1" title="Next Draft">Next &rarr;</button>' +
+            '<button type="button" class="tw-btn" data-cave-close-speed-racer="1" style="border-color:rgba(244,63,94,0.55);background:rgba(244,63,94,0.14);color:#fda4af;font-weight:750" title="Close the Speed Racer dialogue">&#10005; Close Speed Racer</button>' +
           '</div>' +
         '</div>' +
         '<div class="sr-diff-grid">' +
@@ -4481,22 +5221,26 @@
               '<div style="font-size:11.5px;color:#cbd5e1;white-space:pre-wrap;line-height:1.45">' + _escH(_sanitizeEmailSandboxText(item.incoming_snippet || '')) + '</div>' +
             '</div>' +
             '<div style="padding:6px 8px;border-radius:6px;background:rgba(56,189,248,0.1);border:1px solid rgba(56,189,248,0.3);font-size:10.5px;color:#7dd3fc">' +
-              '&#10024; <b>Steward Reasoning:</b> ' + _escH(item.context_reason || 'Drafted for rapid approval in Speed Racer.') +
+              '&#10024; <b>Steward Reasoning &amp; Instruction Rating (' + _escH(ratingLbl) + '):</b> ' + _escH(item.context_reason || 'Drafted for rapid approval in Speed Racer.') +
             '</div>' +
           '</div>' +
           '<div style="background:#0d1524;border:1px solid #283548;border-radius:7px;padding:8px 10px;display:flex;flex-direction:column;gap:6px">' +
-            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">' +
+            '<div style="display:grid;grid-template-columns:1fr 0.85fr 1fr;gap:6px">' +
               '<div><label style="font-size:10px;color:#94a3b8;display:block">To</label>' +
               '<input type="text" id="caveSrToInput" value="' + _escH(item.to || '') + '" style="width:100%;box-sizing:border-box;padding:4px 7px;border-radius:5px;border:1px solid #334155;background:#070b12;color:#f8fafc;font-size:11.5px"></div>' +
+              '<div><label style="font-size:10px;color:#94a3b8;display:block">Cc (Optional)</label>' +
+              '<input type="text" id="caveSrCcInput" value="' + _escH(item.cc || '') + '" placeholder="cc@..." style="width:100%;box-sizing:border-box;padding:4px 7px;border-radius:5px;border:1px solid #334155;background:#070b12;color:#f8fafc;font-size:11.5px"></div>' +
               '<div><label style="font-size:10px;color:#94a3b8;display:block">Subject</label>' +
               '<input type="text" id="caveSrSubjInput" value="' + _escH(item.subject || '') + '" style="width:100%;box-sizing:border-box;padding:4px 7px;border-radius:5px;border:1px solid #334155;background:#070b12;color:#f8fafc;font-size:11.5px"></div>' +
             '</div>' +
             '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px">' +
               '<label style="font-size:10px;font-weight:700;color:#6ee7b7">&#9998; Steward Draft (Edit Freely Before Approving)</label>' +
               '<div style="display:inline-flex;gap:4px;flex-wrap:wrap">' +
-                '<button type="button" class="tw-btn" data-sr-tone="shorter" style="font-size:10px;padding:1px 6px">&#10024; Shorter</button>' +
-                '<button type="button" class="tw-btn" data-sr-tone="calendar" style="font-size:10px;padding:1px 6px">&#128197; + Calendar Slot</button>' +
-                '<button type="button" class="tw-btn" data-sr-tone="warm" style="font-size:10px;padding:1px 6px">&#129309; Warmer</button>' +
+                '<button type="button" class="tw-btn" data-sr-tone="warmer" style="font-size:10px;padding:1px 6px" title="Make warmer and more informal">&#129309; Warmer / Informal</button>' +
+                '<button type="button" class="tw-btn" data-sr-tone="formal" style="font-size:10px;padding:1px 6px" title="Make more formal and executive">&#127913; More Formal</button>' +
+                '<button type="button" class="tw-btn" data-sr-tone="simpler" style="font-size:10px;padding:1px 6px" title="Make simpler and more concise">&#9986;&#65039; Make Simpler</button>' +
+                '<button type="button" class="tw-btn" data-sr-tone="more_detail" style="font-size:10px;padding:1px 6px" title="Add more context-grounded detail from the email">&#128221; Add More Detail</button>' +
+                '<button type="button" class="tw-btn" data-sr-tone="async_email" style="font-size:10px;padding:1px 6px" title="Handle by email without setting up a call">&#9993;&#65039; Handle by Email (No Call)</button>' +
               '</div>' +
             '</div>' +
             '<textarea id="caveSrBodyInput" rows="5" style="width:100%;box-sizing:border-box;padding:7px 9px;border-radius:6px;border:1px solid #3b4f6b;background:#070b12;color:#f8fafc;font-size:12px;line-height:1.45">' + _escH(item.draft_body || '') + '</textarea>' +
@@ -4516,9 +5260,11 @@
         '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid #1e293b">' +
           '<span style="font-size:11px;color:#fde68a;font-weight:650">&#128274; Permission Gate: Steward holds this draft until you click <b>Approve &amp; Send</b></span>' +
           '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
+            '<button type="button" class="tw-btn" id="btnCaveSrSaveModified" style="border-color:rgba(56,189,248,0.55);color:#7dd3fc;font-weight:750" title="Save any modifications you made to To, Subject, or Draft Body">&#128190; Save Modifications</button>' +
             '<button type="button" class="tw-btn" id="btnCaveSrSkip" title="Keep in queue and move to next draft">&#9197; Skip / Later</button>' +
-            '<button type="button" class="tw-btn" id="btnCaveSrDiscard" style="border-color:rgba(244,63,94,0.45);color:#fda4af" title="Remove draft from Speed Racer without sending">&#128465; Discard</button>' +
+            '<button type="button" class="tw-btn" id="btnCaveSrDiscard" style="border-color:rgba(244,63,94,0.55);background:rgba(244,63,94,0.12);color:#fda4af;font-weight:750" title="Cancel and remove this draft from Speed Racer without sending">&#10005; Cancel / Discard</button>' +
             '<button type="button" class="tw-btn done" id="btnCaveSrApproveSend" style="border-color:#10b981;background:rgba(16,185,129,0.24);color:#ecfdf5;font-weight:800;padding:4px 12px">&#10003; Approve &amp; Send</button>' +
+            '<button type="button" class="tw-btn" data-cave-close-speed-racer="1" style="border-color:rgba(244,63,94,0.55);background:rgba(244,63,94,0.14);color:#fda4af;font-weight:750" title="Close the Speed Racer dialogue">&#10005; Close Speed Racer</button>' +
           '</div>' +
         '</div>' +
       '</div>';
@@ -4539,6 +5285,11 @@
   function _syncSpeedRacerFromServer(srObj) {
     if (!srObj || typeof srObj !== 'object') return;
     _srState = srObj;
+    if (Array.isArray(_srState.queue) && _srState.queue.length > 0 && !window._srUserCollapsed) {
+      _setSpeedRacerExpanded(true);
+    } else if (!Array.isArray(_srState.queue) || _srState.queue.length === 0) {
+      _setSpeedRacerExpanded(false);
+    }
     _renderCaveSpeedRacerTile();
     var ts = Number(srObj.auto_open_ts || 0);
     if (ts > _srLastAutoOpenTs) {
@@ -4558,7 +5309,9 @@
     if (curGrid && curGrid.getAttribute('data-layout') === 'cal') {
       applyCommsLayout('split');
     }
+    window._srUserCollapsed = false;
     _setSpeedRacerExpanded(true);
+    _renderCaveSpeedRacerTile();
     fetch('/api/steward/comms', {
       method: 'POST',
       headers: headers(),
@@ -4702,17 +5455,103 @@
       }
       return;
     }
+    var closeSrBtn = e.target.closest && e.target.closest('[data-cave-close-speed-racer]');
+    if (closeSrBtn) {
+      e.preventDefault(); e.stopPropagation();
+      window._srUserCollapsed = true;
+      var archDrawerClose = document.getElementById('caveSpeedRacerArchiveDrawer');
+      if (archDrawerClose) archDrawerClose.hidden = true;
+      _setSpeedRacerExpanded(false);
+      receipt('Closed Speed Racer dialogue.');
+      return;
+    }
+    var scribeRevBtn = e.target.closest && e.target.closest('[data-scribe-periodic-review]');
+    if (scribeRevBtn) {
+      e.preventDefault(); e.stopPropagation();
+      scribeRevBtn.disabled = true;
+      fetch('/api/steward/comms', {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({ action: 'scribe_periodic_review' })
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          scribeRevBtn.disabled = false;
+          if (d && d.ok && d.scribe_digest) {
+            var bdg = document.getElementById('caveScribeDigestBadge');
+            if (bdg) {
+              var revTot = Number(d.scribe_digest.total_emails_reviewed || 0);
+              var factsCnt = Number(d.scribe_digest.knowledge_facts_count || 0);
+              bdg.innerHTML = '&#129718; Periodic Email Review: ' + revTot + ' emails &middot; ' + factsCnt + ' facts indexed';
+            }
+            receipt('\ud83e\udeb6 Scribe Periodic Review complete: reviewed ' + (d.scribe_digest.total_emails_reviewed || 0) + ' emails across all threads.');
+          }
+        })
+        .catch(function () { scribeRevBtn.disabled = false; });
+      return;
+    }
     var srHead = e.target.closest && e.target.closest('#caveSpeedRacerHead');
-    if (srHead) {
+    if (srHead && !e.target.closest('[data-sr-archive-toggle], [data-toggle-mail-float], [data-cave-close-speed-racer], [data-scribe-periodic-review]')) {
       e.preventDefault();
       var body = document.getElementById('caveSpeedRacerBody');
-      _setSpeedRacerExpanded(body ? body.hidden : true);
+      var nextOpen = body ? body.hidden : true;
+      window._srUserCollapsed = !nextOpen;
+      _setSpeedRacerExpanded(nextOpen);
+      if (nextOpen) _renderCaveSpeedRacerTile();
+      return;
+    }
+    var srSaveModBtn = e.target.closest && e.target.closest('#btnCaveSrSaveModified');
+    if (srSaveModBtn) {
+      e.preventDefault();
+      var qMod = (_srState && Array.isArray(_srState.queue)) ? _srState.queue : [];
+      var curMod = qMod[_srIdx] || qMod[0];
+      if (!curMod) return;
+      var modTo = ((document.getElementById('caveSrToInput') || {}).value || curMod.to || '').trim();
+      var modCc = ((document.getElementById('caveSrCcInput') || {}).value || curMod.cc || '').trim();
+      var modSubj = ((document.getElementById('caveSrSubjInput') || {}).value || curMod.subject || '').trim();
+      var modBody = ((document.getElementById('caveSrBodyInput') || {}).value || curMod.draft_body || '');
+      curMod.to = modTo;
+      curMod.cc = modCc;
+      curMod.subject = modSubj;
+      curMod.draft_body = modBody;
+      fetch('/api/steward/comms', {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({
+          action: 'speed_racer_act',
+          sr_action: 'edit',
+          id: curMod.id,
+          to: modTo,
+          cc: modCc,
+          subject: modSubj,
+          draft_body: modBody
+        })
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d && d.speed_racer) {
+            _srState = d.speed_racer;
+            _renderCaveSpeedRacerTile();
+          }
+          receipt('\u2713 Saved modifications to Speed Racer draft.');
+        })
+        .catch(function () {
+          receipt('\u2713 Saved modifications in Speed Racer.');
+        });
       return;
     }
     var openSrBtn = e.target.closest && e.target.closest('[data-cave-open-speed-racer]');
     if (openSrBtn) {
       e.preventDefault(); e.stopPropagation();
-      window.openCaveSpeedRacer();
+      var srTileToggle = document.getElementById('caveSpeedRacerTile');
+      var srBodyToggle = document.getElementById('caveSpeedRacerBody');
+      if (srTileToggle && srTileToggle.classList.contains('open') && srBodyToggle && !srBodyToggle.hidden) {
+        window._srUserCollapsed = true;
+        _setSpeedRacerExpanded(false);
+        receipt('Closed Speed Racer dialogue.');
+      } else {
+        window.openCaveSpeedRacer();
+      }
       return;
     }
     var queueMailBtn = e.target.closest && e.target.closest('[data-speed-racer-queue]');
@@ -4724,6 +5563,11 @@
       var mSubj = queueMailBtn.getAttribute('data-mail-subject') || '(No Subject)';
       var mAcct = queueMailBtn.getAttribute('data-mail-account') || 'PSU 365';
       var mSnip = queueMailBtn.getAttribute('data-mail-snippet') || '';
+      if (window._optimisticallyRemoveEmailFromLists) {
+        window._optimisticallyRemoveEmailFromLists(mUid, '\ud83c\udfce\ufe0f Speed Racer', 'Queued in Speed Racer for review');
+      } else {
+        _captureNextEmailInCurrentList(mUid);
+      }
       queueMailBtn.disabled = true;
       fetch('/api/steward/comms', {
         method: 'POST',
@@ -4743,9 +5587,10 @@
           queueMailBtn.disabled = false;
           if (d && d.ok && d.speed_racer) {
             if (!_caveCommsData) _caveCommsData = { ok: true };
-            if (Array.isArray(d.important_emails)) _caveCommsData.important_emails = d.important_emails;
+            if (Array.isArray(d.important_emails)) _caveCommsData.important_emails = _mergeStableEmailOrder(_caveCommsData.important_emails, d.important_emails);
             if (Array.isArray(d.other_emails)) _caveCommsData.other_emails = d.other_emails;
             if (Array.isArray(d.acted_upon_emails)) _caveCommsData.acted_upon_emails = d.acted_upon_emails;
+            _caveCommsData._interleavedOnce = true;
             _hydrateMailCardsFromCommsData(_caveCommsData);
             _srState = d.speed_racer;
             _srIdx = 0;
@@ -4815,18 +5660,41 @@
       e.preventDefault();
       var tone = srToneBtn.getAttribute('data-sr-tone') || '';
       var bEl = document.getElementById('caveSrBodyInput');
+      var toInT = document.getElementById('caveSrToInput');
+      var ccInT = document.getElementById('caveSrCcInput');
+      var subjInT = document.getElementById('caveSrSubjInput');
+      var qTone = (_srState && Array.isArray(_srState.queue)) ? _srState.queue : [];
+      var curToneItem = qTone[_srIdx] || qTone[0];
       if (!bEl) return;
       var cur = bEl.value || '';
-      if (tone === 'shorter') {
-        var lines = cur.split('\n').filter(function (ln) { return ln.trim().length > 0; });
-        if (lines.length > 3) {
-          bEl.value = lines[0] + '\n\n' + lines[1] + '\n\nBest,\nJohn';
-        }
-      } else if (tone === 'calendar') {
-        bEl.value = cur.replace(/\n*Best,\nJohn/i, '') + '\n\nI have open slots on Thursday 2:00-3:30 PM ET or Friday 10:30 AM-12:00 PM ET if either works.\n\nBest,\nJohn';
-      } else if (tone === 'warm') {
-        bEl.value = cur.replace(/^Hi([^,\n]*),/i, 'Hi$1,\n\nHope your week is going well!');
-      }
+      srToneBtn.disabled = true;
+      fetch('/api/steward/comms', {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({
+          action: 'speed_racer_act',
+          sr_action: 'redraft',
+          id: curToneItem ? curToneItem.id : '',
+          tone: tone,
+          feedback: 'Tone: ' + tone,
+          current_draft: cur,
+          to: toInT ? toInT.value.trim() : (curToneItem ? curToneItem.to : ''),
+          cc: ccInT ? ccInT.value.trim() : (curToneItem ? (curToneItem.cc || '') : ''),
+          subject: subjInT ? subjInT.value.trim() : (curToneItem ? curToneItem.subject : '')
+        })
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          srToneBtn.disabled = false;
+          if (d && d.speed_racer) {
+            _srState = d.speed_racer;
+            _renderCaveSpeedRacerTile();
+          }
+          receipt('\u2728 Scribe crafted ' + tone.replace('_', ' ') + ' version in Speed Racer.');
+        })
+        .catch(function () {
+          srToneBtn.disabled = false;
+        });
       return;
     }
     var srRefineBtn = e.target.closest && e.target.closest('#btnCaveSrApplyFeedback');
@@ -4834,11 +5702,41 @@
       e.preventDefault();
       var fbIn = document.getElementById('caveSrFeedbackInput');
       var bIn = document.getElementById('caveSrBodyInput');
+      var toIn = document.getElementById('caveSrToInput');
+      var ccIn = document.getElementById('caveSrCcInput');
+      var subjIn = document.getElementById('caveSrSubjInput');
+      var qRef = (_srState && Array.isArray(_srState.queue)) ? _srState.queue : [];
+      var curRef = qRef[_srIdx] || qRef[0];
       if (fbIn && bIn && fbIn.value.trim()) {
         var note = fbIn.value.trim();
-        bIn.value = bIn.value.replace(/\n*Best,\nJohn/i, '') + '\n\n' + note + '\n\nBest,\nJohn';
-        fbIn.value = '';
-        receipt('\u2728 Steward incorporated your feedback into the Speed Racer draft.');
+        srRefineBtn.disabled = true;
+        fetch('/api/steward/comms', {
+          method: 'POST',
+          headers: headers(),
+          body: JSON.stringify({
+            action: 'speed_racer_act',
+            sr_action: 'redraft',
+            id: curRef ? curRef.id : '',
+            feedback: note,
+            current_draft: bIn.value || '',
+            to: toIn ? toIn.value.trim() : (curRef ? curRef.to : ''),
+            cc: ccIn ? ccIn.value.trim() : (curRef ? (curRef.cc || '') : ''),
+            subject: subjIn ? subjIn.value.trim() : (curRef ? curRef.subject : '')
+          })
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            srRefineBtn.disabled = false;
+            fbIn.value = '';
+            if (d && d.speed_racer) {
+              _srState = d.speed_racer;
+              _renderCaveSpeedRacerTile();
+            }
+            receipt('\u2728 Steward redrafted the email in Speed Racer based on your instructions.');
+          })
+          .catch(function () {
+            srRefineBtn.disabled = false;
+          });
       }
       return;
     }
@@ -4878,6 +5776,13 @@
           if (d && d.speed_racer) {
             _srState = d.speed_racer;
             _renderCaveSpeedRacerTile();
+            var remDisc = (_srState && Array.isArray(_srState.queue)) ? _srState.queue : [];
+            if (!remDisc.length) {
+              var archDisc = document.getElementById('caveSpeedRacerArchiveDrawer');
+              if (archDisc) archDisc.hidden = true;
+              window._srUserCollapsed = true;
+              _setSpeedRacerExpanded(false);
+            }
             receipt('Removed draft from Speed Racer queue.');
           }
         });
@@ -4891,18 +5796,23 @@
       if (!curApp) return;
       var approvedId = String(curApp.id || 'sr-' + Date.now());
       var toV = ((document.getElementById('caveSrToInput') || {}).value || curApp.to || '').trim();
+      var ccV = ((document.getElementById('caveSrCcInput') || {}).value || curApp.cc || '').trim();
       var subV = ((document.getElementById('caveSrSubjInput') || {}).value || curApp.subject || '').trim();
       var bodyV = ((document.getElementById('caveSrBodyInput') || {}).value || curApp.draft_body || '').trim();
       srApproveBtn.disabled = true;
       var optimisticApproved = Object.assign({}, curApp, {
         id: approvedId,
         to: toV,
+        cc: ccV,
         subject: subV,
         draft_body: bodyV,
         status: 'Approved & Sent',
         approved_at: new Date().toISOString().slice(0, 16).replace('T', ' ')
       });
       _srLastSentDraft = optimisticApproved;
+      if (curApp.uid && window._optimisticallyRemoveEmailFromLists) {
+        window._optimisticallyRemoveEmailFromLists(curApp.uid, '\u21a9 Replied', 'Approved & Sent via Speed Racer to ' + toV);
+      }
       // Immediately clear the approved item from the active Speed Racer queue and move it into the Speed Racer Archive
       _srState.queue = qApp.filter(function (it) { return it && it.id !== approvedId; });
       if (!Array.isArray(_srState.archive)) _srState.archive = [];
@@ -4910,8 +5820,12 @@
       _srIdx = Math.min(_srIdx, Math.max(0, _srState.queue.length - 1));
       _renderCaveSpeedRacerTile();
       var archDrawerNow = document.getElementById('caveSpeedRacerArchiveDrawer');
-      if (archDrawerNow && !_srState.queue.length) {
-        archDrawerNow.hidden = false;
+      if (archDrawerNow) {
+        archDrawerNow.hidden = true;
+      }
+      if (!_srState.queue.length) {
+        window._srUserCollapsed = true;
+        _setSpeedRacerExpanded(false);
       }
 
       fetch('/api/steward/comms', {
@@ -4923,6 +5837,7 @@
           id: approvedId,
           uid: curApp.uid || '',
           to: toV,
+          cc: ccV,
           subject: subV,
           draft_body: bodyV,
           account: curApp.account || curApp.account_badge || 'PSU 365',
@@ -4935,6 +5850,15 @@
         .then(function (r) { return r.json(); })
         .then(function (d) {
           srApproveBtn.disabled = false;
+          if (d && d.ok) {
+            if (!_caveCommsData) _caveCommsData = { ok: true };
+            if (Array.isArray(d.important_emails)) _caveCommsData.important_emails = _mergeStableEmailOrder(_caveCommsData.important_emails, d.important_emails);
+            if (Array.isArray(d.other_emails)) _caveCommsData.other_emails = d.other_emails;
+            if (Array.isArray(d.acted_upon_emails)) _caveCommsData.acted_upon_emails = d.acted_upon_emails;
+            _caveCommsData._interleavedOnce = true;
+            if (Array.isArray(d.sent_emails)) _caveCommsData.sent_emails = d.sent_emails;
+            _hydrateMailCardsFromCommsData(_caveCommsData);
+          }
           if (d && d.speed_racer) {
             _srState = d.speed_racer;
             if (Array.isArray(_srState.queue)) {
@@ -4948,8 +5872,12 @@
           _srIdx = Math.min(_srIdx, Math.max(0, remQ.length - 1));
           _renderCaveSpeedRacerTile();
           var archDrawer = document.getElementById('caveSpeedRacerArchiveDrawer');
-          if (archDrawer && !remQ.length) {
-            archDrawer.hidden = false;
+          if (archDrawer) {
+            archDrawer.hidden = true;
+          }
+          if (!remQ.length) {
+            window._srUserCollapsed = true;
+            _setSpeedRacerExpanded(false);
           }
           var undoBar = document.getElementById('caveSpeedRacerUndoBar');
           var undoTxt = document.getElementById('caveSpeedRacerUndoText');
@@ -4994,6 +5922,29 @@
           }
         });
       return;
+    }
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter') return;
+    var t = e.target;
+    if (!t || !t.id) return;
+    if (t.id === 'caveDlgStewardActionInput') {
+      e.preventDefault();
+      var actBtn = document.getElementById('btnCaveDlgSendStewardAction');
+      if (actBtn && !actBtn.disabled) actBtn.click();
+    } else if (t.id === 'caveDlgStewardDirectionsInput') {
+      e.preventDefault();
+      var srDirBtn = document.getElementById('btnCaveDlgSendDirectionsToSr');
+      if (srDirBtn && !srDirBtn.disabled) srDirBtn.click();
+    } else if (t.id === 'caveSrFeedbackInput') {
+      e.preventDefault();
+      var srRefBtn = document.getElementById('btnCaveSrApplyFeedback');
+      if (srRefBtn && !srRefBtn.disabled) srRefBtn.click();
+    } else if (t.id === 'caveDlgScribeInstructionInput') {
+      e.preventDefault();
+      var scAppBtn = document.getElementById('btnCaveDlgScribeApply');
+      if (scAppBtn && !scAppBtn.disabled) scAppBtn.click();
     }
   });
 
@@ -6008,6 +6959,9 @@
       _wlMutate('list', {});
     }
   };
+  if (_srState && Array.isArray(_srState.queue) && _srState.queue.length > 0) {
+    _setSpeedRacerExpanded(true);
+  }
   _renderCaveSpeedRacerTile();
   _renderWorkingListSpine();
 

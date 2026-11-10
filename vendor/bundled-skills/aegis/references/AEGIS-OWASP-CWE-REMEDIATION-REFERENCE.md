@@ -1,6 +1,6 @@
 # Aegis OWASP / CWE Deterministic Remediation Reference
 
-**Skill:** `Aegis` (`C:\dev\Skill Foundry\skills\aegis\`)  
+**Skill:** `Aegis` (`<path> Foundry\skills\aegis\`)  
 **Engine:** `scripts/aegis_engine.py`
 
 ---
@@ -38,6 +38,6 @@
 - **Deterministic Remediation:** Rewrite secret equality to `hmac.compare_digest(str(left), str(right))` and upgrade security digests to `hashlib.sha256()`.
 
 ### `AEG-06` — Hardcoded Secrets, API Keys & Personal Profile Paths (`CWE-798`)
-- **Dangerous Sink:** Source literals matching `sk-...`, `ghp_...`, `gho_...`, `AKIA...`, hardcoded credential assignments (`api_key = "..."`), or hardcoded personal profile paths (`C:\Users\example\...`).
+- **Dangerous Sink:** Source literals matching `sk-...`, `ghp_...`, `gho_...`, `AKIA...`, hardcoded credential assignments (`api_key = "..."`), or hardcoded personal profile paths (`<path><username>\...`).
 - **Attack Vector:** Credential leakage in git history or broken portability across collaborator machines.
 - **Deterministic Remediation:** Replace hardcoded credentials with `os.environ.get("<ENV_VAR>", "")` and replace hardcoded user profile paths with `Path.home()` or configurable environment roots.

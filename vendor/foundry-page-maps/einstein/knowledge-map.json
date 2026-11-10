@@ -234,13 +234,13 @@
     },
     {
       "id": "einstein-leaf-ref-2",
-      "name": "Journal: 0054-preserve-unchanged-slide-image-hashes-across-refinements",
-      "title": "Journal: 0054-preserve-unchanged-slide-image-hashes-across-refinements",
+      "name": "Journal: 0058-monolithic-edit-crlf-timeout-vs-modular-context-and-card-fit",
+      "title": "Journal: 0058-monolithic-edit-crlf-timeout-vs-modular-context-and-card-fit",
       "parent_ids": [
         "einstein-branch-references"
       ],
       "ring": 2,
-      "resource_id": "einstein-journal-0054-preserve-unchanged-slide-i",
+      "resource_id": "einstein-journal-0058-monolithic-edit-crlf-timeo",
       "facets": [
         "References",
         "knowledge-base"
@@ -252,13 +252,13 @@
     },
     {
       "id": "einstein-leaf-ref-3",
-      "name": "Journal: 0053-shared-axis-density-caption-and-bin-scaling",
-      "title": "Journal: 0053-shared-axis-density-caption-and-bin-scaling",
+      "name": "Journal: 0057-phd-seminar-disposition-matrix-and-ramanujan-handoff",
+      "title": "Journal: 0057-phd-seminar-disposition-matrix-and-ramanujan-handoff",
       "parent_ids": [
         "einstein-branch-references"
       ],
       "ring": 2,
-      "resource_id": "einstein-journal-0053-shared-axis-density-captio",
+      "resource_id": "einstein-journal-0057-phd-seminar-disposition-ma",
       "facets": [
         "References",
         "knowledge-base"
@@ -270,13 +270,13 @@
     },
     {
       "id": "einstein-leaf-ref-4",
-      "name": "Journal: 0052-stream-interruption-large-deck-builder",
-      "title": "Journal: 0052-stream-interruption-large-deck-builder",
+      "name": "Journal: 0056-copy-donor-builder-and-modular-append-for-24-slide-phd-deck",
+      "title": "Journal: 0056-copy-donor-builder-and-modular-append-for-24-slide-phd-deck",
       "parent_ids": [
         "einstein-branch-references"
       ],
       "ring": 2,
-      "resource_id": "einstein-journal-0052-stream-interruption-large-",
+      "resource_id": "einstein-journal-0056-copy-donor-builder-and-mod",
       "facets": [
         "References",
         "knowledge-base"

@@ -4,15 +4,15 @@ Foreman Wave 1 (W0) for **Tidy-Idy GUI polish** writes read-only inventories and
 
 **Canonical bundle:**
 
-`C:\dev\plans\2026-07-tidy-idy-gui-polish\W0\README.md`
+`<path>
 
 **Refresh & Token contract:**
 
-`C:\dev\plans\2026-07-tidy-idy-gui-polish\REFRESH-TOKEN-CONTRACT.md`
+`<path>
 
 **Baseline note:**
 
-`C:\dev\plans\2026-07-tidy-idy-gui-polish\journal\baseline\pre-edit-node-test-baseline.md`
+`<path>
 
 ## Quick stamps (do not treat as SC credit)
 

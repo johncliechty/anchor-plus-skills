@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { resolveGeminiModel } from 'file:///C:/dev/trio/drivers/gemini-cli.mjs';
+import { resolveGeminiModel } from 'fil<path>';
 
 /**
  * Parses the .gitignore file inside the project directory and returns

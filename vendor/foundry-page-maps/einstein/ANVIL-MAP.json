@@ -32,12 +32,12 @@
       "Gandalf Pedagogical Reviewer"
     ],
     "kb_reference_resources": [
+      "0058-monolithic-edit-crlf-timeout-vs-modular-context-and-card-fit",
+      "0057-phd-seminar-disposition-matrix-and-ramanujan-handoff",
+      "0056-copy-donor-builder-and-modular-append-for-24-slide-phd-deck",
+      "0055-title-first-deliverables-and-hierarchical-final-shelf",
       "0054-preserve-unchanged-slide-image-hashes-across-refinements",
-      "0053-shared-axis-density-caption-and-bin-scaling",
-      "0052-stream-interruption-large-deck-builder",
-      "0050-ban-fancybbox-flowcharts-and-show-visible-math-on-slides",
-      "0049-chunked-script-writes-to-prevent-stream-timeout",
-      "0048-windows-check-argv-list-for-paths-with-spaces"
+      "0053-shared-axis-density-caption-and-bin-scaling"
     ]
   },
   "orange_split": {
@@ -267,9 +267,9 @@
           "Ramanujan Mathematical Partner"
         ],
         "kb_sources": [
-          "0054-preserve-unchanged-slide-image-hashes-across-refinements",
-          "0053-shared-axis-density-caption-and-bin-scaling",
-          "0052-stream-interruption-large-deck-builder"
+          "0058-monolithic-edit-crlf-timeout-vs-modular-context-and-card-fit",
+          "0057-phd-seminar-disposition-matrix-and-ramanujan-handoff",
+          "0056-copy-donor-builder-and-modular-append-for-24-slide-phd-deck"
         ]
       },
       "level2_mechanics": {
@@ -324,8 +324,8 @@
         "kb_sources": [
           "SKILL.md",
           "Einstein Agent & Execution Protocol (SKILL.md)",
-          "0054-preserve-unchanged-slide-image-hashes-across-refinements",
-          "0053-shared-axis-density-caption-and-bin-scaling"
+          "0058-monolithic-edit-crlf-timeout-vs-modular-context-and-card-fit",
+          "0057-phd-seminar-disposition-matrix-and-ramanujan-handoff"
         ]
       },
       "level2_mechanics": {
@@ -377,9 +377,9 @@
           "Gandalf Pedagogical Reviewer"
         ],
         "kb_sources": [
-          "0054-preserve-unchanged-slide-image-hashes-across-refinements",
-          "0053-shared-axis-density-caption-and-bin-scaling",
-          "0052-stream-interruption-large-deck-builder"
+          "0058-monolithic-edit-crlf-timeout-vs-modular-context-and-card-fit",
+          "0057-phd-seminar-disposition-matrix-and-ramanujan-handoff",
+          "0056-copy-donor-builder-and-modular-append-for-24-slide-phd-deck"
         ]
       },
       "level2_mechanics": {
@@ -430,12 +430,12 @@
           "Ramanujan Mathematical Partner"
         ],
         "kb_sources": [
+          "0058-monolithic-edit-crlf-timeout-vs-modular-context-and-card-fit",
+          "0057-phd-seminar-disposition-matrix-and-ramanujan-handoff",
+          "0056-copy-donor-builder-and-modular-append-for-24-slide-phd-deck",
+          "0055-title-first-deliverables-and-hierarchical-final-shelf",
           "0054-preserve-unchanged-slide-image-hashes-across-refinements",
-          "0053-shared-axis-density-caption-and-bin-scaling",
-          "0052-stream-interruption-large-deck-builder",
-          "0050-ban-fancybbox-flowcharts-and-show-visible-math-on-slides",
-          "0049-chunked-script-writes-to-prevent-stream-timeout",
-          "0048-windows-check-argv-list-for-paths-with-spaces"
+          "0053-shared-axis-density-caption-and-bin-scaling"
         ]
       },
       "level2_mechanics": {
@@ -495,9 +495,9 @@
         "Project Steward (Lamp / Seal)"
       ],
       "librarian_kb_reads": [
-        "0054-preserve-unchanged-slide-image-hashes-across-refinements",
-        "0053-shared-axis-density-caption-and-bin-scaling",
-        "0052-stream-interruption-large-deck-builder"
+        "0058-monolithic-edit-crlf-timeout-vs-modular-context-and-card-fit",
+        "0057-phd-seminar-disposition-matrix-and-ramanujan-handoff",
+        "0056-copy-donor-builder-and-modular-append-for-24-slide-phd-deck"
       ],
       "librarian_kb_writes": [],
       "source_anchor": {
@@ -540,9 +540,9 @@
         "Project Steward (Lamp / Seal)"
       ],
       "librarian_kb_reads": [
-        "0054-preserve-unchanged-slide-image-hashes-across-refinements",
-        "0053-shared-axis-density-caption-and-bin-scaling",
-        "0052-stream-interruption-large-deck-builder"
+        "0058-monolithic-edit-crlf-timeout-vs-modular-context-and-card-fit",
+        "0057-phd-seminar-disposition-matrix-and-ramanujan-handoff",
+        "0056-copy-donor-builder-and-modular-append-for-24-slide-phd-deck"
       ],
       "librarian_kb_writes": [],
       "source_anchor": {
@@ -586,9 +586,9 @@
         "Ramanujan Mathematical Partner"
       ],
       "librarian_kb_reads": [
-        "0054-preserve-unchanged-slide-image-hashes-across-refinements",
-        "0053-shared-axis-density-caption-and-bin-scaling",
-        "0052-stream-interruption-large-deck-builder"
+        "0058-monolithic-edit-crlf-timeout-vs-modular-context-and-card-fit",
+        "0057-phd-seminar-disposition-matrix-and-ramanujan-handoff",
+        "0056-copy-donor-builder-and-modular-append-for-24-slide-phd-deck"
       ],
       "librarian_kb_writes": [],
       "source_anchor": {
@@ -631,9 +631,9 @@
         "Ramanujan Mathematical Partner"
       ],
       "librarian_kb_reads": [
-        "0054-preserve-unchanged-slide-image-hashes-across-refinements",
-        "0053-shared-axis-density-caption-and-bin-scaling",
-        "0052-stream-interruption-large-deck-builder"
+        "0058-monolithic-edit-crlf-timeout-vs-modular-context-and-card-fit",
+        "0057-phd-seminar-disposition-matrix-and-ramanujan-handoff",
+        "0056-copy-donor-builder-and-modular-append-for-24-slide-phd-deck"
       ],
       "librarian_kb_writes": [],
       "source_anchor": {
@@ -675,7 +675,7 @@
         "Project Steward (Lamp / Seal)"
       ],
       "librarian_kb_reads": [
-        "0054-preserve-unchanged-slide-image-hashes-across-refinements"
+        "0058-monolithic-edit-crlf-timeout-vs-modular-context-and-card-fit"
       ],
       "librarian_kb_writes": [
         "journal/runs/einstein-run-receipt.json",

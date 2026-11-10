@@ -1,0 +1,116 @@
+{
+  "resources": [
+    {
+      "id": "scribe-mat-skill-md",
+      "title": "Scribe Agent & Execution Protocol (SKILL.md)",
+      "category": "material",
+      "path": "SKILL.md",
+      "description": "Canonical instructions, stage gates, invariants, and operator manual."
+    },
+    {
+      "id": "scribe-mat-human-md",
+      "title": "Scribe Human Guide (HUMAN.md)",
+      "category": "material",
+      "path": "HUMAN.md",
+      "description": "Plain-English overview, when to invoke, workflow stages, and honest boundaries."
+    },
+    {
+      "id": "scribe-mat-north-star-md",
+      "title": "Scribe Locked North Star (NORTH-STAR.md)",
+      "category": "material",
+      "path": "NORTH-STAR.md",
+      "description": "Locked mission objective, anti-drift contract, and acceptance criteria."
+    },
+    {
+      "id": "scribe-tool-scripts-scribe-engine-py",
+      "title": "scribe_engine.py (scripts/scribe_engine.py)",
+      "category": "tools",
+      "path": "scripts/scribe_engine.py",
+      "description": "Executable .py module (1328 LOC; key symbols: sanitize_email_text, strip_quoted_headers_and_history, extract_sender_identity, learn_proper_names_from_text)."
+    },
+    {
+      "id": "scribe-tool-tests-test-scribe-engine-py",
+      "title": "test_scribe_engine.py (tests/test_scribe_engine.py)",
+      "category": "tools",
+      "path": "tests/test_scribe_engine.py",
+      "description": "Executable .py module (77 LOC; key symbols: test_idempotent_correspondence_history_mining, test_proper_name_lexicon_and_five_tone_transforms)."
+    },
+    {
+      "id": "scribe-shared-tool-anvil-engine",
+      "title": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "category": "tools",
+      "path": "skills/anvil/scripts/anvil_engine.py",
+      "description": "Shared 3-level progressive abstraction, Orange Split, and Functional Core remapping engine."
+    },
+    {
+      "id": "scribe-shared-tool-mapping",
+      "title": "Foundry Universal Triage & Model Seating Engine (mapping.mjs)",
+      "category": "tools",
+      "path": "foundry/triage/mapping.mjs",
+      "description": "Shared complexity band evaluator and model_prefs.json seating resolver."
+    },
+    {
+      "id": "scribe-shared-tool-foreman-lib",
+      "title": "Foreman Durability & Sub-Agent Driver Library (foreman-lib.mjs)",
+      "category": "tools",
+      "path": "foreman/bin/foreman-lib.mjs",
+      "description": "Shared Trio worktree durability, checkpoint, and CLI dispatch library."
+    },
+    {
+      "id": "scribe-peer-aegis",
+      "title": "Aegis Read-Only Email Sandbox",
+      "category": "skills",
+      "skill": "aegis",
+      "description": "Enforces SANDBOXED_READ_ONLY_EMAIL_DATA taint isolation and prompt-injection stripping on untrusted email bodies"
+    },
+    {
+      "id": "scribe-peer-gandalf",
+      "title": "Gandalf Deep-Think Tone & Nuance Advisor",
+      "category": "skills",
+      "skill": "gandalf",
+      "description": "Reviews high-stakes executive, counsel, and trust correspondence for nuance and clarity"
+    },
+    {
+      "id": "scribe-peer-steward-portfolio",
+      "title": "Portfolio Steward (Cave of Wonders / High Seat)",
+      "category": "skills",
+      "skill": "steward-portfolio",
+      "description": "Routes focused inbox triage, Speed Racer drafts, and Direct Replies through Scribe inside Cave of Wonders"
+    },
+    {
+      "id": "scribe-ref-lessons",
+      "title": "Scribe LESSONS.md",
+      "category": "references",
+      "path": "LESSONS.md",
+      "description": "Accumulated operational lessons and historical evolution in LESSONS.md."
+    },
+    {
+      "id": "scribe-ref-scribe-voice-tone-memory-reference",
+      "title": "Reference: SCRIBE-VOICE-TONE-MEMORY-REFERENCE.md",
+      "category": "references",
+      "path": "references/SCRIBE-VOICE-TONE-MEMORY-REFERENCE.md",
+      "description": "Domain reference and knowledge-base specification (references/SCRIBE-VOICE-TONE-MEMORY-REFERENCE.md)."
+    },
+    {
+      "id": "scribe-journal-0001-scribe-v1-correspondence-int",
+      "title": "Journal: 0001-scribe-v1-correspondence-intelligence",
+      "category": "references",
+      "path": "journal/0001-scribe-v1-correspondence-intelligence.md",
+      "description": "Recorded operational run receipt and field lesson (journal/0001-scribe-v1-correspondence-intelligence.md)."
+    },
+    {
+      "id": "scribe-kb-portfolio-triage-and-band-eval",
+      "title": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "category": "references",
+      "path": "foundry/triage/docs/PORTFOLIO-TRIAGE-AND-BAND-EVAL.md",
+      "description": "Empirical calibration of skill tiers, model seating, and complexity bands across the portfolio."
+    },
+    {
+      "id": "scribe-kb-researchprime-code-rewriting-tools",
+      "title": "Knowledge Base: Lossless Code-Rewriting & Functional Core Patterns",
+      "category": "references",
+      "path": "skills/anvil/references/RESEARCHPRIME-CODE-REWRITING-TOOLS.md",
+      "description": "Reference synthesis on LibCST, parso, ast-grep, Hypothesis equivalence, and Parable of the Oranges."
+    }
+  ]
+}

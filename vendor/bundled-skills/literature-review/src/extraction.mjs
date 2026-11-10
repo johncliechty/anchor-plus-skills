@@ -1,7 +1,7 @@
 import { validateSchema } from './validateSchema.mjs';
 import {
   LIT_REVIEW_SAFETY_FLOOR,
-} from 'file:///C:/dev/Skill%20Foundry/foundry/triage/mapping.mjs';
+} from 'fil<path>';
 
 // Generator Schema combining both AssumptionsLedger and ParameterizedMatrix structures
 export const GENERATOR_SCHEMA = {

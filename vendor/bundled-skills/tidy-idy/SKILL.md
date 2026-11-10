@@ -194,7 +194,7 @@ Polish does **not** redesign the apply control plane:
 
 Canonical CURRENT mockups (only these; not a second CURRENT home):
 
-`C:\dev\plans\2026-07-tidy-idy-gui-polish\design\`
+`<path>
 
 | File | Lock |
 |------|------|

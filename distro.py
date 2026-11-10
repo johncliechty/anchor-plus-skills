@@ -261,7 +261,14 @@ def _iter_repo_files(root: Path):
     """
     import os as _os
     skip_dirs = {".git", "__pycache__", ".pytest_cache", ".hypothesis", ".ruff_cache"}
-    skip_heavy_top = {"_archive", "rnd_jobs", "logs", "health_reports"}
+    skip_heavy_top = {
+        "_archive", "rnd_jobs", "logs", "health_reports",
+        "planning", "bundle", "bundle_staging", "ecgberht-commissions",
+        "foundry-gui", "research", "presentations", "swarm",
+        ".ecgberht", ".steward", ".foreman", ".foreman-job",
+        "gwl_hub_repository", "skills",
+        "test_tmp2", "test_tmp3", "test_tmp4", "test_tmp5", "test_tmp6", "test_tmp6_wt",
+    }
     skip_anchor_subdirs = {"worktrees", "code-jobs", "projects", "sessions", "jobs", "Usage"}
     found = []
     root_path = Path(root)
@@ -1284,13 +1291,18 @@ def build_distro(root: Path | None = None,
     if vendor_skills_:
         import vendor_skills  # local import: keeps distro importable if absent
         vendor_report = vendor_skills.vendor_all(output_dir, sources=vendor_sources)
+        staged_pairs = [(r, p) for r, p in staged_pairs if p.is_file()]
+        selected = [r for r in selected if (output_dir / r).is_file()]
+        seen_staged = {r for r, _ in staged_pairs}
         bundle_root = output_dir / "vendor" / "bundled-skills"
         if bundle_root.exists():
             for p in sorted(bundle_root.rglob("*")):
                 if not p.is_file():
                     continue
                 rel = p.relative_to(output_dir).as_posix()
-                staged_pairs.append((rel, p))
+                if rel not in seen_staged:
+                    staged_pairs.append((rel, p))
+                    seen_staged.add(rel)
                 if rel not in selected:
                     selected.append(rel)
                     

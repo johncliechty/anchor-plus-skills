@@ -379,3 +379,54 @@ def test_gemini_usage_tracker_tails_transcript_and_nightly_sync_reconciles(tmp_p
     assert st_after["tokens"] == 52_000
     assert st_after["estimated_spend"] > 0.0
     assert (paths.data_dir() / ".anchor" / "usage_snapshots" / "latest.json").is_file()
+
+
+def test_subscription_turn_end_emits_estimated_cost_and_no_inflight_compounding(tmp_path, monkeypatch):
+    monkeypatch.setattr(engine_mod, "STATE_FILE", tmp_path / "state.json")
+    cockpit = engine_mod.Engine(str(tmp_path))
+    cockpit.cli = "gemini"
+    cockpit.session_id = "8f9d7898-c49c-4cbd-b7a0-a511bb3d2294"
+    cockpit.model_selection = {"cli": "gemini", "model": "gemini-4-argon", "model_served": "gemini-4-argon-high"}
+
+    inv_id = "f3552e75-1169-4e3c-8434-3a16b8f0f9a4"
+    cockpit._record_usage_checkpoint({
+        "type": "usage_checkpoint",
+        "invocation_id": inv_id,
+        "session_id": cockpit.session_id,
+        "cli": "gemini",
+        "model": "gemini-4-argon-high",
+        "usage_source": "gemini-transcript",
+        "usage": {"input_tokens": 828_923, "cached_input_tokens": 808_254, "output_tokens": 7_234},
+    })
+    # While unfinalized, self.estimated_spend is 0.0 and inflight is added only in state()
+    assert cockpit.estimated_spend == 0.0
+    mid_state = cockpit.state()
+    assert mid_state["estimated_spend_usd"] > 0.30
+
+    # Reloading a second Engine from persisted state must NOT bake unfinalized inflight_spend into self.estimated_spend
+    reloaded = engine_mod.Engine(str(tmp_path))
+    assert reloaded.estimated_spend == 0.0
+
+    # Finalize the turn via _handle("result") and verify turn_end carries estimated_cost_usd
+    cockpit.busy = True
+    cockpit._handle({
+        "type": "result",
+        "subtype": "success",
+        "is_error": False,
+        "result": "Done.",
+        "session_id": cockpit.session_id,
+        "usage_invocation_id": inv_id,
+        "usage_source": "gemini-transcript",
+        "token_status": "reported",
+        "total_cost_usd": None,
+        "duration_ms": 153200,
+        "usage": {"input_tokens": 828_923, "cached_input_tokens": 808_254, "output_tokens": 7_234},
+    }, cockpit.proc)
+
+    turn_ends = [ev for ev in cockpit.events if ev.get("t") == "turn_end"]
+    assert len(turn_ends) == 1
+    assert turn_ends[0]["cost_usd"] is None
+    assert turn_ends[0]["estimated_cost_usd"] is not None
+    assert turn_ends[0]["estimated_cost_usd"] > 0.30
+    assert round(cockpit.estimated_spend, 4) == turn_ends[0]["estimated_cost_usd"]
+

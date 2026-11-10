@@ -11,8 +11,8 @@ function emit(line) {
   try { fs.appendFileSync(STATUS_FILE, out); } catch { /* ignore */ }
 }
 
-const { runProject } = await import('file:///C:/dev/trio/foreman/bin/project-engine.mjs');
-const { makeForemanDriver } = await import('file:///C:/dev/trio/drivers/index.mjs');
+const { runProject } = await import('fil<path>');
+const { makeForemanDriver } = await import('fil<path>');
 
 try { fs.writeFileSync(STATUS_FILE, ''); } catch { /* ignore */ }
 emit(`=== RAMANUJAN FOREMAN LIVE RUN ===`);

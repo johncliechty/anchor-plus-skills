@@ -56,7 +56,7 @@ Based on `researchPrime` evaluation across Python, TypeScript/JavaScript, and po
 ## 4. Integration into Foundry Tools (`ft.py cst-rewrite`) and `anvil_engine.py`
 
 To ensure agents never write ad-hoc regex refactoring scripts by hand:
-1. **`python C:/dev/foundry-tools/ft.py cst-rewrite`** provides a fast, logged Foundry Tool for:
+1. **`python <path> cst-rewrite`** provides a fast, logged Foundry Tool for:
    - `--orange-split <file_or_dir>`: Runs the Parable of the Oranges AST/CST decomposition (**Peel**, **Juice**, **Pith/Seeds**), outputting exact symbol classifications and a ready-to-audit Null Space Ledger.
    - `--rename <old:new>` / `--transform <rule.json>`: Runs a lossless `LibCST` / `parso` structural codemod while preserving comments and docstrings, followed by `ruff check`.
    - `--verify-equivalence <old_mod:fn> <new_mod:fn>`: Runs a deterministic `Hypothesis` + `pytest` differential equivalence harness comparing outputs, exceptions, and numerical tolerance (`rtol=1e-7`) across generated and seed inputs.

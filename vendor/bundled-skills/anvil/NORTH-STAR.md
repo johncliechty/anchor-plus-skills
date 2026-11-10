@@ -1,6 +1,6 @@
 # ANVIL — Locked North Star & Idea Log
 
-**Skill Path:** `C:\dev\Skill Foundry\skills\anvil\`  
+**Skill Path:** `<path> Foundry\skills\anvil\`  
 **Date Locked:** 2026-10-14  
 **Author & Convergence Authority:** John  
 **Visual Brand Asset:** `/vendor/brand/workbench-anvil.jpg` + Standard Anchor Mark (`/vendor/brand/anchor-tab-48.png`)

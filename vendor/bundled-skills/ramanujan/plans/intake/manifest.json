@@ -1,7 +1,7 @@
 {
   "tier": "tier2",
   "brownfield": true,
-  "projectDir": "C:\\dev\\Skill Foundry\\skills\\ramanujan",
+  "projectDir": "<path> Foundry\\skills\\ramanujan",
   "versions": [
     "NORTH-STAR-CANDIDATE.md",
     "NORTH-STAR-CANDIDATE-v2.md",

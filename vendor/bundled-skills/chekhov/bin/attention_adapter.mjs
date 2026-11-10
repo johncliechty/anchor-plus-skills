@@ -58,7 +58,7 @@ async function projectAttention(input) {
   requireValue(record.outcome !== 'produced' || !waiting, 'Produced report still carries a human wait');
   if (record.outcome === 'died') return { ok: true, published: false, reason: 'No attention transition for died outcome' };
 
-  const cliModule = process.env.CHEKHOV_ECGBERHT_MODULE || 'C:\Users\example/.agents/skills/ecgberht/bin/ecgberht.mjs';
+  const cliModule = process.env.CHEKHOV_ECGBERHT_MODULE || '<path>';
   requireValue(path.isAbsolute(cliModule) && (await stat(cliModule)).isFile(), 'Installed Ecgberht module required');
   const attentionModule = path.resolve(path.dirname(cliModule), '../engine/attention.mjs');
   requireValue((await stat(attentionModule)).isFile(), 'Installed attention API missing');

@@ -891,6 +891,8 @@ def chief_of_staff_horizon_efforts(ctx: dict[str, Any]) -> dict[str, Any]:
         today_efforts = [
             {
                 "id": "cos-today-mit",
+                "list_tile_id": "wl-archty-shutdown",
+                "list_badge": "📋 The List · #1 (1st)",
                 "tier_cls": "q1-urgent",
                 "tier_badge": "📋 The List · #1 (1st)",
                 "tier_pill_cls": "red",
@@ -1075,6 +1077,26 @@ def chief_of_staff_horizon_efforts(ctx: dict[str, Any]) -> dict[str, Any]:
             "is_create": False,
         },
     ]
+
+    # Ensure every Chief of Staff recommendation (Today, Week, Month, Quarter) is tied to an item on The List
+    _default_list_map = [
+        ("wl-mba-ba815", "📋 The List · #1 (Teaching)"),
+        ("wl-family-trusts-jane", "📋 The List · #2 (Personal)"),
+        ("wl-hnf-grant", "📋 The List · #2 (Research)"),
+        ("wl-nextgen-billing", "📋 The List · #1 (Business)"),
+    ]
+    for _idx, _ef in enumerate(today_efforts):
+        _ef.setdefault("list_tile_id", _default_list_map[_idx % len(_default_list_map)][0])
+        _ef.setdefault("list_badge", _ef.get("tier_badge") or _default_list_map[_idx % len(_default_list_map)][1])
+    for _idx, _ef in enumerate(week_efforts):
+        _ef.setdefault("list_tile_id", _default_list_map[_idx % len(_default_list_map)][0])
+        _ef.setdefault("list_badge", _default_list_map[_idx % len(_default_list_map)][1])
+    for _idx, _ef in enumerate(month_efforts):
+        _ef.setdefault("list_tile_id", _default_list_map[(_idx + 1) % len(_default_list_map)][0])
+        _ef.setdefault("list_badge", _default_list_map[(_idx + 1) % len(_default_list_map)][1])
+    for _idx, _ef in enumerate(quarter_efforts):
+        _ef.setdefault("list_tile_id", _default_list_map[(_idx + 2) % len(_default_list_map)][0])
+        _ef.setdefault("list_badge", _default_list_map[(_idx + 2) % len(_default_list_map)][1])
 
     n_running = max(len(working_pids), 2)
     return {

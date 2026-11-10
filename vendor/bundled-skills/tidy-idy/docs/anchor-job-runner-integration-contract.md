@@ -1,7 +1,7 @@
 # Anchor `job_runner` integration contract (Wave 5)
 
 **Status:** written from job_runner's ACTUAL source, not from its documentation.
-**Sources read:** `C:\dev\Anchor\job_runner.py` (1729 lines) and `C:\dev\Anchor\gandalf.py`, 2026-07-21.
+**Sources read:** `<path> (1729 lines) and `<path> 2026-07-21.
 **Scope:** what Anchor's Tidy-Idy button may do, and what it must NOT do.
 
 The button is a THIN CALLER. It **dispatches** the tool's own entry point and

@@ -1,7 +1,7 @@
 {
   "tier": "tier2",
   "brownfield": true,
-  "projectDir": "C:\\dev\\Skill Foundry\\skills\\gandalf",
+  "projectDir": "<path> Foundry\\skills\\gandalf",
   "versions": [
     "SKILL.md (truth-updated 2026-07-11)",
     "planning/NEXT-SESSION-HANDOFF.md (2026-06-20)",

@@ -13,12 +13,12 @@ invariants only (no auto-apply, one Apply per run, token never on disk/URL/local
 | Operator manual | `SKILL.md` → “How to run” |
 | CLI `--help` | `bin/tidy-idy.mjs` `USAGE` |
 | Thin caller | `engine/launch/anchor-caller.mjs` (+ `docs/anchor-job-runner-integration-contract.md`) |
-| W0 mismatch list (M1–M8) | `C:\dev\plans\2026-07-tidy-idy-gui-polish\W0\skill-mismatch-list.md` |
+| W0 mismatch list (M1–M8) | `<path> |
 | Truth gate | `test/sc5-operator-truth.test.mjs` |
 
 ## Design note (canonical mockup + A2 Opt1 stage lock)
 
-**CURRENT home:** `C:\dev\plans\2026-07-tidy-idy-gui-polish\design\`
+**CURRENT home:** `<path>
 
 | CURRENT | Lock |
 |---------|------|

@@ -1,0 +1,136 @@
+{
+  "qualification": "Source-anchored Scribe execution walkthrough (Ingest \u2192 KB Grounding \u2192 Functional Core \u2192 Adversarial Verification \u2192 Deliverable & Journal).",
+  "steps": [
+    {
+      "id": "step-1-ingest-triage",
+      "title": "1. Ingest, Scope & Universal Triage (Scribe)",
+      "kind": "program",
+      "role": "Imperative Shell (Ingest Boundary)",
+      "description": "Validates operator inputs, resolves complexity band and ~/.anchor/model_prefs.json seating, and loads Scribe context.",
+      "code": {
+        "path": "scripts/scribe_engine.py",
+        "symbol": "def sanitize_email_text"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "## The Elegance Law (locked by John \u2014 binding on this skill)"
+      },
+      "resource_ids": [
+        "scribe-mat-skill-md",
+        "scribe-tool-scripts-scribe-engine-py"
+      ]
+    },
+    {
+      "id": "step-2-context-kb-load",
+      "title": "2. Knowledge Base, Dossier & Reference Grounding",
+      "kind": "program",
+      "role": "Librarian & Context Loader",
+      "description": "Reads prior journals, domain references, and project memory so Scribe never repeats cold-start discovery.",
+      "code": {
+        "path": "tests/test_scribe_engine.py",
+        "symbol": "def test_proper_name_lexicon_and_five_tone_transforms"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "# Scribe \u2014 Correspondence Intelligence, Voice-Faithful Drafting & Priority Memory Engine"
+      },
+      "resource_ids": [
+        "scribe-ref-lessons",
+        "scribe-ref-scribe-voice-tone-memory-reference",
+        "scribe-mat-skill-md"
+      ]
+    },
+    {
+      "id": "step-3-core-execution",
+      "title": "3. Functional Core Execution & Domain Synthesis (Scribe)",
+      "kind": "model",
+      "role": "Primary Scribe Engine & Seat",
+      "description": "Executes the deterministic domain core and model-assisted synthesis for Scribe, transforming validated inputs into structured candidate artifacts.",
+      "code": {
+        "path": "tests/test_scribe_engine.py",
+        "symbol": "def test_proper_name_lexicon_and_five_tone_transforms"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "## 1. Mission & Core Architecture"
+      },
+      "resource_ids": [
+        "scribe-tool-scripts-scribe-engine-py",
+        "scribe-tool-tests-test-scribe-engine-py",
+        "scribe-peer-aegis"
+      ]
+    },
+    {
+      "id": "step-4-adversarial-verify",
+      "title": "4. Cross-Family Adversarial Verification & Quality Gate",
+      "kind": "review",
+      "role": "Cross-Family Verification Seat (Gandalf / researchPrime / Certifier)",
+      "description": "Runs deterministic invariant checks and cross-family adversarial review (stamping cross_model honestly) before any output is accepted.",
+      "code": {
+        "path": "tests/test_scribe_engine.py",
+        "symbol": "def test_proper_name_lexicon_and_five_tone_transforms"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "## 2. Five Voice-Faithful Tone & Detail Transformation Modes"
+      },
+      "resource_ids": [
+        "scribe-peer-aegis",
+        "scribe-peer-gandalf",
+        "scribe-ref-lessons"
+      ]
+    },
+    {
+      "id": "step-5-emit-journal",
+      "title": "5. Deliverable Emission & Usage-Journal Receipt",
+      "kind": "terminal",
+      "role": "Imperative Shell (Emit & Journal Boundary)",
+      "description": "Atomically writes the verified Scribe deliverable, updates the run receipt in journal/runs/, and presents the human decision summary.",
+      "code": {
+        "path": "tests/test_scribe_engine.py",
+        "symbol": "def test_proper_name_lexicon_and_five_tone_transforms"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "## 3. 5-Stage Correspondence Intelligence State Machine"
+      },
+      "resource_ids": [
+        "scribe-mat-north-star-md",
+        "scribe-kb-researchprime-code-rewriting-tools"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "step-1-ingest-triage",
+      "to": "step-2-context-kb-load",
+      "label": "Inputs & seating validated"
+    },
+    {
+      "from": "step-2-context-kb-load",
+      "to": "step-3-core-execution",
+      "label": "KB & references grounded"
+    },
+    {
+      "from": "step-3-core-execution",
+      "to": "step-4-adversarial-verify",
+      "label": "Candidate artifact ready"
+    },
+    {
+      "from": "step-4-adversarial-verify",
+      "to": "step-3-core-execution",
+      "label": "Refinement required"
+    },
+    {
+      "from": "step-4-adversarial-verify",
+      "to": "step-5-emit-journal",
+      "label": "Verification gate passed"
+    }
+  ],
+  "exits": [
+    "Verified Scribe primary deliverable artifact",
+    "Honesty-stamped run receipt in journal/runs/<run_id>.json",
+    "Human-readable field lesson in journal/NNNN-<slug>.md when friction occurs"
+  ],
+  "deliverable": "Source-grounded, adversarially verified Scribe work product + machine run receipt."
+}

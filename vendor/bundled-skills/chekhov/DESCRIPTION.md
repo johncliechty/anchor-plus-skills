@@ -1,6 +1,6 @@
 # Chekhov — the writing skill (foundry) — Description
 
-**North Star:** NORTH STAR LOCKED by John 2026-09-06 (full file: C:/dev/Writing/planning/writing-skill-2026-09-05/crucible/NORTH-STAR-LOCKED.md):
+**North Star:** NORTH STAR LOCKED by John 2026-09-06 (full file: <path>
 
 # North Star — the writing skill (LOCKED by John)
 
@@ -58,7 +58,7 @@ _Band: full (tier Heavy, depth FULL; triage lock written). Ingest: 7 Confirmed �
 
 Corrections John gave this morning, applied to the locked North Star: Bright-Heart = kishōtenketsu (whether any Western layer from the 2026 "Three-River" hybrid stays is the first entry in its decision record); Artificial Magi = Four-Part conflict; Sing for the Dead = the Eddy; one doctrine tag per project with a cross-doctrine lint; poetry and political shorts arrive later as packs of the same skill; a collection is a project of many stories and novellas, and a second collection is a second project sharing the pack and the voice profile.
 
-Skill folder: `C:\dev\Skill Foundry\skills\chekhov` (to be created by the build, not before Stage 2).
+Skill folder: `<path> Foundry\skills\chekhov` (to be created by the build, not before Stage 2).
 
 
 ## Decision 4 — Master Plan APPROVED (2026-09-06, "approve")
@@ -88,9 +88,9 @@ John approved `crucible/IMPLEMENTATION-PLAN-VERIFIED.md` (20 waves; Fable review
 
 
 === FOREMAN EXPECTATIONS (the shape of the build) ===
-- Project dir for the build: C:\dev\Skill Foundry\skills\chekhov (created in the first wave: SKILL.md with the ELEGANCE block, HUMAN.md, journal/, package.json with "test": "node --test", tests/). The ground-truth gate is `node --test` in that folder from wave 1 onward.
-- Per-project data lives in each writing project folder under C:\dev\Writing (the ledger, decision record, verdict log, STATUS.json); it never leaves those folders; private voice profiles are never copied into the skill folder.
-- The icon is decided (decision 5): copy C:/dev/Writing/planning/writing-skill-2026-09-05/icons/chekhov-icon.svg (+ -1024.png, -256.png) into the skill folder in the first wave and register it in Anchor's skill-icons map in the wave that touches Anchor, if any; no other Anchor change.
+- Project dir for the build: <path> Foundry\skills\chekhov (created in the first wave: SKILL.md with the ELEGANCE block, HUMAN.md, journal/, package.json with "test": "node --test", tests/). The ground-truth gate is `node --test` in that folder from wave 1 onward.
+- Per-project data lives in each writing project folder under <path> (the ledger, decision record, verdict log, STATUS.json); it never leaves those folders; private voice profiles are never copied into the skill folder.
+- The icon is decided (decision 5): copy <path> (+ -1024.png, -256.png) into the skill folder in the first wave and register it in Anchor's skill-icons map in the wave that touches Anchor, if any; no other Anchor change.
 - Sub-agents Read/Grep/Glob only; no shell spawns from agents; no git hooks; no fine-tune; no database; no GUI. Node + markdown.
 - Seats from Anchor prefs (~/.anchor/model_prefs.json: coding=claude, review=grok); Gemini/agy never; cross-family only at lock events.
 - Every wave ends with a journal entry in the skill's journal/; the first real job (Bright-Heart decision record) runs before any further wave (usage before waves).
@@ -110,7 +110,7 @@ One writing skill that keeps one checkable ledger per project (facts, threads, t
 - CROSS-FAMILY ONLY AT LOCK EVENTS, seats from Anchor prefs via the trio seams; the first-lock corpus is named per project (never profiles, never the manuscript); the lock receipt records the payload file list and the commit hash.
 - HARDENING LAW: every asserted property EMITS a mechanical gate with a NAMED test id in its wave's test file; screen claims are John's human step, never a test; failure-state tables carry "unknown" and "empty" as different rows.
 - USAGE BEFORE WAVES: the first real job (Bright-Heart decision record: Western layer, six vs seven books, Book-1 boundary, chapter rule, age category as an ask; then the AM Spine v4 pass) runs on the proof slice and leaves a journal entry BEFORE any pack, voice-guard or lock-event wave.
-- FOUNDRY SHAPE + GROUND TRUTH: C:\dev\Skill Foundry\skills\chekhov with SKILL.md (ELEGANCE block) + HUMAN.md + journal/ + tests; `node --test` is the single gate from wave 1; Node + markdown; no GUI, no fine-tune, no database, no git hooks; sub-agents Read/Grep/Glob only.
+- FOUNDRY SHAPE + GROUND TRUTH: <path> Foundry\skills\chekhov with SKILL.md (ELEGANCE block) + HUMAN.md + journal/ + tests; `node --test` is the single gate from wave 1; Node + markdown; no GUI, no fine-tune, no database, no git hooks; sub-agents Read/Grep/Glob only.
 - ELEGANCE: every wave names what it CUT with the cost saved; every unrequested element carries a needed-because line; waves are numbered once; adjacent waves that are one change are merged (RC-8); nothing the Round-2 or Round-3 resolutions cut is rebuilt.
 
 ## Provenance

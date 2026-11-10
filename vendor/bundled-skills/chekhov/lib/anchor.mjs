@@ -48,7 +48,7 @@ export function callAnchorAdapter(request, config = {}, { run = spawnSync, timeo
     if (!Array.isArray(command) || !command.length || command.some((v) => typeof v !== 'string' || !v || /[\r\n\0]/.test(v))) throw new Error('Python command must be a JSON argv array');
     const [binary, ...prefix] = command;
     const out = run(binary, [...prefix, '-B', ANCHOR_ADAPTER], { input: JSON.stringify({ ...request,
-      anchor_dir: config.anchor_dir || process.env.CHEKHOV_ANCHOR_DIR || 'C:/dev/Anchor' }),
+      anchor_dir: config.anchor_dir || process.env.CHEKHOV_ANCHOR_DIR || '<path>' }),
       encoding: 'utf8', windowsHide: true, shell: false, timeout, maxBuffer: 4 * 1024 * 1024,
       env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONIOENCODING: 'utf-8' } });
     if (out.error) throw out.error;

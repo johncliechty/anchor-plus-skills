@@ -65,7 +65,7 @@ export const DEFAULT_REFUTER_ROUTES = Object.freeze({
  * @param {object} [env=process.env]
  */
 export async function buildDefaultRefuterRoutes(env = process.env) {
-  const { buildRoutesFromFamilies } = await import('file:///C:/dev/trio/drivers/index.mjs');
+  const { buildRoutesFromFamilies } = await import('fil<path>');
   return buildRoutesFromFamilies({
     env,
     codingRoles: [],
@@ -388,7 +388,7 @@ export function pickRefuterFamily({ families = {}, drafterFamily } = {}) {
 }
 
 export async function buildLiveRefuterAgent({ routes, drafterFamily, env = process.env } = {}) {
-  const { makeRoleRoutedAgent, buildRoutesFromFamilies, familyToDriverName } = await import('file:///C:/dev/trio/drivers/index.mjs');
+  const { makeRoleRoutedAgent, buildRoutesFromFamilies, familyToDriverName } = await import('fil<path>');
   const built = buildRoutesFromFamilies({
     env,
     codingRoles: [],

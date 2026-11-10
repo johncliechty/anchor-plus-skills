@@ -81,7 +81,7 @@ function runCli(seat, prompt, { id, outDir, log }) {
     let args; let stdinText = null; let tmp = null;
     const env = { ...subscriptionOnlyEnv(process.env), NO_COLOR: '1', CI: '1' };
     if (seat.family === 'chatgpt') {
-      args = buildCodexExecArgs({ model: seat.model, reasoningEffort: seat.effort, sandbox: 'read-only', target: 'C:/dev' });
+      args = buildCodexExecArgs({ model: seat.model, reasoningEffort: seat.effort, sandbox: 'read-only', target: '<path>' });
       stdinText = prompt;
     } else {
       args = ['--output-format', 'json', '--model', seat.model, '--reasoning-effort', seat.effort, '--permission-mode', 'plan', '--max-turns', '8'];

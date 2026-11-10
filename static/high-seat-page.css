@@ -1179,7 +1179,7 @@ code{font-family:ui-monospace,Consolas,"Cascadia Mono",monospace}
 .cal-2line-rows{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
 .cal-sline{display:flex;align-items:center;gap:7px;min-height:22px;padding:2px 6px;border-radius:6px;white-space:nowrap;overflow:hidden;transition:background .12s}
 .cal-sline:hover{background:rgba(108,156,252,.11)}
-.cal-stag{font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;width:118px;flex-shrink:0;display:inline-flex;align-items:center;gap:4px}
+.cal-stag{font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;min-width:118px;width:auto;white-space:nowrap;flex-shrink:0;display:inline-flex;align-items:center;gap:4px;margin-right:4px}
 .cal-stag.sky{color:var(--accent-t)}
 .cal-stag.amber{color:var(--amber-t)}
 .cal-sprimary{font-size:11.5px;color:var(--text-warm);overflow:hidden;text-overflow:ellipsis;min-width:0}
@@ -1632,3 +1632,362 @@ code{font-family:ui-monospace,Consolas,"Cascadia Mono",monospace}
   border-color: #38bdf8;
   color: #f8fafc;
 }
+
+
+/* Wave 23 (2026-11-06): The List inside Chief of Staff + Outlook-Style Split-Pane Email Workbench */
+#shTriage .wl-spine-sec {
+  margin: 6px 0 2px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(56, 189, 248, 0.38);
+  background: rgba(9, 14, 24, 0.78);
+}
+.cave-outlook-mail-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.48fr) minmax(0, 0.84fr);
+  gap: 8px;
+  align-items: start;
+  margin-top: 6px;
+}
+#commsGrid[data-layout="split"] {
+  display: grid;
+  grid-template-columns: minmax(0, 0.70fr) minmax(0, 1.50fr) !important;
+  gap: 10px;
+}
+#commsGrid[data-layout="mail"] #caveMailBucketsGrid {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 6px !important;
+}
+@media (max-width: 1180px) {
+  .cave-outlook-mail-split,
+  #commsGrid[data-layout="split"] {
+    grid-template-columns: 1fr !important;
+  }
+}
+.cave-outlook-left-wrap {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  min-width: 0;
+}
+.cave-outlook-left-list {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-height: 540px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+.cave-outlook-left-list::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+/* Terminal-style sleek little oval scrollbar rail & thumb */
+.cave-oval-scrollbar {
+  width: 9px;
+  flex: 0 0 9px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.78);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  position: relative;
+  cursor: pointer;
+  user-select: none;
+  margin: 2px 0;
+}
+.cave-oval-thumb {
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  top: 4px;
+  height: 44px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #94a3b8 0%, #64748b 100%);
+  border: 1px solid rgba(255, 255, 255, 0.38);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.55);
+  cursor: grab;
+  transition: background 0.12s, box-shadow 0.12s;
+}
+.cave-oval-scrollbar:hover .cave-oval-thumb,
+.cave-oval-thumb.is-dragging {
+  background: linear-gradient(180deg, #7dd3fc 0%, #38bdf8 100%);
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.65);
+}
+#caveOutlookMailSplit .cave-mail-list {
+  max-height: none !important;
+  overflow: visible !important;
+  gap: 2.5px !important;
+  padding-right: 0 !important;
+}
+/* Universal Terminal-Style Oval Scrollbar across all lists & scrollable containers */
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-button {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+*::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.72);
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #94a3b8 0%, #64748b 100%);
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  min-height: 28px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #7dd3fc 0%, #38bdf8 100%);
+}
+#caveDialogueThreadScrollBox,
+#caveCalViewport,
+#wlTilesContainer {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+#caveDialogueThreadScrollBox::-webkit-scrollbar,
+#caveCalViewport::-webkit-scrollbar,
+#wlTilesContainer::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+/* Ultra-thin, smaller-text, wider single-row email tiles */
+#caveOutlookMailSplit .cave-mail-card {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 4px !important;
+  padding: 2px 6px !important;
+  min-height: 22px !important;
+  margin: 0 !important;
+  border-radius: 5px !important;
+  cursor: pointer !important;
+  font-size: 10.5px !important;
+  line-height: 1.2 !important;
+}
+.cave-mail-row-main {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+.cave-mail-mini-badge {
+  font-size: 8px !important;
+  padding: 0px 3.5px !important;
+  line-height: 1.3 !important;
+  border-radius: 4px !important;
+  flex-shrink: 0 !important;
+  white-space: nowrap !important;
+}
+#caveOutlookMailSplit .cave-mail-from {
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  color: #f8fafc;
+  max-width: 96px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+}
+.cave-mail-sep {
+  color: #475569;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+#caveOutlookMailSplit .cave-mail-subj {
+  font-size: 10.5px !important;
+  font-weight: 500 !important;
+  color: #cbd5e1 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  flex: 1 1 140px !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+}
+.cave-mail-row-acts {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 2px !important;
+  flex-shrink: 0 !important;
+  margin: 0 !important;
+  flex-wrap: nowrap !important;
+}
+.cave-mail-date {
+  font-size: 8.5px !important;
+  color: #64748b !important;
+  white-space: nowrap !important;
+  margin-right: 1px !important;
+}
+.cave-mail-act-pill {
+  font-size: 8.5px !important;
+  padding: 0px 3px !important;
+  line-height: 1.25 !important;
+  border-radius: 3px !important;
+  white-space: nowrap !important;
+}
+.cave-mail-act-pill.sr-pill {
+  border-color: rgba(245, 158, 11, 0.55) !important;
+  background: rgba(245, 158, 11, 0.16) !important;
+  color: #fef08a !important;
+  font-weight: 700 !important;
+}
+.cave-mail-act-pill.cal {
+  border-color: rgba(16, 185, 129, 0.5) !important;
+  color: #6ee7b7 !important;
+}
+.cave-outlook-right-pane {
+  background: linear-gradient(180deg, #0f172a 0%, #0b1120 100%);
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  border-radius: 10px;
+  padding: 9px 11px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.42);
+  position: sticky;
+  top: 8px;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  overflow: hidden;
+}
+.cave-outlook-right-pane .mini {
+  font-size: 9.5px !important;
+  padding: 2px 6px !important;
+  border-radius: 5px !important;
+  border: 1px solid #334155;
+  line-height: 1.25 !important;
+}
+.cave-mail-card.is-selected {
+  border-color: #38bdf8 !important;
+  border-left: 4px solid #38bdf8 !important;
+  background: rgba(56, 189, 248, 0.14) !important;
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.35);
+}
+#caveSpeedRacerHead .comms-badge {
+  position: static !important;
+  display: inline-flex !important;
+  align-items: center;
+  white-space: nowrap;
+}
+.cave-outlook-left-list,
+.cave-mail-bucket-col,
+.cave-mail-list,
+.cave-mail-card,
+.cave-mail-card .comms-item-top,
+.cave-mail-card .comms-item-title {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+.cave-mail-list {
+  overflow-x: hidden !important;
+}
+
+/* ==========================================================================
+   Wave 23 (2026-11-07):
+   1) Floating Expanded Email Reading/Response Pane & Speed Racer Tile Over Steward Dialogue
+   2) Clickable Inline Web Links & Larger Human-Readable Review Window
+   3) Auto-Hidden Oval Scrollbar When Nothing To Slide
+   ========================================================================== */
+.cave-oval-scrollbar[hidden] {
+  display: none !important;
+}
+
+.cave-email-inline-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 7px;
+  margin: 0 2px;
+  border-radius: 5px;
+  background: rgba(56, 189, 248, 0.16);
+  border: 1px solid rgba(56, 189, 248, 0.55);
+  color: #7dd3fc !important;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none !important;
+  transition: background 0.14s, border-color 0.14s, color 0.14s;
+}
+.cave-email-inline-link:hover {
+  background: rgba(56, 189, 248, 0.28);
+  border-color: #38bdf8;
+  color: #ffffff !important;
+}
+
+.cal.open,
+.cal.open .cal-body,
+.cal.open #commsGrid,
+.cal.open #commsMailCol,
+.board {
+  overflow: visible !important;
+}
+.cal.open {
+  position: relative;
+  z-index: 24;
+}
+
+@media (min-width: 1341px) {
+  #caveOutlookMailSplit:not(.is-docked):not(.email-dlg-closed) {
+    margin-right: -492px !important;
+    grid-template-columns: minmax(270px, 0.72fr) minmax(560px, 1.68fr) !important;
+    position: relative;
+    z-index: 28;
+  }
+  #caveOutlookMailSplit:not(.is-docked):not(.email-dlg-closed) .cave-outlook-right-pane {
+    box-shadow: -8px 12px 34px rgba(0, 0, 0, 0.72), 0 0 0 1px rgba(56, 189, 248, 0.6) !important;
+    border-color: rgba(56, 189, 248, 0.7) !important;
+    background: linear-gradient(180deg, #0d1629 0%, #09101e 100%) !important;
+    padding: 12px 15px !important;
+  }
+  #caveSpeedRacerTile.open:not(.is-docked) {
+    margin-right: -492px !important;
+    position: relative;
+    z-index: 30;
+    box-shadow: -8px 14px 36px rgba(0, 0, 0, 0.76), 0 0 0 1px rgba(245, 158, 11, 0.7) !important;
+    background: linear-gradient(180deg, #1a150c 0%, #0b1120 100%) !important;
+  }
+  #caveSpeedRacerTile.open:not(.is-docked) .sr-diff-grid {
+    grid-template-columns: 0.92fr 1.28fr !important;
+    gap: 12px !important;
+  }
+}
+
+@media (min-width: 1101px) and (max-width: 1340px) {
+  #caveOutlookMailSplit:not(.is-docked):not(.email-dlg-closed) {
+    margin-right: -352px !important;
+    grid-template-columns: minmax(250px, 0.76fr) minmax(460px, 1.54fr) !important;
+    position: relative;
+    z-index: 28;
+  }
+  #caveOutlookMailSplit:not(.is-docked):not(.email-dlg-closed) .cave-outlook-right-pane {
+    box-shadow: -8px 12px 34px rgba(0, 0, 0, 0.72), 0 0 0 1px rgba(56, 189, 248, 0.6) !important;
+  }
+  #caveSpeedRacerTile.open:not(.is-docked) {
+    margin-right: -352px !important;
+    position: relative;
+    z-index: 30;
+    box-shadow: -8px 14px 36px rgba(0, 0, 0, 0.76), 0 0 0 1px rgba(245, 158, 11, 0.7) !important;
+  }
+}
+
+#caveOutlookMailSplit.email-dlg-closed {
+  margin-right: 0 !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  z-index: auto !important;
+}
+#caveOutlookMailSplit.email-dlg-closed #caveEmailDialoguePane {
+  display: none !important;
+}
+#caveSpeedRacerTile:not(.open) #btnCaveSrCloseHead {
+  display: none !important;
+}
+

@@ -69,3 +69,49 @@
 .db-list li a{color:var(--accent-t)}
 .db-list .db-m{display:block;font-size:10.5px;color:var(--text-dim2)}
 .db-list .db-cur{color:var(--amber-t);font-weight:650}
+
+/* Wave 23 (2026-11-07): Terminal-Style Oval Scrollbar Slider on Steward Dialogue & Deliverables (Auto-Hidden When Nothing to Slide) */
+.exwrap .scroll,
+.db-list,
+.panel textarea {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(56, 189, 248, 0.78) rgba(15, 23, 42, 0.45);
+}
+.exwrap .scroll::-webkit-scrollbar,
+.db-list::-webkit-scrollbar,
+.panel textarea::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+.exwrap .scroll::-webkit-scrollbar-button,
+.db-list::-webkit-scrollbar-button,
+.panel textarea::-webkit-scrollbar-button {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+.exwrap .scroll::-webkit-scrollbar-track,
+.db-list::-webkit-scrollbar-track,
+.panel textarea::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.55);
+  border-radius: 999px;
+  border: 1px solid rgba(51, 65, 85, 0.45);
+  margin: 4px 0;
+}
+.exwrap .scroll::-webkit-scrollbar-thumb,
+.db-list::-webkit-scrollbar-thumb,
+.panel textarea::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #38bdf8 0%, #6366f1 100%);
+  border-radius: 999px;
+  border: 1.5px solid rgba(15, 23, 42, 0.9);
+  min-height: 28px;
+  box-shadow: 0 0 6px rgba(56, 189, 248, 0.45);
+}
+.exwrap .scroll::-webkit-scrollbar-thumb:hover,
+.db-list::-webkit-scrollbar-thumb:hover,
+.panel textarea::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #7dd3fc 0%, #818cf8 100%);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.75);
+}
+

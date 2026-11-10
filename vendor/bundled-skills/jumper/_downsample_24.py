@@ -2,8 +2,8 @@
 from pathlib import Path
 from PIL import Image
 
-src_dir = Path(r"C:\Users\example\.claude\skills\ecgberht\assets\icons")
-out_dir = Path(r"C:\dev\Skill Foundry\skills\jumper\_refuter-24px")
+src_dir = Path(r"<path>")
+out_dir = Path(r"<path> Foundry\skills\jumper\_refuter-24px")
 out_dir.mkdir(exist_ok=True)
 
 jobs = [

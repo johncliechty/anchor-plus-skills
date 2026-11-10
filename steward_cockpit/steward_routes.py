@@ -30,10 +30,16 @@ import time
 import importlib
 from pathlib import Path
 
-for _hot_mod in ("anchor_settings", "usage_allowance_monitor", "deliverables_register", "steward_cockpit.spellcheck_engine", "steward_cockpit.dictation_engine", "steward_cockpit.steward_campaign", "steward_cockpit.campaign_acts", "steward_cockpit.campaign_say", "high_seat_page", "report_viewer"):
+_HOT_MOD_MTIMES = globals().get("_HOT_MOD_MTIMES") if isinstance(globals().get("_HOT_MOD_MTIMES"), dict) else {}
+for _hot_mod in ("anchor_settings", "usage_allowance_monitor", "usage_nightly_sync", "deliverables_register", "steward_cockpit.spellcheck_engine", "steward_cockpit.dictation_engine", "steward_cockpit.steward_campaign", "steward_cockpit.campaign_acts", "steward_cockpit.campaign_say", "high_seat_page", "report_viewer"):
     if _hot_mod in sys.modules:
         try:
-            importlib.reload(sys.modules[_hot_mod])
+            _m_obj = sys.modules[_hot_mod]
+            _m_file = getattr(_m_obj, "__file__", None)
+            _m_mt = os.stat(_m_file).st_mtime_ns if _m_file else None
+            if _m_mt is not None and _HOT_MOD_MTIMES.get(_hot_mod) != _m_mt:
+                importlib.reload(_m_obj)
+                _HOT_MOD_MTIMES[_hot_mod] = _m_mt
         except Exception:
             pass
 
@@ -105,7 +111,7 @@ OPENABLE_EXT = {".md", ".txt", ".pdf", ".docx", ".doc", ".xlsx", ".xls",
                 ".csv", ".pptx", ".ppt", ".png", ".jpg", ".jpeg", ".gif", ".json",
                 ".r", ".rmd", ".qmd", ".rds", ".rdata", ".py", ".ipynb", ".jl",
                 ".m", ".sql", ".stan", ".tex", ".bib", ".toml", ".yaml", ".yml",
-                ".html", ".htm", ".svg", ".xml", ".log"}
+                ".html", ".htm", ".svg", ".xml", ".log", ".zip"}
 # Only block actual OS binary executables / shell linkers; source code & data-science scripts
 # (.r, .rmd, .py, .ipynb, .jl, .sql, .sh, .ps1, .js, .ts, .html, .svg) are allowed in AI Cockpits.
 DENY_UPLOAD_EXT = {".exe", ".com", ".scr", ".hta", ".jse", ".vbs", ".vbe",
@@ -1030,6 +1036,23 @@ def _usage_rollup(cdir, estate=None):
     return copy.deepcopy(value)
 
 
+_REALPATH_CACHE = globals().get("_REALPATH_CACHE") if isinstance(globals().get("_REALPATH_CACHE"), dict) else {}
+
+
+def _realpath_fast(p):
+    s = str(p or "")
+    if "PYTEST_CURRENT_TEST" in os.environ:
+        return os.path.realpath(s)
+    hit = _REALPATH_CACHE.get(s)
+    if hit is not None:
+        return hit
+    res = os.path.realpath(s)
+    if len(_REALPATH_CACHE) > 4096:
+        _REALPATH_CACHE.clear()
+    _REALPATH_CACHE[s] = res
+    return res
+
+
 def _usage_rollup_fresh(cdir, estate=None):
     numeric_fields = ("reported_spend", "unpriced_turns", "estimated_spend", "estimated_turns",
                       "tokens", "secs", "turns", "cumulative_tokens", "cumulative_estimated_spend")
@@ -1056,11 +1079,11 @@ def _usage_rollup_fresh(cdir, estate=None):
                 pass
         estate = _read_all_state()
     stew, term = zero(), zero()
-    cdir_n = os.path.realpath(cdir)
+    cdir_n = _realpath_fast(cdir)
     discovered = campaign.discover_efforts(cdir_n)
-    allowed_roots = ({cdir_n} | {os.path.realpath(str(Path(cdir_n) / e["rel"])) for e in discovered if e.get("rel")}) if discovered else None
+    allowed_roots = ({cdir_n} | {_realpath_fast(str(Path(cdir_n) / e["rel"])) for e in discovered if e.get("rel")}) if discovered else None
     for key, entry in estate.items():
-        base = os.path.realpath(key.split("||")[0])
+        base = _realpath_fast(key.split("||")[0])
         # exact boundary, not a string prefix: '.../foo' must not match '.../foobar'
         if base != cdir_n and not base.startswith(cdir_n + os.sep):
             continue
@@ -1206,7 +1229,15 @@ def _usage_rollup_fresh(cdir, estate=None):
             b["unpriced_turns"] += 1
             b["_cost_unknown"] += 1
             b["_tokens_known"] += 1
-            est = estimate_list_price_usd(row.get("model"), row.get("usage"))
+            row_fam = str(row.get("cli") or "").strip().lower()
+            row_mod = row.get("model") or _FAMILY_DEFAULT_MODELS.get(row_fam, "claude-opus-5-5")
+            est = estimate_list_price_usd(row_mod, row.get("usage"))
+            if est is None and number(tokens) and tokens > 0:
+                in_t = int(tokens * 0.90)
+                est = estimate_list_price_usd(
+                    row_mod,
+                    {"input_tokens": in_t, "cached_input_tokens": int(tokens * 0.50), "output_tokens": max(0, int(tokens) - in_t)},
+                )
             if est is not None:
                 b["estimated_spend"] += est
                 b["estimated_turns"] += 1
@@ -1249,7 +1280,11 @@ def _usage_rollup_fresh(cdir, estate=None):
                 if ebase_name not in effort_job_ids or ebase_name in already_indexed_jobs:
                     continue
                 j_raw = eentry.get("usage")
-                ju = _backfill_usage_estimate(_usage_snapshot(j_raw), j_raw, eentry.get("model_policy"))
+                j_live = ENGINES.get(ekey)
+                ju = _backfill_usage_estimate(
+                    _usage_snapshot(j_raw), j_raw, eentry.get("model_policy"),
+                    include_inflight=bool(j_live is not None and getattr(j_live, "busy", False)),
+                )
                 jobs["count"] += 1
                 for field in numeric_fields:
                     jobs[field] += ju[field]
@@ -1462,10 +1497,23 @@ def _compute_global_usage_summary():
         all_sid_items = list(sid_map.items()) + [(s, (None, None, None, None, None)) for s in extra_sids]
         for sid, (fam, mod, pid, pname, base_dir) in all_sid_items:
             doc = _ul.load_ledger(sid)
-            es = sorted((doc.get("entries") or {}).items(), key=lambda kv: str((kv[1] or {}).get("recorded_at") or ""))
+            raw_entries = doc.get("entries") or {}
+            max_line_cum_at = max(
+                (
+                    str(ev_item.get("recorded_at") or "")
+                    for ek_item, ev_item in raw_entries.items()
+                    if isinstance(ev_item, dict)
+                    and not str(ek_item).startswith("agy-sync:")
+                    and "cache_read_input_tokens" in (ev_item.get("usage") or {})
+                ),
+                default="",
+            )
+            es = sorted(raw_entries.items(), key=lambda kv: str((kv[1] or {}).get("recorded_at") or ""))
             prev_by_sess = {}
             for k, e in es:
                 if not isinstance(e, dict):
+                    continue
+                if str(k).startswith("agy-sync:") and max_line_cum_at and str(e.get("recorded_at") or "") <= max_line_cum_at:
                     continue
                 ukey = (sid, k)
                 if ukey in seen_keys:
@@ -1484,7 +1532,25 @@ def _compute_global_usage_summary():
                     e_copy["usage"] = u
                 sess_key = str(e.get("session_id") or sid)
                 src = e.get("source")
-                if efam in ("chatgpt", "gemini") and (src in ("steward-turn", "terminal-turn", None)):
+                is_per_turn_gemini = (
+                    efam == "gemini"
+                    and not str(k).startswith("agy-sync:")
+                    and isinstance(u, dict)
+                    and "cached_input_tokens" in u
+                    and "cache_read_input_tokens" not in u
+                )
+                if is_per_turn_gemini and (src in ("steward-turn", "terminal-turn", None)):
+                    prev_u, prev_tok = prev_by_sess.get(sess_key, (None, 0))
+                    if isinstance(prev_u, dict):
+                        in_t = int(u.get("input_tokens") or 0)
+                        ca_t = int(u.get("cached_input_tokens") or 0)
+                        out_t = int(u.get("output_tokens") or 0)
+                        prev_by_sess[sess_key] = ({
+                            "input_tokens": int(prev_u.get("input_tokens") or 0) + max(0, in_t - ca_t),
+                            "cache_read_input_tokens": int(prev_u.get("cache_read_input_tokens") or prev_u.get("cached_input_tokens") or 0) + ca_t,
+                            "output_tokens": int(prev_u.get("output_tokens") or 0) + out_t,
+                        }, prev_tok + int(e.get("tokens") or 0))
+                elif efam in ("chatgpt", "gemini") and (src in ("steward-turn", "terminal-turn", None)):
                     tok = int(e.get("tokens") or 0)
                     prev_u, prev_tok = prev_by_sess.get(sess_key, (None, 0))
                     if isinstance(u, dict) and isinstance(prev_u, dict):
@@ -1494,17 +1560,17 @@ def _compute_global_usage_summary():
                         in_p = int(prev_u.get("input_tokens") or 0)
                         out_p = int(prev_u.get("output_tokens") or 0)
                         ca_p = int(prev_u.get("cached_input_tokens") or prev_u.get("cache_read_input_tokens") or 0)
-                        if in_c >= in_p and out_c >= out_p and ca_c >= ca_p:
-                            delta_in = in_c - in_p
-                            delta_out = out_c - out_p
-                            delta_ca = ca_c - ca_p
+                        if in_c >= in_p or out_c >= out_p or ca_c >= ca_p or (in_c + ca_c) > max(1, tok * 2):
+                            delta_in = max(0, in_c - in_p)
+                            delta_out = max(0, out_c - out_p)
+                            delta_ca = max(0, ca_c - ca_p)
                             has_additive_ca = "cache_read_input_tokens" in u and "cached_input_tokens" not in u
                             delta_sum = delta_in + delta_out + (delta_ca if has_additive_ca else 0)
                             # tok in .anchor/usage_ledger is already the per-turn delta for steward-turn/terminal-turn;
                             # only subtract prev_tok when tok is a cumulative counter larger than the current cumulative input.
                             if tok >= prev_tok and prev_tok > 0 and tok >= in_c and delta_sum > 0 and tok > delta_sum:
                                 e_copy["tokens"] = tok - prev_tok
-                            elif delta_sum > 0:
+                            elif delta_sum > 0 and (tok <= 0 or delta_sum < tok):
                                 e_copy["tokens"] = delta_sum
                             if has_additive_ca:
                                 e_copy["usage"] = {
@@ -1519,7 +1585,25 @@ def _compute_global_usage_summary():
                                     "cached_input_tokens": delta_ca,
                                 }
                     has_u = isinstance(u, dict) and (int(u.get("input_tokens") or 0) > 0 or int(u.get("output_tokens") or 0) > 0)
-                    prev_by_sess[sess_key] = (u if has_u else prev_u, tok if tok > 0 else prev_tok)
+                    if has_u:
+                        in_cur = int(u.get("input_tokens") or 0)
+                        out_cur = int(u.get("output_tokens") or 0)
+                        ca_cur = int(u.get("cached_input_tokens") or u.get("cache_read_input_tokens") or 0)
+                        in_prv = int((prev_u or {}).get("input_tokens") or 0)
+                        out_prv = int((prev_u or {}).get("output_tokens") or 0)
+                        ca_prv = int((prev_u or {}).get("cached_input_tokens") or (prev_u or {}).get("cache_read_input_tokens") or 0)
+                        has_add = "cache_read_input_tokens" in u and "cached_input_tokens" not in u
+                        ck_key = "cache_read_input_tokens" if has_add else "cached_input_tokens"
+                        if prev_u is None:
+                            prev_by_sess[sess_key] = (u, tok if tok >= prev_tok else prev_tok)
+                        elif in_cur >= in_prv or out_cur >= out_prv or ca_cur >= ca_prv or (in_cur + ca_cur) > max(1, tok * 2):
+                            prev_by_sess[sess_key] = ({
+                                "input_tokens": max(in_cur, in_prv),
+                                "output_tokens": max(out_cur, out_prv),
+                                ck_key: max(ca_cur, ca_prv),
+                            }, tok if tok >= prev_tok else prev_tok)
+                    elif tok > prev_tok:
+                        prev_by_sess[sess_key] = (prev_u, tok)
                 epid = e.get("project_id") or pid
                 epname = (proj_by_id.get(epid) or {}).get("name") or pname
                 if not epid and (e.get("effort_dir") or e.get("folder_path")):
@@ -1910,6 +1994,10 @@ def _state_cached(eng, cdir):
     except ValueError:
         ttl = 2.0
     stamp = campaign.map_stamp(cdir)                  # a question or review written to disk is never answered stale
+    try:
+        inf_est = round(float(eng._inflight_usage_estimate()[0] or 0.0), 4) if hasattr(eng, "_inflight_usage_estimate") else 0.0
+    except Exception:
+        inf_est = 0.0
     key = (
         id(eng),
         getattr(eng, "seq", None),
@@ -1918,6 +2006,7 @@ def _state_cached(eng, cdir):
         getattr(eng, "turns", None),
         round(float(getattr(eng, "spend", 0.0) or 0.0), 4),
         round(float(getattr(eng, "estimated_spend", 0.0) or 0.0), 4),
+        inf_est,
         stamp,
     )
     now = time.monotonic()
@@ -1944,6 +2033,7 @@ def _state_with_usage(eng, cdir):
         getattr(eng, "turns", 0),
         round(float(getattr(eng, "spend", 0.0) or 0.0), 4),
         round(float(getattr(eng, "estimated_spend", 0.0) or 0.0), 4),
+        round(float(state.get("estimated_spend_usd") or 0.0), 4),
     )
     if getattr(eng, "_last_rollup_sig", None) != cur_sig:
         eng._last_rollup_sig = cur_sig

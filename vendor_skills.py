@@ -61,6 +61,7 @@ SKILL_SOURCES = [
     ("einstein", "ANCHOR_FOUNDRY_DIR", "skills/einstein"),
     ("figure-designer", "ANCHOR_FOUNDRY_DIR", "skills/figure-designer"),
     ("agy-dispatch", "ANCHOR_FOUNDRY_DIR", "skills/agy-dispatch"),
+    ("scribe", "ANCHOR_FOUNDRY_DIR", "skills/scribe"),
     # v1.2.3: the Ecgberht steward. Repo root IS the skill (the gandalf shape).
     # Anchor already shipped its HOST CONTRACTS (the chamber_* modules) while
     # the skill itself stayed home — collaborators had steward-shaped Anchor

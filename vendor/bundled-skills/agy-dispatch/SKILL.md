@@ -146,9 +146,9 @@ node tools/agy-dispatch.mjs --prompt-file <scratch>/review.txt --target <target>
   pass; cross-review risky output with a second `--readonly` agy run.
 
 ## Related — the TWO sanctioned agy transports (and only these two)
-- `C:\dev\Skill Foundry\tools\agy-dispatch.mjs` (THIS skill) — the standalone one-shot CLI
+- `<path> Foundry\tools\agy-dispatch.mjs` (THIS skill) — the standalone one-shot CLI
   transport: ad-hoc dispatches, Anchor's `agy_job_adapter.mjs`, anything outside a trio engine.
-- `C:\dev\trio\drivers\gemini-cli.mjs` — the in-engine seam for trio/foundry engines: adds
+- `<path> — the in-engine seam for trio/foundry engines: adds
   served-model ATTESTATION (substitution tripwire), tier-label resolution, and the fail-closed
   `makeGeminiCliSeam`. Engines use this, never the CLI wrapper.
 Division of labor is deliberate; when the agy CONTRACT changes (argv shape, log lines,

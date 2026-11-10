@@ -60,11 +60,11 @@
     ],
     "kb_reference_resources": [
       "README",
+      "0109-agy-stream-json-elegance-non-exit-and-matrix-fast-track",
       "0108-parallel-study-matrix-and-bounded-single-pass-convergence",
       "0107-calculator-history-slim-delay",
       "0106-cockpit-slim-formal-improvement",
-      "0105-current-campaign-reconciliation",
-      "0104-steward-live-acceptance-and-review-efficiency"
+      "0105-current-campaign-reconciliation"
     ]
   },
   "orange_split": {
@@ -394,8 +394,8 @@
         ],
         "kb_sources": [
           "README",
-          "0108-parallel-study-matrix-and-bounded-single-pass-convergence",
-          "0107-calculator-history-slim-delay"
+          "0109-agy-stream-json-elegance-non-exit-and-matrix-fast-track",
+          "0108-parallel-study-matrix-and-bounded-single-pass-convergence"
         ]
       },
       "level2_mechanics": {
@@ -451,7 +451,7 @@
           "SKILL.md",
           "HUMAN.md",
           "README",
-          "0108-parallel-study-matrix-and-bounded-single-pass-convergence"
+          "0109-agy-stream-json-elegance-non-exit-and-matrix-fast-track"
         ]
       },
       "level2_mechanics": {
@@ -505,8 +505,8 @@
         ],
         "kb_sources": [
           "README",
-          "0108-parallel-study-matrix-and-bounded-single-pass-convergence",
-          "0107-calculator-history-slim-delay"
+          "0109-agy-stream-json-elegance-non-exit-and-matrix-fast-track",
+          "0108-parallel-study-matrix-and-bounded-single-pass-convergence"
         ]
       },
       "level2_mechanics": {
@@ -558,11 +558,11 @@
         ],
         "kb_sources": [
           "README",
+          "0109-agy-stream-json-elegance-non-exit-and-matrix-fast-track",
           "0108-parallel-study-matrix-and-bounded-single-pass-convergence",
           "0107-calculator-history-slim-delay",
           "0106-cockpit-slim-formal-improvement",
-          "0105-current-campaign-reconciliation",
-          "0104-steward-live-acceptance-and-review-efficiency"
+          "0105-current-campaign-reconciliation"
         ]
       },
       "level2_mechanics": {
@@ -623,8 +623,8 @@
       ],
       "librarian_kb_reads": [
         "README",
-        "0108-parallel-study-matrix-and-bounded-single-pass-convergence",
-        "0107-calculator-history-slim-delay"
+        "0109-agy-stream-json-elegance-non-exit-and-matrix-fast-track",
+        "0108-parallel-study-matrix-and-bounded-single-pass-convergence"
       ],
       "librarian_kb_writes": [],
       "source_anchor": {
@@ -668,8 +668,8 @@
       ],
       "librarian_kb_reads": [
         "README",
-        "0108-parallel-study-matrix-and-bounded-single-pass-convergence",
-        "0107-calculator-history-slim-delay"
+        "0109-agy-stream-json-elegance-non-exit-and-matrix-fast-track",
+        "0108-parallel-study-matrix-and-bounded-single-pass-convergence"
       ],
       "librarian_kb_writes": [],
       "source_anchor": {
@@ -714,8 +714,8 @@
       ],
       "librarian_kb_reads": [
         "README",
-        "0108-parallel-study-matrix-and-bounded-single-pass-convergence",
-        "0107-calculator-history-slim-delay"
+        "0109-agy-stream-json-elegance-non-exit-and-matrix-fast-track",
+        "0108-parallel-study-matrix-and-bounded-single-pass-convergence"
       ],
       "librarian_kb_writes": [],
       "source_anchor": {
@@ -759,8 +759,8 @@
       ],
       "librarian_kb_reads": [
         "README",
-        "0108-parallel-study-matrix-and-bounded-single-pass-convergence",
-        "0107-calculator-history-slim-delay"
+        "0109-agy-stream-json-elegance-non-exit-and-matrix-fast-track",
+        "0108-parallel-study-matrix-and-bounded-single-pass-convergence"
       ],
       "librarian_kb_writes": [],
       "source_anchor": {

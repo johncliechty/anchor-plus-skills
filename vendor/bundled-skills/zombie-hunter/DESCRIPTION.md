@@ -38,8 +38,8 @@ Make Anchor’s Zombie Hunter a **trustworthy, fail-safe token-spend sentinel** 
 
 ## Code surfaces (brownfield)
 
-- Skill: `C:\dev\Skill Foundry\skills\zombie-hunter` (Node sentinel: `classify.js`, `spend.js`, `soft-freeze.js`, `server.js`, tests)
-- Anchor: `C:\dev\Anchor` (`anchor_gui.py` zombie/doctor/health banner handlers, `proc_probe.py`, `zombie_hunter.py` / `reaper.py` only if needed for ownership parity)
+- Skill: `<path> Foundry\skills\zombie-hunter` (Node sentinel: `classify.js`, `spend.js`, `soft-freeze.js`, `server.js`, tests)
+- Anchor: `<path> (`anchor_gui.py` zombie/doctor/health banner handlers, `proc_probe.py`, `zombie_hunter.py` / `reaper.py` only if needed for ownership parity)
 - Optional skill SKILL.md contract sync for the tightened definition
 
 ## Depth / seating

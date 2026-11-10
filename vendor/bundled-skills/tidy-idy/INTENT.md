@@ -26,7 +26,7 @@ Make a project's **Tidy-Idy** button (in the Anchor project window) run a **back
   - 📁 Reorg — **before→after tree** graphic (Option 1); Approve set / Edit / Skip.
   - 🛡 Kept & protected (collapsed).
 - **Sticky Apply** → all approved changes land as **ONE git commit** (undo = `git revert`). Nothing happens until Apply.
-- Reference mockups (CURRENT only): `C:\dev\plans\2026-07-tidy-idy-gui-polish\design\tidy-idy-mockup-A-triage.html`, `…\tidy-idy-mockup-A2-reorg.html` (Option 1 only; B/C and A2 Option 2 REJECTED).
+- Reference mockups (CURRENT only): `<path> `…\tidy-idy-mockup-A2-reorg.html` (Option 1 only; B/C and A2 Option 2 REJECTED).
 
 ## Run model + Anchor integration
 - **Background run like Gandalf** (the project-window header Tidy-Idy button → `tidyIdyRun`) — headless job via Anchor's `job_runner` / the Gandalf map-reduce pattern; writes a persisted report the GUI reads.

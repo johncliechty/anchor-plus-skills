@@ -192,7 +192,7 @@ async function main() {
     const cands = [
       process.env.ANCHOR_TRIO_DIR && join(process.env.ANCHOR_TRIO_DIR, 'foreman', 'bin', 'foreman-lib.mjs'),
       resolve(here, '..', '..', 'foreman', 'bin', 'foreman-lib.mjs'), // vendored sibling layout
-      'C:/dev/trio/foreman/bin/foreman-lib.mjs',                      // author-host canonical
+      '<path>',                      // author-host canonical
     ].filter(Boolean);
     for (const c of cands) {
       if (existsSync(c)) {

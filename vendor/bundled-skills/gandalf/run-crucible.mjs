@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { makeGeminiCliSeam as makeAgentSeam, resolveGeminiModel } from 'file:///C:/dev/trio/drivers/gemini-cli.mjs';
+import { makeGeminiCliSeam as makeAgentSeam, resolveGeminiModel } from 'fil<path>';
 
 // Explicitly set the environment variables as requested by the user and Global Skill Model Rule.
 // W4 (2026-07-05): the model is the CURRENT agy LABEL resolved via the TRIO_TIER ladder — NEVER a
@@ -12,8 +12,8 @@ process.env.TRIO_DRIVER = 'gemini-cli';
 const RESOLVED_GEMINI_MODEL = resolveGeminiModel({ env: process.env });
 process.env.TRIO_MODEL = RESOLVED_GEMINI_MODEL;
 process.env.GEMINI_MODEL = RESOLVED_GEMINI_MODEL;
-import { runStage0 } from 'file:///C:/dev/trio/crucible/bin/stage0.mjs';
-import { runBrainstorm, triageIdeas, buildPhasedPlan, renderMasterPlanDraft, runMasterPlanLoop } from 'file:///C:/dev/trio/crucible/bin/stage1.mjs';
+import { runStage0 } from 'fil<path>';
+import { runBrainstorm, triageIdeas, buildPhasedPlan, renderMasterPlanDraft, runMasterPlanLoop } from 'fil<path>';
 
 const TARGET = process.cwd();
 const outputDir = path.join(TARGET, 'planning', 'crucible-scale2');

@@ -53,9 +53,9 @@ before(async () => {
     GIT_CONFIG_NOSYSTEM: '1',
     GIT_CONFIG_GLOBAL: emptyCfg,
     GIT_AUTHOR_NAME: 'tidy-idy-spike',
-    GIT_AUTHOR_EMAIL: 'spike@example.com',
+    GIT_AUTHOR_EMAIL: '<email>',
     GIT_COMMITTER_NAME: 'tidy-idy-spike',
-    GIT_COMMITTER_EMAIL: 'spike@example.com',
+    GIT_COMMITTER_EMAIL: '<email>',
   };
   repoDir = path.join(tmpRoot, 'fixture-repo');
   await fs.mkdir(repoDir);

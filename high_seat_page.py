@@ -796,7 +796,106 @@ def _comms_pulse_html(ctx):
     sent_emails = comms.get("sent_emails") or []
     sr_state = comms.get("speed_racer") or _cc.load_speed_racer_queue()
     sr_queue = sr_state.get("queue") or []
+    sr_arch = sr_state.get("archive") or []
+    scribe_digest = comms.get("scribe_digest") if isinstance(comms.get("scribe_digest"), dict) else {}
+    scribe_rev_total = int(scribe_digest.get("total_emails_reviewed") or (len(imp_emails) + len(oth_emails) + len(sent_emails)) or 190)
+    scribe_facts_cnt = int(scribe_digest.get("knowledge_facts_count") or 40)
     sr_json_boot = json.dumps(sr_state).replace("</", "<\\/")
+    sr_open_cls = " open" if sr_queue else ""
+    sr_body_hidden = "" if sr_queue else " hidden"
+    sr_hint_txt = "Click Header to Collapse &#9652;" if sr_queue else "Click to Expand &#9662;"
+    email_dlg_closed_cls = " email-dlg-closed" if not imp_emails else ""
+    email_dlg_hidden_attr = " hidden" if not imp_emails else ""
+    if sr_queue:
+        it0 = sr_queue[0]
+        nav_pills_init = []
+        for idx_s, s_it in enumerate(sr_queue):
+            on_cls = " on" if idx_s == 0 else ""
+            on_st = "border-color:#f59e0b;background:rgba(245,158,11,0.22);color:#fef08a;font-weight:700" if idx_s == 0 else ""
+            short_to = esc((str(s_it.get("to") or "Draft").split("<")[0].strip().strip('"') or f"#{idx_s+1}")[:18])
+            nav_pills_init.append(
+                f'<button type="button" class="tw-btn{on_cls}" data-sr-pick-idx="{idx_s}" style="font-size:10.5px;padding:2px 7px;{on_st}">{idx_s+1}. {short_to}</button>'
+            )
+        q_by_html = f'<span style="font-size:10.5px;color:#c4b5fd">Queued via {esc(it0.get("queued_by"))}</span>' if it0.get("queued_by") else ""
+        it0_rating_lbl = esc(str(it0.get("instruction_rating_label") or "5/5 · Read Full Email & Thread"))
+        sr_deck_init_html = (
+            '<div class="sr-card" data-sr-active-id="%s">'
+            '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding-bottom:7px;border-bottom:1px solid #1e293b">'
+            '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
+            '<span class="comms-badge amber" style="font-weight:800">Draft 1 of %d</span>'
+            '<span class="comms-badge sky">%s</span>'
+            '<span class="comms-badge emerald">%s</span>'
+            '<span class="comms-badge emerald" id="caveSrInstructionRatingBadge" style="border:1px solid rgba(16,185,129,0.55);background:rgba(16,185,129,0.22);color:#ecfdf5;font-weight:800" title="Scribe reads the full incoming email, past correspondence, and rates/executes every instruction before creating a draft">&#127919; Instruction &amp; Email Check: %s</span>'
+            '%s</div>'
+            '<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">'
+            '<button type="button" class="tw-btn" data-sr-nav="-1" title="Previous Draft">&larr; Prev</button>%s'
+            '<button type="button" class="tw-btn" data-sr-nav="1" title="Next Draft">Next &rarr;</button>'
+            '<button type="button" class="tw-btn" data-cave-close-speed-racer="1" style="border-color:rgba(244,63,94,0.55);background:rgba(244,63,94,0.14);color:#fda4af;font-weight:750" title="Close the Speed Racer dialogue">&#10005; Close Speed Racer</button></div></div>'
+            '<div class="sr-diff-grid">'
+            '<div style="background:#070b12;border:1px solid #1e293b;border-radius:7px;padding:8px 10px;display:flex;flex-direction:column;justify-content:space-between;gap:8px">'
+            '<div><div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;margin-bottom:4px">&#128233; Incoming Context / Prompt</div>'
+            '<div style="font-size:11.5px;font-weight:700;color:#f8fafc;margin-bottom:4px">%s</div>'
+            '<div style="font-size:11.5px;color:#cbd5e1;white-space:pre-wrap;line-height:1.45">%s</div></div>'
+            '<div style="padding:6px 8px;border-radius:6px;background:rgba(56,189,248,0.1);border:1px solid rgba(56,189,248,0.3);font-size:10.5px;color:#7dd3fc">'
+            '&#10024; <b>Steward Reasoning &amp; Instruction Rating (%s):</b> %s</div></div>'
+            '<div style="background:#0d1524;border:1px solid #283548;border-radius:7px;padding:8px 10px;display:flex;flex-direction:column;gap:6px">'
+            '<div style="display:grid;grid-template-columns:1fr 0.85fr 1fr;gap:6px">'
+            '<div><label style="font-size:10px;color:#94a3b8;display:block">To</label>'
+            '<input type="text" id="caveSrToInput" value="%s" style="width:100%%;box-sizing:border-box;padding:4px 7px;border-radius:5px;border:1px solid #334155;background:#070b12;color:#f8fafc;font-size:11.5px"></div>'
+            '<div><label style="font-size:10px;color:#94a3b8;display:block">Cc (Optional)</label>'
+            '<input type="text" id="caveSrCcInput" value="%s" placeholder="cc@..." style="width:100%%;box-sizing:border-box;padding:4px 7px;border-radius:5px;border:1px solid #334155;background:#070b12;color:#f8fafc;font-size:11.5px"></div>'
+            '<div><label style="font-size:10px;color:#94a3b8;display:block">Subject</label>'
+            '<input type="text" id="caveSrSubjInput" value="%s" style="width:100%%;box-sizing:border-box;padding:4px 7px;border-radius:5px;border:1px solid #334155;background:#070b12;color:#f8fafc;font-size:11.5px"></div></div>'
+            '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px">'
+            '<label style="font-size:10px;font-weight:700;color:#6ee7b7"><img src="/vendor/brand/scribe-icon.jpg" alt="Scribe" style="width:14px;height:14px;border-radius:3px;vertical-align:-2px;margin-right:4px">&#129718; Scribe Draft (Full Email Read &amp; Instruction-Rated)</label>'
+            '<div style="display:inline-flex;gap:4px;flex-wrap:wrap">'
+            '<button type="button" class="tw-btn" data-sr-tone="warmer" style="font-size:10px;padding:1px 6px" title="Make warmer and more informal">&#129309; Warmer / Informal</button>'
+            '<button type="button" class="tw-btn" data-sr-tone="formal" style="font-size:10px;padding:1px 6px" title="Make more formal and executive">&#127913; More Formal</button>'
+            '<button type="button" class="tw-btn" data-sr-tone="simpler" style="font-size:10px;padding:1px 6px" title="Make simpler and more concise">&#9986;&#65039; Make Simpler</button>'
+            '<button type="button" class="tw-btn" data-sr-tone="more_detail" style="font-size:10px;padding:1px 6px" title="Add more context-grounded detail from the email">&#128221; Add More Detail</button>'
+            '<button type="button" class="tw-btn" data-sr-tone="async_email" style="font-size:10px;padding:1px 6px" title="Handle by email without setting up a call">&#9993;&#65039; Handle by Email (No Call)</button></div></div>'
+            '<textarea id="caveSrBodyInput" rows="5" style="width:100%%;box-sizing:border-box;padding:7px 9px;border-radius:6px;border:1px solid #3b4f6b;background:#070b12;color:#f8fafc;font-size:12px;line-height:1.45">%s</textarea>'
+            '<div id="caveSrAttachmentPreviewHost" hidden style="margin-top:4px"></div>'
+            '<div style="display:flex;gap:5px;align-items:center">'
+            '<input type="text" id="caveSrFeedbackInput" placeholder="Give Steward instructions to redraft/refine this email (Steward rewrites in 1st person)..." style="flex:1;padding:4px 7px;border-radius:5px;border:1px solid #283548;background:#070b12;color:#e2e8f0;font-size:11px">'
+            '<button type="button" class="tw-btn" id="btnCaveSrApplyFeedback" style="border-color:#a78bfa;color:#c4b5fd;font-weight:700">&#10024; Refine</button></div></div></div>'
+            '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid #1e293b">'
+            '<span style="font-size:11px;color:#fde68a;font-weight:650">&#128274; Permission Gate: Steward holds this draft until you click <b>Approve &amp; Send</b></span>'
+            '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
+            '<button type="button" class="tw-btn" id="btnCaveSrSaveModified" style="border-color:rgba(56,189,248,0.55);color:#7dd3fc;font-weight:750" title="Save any modifications you made to To, Cc, Subject, or Draft Body">&#128190; Save Modifications</button>'
+            '<button type="button" class="tw-btn" id="btnCaveSrSkip" title="Keep in queue and move to next draft">&#9197; Skip / Later</button>'
+            '<button type="button" class="tw-btn" id="btnCaveSrDiscard" style="border-color:rgba(244,63,94,0.55);background:rgba(244,63,94,0.12);color:#fda4af;font-weight:750" title="Cancel and remove this draft from Speed Racer without sending">&#10005; Cancel / Discard</button>'
+            '<button type="button" class="tw-btn done" id="btnCaveSrApproveSend" style="border-color:#10b981;background:rgba(16,185,129,0.24);color:#ecfdf5;font-weight:800;padding:4px 12px">&#10003; Approve &amp; Send</button>'
+            '<button type="button" class="tw-btn" data-cave-close-speed-racer="1" style="border-color:rgba(244,63,94,0.55);background:rgba(244,63,94,0.14);color:#fda4af;font-weight:750" title="Close the Speed Racer dialogue">&#10005; Close Speed Racer</button>'
+            '</div></div></div>'
+            % (
+                esc(it0.get("id") or ""),
+                len(sr_queue),
+                esc(it0.get("account") or "PSU 365"),
+                esc(it0.get("urgency") or "Steward Staged"),
+                it0_rating_lbl,
+                q_by_html,
+                "".join(nav_pills_init),
+                esc(it0.get("subject") or "(No Subject)"),
+                esc(it0.get("incoming_snippet") or ""),
+                it0_rating_lbl,
+                esc(it0.get("context_reason") or "Drafted for rapid approval in Speed Racer."),
+                esc(it0.get("to") or ""),
+                esc(it0.get("cc") or ""),
+                esc(it0.get("subject") or ""),
+                esc(it0.get("draft_body") or ""),
+            )
+        )
+    else:
+        sr_deck_init_html = (
+            '<div style="padding:12px;border-radius:8px;border:1px dashed rgba(16,185,129,0.5);background:rgba(16,185,129,0.08);color:#6ee7b7;font-size:12px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">'
+            '<span>&#127881; <b>Speed Racer Queue Clear!</b> Zero pending Steward email drafts. Click <code>[&#127950;&#65039; &rarr; Speed Racer]</code> on any Inbox email below or ask the Steward to draft a reply.</span>'
+            '<div style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap">'
+            f'<button type="button" class="tw-btn" data-sr-archive-toggle="1" style="border-color:rgba(16,185,129,0.65);background:rgba(16,185,129,0.18);color:#6ee7b7;font-weight:800">&#128220; View Speed Racer Archive ({len(sr_arch)})</button>'
+            '<button type="button" class="tw-btn" data-cave-close-speed-racer="1" style="border-color:rgba(244,63,94,0.55);background:rgba(244,63,94,0.14);color:#fda4af;font-weight:750" title="Close the Speed Racer dialogue">&#10005; Close Speed Racer</button>'
+            '</div>'
+            '</div>'
+        )
     threads = comms.get("email_threads") or []
     last_sync = str(comms.get("last_sync_at") or "").strip()
     poller_min = max(1, int(round(int(p_stat.get("interval_sec") or 300) / 60.0)))
@@ -852,8 +951,8 @@ def _comms_pulse_html(ctx):
             if ev.get("merged_badge")
             else ""
         )
-        rsvp_st = str(ev.get("rsvp_status") or "responded")
-        rsvp_lbl = esc(str(ev.get("rsvp_label") or ("✓ Responded · Attending" if rsvp_st == "responded" else "⏳ Not Responded")))
+        rsvp_st = str(ev.get("rsvp_status") or "not_responded")
+        rsvp_lbl = esc(str(ev.get("rsvp_label") or ("✓ Accepted · Going (Responded)" if rsvp_st == "responded" else "? Not Accepted · Not Going (Not Responded)")))
         rsvp_tone = esc(str(ev.get("rsvp_tone") or ("emerald" if rsvp_st == "responded" else "amber")))
         rsvp_pill = (
             '<button type="button" class="tw-btn comms-badge %s" data-cal-rsvp-toggle="%s" data-cal-rsvp-status="%s" data-cal-title="%s" data-cal-date="%s" '
@@ -900,197 +999,211 @@ def _comms_pulse_html(ctx):
         )
     cal_col_html = "".join(cal_rows) or '<div class="tw-empty">No upcoming calendar or dated delivery items in the next 14 days.</div>'
 
-    # Initial server-rendered Steward 2-Bucket Email Triage rows
+    # Initial server-rendered Steward Outlook-Style Compact Left-Pane Email Tiles
     imp_mail_rows = []
-    for em in imp_emails[:30]:
+    def _short_mail_dt(raw_dt):
+        s = str(raw_dt or "").strip()
+        if len(s) >= 10 and s[4:5] == "-" and s[7:8] == "-":
+            return s[5:10]
+        if "," in s:
+            rest = s.split(",", 1)[1].strip().split()
+            if len(rest) >= 2:
+                return "%s %s" % (rest[0], rest[1][:3])
+        return s[:6]
+
+    def _short_acct(raw_b):
+        s = str(raw_b or "Inbox").strip()
+        sl = s.lower()
+        if "psu" in sl:
+            return "PSU"
+        if "axmra" in sl:
+            return "Axmra"
+        if "gmail" in sl:
+            return "Gmail"
+        return s[:6]
+
+    for idx_em, em in enumerate(imp_emails[:30]):
         uid = esc(em.get("uid") or "")
         frm_raw = str(em.get("from") or "Inbox")
-        frm_clean = esc(frm_raw.split("<")[0].strip().strip('"') or frm_raw)
+        frm_clean = esc((frm_raw.split("<")[0].strip().strip('"') or frm_raw)[:22])
         s_email = esc(em.get("sender_email") or frm_raw)
         subj = esc(em.get("subject") or "(No Subject)")
         acct_b = esc(em.get("account_badge") or "Inbox")
-        score = int(em.get("steward_score") or 75)
-        att_badge = '<span class="comms-badge amber">&#128206; Attachment</span>' if em.get("has_attachments") else ""
-        t_cnt = int(em.get("thread_count") or 1)
-        cnt_badge = ('<span class="comms-badge sky">%d msgs</span>' % t_cnt) if t_cnt > 1 else ""
-        linked_ev = str(em.get("linked_calendar_event") or "").strip()
-        prep_badge = (
-            '<span class="comms-badge emerald" title="Steward linked this email to upcoming calendar event: %s">&#128197; Prep: %s</span>'
-            % (esc(linked_ev), esc(linked_ev[:38]))
-            if linked_ev
-            else ""
-        )
+        acct_short = esc(_short_acct(em.get("account_badge") or "Inbox"))
+        att_badge = '<span class="comms-badge amber" style="font-size:8px;padding:0 2px;flex-shrink:0" title="Has attachment">&#128206;</span>' if em.get("has_attachments") else ""
+        sel_cls = " is-selected" if idx_em == 0 else ""
+        dt_short = esc(_short_mail_dt(em.get("date") or ""))
         imp_mail_rows.append(
-            '<div class="comms-item amber cave-mail-card" data-mail-uid="%s" data-mail-sender="%s" data-mail-source="%s" data-mail-opened="%s" data-cave-mail-open="%s" style="cursor:pointer" title="Click to blow up Email Interaction &amp; Steward Reply Dialogue Tile">'
-            '<div class="comms-item-top">'
-            '<span class="comms-badge sky">%s</span>'
-            '<b class="cave-mail-from" data-cave-mail-open="%s" style="cursor:pointer;color:#f8fafc">%s</b>'
-            '<span class="comms-badge emerald" title="%s">&#9733; %d</span>'
-            '%s%s%s'
-            '<span class="comms-meta" style="text-align:right">%s</span>'
-            '<span class="comms-acts">'
-            '<button type="button" class="tw-btn" data-speed-racer-queue="1" data-mail-uid="%s" data-mail-sender="%s" data-mail-subject="%s" data-mail-source="%s" style="border-color:rgba(245,158,11,0.55);background:rgba(245,158,11,0.16);color:#fde68a;font-weight:700" title="Put this email into the Speed Racer Tile for rapid Steward reply &amp; approval">&#127950;&#65039; &rarr; Speed Racer</button>'
-            '<button type="button" class="tw-btn" data-cave-mail-open="%s" title="Open Email Dialogue Tile (Thread History + Steward Suggested Reply)">&#128172; Open &amp; Reply</button>'
-            '<button type="button" class="tw-btn" data-cave-mail-triage="seen" data-mail-uid="%s" data-mail-sender="%s" title="Tap Seen: if you have not opened this email, Steward learns it is Not Interesting and downgrades it">&#128065; Seen</button>'
-            '<button type="button" class="tw-btn" data-cave-mail-triage="downgrade" data-mail-uid="%s" data-mail-sender="%s" title="Downgrade to Not Important &amp; teach Steward">&#11015; Not Interested</button>'
-            '</span></div>'
-            '<div class="comms-item-title" data-cave-mail-open="%s" style="cursor:pointer">%s</div>'
-            '<div class="cave-mail-body" id="caveMailBody-%s" hidden style="margin-top:6px;padding-top:6px;border-top:1px dashed #283548">'
-            '<div class="comms-item-sub" style="white-space:pre-wrap;color:#cbd5e1">%s</div>'
-            '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">'
-            '<button type="button" class="tw-btn" data-comms-draft-reply="1" data-comms-draft-subject="%s" data-comms-draft-to="%s" data-comms-draft-project="%s" data-comms-draft-step="">&#9998; Draft Reply</button>'
-            '<button type="button" class="tw-btn" data-comms-download-att="%s" data-comms-att-subject="%s">&#11015; Save Attachment Locally</button>'
-            '<button type="button" class="tw-btn" data-cave-mail-triage="downgrade" data-mail-uid="%s" data-mail-sender="%s">&#11015; Downgrade / Not Interested</button>'
-            '</div></div></div>'
+            '<div class="comms-item amber cave-mail-card cave-mail-thin-row%s" data-mail-uid="%s" data-mail-sender="%s" data-mail-source="%s" data-mail-opened="%s" data-cave-mail-open="%s" title="%s — %s">'
+            '<div class="cave-mail-row-main">'
+            '<span class="comms-badge sky cave-mail-mini-badge">%s</span>'
+            '<b class="cave-mail-from" data-cave-mail-open="%s">%s</b>'
+            '<span class="cave-mail-sep">&middot;</span>'
+            '<span class="comms-item-title cave-mail-subj" data-cave-mail-open="%s">%s</span>'
+            '%s'
+            '</div>'
+            '<div class="comms-acts cave-mail-row-acts">'
+            '<span class="comms-meta cave-mail-date">%s</span>'
+            '<button type="button" class="tw-btn cave-mail-act-pill sr-pill" data-speed-racer-queue="1" data-mail-uid="%s" data-mail-sender="%s" data-mail-subject="%s" data-mail-source="%s" title="Jump into Speed Racer and remove from active Focused list">&#127950;&#65039;</button>'
+            '<button type="button" class="tw-btn done cave-mail-act-pill" data-cave-mail-triage="seen_important" data-mail-uid="%s" data-mail-sender="%s" title="Seen &amp; Important: remove from active Focused list, and teach Steward that emails like this are Important">&#11088;</button>'
+            '<button type="button" class="tw-btn cave-mail-act-pill" data-cave-mail-triage="seen" data-mail-uid="%s" data-mail-sender="%s" title="Mark Looked At / Ignore (marks Read in Outlook/Gmail and removes from Focused)">&#128065;</button>'
+            '<button type="button" class="tw-btn cave-mail-act-pill cal" data-cave-mail-triage="calendar_done" data-mail-uid="%s" data-mail-sender="%s" data-mail-subject="%s" title="Place confirmation/invitation info on Calendar and remove from Focused">&#128197;</button>'
+            '</div></div>'
             % (
+                sel_cls,
                 uid,
                 s_email,
                 acct_b,
                 "1" if em.get("was_opened") else "0",
                 uid,
-                acct_b,
+                frm_clean,
+                subj,
+                acct_short,
                 uid,
                 frm_clean,
-                esc(em.get("steward_reason") or "Steward Priority"),
-                score,
-                prep_badge,
+                uid,
+                subj,
                 att_badge,
-                cnt_badge,
-                esc(str(em.get("date") or "")[:16]),
+                dt_short,
                 uid,
                 s_email,
                 subj,
                 acct_b,
                 uid,
-                uid,
                 s_email,
                 uid,
                 s_email,
                 uid,
+                s_email,
                 subj,
-                uid,
-                esc(em.get("snippet") or "Click to read full message body from account inbox."),
-                subj,
-                s_email,
-                acct_b,
-                uid,
-                subj,
-                uid,
-                s_email,
             )
         )
     imp_mail_html = "".join(imp_mail_rows) or '<div class="tw-empty">No unaddressed high-priority inbox emails right now.</div>'
 
     oth_mail_rows = []
-    for em in oth_emails[:16]:
+    for em in oth_emails[:25]:
         uid = esc(em.get("uid") or "")
         frm_raw = str(em.get("from") or "Inbox")
-        frm_clean = esc(frm_raw.split("<")[0].strip().strip('"') or frm_raw)
+        frm_clean = esc((frm_raw.split("<")[0].strip().strip('"') or frm_raw)[:22])
         s_email = esc(em.get("sender_email") or frm_raw)
         subj = esc(em.get("subject") or "(No Subject)")
         acct_b = esc(em.get("account_badge") or "Inbox")
+        acct_short = esc(_short_acct(em.get("account_badge") or "Inbox"))
+        dt_short = esc(_short_mail_dt(em.get("date") or ""))
         oth_mail_rows.append(
-            '<div class="comms-item sky cave-mail-card" data-mail-uid="%s" data-mail-sender="%s" data-mail-source="%s" data-cave-mail-open="%s" style="opacity:0.86;cursor:pointer" title="Click to open Email Dialogue Tile">'
-            '<div class="comms-item-top">'
-            '<span class="comms-badge">%s</span>'
-            '<span class="comms-meta"><b>%s</b> &middot; %s</span>'
-            '<span class="comms-acts">'
-            '<button type="button" class="tw-btn" data-speed-racer-queue="1" data-mail-uid="%s" data-mail-sender="%s" data-mail-subject="%s" data-mail-source="%s" style="border-color:rgba(245,158,11,0.45);color:#fde68a" title="Put this email into the Speed Racer Tile">&#127950;&#65039; &rarr; Speed Racer</button>'
-            '<button type="button" class="tw-btn" data-cave-mail-open="%s">&#128172; Open</button>'
-            '<button type="button" class="tw-btn done" data-cave-mail-triage="upgrade" data-mail-uid="%s" data-mail-sender="%s" title="Upgrade to Emails to Address &amp; teach Steward this sender is important">&#11014; Upgrade</button>'
-            '</span></div>'
-            '<div class="comms-item-sub">%s</div></div>'
+            '<div class="comms-item sky cave-mail-card cave-mail-thin-row" data-mail-uid="%s" data-mail-sender="%s" data-mail-source="%s" data-cave-mail-open="%s" style="opacity:0.88" title="%s — %s">'
+            '<div class="cave-mail-row-main">'
+            '<span class="comms-badge cave-mail-mini-badge">%s</span>'
+            '<b class="cave-mail-from" data-cave-mail-open="%s">%s</b>'
+            '<span class="cave-mail-sep">&middot;</span>'
+            '<span class="comms-item-title cave-mail-subj" data-cave-mail-open="%s">%s</span>'
+            '</div>'
+            '<div class="comms-acts cave-mail-row-acts">'
+            '<span class="comms-meta cave-mail-date">%s</span>'
+            '<button type="button" class="tw-btn cave-mail-act-pill sr-pill" data-speed-racer-queue="1" data-mail-uid="%s" data-mail-sender="%s" data-mail-subject="%s" data-mail-source="%s" title="Put this email into Speed Racer">&#127950;&#65039;</button>'
+            '<button type="button" class="tw-btn done cave-mail-act-pill" data-cave-mail-triage="seen_important" data-mail-uid="%s" data-mail-sender="%s" title="Seen &amp; Important: remove from active Inbox, and teach Steward that emails like this are Important">&#11088;</button>'
+            '<button type="button" class="tw-btn cave-mail-act-pill" data-cave-mail-triage="seen" data-mail-uid="%s" data-mail-sender="%s" title="Mark Looked At / Seen">&#128065;</button>'
+            '<button type="button" class="tw-btn done cave-mail-act-pill" data-cave-mail-triage="upgrade" data-mail-uid="%s" data-mail-sender="%s" title="Upgrade to Focused &amp; teach Steward">&#11014;</button>'
+            '</div></div>'
             % (
                 uid,
                 s_email,
                 acct_b,
                 uid,
-                acct_b,
                 frm_clean,
-                esc(em.get("steward_reason") or "Low Priority"),
+                subj,
+                acct_short,
+                uid,
+                frm_clean,
+                uid,
+                subj,
+                dt_short,
                 uid,
                 s_email,
                 subj,
                 acct_b,
                 uid,
+                s_email,
                 uid,
                 s_email,
-                subj,
+                uid,
+                s_email,
             )
         )
     oth_mail_html = "".join(oth_mail_rows) or '<div class="tw-empty">No downgraded or promotional items in this bucket.</div>'
 
     sent_mail_rows = []
-    for em in sent_emails[:25]:
+    for em in sent_emails[:30]:
         uid = esc(em.get("uid") or "")
         to_raw = str(em.get("to") or em.get("counterparty") or "Recipient")
-        to_clean = esc(to_raw.split("<")[0].strip().strip('"') or to_raw)
+        to_clean = esc((to_raw.split("<")[0].strip().strip('"') or to_raw)[:20])
         to_email = esc(em.get("to") or em.get("sender_email") or to_raw)
         subj = esc(em.get("subject") or "(No Subject)")
         acct_b = esc(em.get("account_badge") or "Sent")
-        att_badge = '<span class="comms-badge amber">&#128206; Attachment</span>' if em.get("has_attachments") else ""
-        dt_short = esc(str(em.get("date") or "")[:16])
-        snip = esc(em.get("snippet") or em.get("body") or "Click to view full sent email and thread history.")
+        acct_short = esc(_short_acct(em.get("account_badge") or "Sent"))
+        att_badge = '<span class="comms-badge amber" style="font-size:8px;padding:0 2px;flex-shrink:0">&#128206;</span>' if em.get("has_attachments") else ""
+        dt_short = esc(_short_mail_dt(em.get("date") or ""))
         sent_mail_rows.append(
-            '<div class="comms-item emerald cave-mail-card cave-sent-card" data-mail-uid="%s" data-mail-sender="%s" data-mail-source="%s" data-mail-direction="sent" data-cave-mail-open="%s" style="cursor:pointer;border-left:3px solid #10b981" title="Click to open Sent Email &amp; Thread History">'
-            '<div class="comms-item-top">'
-            '<span class="comms-badge emerald">&#128228; %s</span>'
-            '<b class="cave-mail-from" data-cave-mail-open="%s" style="cursor:pointer;color:#6ee7b7">To: %s</b>'
+            '<div class="comms-item emerald cave-mail-card cave-sent-card cave-mail-thin-row" data-mail-uid="%s" data-mail-sender="%s" data-mail-source="%s" data-mail-direction="sent" data-cave-mail-open="%s" style="border-left:3px solid #10b981" title="To: %s — %s">'
+            '<div class="cave-mail-row-main">'
+            '<span class="comms-badge emerald cave-mail-mini-badge">&#128228; %s</span>'
+            '<b class="cave-mail-from" data-cave-mail-open="%s" style="color:#6ee7b7">To: %s</b>'
+            '<span class="cave-mail-sep">&middot;</span>'
+            '<span class="comms-item-title cave-mail-subj" data-cave-mail-open="%s">%s</span>'
             '%s'
-            '<span class="comms-meta" style="text-align:right">%s</span>'
-            '<span class="comms-acts">'
-            '<button type="button" class="tw-btn" data-cave-mail-open="%s" title="Open Sent Email &amp; Thread History">&#128172; View / Follow Up</button>'
-            '<button type="button" class="tw-btn" data-comms-draft-reply="1" data-comms-draft-subject="%s" data-comms-draft-to="%s" data-comms-draft-project="%s" data-comms-draft-step="">&#9998; Follow-Up Draft</button>'
-            '</span></div>'
-            '<div class="comms-item-title" data-cave-mail-open="%s" style="cursor:pointer">%s</div>'
-            '<div class="comms-item-sub" style="color:#cbd5e1">%s</div></div>'
+            '</div>'
+            '<div class="comms-acts cave-mail-row-acts">'
+            '<span class="comms-meta cave-mail-date">%s</span>'
+            '<button type="button" class="tw-btn cave-mail-act-pill" data-comms-draft-reply="1" data-comms-draft-subject="%s" data-comms-draft-to="%s" data-comms-draft-project="%s" data-comms-draft-step="" title="Follow-Up Draft">&#9998;</button>'
+            '</div></div>'
             % (
                 uid,
                 to_email,
                 acct_b,
                 uid,
-                acct_b,
+                to_clean,
+                subj,
+                acct_short,
                 uid,
                 to_clean,
+                uid,
+                subj,
                 att_badge,
                 dt_short,
-                uid,
                 subj,
                 to_email,
                 acct_b,
-                uid,
-                subj,
-                snip,
             )
         )
     sent_mail_html = "".join(sent_mail_rows) or '<div class="tw-empty">No recent sent emails recorded yet &mdash; click <b>&#8635; Sync Now</b> or send a reply from any email thread.</div>'
 
     acted_mail_rows = []
-    for em in acted_emails[:30]:
+    for em in acted_emails[:35]:
         uid = esc(em.get("uid") or "")
         frm_raw = str(em.get("from") or "Inbox")
-        frm_clean = esc(frm_raw.split("<")[0].strip().strip('"') or frm_raw)
+        frm_clean = esc((frm_raw.split("<")[0].strip().strip('"') or frm_raw)[:20])
         s_email = esc(em.get("sender_email") or frm_raw)
         subj = esc(em.get("subject") or "(No Subject)")
         acct_b = esc(em.get("account_badge") or "Inbox")
-        act_st = esc(em.get("acted_status") or "✓ Acted Upon")
+        acct_short = esc(_short_acct(em.get("account_badge") or "Inbox"))
+        act_st = esc(em.get("acted_status") or "✓ Acted")
         act_tone = esc(em.get("acted_tone") or "emerald")
         act_rsn = esc(em.get("acted_reason") or "Handled")
-        dt_short = esc(str(em.get("date") or "")[:16])
+        dt_short = esc(_short_mail_dt(em.get("date") or ""))
         acted_mail_rows.append(
-            '<div class="comms-item %s cave-mail-card cave-acted-card" data-mail-uid="%s" data-mail-sender="%s" data-mail-source="%s" data-cave-mail-open="%s" style="cursor:pointer;opacity:0.92;border-left:3px solid #38bdf8" title="Click to open Email Dialogue Tile">'
-            '<div class="comms-item-top">'
-            '<span class="comms-badge %s" style="font-weight:750">%s</span>'
-            '<span class="comms-badge sky">%s</span>'
-            '<b class="cave-mail-from" data-cave-mail-open="%s" style="cursor:pointer;color:#f8fafc">%s</b>'
-            '<span class="comms-meta" style="text-align:right">%s</span>'
-            '<span class="comms-acts">'
-            '<button type="button" class="tw-btn" data-cave-mail-open="%s" title="Open Email Dialogue Tile">&#128172; Open</button>'
-            '<button type="button" class="tw-btn" data-cave-mail-triage="unact" data-mail-uid="%s" data-mail-sender="%s" title="Move back to Active Inbox">&#8617; Back to Active Inbox</button>'
-            '</span></div>'
-            '<div class="comms-item-title" data-cave-mail-open="%s" style="cursor:pointer">%s</div>'
-            '<div class="comms-item-sub" style="color:#94a3b8;font-size:11px">%s</div></div>'
-            % (act_tone, uid, s_email, acct_b, uid, act_tone, act_st, acct_b, uid, frm_clean, dt_short, uid, uid, s_email, uid, subj, act_rsn)
+            '<div class="comms-item %s cave-mail-card cave-acted-card cave-mail-thin-row" data-mail-uid="%s" data-mail-sender="%s" data-mail-source="%s" data-cave-mail-open="%s" style="opacity:0.92;border-left:3px solid #38bdf8" title="%s — %s">'
+            '<div class="cave-mail-row-main">'
+            '<span class="comms-badge %s cave-mail-mini-badge" style="font-weight:750">%s</span>'
+            '<span class="comms-badge sky cave-mail-mini-badge">%s</span>'
+            '<b class="cave-mail-from" data-cave-mail-open="%s">%s</b>'
+            '<span class="cave-mail-sep">&middot;</span>'
+            '<span class="comms-item-title cave-mail-subj" data-cave-mail-open="%s">%s</span>'
+            '</div>'
+            '<div class="comms-acts cave-mail-row-acts">'
+            '<span class="comms-meta cave-mail-date">%s</span>'
+            '<button type="button" class="tw-btn cave-mail-act-pill" data-cave-mail-triage="unact" data-mail-uid="%s" data-mail-sender="%s" title="Move back to Active Inbox">&#8617;</button>'
+            '</div></div>'
+            % (act_tone, uid, s_email, acct_b, uid, act_rsn, subj, act_tone, act_st, acct_short, uid, frm_clean, uid, subj, dt_short, uid, s_email)
         )
     acted_mail_html = "".join(acted_mail_rows) or '<div class="tw-empty">No acted-upon emails yet. Emails you reply to, mark Seen, or send to Speed Racer appear here.</div>'
 
@@ -1297,8 +1410,8 @@ def _comms_pulse_html(ctx):
         '<span class="cal-sfull-chip" data-comms-layout="cal">&#10530; Full Calendar</span>'
         '</div>'
         '<div class="cal-sline" id="tabMail" data-cal-tab="mail" data-comms-layout="mail" title="Click to open Email Triage &amp; Speed Racer Full Width (or use Split 50/50 on the right)">'
-        '<span class="cal-stag amber">&#9993; Inbox, Speed Racer &amp; Sent</span>'
-        '<span class="comms-pill amber" data-cave-open-speed-racer="1" style="padding:1px 7px;font-size:10px;cursor:pointer;border-color:#f59e0b;background:rgba(245,158,11,0.22);color:#fef08a" title="Click to open Speed Racer Rapid Email Review &amp; Approval Tile">&#127950;&#65039; Speed Racer (<span id="caveHdrSrCount">%d</span>)</span>'
+        '<span class="cal-stag amber">&#9993; Email &amp; Inbox</span>'
+        '<span class="comms-pill amber" data-cave-open-speed-racer="1" style="padding:1px 8px;font-size:10px;cursor:pointer;border:1px solid #f59e0b;background:#291d0a;color:#fef08a;font-weight:800;flex-shrink:0" title="Click to open Speed Racer Rapid Email Review &amp; Approval Tile">&#127950;&#65039; Speed Racer (<span id="caveHdrSrCount">%d</span>)</span>'
         '<span class="comms-pill amber" style="padding:1px 7px;font-size:10px">&#9889; %d to Address</span>'
         '<span class="comms-pill emerald" data-cave-open-sent="1" style="padding:1px 7px;font-size:10px;cursor:pointer" title="Click to view Sent Emails">&#128228; %d Sent</span>'
         '<span class="comms-pill" style="padding:1px 7px;font-size:10px">&#128229; %d Not Important</span>'
@@ -1415,75 +1528,8 @@ def _comms_pulse_html(ctx):
         '<a class="mini" id="btnCommsDraftMailto" href="#" target="_blank" rel="noopener" hidden>&#9993; Open in Mail App (mailto:)</a>'
         '<span id="commsDraftStatus" style="font-size:12px;color:#8b949e"></span>'
         '</div></div>'
-        '<!-- Interactive Blow-Up Dialogue Tile for Email Thread + Steward Reply OR Calendar Event + Multi-Cal Sync -->'
+        '<!-- Interactive Dialogue Tile for Calendar Event + Multi-Cal Sync -->'
         '<div id="caveCommsDialogueTile" hidden style="margin:10px 0 12px;padding:14px 16px;border:2px solid #38bdf8;border-radius:12px;background:linear-gradient(180deg,#0f172a 0%%,#0b1120 100%%);box-shadow:0 12px 32px rgba(0,0,0,0.55)">'
-        '  <!-- EMAIL DIALOGUE PANE -->'
-        '  <div id="caveEmailDialoguePane" hidden>'
-        '    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap;padding-bottom:10px;border-bottom:1px solid #283548">'
-        '      <div>'
-        '        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
-        '          <span class="comms-badge sky" id="caveDlgMailBadge">PSU 365</span>'
-        '          <b id="caveDlgMailSubject" style="font-size:14.5px;color:#f8fafc">Email Subject</b>'
-        '        </div>'
-        '        <div id="caveDlgMailMeta" style="font-size:11.5px;color:#94a3b8;margin-top:3px">From: &mdash;</div>'
-        '      </div>'
-        '      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
-        '        <button type="button" class="mini" id="btnCaveDlgSeen" style="border-color:#38bdf8;background:rgba(56,189,248,0.18);color:#7dd3fc;font-weight:800" title="Mark as Seen (no response needed right now) and move out of Active Inbox into Acted Upon">&#128065; Seen (&rarr; Acted Upon)</button>'
-        '        <button type="button" class="mini" id="btnCaveDlgToSpeedRacer" style="border-color:#f59e0b;background:rgba(245,158,11,0.22);color:#fef08a;font-weight:800" title="Have the Steward craft a response in Speed Racer and move this email out of Active Inbox into Acted Upon">&#127950;&#65039; Speed Racer (Craft Response)</button>'
-        '        <button type="button" class="mini" id="btnCaveDlgAlreadyReplied" style="border-color:#10b981;background:rgba(16,185,129,0.16);color:#6ee7b7;font-weight:750" title="Tell Steward you already answered this email — removes any draft and moves to Acted Upon">&#10003; Already Replied</button>'
-        '        <button type="button" class="mini" id="btnCaveDlgDownloadAtt" hidden style="border-color:#38bdf8;color:#7dd3fc">&#11015; Save Attachments</button>'
-        '        <button type="button" class="mini" id="btnCaveDlgDowngrade" title="Downgrade to Not Important &amp; teach Steward">&#11015; Not Interested</button>'
-        '        <button type="button" class="mini" id="btnCaveDlgUpgrade" title="Promote to Emails to Address">&#11014; Upgrade</button>'
-        '        <button type="button" class="mini" data-cave-dlg-close="1" style="border-color:#f43f5e;color:#fda4af;font-weight:700">&times; Close</button>'
-        '      </div>'
-        '    </div>'
-        '    <!-- Steward Directions Bar for Open Email (Giving instructions moves email from Active Inbox -> Acted Upon & queues in Speed Racer) -->'
-        '    <div id="caveDlgStewardDirectionsBar" style="margin-top:10px;padding:8px 11px;border-radius:8px;border:1px solid rgba(245,158,11,0.45);background:rgba(245,158,11,0.09);display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
-        '      <span style="font-size:11px;font-weight:800;color:#fef08a">&#127950;&#65039; Give Steward Directions for This Email:</span>'
-        '      <input type="text" id="caveDlgStewardDirectionsInput" placeholder="e.g. Confirm Wednesday 3-5 PM proctoring and ask Hollie to assign 2 TAs (then move out of Active Inbox)..." style="flex:1;min-width:240px;padding:5px 9px;border-radius:6px;border:1px solid #334155;background:#070b12;color:#f8fafc;font-size:11.5px">'
-        '      <button type="button" class="tw-btn" id="btnCaveDlgSendDirectionsToSr" style="border-color:#f59e0b;background:rgba(245,158,11,0.24);color:#fef08a;font-weight:800;padding:4px 10px" title="Steward crafts response per your directions in Speed Racer and moves this email to Acted Upon">&#127950;&#65039; Send Directions &rarr; Speed Racer (&amp; Move to Acted Upon)</button>'
-        '    </div>'
-        '    <!-- Clickable Attachments Bar + Inline Attachment Viewer inside Expanded Email Tile -->'
-        '    <div id="caveDlgAttachmentsBar" hidden style="margin-top:8px;padding:7px 10px;border-radius:8px;border:1px solid rgba(56,189,248,0.4);background:rgba(15,23,42,0.9);display:flex;align-items:center;gap:6px;flex-wrap:wrap"></div>'
-        '    <div id="caveDlgAttachmentPreviewHost" hidden style="margin-top:8px;padding:10px;border-radius:8px;border:1px solid #38bdf8;background:#070b12"></div>'
-        '    <div style="display:grid;grid-template-columns:1.05fr 1fr;gap:14px;margin-top:12px" class="cave-dlg-split">'
-        '      <!-- Left: Conversation & Past Messages History -->'
-        '      <div style="background:#090d16;border:1px solid #283548;border-radius:10px;padding:10px 12px;max-height:420px;overflow-y:auto">'
-        '        <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:#7dd3fc;margin-bottom:8px">&#128172; Interaction &amp; Past Messages / Responses</div>'
-        '        <div id="caveDialogueThreadList" style="display:flex;flex-direction:column;gap:8px"></div>'
-        '      </div>'
-        '      <!-- Right: Steward Suggested Draft Generator + Editable Reply & Send -->'
-        '      <div style="background:#111827;border:1px solid #283548;border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:8px">'
-        '        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">'
-        '          <span style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:#6ee7b7">&#10024; Steward Suggested Response &amp; Direct Reply</span>'
-        '          <span id="caveDlgStewardNote" style="font-size:10.5px;color:#a78bfa">Ready to draft or edit</span>'
-        '        </div>'
-        '        <div style="display:flex;flex-wrap:wrap;gap:5px">'
-        '          <button type="button" class="tw-btn done" data-steward-draft-intent="default">&#10024; Steward Draft</button>'
-        '          <button type="button" class="tw-btn" data-steward-draft-intent="confirm">&#10003; Confirm / Approve</button>'
-        '          <button type="button" class="tw-btn" data-steward-draft-intent="meeting">&#128197; Propose Free Calendar Times</button>'
-        '          <button type="button" class="tw-btn" data-steward-draft-intent="details">&#128203; Ask for Details / Docs</button>'
-        '        </div>'
-        '        <div style="display:flex;gap:6px">'
-        '          <input type="text" id="caveStewardCustomPrompt" placeholder="Or tell Steward what to say (e.g. Excuse absence and wish the team luck)..." style="flex:1;padding:5px 8px;border-radius:6px;border:1px solid #283548;background:#0b0f17;color:#f1f5f9;font-size:11.5px">'
-        '          <button type="button" class="mini" id="btnCaveStewardCustomDraft" style="border-color:#a78bfa;color:#c4b5fd;font-weight:700">&#10024; Draft</button>'
-        '        </div>'
-        '        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">'
-        '          <div><label style="font-size:10px;color:#94a3b8;display:block">To</label><input type="text" id="caveReplyTo" style="width:100%%;box-sizing:border-box;padding:5px 7px;border-radius:6px;border:1px solid #283548;background:#0b0f17;color:#f1f5f9;font-size:11.5px"></div>'
-        '          <div><label style="font-size:10px;color:#94a3b8;display:block">Cc (optional)</label><input type="text" id="caveReplyCc" placeholder="cc@example.org" style="width:100%%;box-sizing:border-box;padding:5px 7px;border-radius:6px;border:1px solid #283548;background:#0b0f17;color:#f1f5f9;font-size:11.5px"></div>'
-        '        </div>'
-        '        <div><label style="font-size:10px;color:#94a3b8;display:block">Subject</label><input type="text" id="caveReplySubject" style="width:100%%;box-sizing:border-box;padding:5px 7px;border-radius:6px;border:1px solid #283548;background:#0b0f17;color:#f1f5f9;font-size:11.5px"></div>'
-        '        <textarea id="caveReplyBody" rows="7" placeholder="Steward suggested response appears here — edit freely before sending..." style="width:100%%;box-sizing:border-box;padding:8px;border-radius:7px;border:1px solid #3b4f6b;background:#0b0f17;color:#f8fafc;font-size:12px;line-height:1.45"></textarea>'
-        '        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">'
-        '          <div style="display:flex;gap:6px;flex-wrap:wrap">'
-        '            <button type="button" class="mini comms-sync-btn" id="btnCaveSendReplyNow" style="border-color:#10b981;background:rgba(16,185,129,0.18);color:#6ee7b7;font-weight:800">&#128228; Send Reply Now</button>'
-        '            <button type="button" class="mini" id="btnCaveSaveReplyDraft">&#128190; Save Draft (.eml)</button>'
-        '          </div>'
-        '          <span id="caveReplyStatusMsg" style="font-size:11.5px;color:#94a3b8"></span>'
-        '        </div>'
-        '      </div>'
-        '    </div>'
-        '  </div>'
         '  <!-- CALENDAR EVENT DIALOGUE PANE (Inspect / Edit / Add Event & Sync Back to Selected Calendars) -->'
         '  <div id="caveCalDialoguePane" hidden>'
         '    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding-bottom:10px;border-bottom:1px solid #283548">'
@@ -1504,10 +1550,10 @@ def _comms_pulse_html(ctx):
         '        <div><label style="font-size:10.5px;color:#94a3b8;display:block;margin-bottom:2px">Location / Zoom Link</label><input type="text" id="caveCalEvLocation" placeholder="Zoom / 217 Business Building" style="width:100%%;box-sizing:border-box;padding:5px 8px;border-radius:6px;border:1px solid #283548;background:#0b0f17;color:#f1f5f9"></div>'
         '        <div><label style="font-size:10.5px;color:#94a3b8;display:block;margin-bottom:2px">Agenda / Notes</label><textarea id="caveCalEvNotes" rows="3" placeholder="Meeting agenda, attendees, or context..." style="width:100%%;box-sizing:border-box;padding:6px 8px;border-radius:6px;border:1px solid #283548;background:#0b0f17;color:#f1f5f9"></textarea></div>'
         '        <div id="caveCalEvRsvpBar" style="padding:8px 10px;border-radius:8px;background:#090d16;border:1px solid #283548;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">'
-        '          <span style="font-size:10.5px;font-weight:700;color:#cbd5e1">&#9989; Your Response / Attendance Status:</span>'
+        '          <span style="font-size:10.5px;font-weight:700;color:#cbd5e1">&#9989; Calendar Acceptance Rule (Only Accepted = Going):</span>'
         '          <div style="display:inline-flex;gap:5px;flex-wrap:wrap">'
-        '            <button type="button" class="tw-btn done" data-cave-cal-rsvp-set="responded" style="font-weight:750">&#10003; Responded &middot; Attending</button>'
-        '            <button type="button" class="tw-btn" data-cave-cal-rsvp-set="not_responded" style="border-color:rgba(245,158,11,0.55);color:#fde68a;font-weight:700">&#9203; Not Responded</button>'
+        '            <button type="button" class="tw-btn done" data-cave-cal-rsvp-set="responded" style="font-weight:750">&#10003; Accepted &middot; Going</button>'
+        '            <button type="button" class="tw-btn" data-cave-cal-rsvp-set="not_responded" style="border-color:rgba(245,158,11,0.55);color:#fde68a;font-weight:700">? Not Accepted (Not Going)</button>'
         '            <button type="button" class="tw-btn" data-cave-cal-rsvp-set="tentative">? Tentative</button>'
         '            <button type="button" class="tw-btn" data-cave-cal-rsvp-set="declined" style="border-color:rgba(244,63,94,0.45);color:#fda4af">&#10005; Declined</button>'
         '          </div>'
@@ -1551,49 +1597,60 @@ def _comms_pulse_html(ctx):
         '<button type="button" class="tw-btn" data-cave-cal-nav="1">Next &#9654;</button>'
         '<span style="margin-left:4px;display:inline-flex;gap:4px;align-items:center" id="caveCalRsvpFilterBar">'
         '<button type="button" class="tw-btn on" data-cal-rsvp-filter="all" title="Show all calendar items">All (<span id="caveCalRsvpAllCnt">0</span>)</button>'
-        '<button type="button" class="tw-btn" data-cal-rsvp-filter="responded" style="border-color:rgba(16,185,129,0.55);color:#6ee7b7;font-weight:700" title="Show items you have responded to / are attending">&#10003; Responded (<span id="caveCalRsvpYesCnt">0</span>)</button>'
-        '<button type="button" class="tw-btn" data-cal-rsvp-filter="not_responded" style="border-color:rgba(245,158,11,0.55);color:#fde68a;font-weight:700" title="Show invitations you have NOT responded to yet">&#9203; Not Responded (<span id="caveCalRsvpNoCnt">0</span>)</button>'
+        '<button type="button" class="tw-btn" data-cal-rsvp-filter="responded" style="border-color:rgba(16,185,129,0.55);color:#6ee7b7;font-weight:700" title="Show only Accepted items you are Going to">&#10003; Accepted &middot; Going (<span id="caveCalRsvpYesCnt">0</span>)</button>'
+        '<button type="button" class="tw-btn" data-cal-rsvp-filter="not_responded" style="border-color:rgba(245,158,11,0.55);color:#fde68a;font-weight:700" title="Show calendar items you have NOT accepted (not going)">? Not Accepted (<span id="caveCalRsvpNoCnt">0</span>)</button>'
         '</span>'
         '</div>'
         '<span id="caveCalDateLabel" style="font-weight:700;color:var(--text-warm)">7-Day Week Schedule</span>'
         '</div>'
-        '<div id="caveCalViewport" class="cave-cal-viewport">%s</div>'
+        '<div style="display:flex;align-items:stretch;gap:4px">'
+        '<div id="caveCalViewport" class="cave-cal-viewport" style="flex:1;min-width:0">%s</div>'
+        '<div class="cave-oval-scrollbar" data-oval-scroll-for="caveCalViewport" title="Slide oval up and down to scroll calendar">'
+        '  <div class="cave-oval-thumb"></div>'
+        '</div>'
+        '</div>'
         '</div>'
         '<div class="comms-col" id="commsMailCol">'
         '<script>window.ANCHOR_SPEED_RACER_INIT = %s;</script>'
         '<div class="comms-col-h" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">'
         '<div style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap">'
-        '<span>&#9993; Steward Email Hub: Speed Racer, Inbox &amp; Sent</span>'
+        '<span>&#9993; Outlook-Style Email Reader</span>'
         '<div class="cave-mail-folder-bar" id="caveMailFolderBar" style="display:inline-flex;gap:4px;margin-left:2px;flex-wrap:wrap">'
+        '<button type="button" class="tw-btn on" data-cave-mail-folder="inbox" style="border-color:rgba(245,158,11,0.65);font-weight:800" title="Show ONLY active Focused high-priority emails that need your attention">&#9889; Focused (<span id="caveActiveInboxCountBadge">%d</span>)</button>'
+        '<button type="button" class="tw-btn" data-cave-mail-folder="other" title="Show non-important / other emails">&#128229; Other</button>'
+        '<button type="button" class="tw-btn" id="btnCaveShowAllEmails" data-cave-mail-folder="all" title="Show ALL emails (Focused + Answered + Speed Racer + Auto-Calendared + Looked At) so you can check if you missed anything">&#128218; Show All Emails</button>'
+        '<button type="button" class="tw-btn" id="btnCaveMailFolderActed" data-cave-mail-folder="acted" style="border-color:rgba(56,189,248,0.55);background:rgba(56,189,248,0.12);color:#7dd3fc;font-weight:750" title="View emails already answered, moved to Speed Racer, auto-calendared, or marked Looked At">&#9745; Acted Upon (<span id="caveActedCountBadge">%d</span>)</button>'
+        '<button type="button" class="tw-btn" id="btnCaveMailFolderSent" data-cave-mail-folder="sent" style="border-color:rgba(16,185,129,0.55);color:#6ee7b7;font-weight:700" title="View emails you have sent across your connected accounts &amp; Anchor">&#128228; Sent (<span id="caveSentCountBadge">%d</span>)</button>'
         '<button type="button" class="tw-btn" id="btnCaveOpenSpeedRacer" data-cave-open-speed-racer="1" style="border-color:rgba(245,158,11,0.65);background:rgba(245,158,11,0.18);color:#fef08a;font-weight:800" title="Toggle the expandable Speed Racer Rapid Email Review &amp; Approval Tile">&#127950;&#65039; Speed Racer (<span id="caveSrBtnCount">%d</span>)</button>'
-        '<button type="button" class="tw-btn" id="btnCaveMailFolderSrArchive" data-sr-archive-toggle="1" style="border-color:rgba(16,185,129,0.55);background:rgba(16,185,129,0.14);color:#6ee7b7;font-weight:750" title="Pull up the Speed Racer Archive of emails you have approved &amp; sent">&#128220; Speed Racer Archive (<span id="caveMailBarSrArchCount">0</span>)</button>'
-        '<button type="button" class="tw-btn on" data-cave-mail-folder="all" title="Show Active Inbox + Acted Upon + Sent Emails">&#128203; All Mail</button>'
-        '<button type="button" class="tw-btn" data-cave-mail-folder="inbox" title="Show Active Inbox only (Emails you have not yet replied to, marked Seen, or queued in Speed Racer)">&#128229; Active Inbox (<span id="caveActiveInboxCountBadge">%d</span>)</button>'
-        '<button type="button" class="tw-btn" id="btnCaveMailFolderActed" data-cave-mail-folder="acted" style="border-color:rgba(56,189,248,0.55);background:rgba(56,189,248,0.12);color:#7dd3fc;font-weight:750" title="View emails you have already replied to (auto-detected from Sent Items), marked Seen, or given Steward instructions for Speed Racer">&#9745; Acted Upon (<span id="caveActedCountBadge">%d</span>)</button>'
-        '<button type="button" class="tw-btn" id="btnCaveMailFolderSent" data-cave-mail-folder="sent" style="border-color:rgba(16,185,129,0.55);color:#6ee7b7;font-weight:700" title="View emails you have sent across your connected accounts &amp; Anchor">&#128228; Sent List (<span id="caveSentCountBadge">%d</span>)</button>'
+        '<button type="button" class="tw-btn" id="btnCaveMailFolderSrArchive" data-sr-archive-toggle="1" style="border-color:rgba(16,185,129,0.55);background:rgba(16,185,129,0.14);color:#6ee7b7;font-weight:750" title="Pull up the Speed Racer Archive of emails you have approved &amp; sent">&#128220; Archive (<span id="caveMailBarSrArchCount">0</span>)</button>'
         '</div></div>'
         '<div style="display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap">'
-        '<span class="comms-badge amber" id="caveImpCountBadge">&#9889; %d to Address</span>'
-        '<span class="comms-badge" id="caveOthCountBadge">&#128229; %d Not Important</span>'
+        '<span class="comms-badge amber" id="caveImpCountBadge">&#9889; %d Focused</span>'
+        '<span class="comms-badge" id="caveOthCountBadge">&#128229; %d Other</span>'
         '<button type="button" class="tw-btn" id="btnCaveCommsDraftNew" data-comms-draft-reply="1" data-comms-draft-subject="Update on next steps" data-comms-draft-to="" data-comms-draft-project="" data-comms-draft-step="" title="Compose a new email draft">&#9998; Compose</button>'
         '<button type="button" class="tw-btn" data-comms-layout-toggle="mail" title="Click to toggle Email between 100%% Full Width (Mockup 3) and 50/50 Split">&#10530; Full Email</button>'
+        '<button type="button" class="tw-btn" id="btnCaveMailBarCloseDlg"%s data-cave-close-email-dlg="1" style="border-color:rgba(244,63,94,0.55);background:rgba(244,63,94,0.14);color:#fda4af;font-weight:750" title="Close the Email Reading &amp; Response Dialogue (uncovers the Steward dialogue)">&#10005; Close Email Dialogue</button>'
         '</div></div>'
-        '<!-- EXPANDABLE SPEED RACER TILE INSIDE EMAIL HUB -->'
-        '<div class="cave-sr-tile open" id="caveSpeedRacerTile" style="margin:6px 0 10px;border:1px solid rgba(245,158,11,0.55);border-radius:9px;background:linear-gradient(180deg,rgba(245,158,11,0.09) 0%%,rgba(15,23,42,0.96) 100%%);overflow:hidden">'
-        '  <div class="cave-sr-head" id="caveSpeedRacerHead" style="padding:8px 12px;background:rgba(15,23,42,0.92);display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;cursor:pointer;user-select:none">'
-        '    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
-        '      <b style="font-size:12.5px;color:#fef08a">&#127950;&#65039; Speed Racer Tile &mdash; Rapid Email Review &amp; Approval Queue</b>'
-        '      <span class="comms-badge amber" id="caveSrTileBadge" style="font-weight:700">%d Drafts Awaiting Approval</span>'
-        '      <span style="font-size:10.5px;color:#6ee7b7;font-weight:600">&#128274; Steward NEVER sends without your explicit approval</span>'
+        '<!-- EXPANDABLE SPEED RACER TILE INSIDE EMAIL HUB (Non-Overlapping Header Badges) -->'
+        '<div class="cave-sr-tile%s" id="caveSpeedRacerTile" style="margin:6px 0 10px;border:1px solid rgba(245,158,11,0.55);border-radius:9px;background:linear-gradient(180deg,rgba(245,158,11,0.09) 0%%,rgba(15,23,42,0.96) 100%%);overflow:hidden">'
+        '  <div class="cave-sr-head" id="caveSpeedRacerHead" style="padding:8px 12px;background:rgba(15,23,42,0.92);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;cursor:pointer;user-select:none">'
+        '    <div style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0">'
+        '      <b style="font-size:12.5px;color:#fef08a;white-space:nowrap">&#127950;&#65039; Speed Racer</b>'
+        '      <span class="comms-badge amber" id="caveSrTileBadge" style="font-weight:750;position:static;display:inline-flex">%d Drafts Awaiting Approval</span>'
+        '      <span class="comms-badge sky" id="caveScribeDigestBadge" style="font-weight:750;position:static;display:inline-flex" title="Scribe periodically reviews all inbox &amp; sent emails so it knows the full context across threads">&#129718; Periodic Email Review: %d emails &middot; %d facts indexed</span>'
+        '      <span style="font-size:10.5px;color:#6ee7b7;font-weight:600">&#128274; Approval Gate Active</span>'
         '    </div>'
-        '    <div style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap">'
-        '      <button type="button" class="tw-btn" id="btnCaveSrArchiveToggle" data-sr-archive-toggle="1" style="border-color:rgba(16,185,129,0.55);color:#6ee7b7;font-weight:700" title="View all emails approved &amp; sent through Speed Racer">&#128220; Speed Racer Archive (<span id="caveSrArchiveCount">0</span>)</button>'
-        '      <span id="caveSrToggleHint" style="font-size:11px;color:#fde68a;font-weight:700">Click Header to Expand / Collapse &#9662;</span>'
+        '    <div style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;flex-shrink:0">'
+        '      <button type="button" class="tw-btn" id="btnCaveScribePeriodicReview" data-scribe-periodic-review="1" style="border-color:rgba(56,189,248,0.55);color:#7dd3fc;font-weight:700" title="Have Scribe run a full periodic review across all inbox and sent emails right now">&#8635; Review All Emails</button>'
+        '      <button type="button" class="tw-btn on" data-toggle-mail-float="1" style="border-color:rgba(167,139,250,0.6);color:#e9d5ff;font-weight:700" title="Float Speed Racer &amp; Email Reading Pane out over the Steward Dialogue for a wider review window">&#8644; Float Over Steward</button>'
+        '      <button type="button" class="tw-btn" id="btnCaveSrArchiveToggle" data-sr-archive-toggle="1" style="border-color:rgba(16,185,129,0.55);color:#6ee7b7;font-weight:700" title="View all emails approved &amp; sent through Speed Racer">&#128220; Archive (<span id="caveSrArchiveCount">%d</span>)</button>'
+        '      <span id="caveSrToggleHint" style="font-size:11px;color:#fde68a;font-weight:700">%s</span>'
+        '      <button type="button" class="tw-btn" id="btnCaveSrCloseHead" data-cave-close-speed-racer="1" style="border-color:rgba(244,63,94,0.55);background:rgba(244,63,94,0.14);color:#fda4af;font-weight:750" title="Close the Speed Racer interaction dialogue">&#10005; Close</button>'
         '    </div>'
         '  </div>'
-        '  <div class="cave-sr-body" id="caveSpeedRacerBody" style="padding:10px 12px;border-top:1px solid rgba(245,158,11,0.3);display:flex;flex-direction:column;gap:8px">'
+        '  <div class="cave-sr-body" id="caveSpeedRacerBody"%s style="padding:10px 12px;border-top:1px solid rgba(245,158,11,0.3);display:flex;flex-direction:column;gap:8px">'
         '    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;background:rgba(167,139,250,0.1);border:1px solid rgba(167,139,250,0.35);padding:6px 10px;border-radius:7px;font-size:11px">'
-        '      <span>&#128172; <b>Steward Queue:</b> Click <code>[&#127950;&#65039; &rarr; Speed Racer]</code> on any Inbox email below, or tell the Steward what to draft:</span>'
+        '      <span>&#128172; <b>Steward Queue:</b> Click <code>[&#127950;&#65039; Speed Racer]</code> on any email, or tell the Steward what to draft:</span>'
         '      <div style="display:flex;gap:5px;flex:1;min-width:230px;max-width:480px">'
         '        <input type="text" id="caveSrStewardPromptInput" placeholder="e.g. Draft email to Archty CPA requesting final dissolution tax clearance..." style="flex:1;padding:4px 8px;border-radius:6px;border:1px solid #334155;background:#080d16;color:#f1f5f9;font-size:11px">'
         '        <button type="button" class="tw-btn" id="btnCaveSrStewardDraft" style="border-color:rgba(245,158,11,0.55);color:#fde68a;font-weight:700">&#128172; Draft &rarr; Speed Racer</button>'
@@ -1605,38 +1662,131 @@ def _comms_pulse_html(ctx):
         '    </div>'
         '    <div id="caveSpeedRacerArchiveDrawer" hidden style="padding:10px;border-radius:8px;border:1px solid rgba(16,185,129,0.45);background:#070b12"></div>'
         '    <div id="caveSrAttachmentPreviewHost" hidden style="padding:10px;border-radius:8px;border:1px solid #38bdf8;background:#070b12"></div>'
-        '    <div id="caveSpeedRacerDeckHost"></div>'
+        '    <div id="caveSpeedRacerDeckHost">%s</div>'
         '  </div>'
         '</div>'
-        '<div class="cave-mail-buckets" id="caveMailBucketsGrid" data-mail-folder-mode="all">'
-        '<div class="cave-mail-bucket-col" id="caveMailImportantCol">'
-        '<div style="font-size:10.5px;font-weight:750;color:#fbbf24;margin-bottom:5px;display:flex;align-items:center;justify-content:space-between">'
-        '<span>&#9889; Active Inbox — Emails to Address (Already-Replied &amp; Seen Emails Auto-Moved to Acted Upon)</span>'
-        '<span style="font-size:10px;color:var(--text-dim);font-weight:500">Open &rarr; &#128065; Seen or &#127950;&#65039; Speed Racer moves to Acted Upon</span>'
-        '</div>'
-        '<div id="caveMailImportantList" class="cave-mail-list">%s</div>'
-        '</div>'
-        '<div class="cave-mail-bucket-col" id="caveMailActedCol" style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(56,189,248,0.35)">'
-        '<div style="font-size:10.5px;font-weight:750;color:#7dd3fc;margin-bottom:5px;display:flex;align-items:center;justify-content:space-between">'
-        '<span>&#9745; Acted Upon List (Already Replied in Sent Items, Queued in Speed Racer, or Marked Seen)</span>'
-        '<span style="font-size:10px;color:var(--text-dim);font-weight:500">Auto-detects your Sent replies (e.g. Hollie Meyer)</span>'
-        '</div>'
-        '<div id="caveMailActedList" class="cave-mail-list">%s</div>'
-        '</div>'
-        '<div class="cave-mail-bucket-col" id="caveMailSentCol" style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(16,185,129,0.35)">'
-        '<div style="font-size:10.5px;font-weight:750;color:#6ee7b7;margin-bottom:5px;display:flex;align-items:center;justify-content:space-between">'
-        '<span>&#128228; Sent Emails (Messages You Have Sent Across Gmail, PSU 365, Axmra 365 &amp; Anchor)</span>'
-        '<span style="font-size:10px;color:var(--text-dim);font-weight:500">Click any sent email to view full message or follow up</span>'
-        '</div>'
-        '<div id="caveMailSentList" class="cave-mail-list">%s</div>'
-        '</div>'
-        '<div class="cave-mail-bucket-col" id="caveMailOtherCol" style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--line)">'
-        '<div style="font-size:10.5px;font-weight:750;color:var(--text-dim);margin-bottom:5px;display:flex;align-items:center;justify-content:space-between">'
-        '<span>&#128229; Not Important / Downgraded (Promos &amp; Seen-Unopened)</span>'
-        '<span style="font-size:10px;color:var(--text-dim2);font-weight:500">Click &#11014; Upgrade to promote</span>'
-        '</div>'
-        '<div id="caveMailOtherList" class="cave-mail-list">%s</div>'
-        '</div>'
+        '<!-- OUTLOOK-STYLE SPLIT-PANE EMAIL WORKBENCH: LEFT COMPACT LIST + RIGHT READING & STEWARD ACTION PANE -->'
+        '<div class="cave-outlook-mail-split%s" id="caveOutlookMailSplit">'
+        '  <div class="cave-outlook-left-wrap" id="caveOutlookLeftWrap">'
+        '  <div class="cave-mail-buckets cave-outlook-left-list" id="caveMailBucketsGrid" data-mail-folder-mode="inbox">'
+        '    <div class="cave-mail-bucket-col" id="caveMailImportantCol">'
+        '      <div style="font-size:10.5px;font-weight:800;color:#fbbf24;margin-bottom:5px;display:flex;align-items:center;justify-content:space-between;gap:4px">'
+        '        <span>&#9889; Focused Emails (Active High-Priority)</span>'
+        '        <span style="font-size:9.5px;color:#94a3b8;font-weight:500">Click any tile &rarr; Read on Right</span>'
+        '      </div>'
+        '      <div id="caveMailImportantList" class="cave-mail-list">%s</div>'
+        '    </div>'
+        '    <div class="cave-mail-bucket-col" id="caveMailActedCol" hidden style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(56,189,248,0.35)">'
+        '      <div style="font-size:10.5px;font-weight:750;color:#7dd3fc;margin-bottom:5px;display:flex;align-items:center;justify-content:space-between">'
+        '        <span>&#9745; Acted Upon (Answered, Speed Racer, Auto-Calendared, Looked At)</span>'
+        '      </div>'
+        '      <div id="caveMailActedList" class="cave-mail-list">%s</div>'
+        '    </div>'
+        '    <div class="cave-mail-bucket-col" id="caveMailSentCol" hidden style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(16,185,129,0.35)">'
+        '      <div style="font-size:10.5px;font-weight:750;color:#6ee7b7;margin-bottom:5px;display:flex;align-items:center;justify-content:space-between">'
+        '        <span>&#128228; Sent Emails</span>'
+        '      </div>'
+        '      <div id="caveMailSentList" class="cave-mail-list">%s</div>'
+        '    </div>'
+        '    <div class="cave-mail-bucket-col" id="caveMailOtherCol" hidden style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--line)">'
+        '      <div style="font-size:10.5px;font-weight:750;color:var(--text-dim);margin-bottom:5px;display:flex;align-items:center;justify-content:space-between">'
+        '        <span>&#128229; Other / Non-Important</span>'
+        '      </div>'
+        '      <div id="caveMailOtherList" class="cave-mail-list">%s</div>'
+        '    </div>'
+        '  </div>'
+        '  <div class="cave-oval-scrollbar" id="caveMailOvalScrollbar" title="Slide oval up and down to scroll emails">'
+        '    <div class="cave-oval-thumb" id="caveMailOvalThumb"></div>'
+        '  </div>'
+        '  </div>'
+        '  <!-- RIGHT PANE: PERSISTENT OUTLOOK READING & STEWARD ACTION PANE -->'
+        '  <div class="cave-outlook-right-pane" id="caveEmailDialoguePane"%s>'
+        '    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap;padding-bottom:8px;border-bottom:1px solid #283548">'
+        '      <div style="min-width:0;flex:1">'
+        '        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
+        '          <span class="comms-badge sky" id="caveDlgMailBadge">PSU 365</span>'
+        '          <b id="caveDlgMailSubject" style="font-size:13.5px;color:#f8fafc">Select an email on the left to read &amp; act</b>'
+        '        </div>'
+        '        <div id="caveDlgMailMeta" style="font-size:11px;color:#94a3b8;margin-top:3px">From: &mdash;</div>'
+        '      </div>'
+        '      <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">'
+        '        <button type="button" class="mini on" id="btnCaveDlgToggleFloat" data-toggle-mail-float="1" style="border-color:#a78bfa;background:rgba(167,139,250,0.22);color:#e9d5ff;font-weight:800" title="Float Email Reading &amp; Response Pane out over the Steward Dialogue for a larger review window">&#8644; Float Over Steward</button>'
+        '        <button type="button" class="mini" id="btnCaveDlgQuickReplyFocus" style="border-color:#10b981;background:rgba(16,185,129,0.24);color:#ecfdf5;font-weight:800" title="Respond directly right here in this email pane without sending to Speed Racer">&#128172; Quick Reply Here</button>'
+        '        <button type="button" class="mini" id="btnCaveDlgToSpeedRacer" style="border-color:#f59e0b;background:rgba(245,158,11,0.22);color:#fef08a;font-weight:800" title="Jump this email into Speed Racer for Scribe to draft a reply and remove from active Focused emails">&#127950;&#65039; Put in Speed Racer</button>'
+        '        <button type="button" class="mini" id="btnCaveDlgSeenImportant" style="border-color:#10b981;background:rgba(16,185,129,0.22);color:#6ee7b7;font-weight:800" title="Seen &amp; Important — removes from active Focused list, marks Read, and teaches Steward that emails like this are Important">&#11088; Seen &amp; Important</button>'
+        '        <button type="button" class="mini" id="btnCaveDlgSeen" style="border-color:#38bdf8;background:rgba(56,189,248,0.18);color:#7dd3fc;font-weight:800" title="Mark Looked At / Ignore — removes from Focused AND marks Read in live Outlook 365 / Gmail (never deletes)">&#128065; Looked At / Ignore</button>'
+        '        <button type="button" class="mini" id="btnCaveDlgCalendarDone" style="border-color:#10b981;background:rgba(16,185,129,0.18);color:#6ee7b7;font-weight:800" title="Put confirmation/invitation info on Calendar and remove from Focused">&#128197; Add to Calendar &amp; Done</button>'
+        '        <button type="button" class="mini" id="btnCaveDlgAlreadyReplied" style="border-color:#10b981;background:rgba(16,185,129,0.14);color:#6ee7b7;font-weight:700" title="Mark as Already Answered and remove from Focused">&#10003; Answered</button>'
+        '        <button type="button" class="mini" id="btnCaveDlgDownloadAtt" hidden style="border-color:#38bdf8;color:#7dd3fc">&#11015; Save Attachments</button>'
+        '        <button type="button" class="mini" id="btnCaveDlgDowngrade" title="Move to Other / Not Important">&#11015; Other</button>'
+        '        <button type="button" class="mini" id="btnCaveDlgUpgrade" title="Promote to Focused">&#11014; Focused</button>'
+        '        <button type="button" class="mini" id="btnCaveDlgCloseEmail" data-cave-close-email-dlg="1" style="border-color:rgba(244,63,94,0.65);background:rgba(244,63,94,0.18);color:#fda4af;font-weight:800" title="Close the Email Reading &amp; Response Dialogue (uncovers the Steward dialogue)">&#10005; Close Email</button>'
+        '      </div>'
+        '    </div>'
+        '    <!-- Steward Directions Bar for Sending to Speed Racer -->'
+        '    <div id="caveDlgStewardDirectionsBar" style="margin-top:8px;padding:8px 11px;border-radius:8px;border:1px solid rgba(245,158,11,0.55);background:rgba(245,158,11,0.11);display:flex;align-items:center;gap:7px;flex-wrap:wrap">'
+        '      <span style="font-size:11px;font-weight:800;color:#fef08a"><img src="/vendor/brand/scribe-icon.jpg" alt="Scribe" style="width:14px;height:14px;border-radius:3px;vertical-align:-2px;margin-right:4px">&#127950;&#65039; Directions for Speed Racer:</span>'
+        '      <input type="text" id="caveDlgStewardDirectionsInput" placeholder="Provide directions for Scribe when sending to Speed Racer (e.g. offer Mon 2pm Zoom, ask for signed PDF)..." style="flex:1;min-width:200px;padding:5px 9px;border-radius:6px;border:1px solid #334155;background:#070b12;color:#f8fafc;font-size:11.5px">'
+        '      <button type="button" class="tw-btn" id="btnCaveDlgSendDirectionsToSr" style="flex-shrink:0;border-color:#f59e0b;background:#291d0a;color:#fef08a;font-weight:800;padding:4px 11px" title="Scribe crafts response in Speed Racer using your directions and advances to the next email">&#127950;&#65039; Send to Speed Racer</button>'
+        '    </div>'
+        '    <!-- Steward Comment / Action Bar (Act on Email Without Replying — e.g. Add Task to The List) -->'
+        '    <div id="caveDlgStewardActionBar" style="margin-top:6px;padding:8px 11px;border-radius:8px;border:1px solid rgba(16,185,129,0.55);background:rgba(16,185,129,0.10);display:flex;align-items:center;gap:7px;flex-wrap:wrap">'
+        '      <span style="font-size:11px;font-weight:800;color:#6ee7b7">&#128203; Comment to Steward (No Reply / Add Task):</span>'
+        '      <input type="text" id="caveDlgStewardActionInput" placeholder="Comment if email needs action without answering (e.g. Add task to The List: Review Sliding Rock Trust docs)..." style="flex:1;min-width:200px;padding:5px 9px;border-radius:6px;border:1px solid #334155;background:#070b12;color:#f8fafc;font-size:11.5px">'
+        '      <button type="button" class="tw-btn" id="btnCaveDlgSendStewardAction" style="flex-shrink:0;border-color:#10b981;background:rgba(16,185,129,0.22);color:#ecfdf5;font-weight:800;padding:4px 11px" title="Send comment/task to Steward, add to The List, mark email Acted Upon without replying, and advance to next email">&#128203; Act via Steward &amp; Add Task</button>'
+        '    </div>'
+        '    <!-- Clickable Attachments Bar + Inline Attachment Viewer + Clickable Web Links Bar -->'
+        '    <div id="caveDlgAttachmentsBar" hidden style="margin-top:7px;padding:6px 9px;border-radius:8px;border:1px solid rgba(56,189,248,0.4);background:rgba(15,23,42,0.9);display:flex;align-items:center;gap:6px;flex-wrap:wrap"></div>'
+        '    <div id="caveDlgAttachmentPreviewHost" hidden style="margin-top:7px;padding:8px;border-radius:8px;border:1px solid #38bdf8;background:#070b12"></div>'
+        '    <div id="caveDlgLinksBar" hidden style="margin-top:7px;padding:6px 10px;border-radius:8px;border:1px solid rgba(56,189,248,0.45);background:rgba(14,116,144,0.14);display:flex;align-items:center;gap:6px;flex-wrap:wrap"></div>'
+        '    <!-- Large Human-Readable Email Content & Thread Review Window -->'
+        '    <div style="display:flex;align-items:stretch;gap:4px;margin-top:8px">'
+        '      <div id="caveDialogueThreadScrollBox" style="flex:1;min-width:0;background:#090d16;border:1px solid #283548;border-radius:10px;padding:12px 15px;max-height:430px;min-height:220px;overflow-y:auto">'
+        '        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">'
+        '          <span style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:#7dd3fc">&#128172; Message Review (Preloaded Locally &middot; Clean Human Format)</span>'
+        '          <span id="caveDlgPreloadBadge" style="font-size:10px;color:#6ee7b7;font-weight:700">&#9889; Instant Local Cache</span>'
+        '        </div>'
+        '        <div id="caveDialogueThreadList" style="display:flex;flex-direction:column;gap:8px"></div>'
+        '      </div>'
+        '      <div class="cave-oval-scrollbar" data-oval-scroll-for="caveDialogueThreadScrollBox" hidden style="display:none" title="Slide oval up and down to scroll email content">'
+        '        <div class="cave-oval-thumb"></div>'
+        '      </div>'
+        '    </div>'
+        '    <!-- Direct Reply Box (Manual Quick Response + Inline Scribe Drafting & Style Controls) -->'
+        '    <details id="caveDlgDirectReplyDrawer" open style="margin-top:8px;background:#111827;border:1px solid rgba(16,185,129,0.45);border-radius:9px;padding:8px 11px">'
+        '      <summary style="cursor:pointer;font-size:11.5px;font-weight:800;color:#6ee7b7;display:flex;flex-direction:column;align-items:flex-start;gap:2px">'
+        '        <span>&#9998; Quick Direct Reply &amp; Scribe Assist (Respond Immediately Here or Send to Speed Racer) &#9662;</span>'
+        '        <span id="caveDlgStewardNote" style="font-size:10px;color:#94a3b8;font-weight:600">Type a reply below, click &#129718; Scribe Draft to craft from full email &amp; calendar, or send to Speed Racer</span>'
+        '      </summary>'
+        '      <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">'
+        '        <div id="caveDlgScribeAssistBar" style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;padding:6px 8px;border-radius:7px;background:rgba(15,23,42,0.88);border:1px solid rgba(56,189,248,0.35)">'
+        '          <span style="font-size:10.5px;font-weight:800;color:#fde68a;margin-right:2px">&#129718; Scribe:</span>'
+        '          <button type="button" class="tw-btn" data-dlg-scribe-action="draft" style="border-color:#f59e0b;background:rgba(245,158,11,0.18);color:#fef08a;font-weight:800" title="Have Scribe read the full email, thread history, and calendar to draft a reply right here">&#129718; Scribe Draft</button>'
+        '          <button type="button" class="tw-btn" data-dlg-scribe-action="warmer" style="border-color:rgba(251,191,36,0.45);color:#fde68a" title="Make draft warmer and more conversational">&#9728;&#65039; Warmer</button>'
+        '          <button type="button" class="tw-btn" data-dlg-scribe-action="formal" style="border-color:rgba(148,163,184,0.45);color:#e2e8f0" title="Make draft more formal">&#127963;&#65039; More Formal</button>'
+        '          <button type="button" class="tw-btn" data-dlg-scribe-action="simpler" style="border-color:rgba(56,189,248,0.45);color:#7dd3fc" title="Make draft shorter and simpler">&#9986;&#65039; Simpler</button>'
+        '          <button type="button" class="tw-btn" data-dlg-scribe-action="more_detail" style="border-color:rgba(167,139,250,0.45);color:#e9d5ff" title="Add context and concrete next steps">&#128208; More Detail</button>'
+        '          <button type="button" class="tw-btn" data-dlg-scribe-action="async_email" data-steward-draft-intent="async_email" style="border-color:rgba(16,185,129,0.45);color:#6ee7b7" title="Handle by email without proposing a call">&#128231; Handle by Email (No Call)</button>'
+        '          <input type="text" id="caveDlgScribeInstructionInput" placeholder="Tell Scribe what to say or change (e.g. Tuesday 11am works, include Zoom link)..." style="flex:1;min-width:170px;padding:4px 8px;border-radius:6px;border:1px solid #334155;background:#070b12;color:#f8fafc;font-size:11px">'
+        '          <button type="button" class="tw-btn" id="btnCaveDlgScribeApply" data-dlg-scribe-action="custom" style="border-color:#10b981;background:rgba(16,185,129,0.18);color:#6ee7b7;font-weight:800">&#129718; Craft / Refine</button>'
+        '        </div>'
+        '        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">'
+        '          <div><label style="font-size:10px;color:#94a3b8;display:block">To</label><input type="text" id="caveReplyTo" style="width:100%%;box-sizing:border-box;padding:4px 7px;border-radius:6px;border:1px solid #283548;background:#0b0f17;color:#f1f5f9;font-size:11px"></div>'
+        '          <div><label style="font-size:10px;color:#94a3b8;display:block">Cc (optional)</label><input type="text" id="caveReplyCc" placeholder="cc@example.org" style="width:100%%;box-sizing:border-box;padding:4px 7px;border-radius:6px;border:1px solid #283548;background:#0b0f17;color:#f1f5f9;font-size:11px"></div>'
+        '        </div>'
+        '        <div><label style="font-size:10px;color:#94a3b8;display:block">Subject</label><input type="text" id="caveReplySubject" style="width:100%%;box-sizing:border-box;padding:4px 7px;border-radius:6px;border:1px solid #283548;background:#0b0f17;color:#f1f5f9;font-size:11px"></div>'
+        '        <textarea id="caveReplyBody" rows="5" placeholder="Type a direct reply here, or click Scribe Draft / Craft above to generate a voice-matched reply..." style="width:100%%;box-sizing:border-box;padding:8px 10px;border-radius:7px;border:1px solid #3b4f6b;background:#0b0f17;color:#f8fafc;font-size:12.5px;line-height:1.5"></textarea>'
+        '        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">'
+        '          <div style="display:flex;gap:6px;flex-wrap:wrap">'
+        '            <button type="button" class="mini comms-sync-btn" id="btnCaveSendReplyNow" style="border-color:#10b981;background:rgba(16,185,129,0.18);color:#6ee7b7;font-weight:800">&#128228; Send Reply Now</button>'
+        '            <button type="button" class="mini" id="btnCaveSaveReplyDraft">&#128190; Save Draft (.eml)</button>'
+        '            <button type="button" class="mini" data-cave-close-email-dlg="1" style="border-color:rgba(244,63,94,0.55);background:rgba(244,63,94,0.14);color:#fda4af;font-weight:750" title="Close the Email Reading &amp; Response Dialogue">&#10005; Close Email Dialogue</button>'
+        '          </div>'
+        '          <span id="caveReplyStatusMsg" style="font-size:11px;color:#94a3b8"></span>'
+        '        </div>'
+        '      </div>'
+        '    </details>'
+        '  </div>'
         '</div>'
         '%s'
         '</div>'
@@ -1663,17 +1813,27 @@ def _comms_pulse_html(ctx):
         len(all_cal_evs),
         cal_col_html,
         sr_json_boot,
-        len(sr_queue),
-        len(imp_emails) + len(oth_emails),
+        len(imp_emails),
         len(acted_emails),
         len(sent_emails),
+        len(sr_queue),
         len(imp_emails),
         len(oth_emails),
+        email_dlg_hidden_attr,
+        sr_open_cls,
         len(sr_queue),
+        scribe_rev_total,
+        scribe_facts_cnt,
+        len(sr_arch),
+        sr_hint_txt,
+        sr_body_hidden,
+        sr_deck_init_html,
+        email_dlg_closed_cls,
         imp_mail_html,
         acted_mail_html,
         sent_mail_html,
         oth_mail_html,
+        email_dlg_hidden_attr,
         roadmap_corr_html,
         conn_note,
     )
@@ -2242,21 +2402,25 @@ def _proactive_triage_strip(ctx):
             )
         )
 
-    # Build This Week asymmetric effort cards (Medium column 28% — Soon-to-Be Urgent + Family & Relationships)
+    # Build This Week asymmetric effort cards (Medium column 28% — Soon-to-Be Urgent + Family & Relationships, tied to The List)
     cos_week_html = []
     for ef in cos.get("week_efforts") or ():
         open_cls = "cockpit-create" if ef.get("is_create") else "cockpit-open"
+        w_ltid = esc(str(ef.get("list_tile_id") or "wl-mba-ba815"))
+        w_lbdg = esc(str(ef.get("list_badge") or "📋 The List"))
         cos_week_html.append(
             '<div class="cos-effort-card %s" id="%s" data-cos-card="1" data-break="%s">'
             '<div class="cos-ef-top">'
             '<span class="cos-ef-name" data-cos-modal-open="1" data-cos-title="%s" data-cos-tier="%s" '
             'data-cos-driver="%s" data-cos-oranges="%s" data-cos-href="%s" data-cos-prompt="%s">%s</span>'
-            '<span class="cos-pill %s">%s</span>'
+            '<div class="cos-ef-badges"><span class="cos-pill %s">%s</span>'
+            '<button type="button" class="cos-act-btn" data-wl-focus-tile="%s" style="font-size:9.5px;padding:1px 6px" title="Tied to The List — click to open in The List">%s</button></div>'
             '</div>'
             '<div class="cos-ef-driver"><strong>Driver:</strong> %s</div>'
             '<div class="cos-ef-actions">'
             '<a class="cos-act-btn %s" href="%s" target="_blank" rel="noopener">%s</a>'
             '<button type="button" class="cos-act-btn skill-prestage" data-cos-prestage-prompt="%s" data-cos-skill="%s">%s</button>'
+            '<button type="button" class="cos-act-btn" data-wl-focus-tile="%s" title="Open this item in The List">&#128203; In The List</button>'
             '<button type="button" class="cos-act-btn" data-cos-rotate="%s" title="Rotate suggestion">&#9197;</button>'
             '</div></div>'
             % (
@@ -2272,6 +2436,8 @@ def _proactive_triage_strip(ctx):
                 esc(ef["title"]),
                 esc(ef["tier_pill_cls"]),
                 esc(ef["tier_badge"]),
+                w_ltid,
+                w_lbdg,
                 esc(ef["driver"]),
                 open_cls,
                 esc(ef["href"]),
@@ -2279,23 +2445,27 @@ def _proactive_triage_strip(ctx):
                 esc(ef["skill_prompt"]),
                 esc(ef["oranges_skill"]),
                 esc(ef["skill_btn_label"]),
+                w_ltid,
                 esc(ef["id"]),
             )
         )
 
-    # Build This Month compact expandable cards (14% default -> widens on click)
+    # Build This Month compact expandable cards (14% default -> widens on click, tied to The List)
     cos_month_html = []
     for ef in cos.get("month_efforts") or ():
         open_cls = "cockpit-create" if ef.get("is_create") else "cockpit-open"
+        m_ltid = esc(str(ef.get("list_tile_id") or "wl-family-trusts-jane"))
+        m_lbdg = esc(str(ef.get("list_badge") or "📋 The List"))
         cos_month_html.append(
             '<div class="cos-compact-effort" id="%s" data-cos-card="1" data-break="%s" data-cos-expand-col="month">'
             '<div class="cos-ce-title"><span>%s</span><span class="cos-pill %s">%s</span></div>'
-            '<div class="cos-ce-meta">%s</div>'
+            '<div class="cos-ce-meta">%s &middot; <button type="button" class="cos-act-btn" data-wl-focus-tile="%s" style="font-size:9.5px;padding:0 5px">%s</button></div>'
             '<div class="cos-ce-detail">'
             '<div class="cos-oranges">&#127818; %s</div>'
             '<div class="cos-ef-actions">'
             '<a class="cos-act-btn %s" href="%s" target="_blank" rel="noopener">%s</a>'
             '<button type="button" class="cos-act-btn skill-prestage" data-cos-prestage-prompt="%s">%s</button>'
+            '<button type="button" class="cos-act-btn" data-wl-focus-tile="%s">&#128203; Open in The List</button>'
             '</div></div></div>'
             % (
                 esc(ef["id"]),
@@ -2304,28 +2474,34 @@ def _proactive_triage_strip(ctx):
                 esc(ef["pill_cls"]),
                 esc(ef["badge"]),
                 esc(ef["meta"]),
+                m_ltid,
+                m_lbdg,
                 esc(ef["oranges_text"]),
                 open_cls,
                 esc(ef["href"]),
                 esc(ef["open_label"]),
                 esc(ef["skill_prompt"]),
                 esc(ef["skill_btn_label"]),
+                m_ltid,
             )
         )
 
-    # Build Quarter / Star Chart Q2 compact expandable cards (14% default -> widens on click)
+    # Build Quarter / Star Chart Q2 compact expandable cards (14% default -> widens on click, tied to The List)
     cos_qtr_html = []
     for ef in cos.get("quarter_efforts") or ():
         open_cls = "cockpit-create" if ef.get("is_create") else "cockpit-open"
+        q_ltid = esc(str(ef.get("list_tile_id") or "wl-hnf-grant"))
+        q_lbdg = esc(str(ef.get("list_badge") or "📋 The List"))
         cos_qtr_html.append(
             '<div class="cos-compact-effort" id="%s" data-cos-card="1" data-break="%s" data-cos-expand-col="quarter">'
             '<div class="cos-ce-title"><span>%s</span><span class="cos-pill %s">%s</span></div>'
-            '<div class="cos-ce-meta">%s</div>'
+            '<div class="cos-ce-meta">%s &middot; <button type="button" class="cos-act-btn" data-wl-focus-tile="%s" style="font-size:9.5px;padding:0 5px">%s</button></div>'
             '<div class="cos-ce-detail">'
             '<div class="cos-oranges q2">&#127818; %s</div>'
             '<div class="cos-ef-actions">'
             '<a class="cos-act-btn %s" href="%s" target="_blank" rel="noopener">%s</a>'
             '<button type="button" class="cos-act-btn skill-prestage" data-cos-prestage-prompt="%s">%s</button>'
+            '<button type="button" class="cos-act-btn" data-wl-focus-tile="%s">&#128203; Open in The List</button>'
             '</div></div></div>'
             % (
                 esc(ef["id"]),
@@ -2334,12 +2510,15 @@ def _proactive_triage_strip(ctx):
                 esc(ef["pill_cls"]),
                 esc(ef["badge"]),
                 esc(ef["meta"]),
+                q_ltid,
+                q_lbdg,
                 esc(ef["oranges_text"]),
                 open_cls,
                 esc(ef["href"]),
                 esc(ef["open_label"]),
                 esc(ef["skill_prompt"]),
                 esc(ef["skill_btn_label"]),
+                q_ltid,
             )
         )
 
@@ -2471,7 +2650,7 @@ def _proactive_triage_strip(ctx):
     year_cnt = max(len(goals), 1)
     mode_lbl = esc(mode_name(ctx.get("steward") or {}))
 
-    return (
+    _cos_out = (
         '<section class="triage-strip compact-horizons is-collapsed" id="shTriage">'
         '<div class="ts-head chz-head" style="margin-bottom:4px;gap:6px">'
         '<div class="ts-title chz-title" data-cos-toggle-body="1" style="cursor:pointer;gap:5px" title="Click to expand or collapse Chief-of-Staff Recommendations &amp; Parable-of-the-Oranges Skill Pre-Staging">'
@@ -2482,11 +2661,10 @@ def _proactive_triage_strip(ctx):
         '</div>'
         '<div class="ts-quick chz-quick" style="gap:4px">'
         '<button type="button" class="ts-pill cos-expand-toggle" id="btnCosToggleExpand" data-cos-toggle-body="1" aria-expanded="false" title="Click to drill down and expand Chief-of-Staff Next-Effort Recommendations &amp; Parable-of-the-Oranges Skill Pre-Staging">&#9662; Expand Recommendations (%d)</button>'
-        '<button type="button" class="ts-pill" data-open-the-list="1" style="border-color:rgba(56,189,248,0.55);color:#7dd3fc" title="Open or expand The List tile right below Chief of Staff">&#128203; The List</button><button type="button" class="ts-pill" data-wl-populate-cos="1" style="border-color:rgba(16,185,129,0.55);color:#6ee7b7" title="Steward (in Chief of Staff mode) populates Things To Do from your priority order on The List">&#9889; Populate from The List</button><button type="button" class="ts-pill" id="btnTriageSynthesize" data-triage-synthesize="1" title="Synthesize a cross-portfolio Chief-of-Staff Executive Brief">&#10022; Brief</button>'
+        '<button type="button" class="ts-pill" data-wl-populate-cos="1" style="border-color:rgba(16,185,129,0.55);color:#6ee7b7" title="Steward (in Chief of Staff mode) populates Things To Do from your priority order on The List">&#9889; Populate from The List</button>'
+        '<button type="button" class="ts-pill" id="btnTriageSynthesize" data-triage-synthesize="1" title="Synthesize a cross-portfolio Chief-of-Staff Executive Brief">&#10022; Brief</button>'
         '<a class="ts-pill desk" href="%s" target="_blank" rel="noopener" title="Run ad-hoc admin tasks in the Desktop AI Cockpit">&#128421; Ad-Hoc Cockpit</a>'
         '<button type="button" class="ts-pill" data-toggle-dated="1" title="Toggle Dated Schedule Ruler">&#128197; Dated Ruler</button>'
-        '<button type="button" class="ts-pill" data-jump="#cal">&#9993; Email &amp; Counsel</button>'
-        '<button type="button" class="ts-pill" id="btnTriageConnectComms" data-open-comms-connect="1" style="border-color:rgba(16,185,129,0.55);color:#6ee7b7" title="Connect Gmail, Google Calendar &amp; Microsoft Outlook right on the Cave of Wonders">&#128197;+&#9993; Connect</button>'
         '</div></div>'
         '<div class="cos-compact-summary-row" id="cosCompactSummaryRow">'
         '<button type="button" class="cos-cs-pill today" data-cos-drill="today" title="Click to drill down into Today recommendations &amp; pre-staged skills">'
@@ -2506,6 +2684,7 @@ def _proactive_triage_strip(ctx):
         '<span class="cos-cs-text">&#128214; Artificial Magi &middot; &#128300; 3D Phenomics</span>'
         '<span class="cos-cs-caret">&#9662;</span></button>'
         '</div>'
+        '<!--__THE_LIST_INSIDE_COS__-->'
         '<div class="triage-exec-brief" id="triageExecBrief" hidden style="margin:6px 0 0;padding:8px 12px;border-radius:8px;border:1px solid #2b3546;background:#121822;font-size:12px;color:#e6edf3"></div>'
         '<div class="cos-expandable-body" id="cosExpandableBody" hidden>'
         '<div class="cos-command-bar" id="cosCommandBar">'
@@ -2589,6 +2768,7 @@ def _proactive_triage_strip(ctx):
         '<button type="button" class="cos-act-btn skill-prestage" data-cos-dispatch-skill="Chekhov">&#127917; Chekhov</button>'
         '<button type="button" class="cos-act-btn skill-prestage" data-cos-dispatch-skill="Legal-Beagle">&#9878; Legal-Beagle</button>'
         '<button type="button" class="cos-act-btn skill-prestage" data-cos-dispatch-skill="Financial-Analyst">&#128202; Financial-Analyst</button>'
+        '<button type="button" class="cos-act-btn skill-prestage" data-cos-dispatch-skill="Scribe">&#129718; Scribe</button>'
         '</div>'
         '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;padding-top:8px;border-top:1px solid #26354d">'
         '<button type="button" class="cos-act-btn cockpit-create" data-foundry-action="new_cockpit">+ Create New AI Cockpit</button>'
@@ -2636,6 +2816,7 @@ def _proactive_triage_strip(ctx):
         mode_lbl, "".join(quarter_items_html),
         mode_lbl, "".join(year_items_html),
     )
+    return _cos_out.replace("<!--__THE_LIST_INSIDE_COS__-->", _working_list_spine_html(ctx))
 
 def _working_list_spine_html(ctx) -> str:
     """Variation A + The List (2026-11-06):
@@ -2657,7 +2838,7 @@ def _working_list_spine_html(ctx) -> str:
     cnt_tch = sum(1 for t in active_tiles if t.get("category") == "Teaching")
     cnt_res = sum(1 for t in active_tiles if t.get("category") == "Research")
     cnt_per = sum(1 for t in active_tiles if t.get("category") == "Personal")
-    wl_json = json.dumps(wl_state).replace("</", "<\/")
+    wl_json = json.dumps(wl_state).replace("</", r"<\/")
 
     def _ord_lbl(n: int) -> str:
         n = max(1, int(n or 1))
@@ -2710,6 +2891,7 @@ def _working_list_spine_html(ctx) -> str:
         '    <button type="button" class="ts-pill cos-expand-toggle" id="wlSpineCollapseBtn" aria-expanded="false" title="Click to open/expand or collapse The List tile">&#9662; Click to Expand (%d items)</button>'
         '  </div>'
         '</div>'
+        '<div id="theListCompactRow" class="cos-compact-summary-row" hidden></div>'
         '<div class="wl-body" id="wlSpineBody" hidden style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(56,189,248,0.28)">'
         '  <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px">'
         '    <div class="wl-cat-tabs" id="wlCatTabs" style="display:inline-flex;gap:4px;flex-wrap:wrap">'
@@ -2740,7 +2922,12 @@ def _working_list_spine_html(ctx) -> str:
         '    <button type="button" class="tw-btn" id="btnWlAddTopA1" style="border-color:rgba(244,63,94,0.55);background:rgba(244,63,94,0.18);color:#fda4af;font-weight:700">&#9889; Add as #1 (1st)</button>'
         '    <button type="button" class="tw-btn done" id="btnWlAddTile" style="font-weight:700">+ Add to The List</button>'
         '  </div>'
-        '  <div class="wl-tiles-stack" id="wlTilesContainer">%s</div>'
+        '  <div style="display:flex;align-items:stretch;gap:4px">'
+        '    <div class="wl-tiles-stack" id="wlTilesContainer" style="flex:1;min-width:0;max-height:360px;overflow-y:auto">%s</div>'
+        '    <div class="cave-oval-scrollbar" data-oval-scroll-for="wlTilesContainer" title="Slide oval up and down to scroll The List">'
+        '      <div class="cave-oval-thumb"></div>'
+        '    </div>'
+        '  </div>'
         '</div>'
         '</section>'
     ) % (
@@ -2782,7 +2969,7 @@ def render_high_seat_html(ctx) -> str:
     ctx["orphans"] = [e for e in entries if e.get("id") and e["id"] not in in_goal and e["id"] != camp_pid and e["id"] not in parked_ids]
     ctx["quiet_n"] = sum(1 for e in entries if not (facts.get(e.get("id")) or {}).get("has_record") and e.get("id") not in parked_ids)
     ctx["on_board"] = {p["pid"]: SEAT_NAMES[seat] for seat in ("deck", "active") for g, p in seated(live_inits, seat) if p.get("pid")}      # Active wins when a project has cards on both (Grok's read of W2c)
-    board = ('<div class="board">' + lane_html(ctx.get("lane"), ctx.get("resume_from") or "") + _proactive_triage_strip(ctx) + _working_list_spine_html(ctx) + _campaign_tile(ctx) + _seat_shelves(ctx) + _candidates_tile(ctx) + _projects_tile(ctx)
+    board = ('<div class="board">' + lane_html(ctx.get("lane"), ctx.get("resume_from") or "") + _proactive_triage_strip(ctx) + _campaign_tile(ctx) + _seat_shelves(ctx) + _candidates_tile(ctx) + _projects_tile(ctx)
              + _desk_line(ctx) + _ruler(ctx) + _mothership_collab_html(ctx) + _terminal(ctx) + '</div>')
     page = (
         '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'

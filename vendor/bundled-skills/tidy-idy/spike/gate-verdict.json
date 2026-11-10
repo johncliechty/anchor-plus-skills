@@ -10,7 +10,7 @@
   "verdict": "refactor-in-place",
   "verdict_statement": "Wave 1 first deliverable = refactor-in-place with suite kept green",
   "seams_by_mechanism": {
-    "hardcoded trio-driver path (file:///C:/dev/trio/drivers/gemini-cli.mjs)": ["bin/analyze.mjs", "bin/debate.mjs", "bin/compress.mjs"],
+    "hardcoded trio-driver path (fil<path>": ["bin/analyze.mjs", "bin/debate.mjs", "bin/compress.mjs"],
     "North-Star/Foundry-marker existence assumption": ["bin/scanner.mjs", "bin/analyze.mjs", "bin/debate.mjs"],
     "runtime hard git dependency (non-git refusal / process.exit in library paths)": ["bin/hygiene.mjs"],
     "delete-before-commit ordering (files gone before git holds the undo)": ["bin/remove.mjs"],

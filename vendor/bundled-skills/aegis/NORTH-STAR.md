@@ -1,6 +1,6 @@
 # AEGIS — Locked North Star & Idea Log
 
-**Skill Path:** `C:\dev\Skill Foundry\skills\aegis\`  
+**Skill Path:** `<path> Foundry\skills\aegis\`  
 **Date Locked:** 2026-10-27  
 **Author & Convergence Authority:** John  
 **Visual Brand Asset:** `/vendor/brand/aegis-icon.jpg` + Standard Anchor Mark (`/vendor/brand/anchor-tab-48.png`)
@@ -22,7 +22,7 @@
 >      - **`AEG-03` (`CWE-22` — Path Traversal & Unfenced File Access):** Detects dynamic path joins opened or served without canonical `.resolve().is_relative_to(base.resolve())` containment verification.
 >      - **`AEG-04` (`CWE-918` — SSRF & Unvalidated URL Schemes):** Detects `urllib.request.urlopen()` or HTTP client calls on dynamic URLs without scheme allowlisting (`https://`, `http://`).
 >      - **`AEG-05` (`CWE-208` / `CWE-328` — Timing Side-Channels & Weak Crypto):** Detects non-constant-time `==` comparisons on secret/token variables (`token == expected`) and `md5`/`sha1` security digests.
->      - **`AEG-06` (`CWE-798` — Hardcoded Secrets, API Keys & Personal Profile Paths):** Scans for hardcoded API keys (`sk-`, `ghp_`, `AKIA`), bearer secret literals, and personal user-profile paths (`C:\Users\<name>`).
+>      - **`AEG-06` (`CWE-798` — Hardcoded Secrets, API Keys & Personal Profile Paths):** Scans for hardcoded API keys (`sk-`, `ghp_`, `AKIA`), bearer secret literals, and personal user-profile paths (`<path><name>`).
 >
 > 2. **Minimal, Reversible AST/LibCST Defensive Patch Synthesis (`aegis remediate`):**
 >    - Synthesizes exact, human-readable unified diffs and single-line or structural AST/LibCST replacements for every actionable finding (`shell=False` with explicit argument lists, `ast.literal_eval`, `yaml.safe_load`, `.resolve().is_relative_to(base.resolve())`, `urlparse(u).scheme in ('https', 'http')`, `hmac.compare_digest`, `hashlib.sha256`, and `os.environ.get("<KEY>", "")`).
@@ -53,4 +53,4 @@
 | **AEG-REQ-05** | **Dedicated Anchor AI Cockpit Security Workbench (`/steward/aegis`):** Interactive UI with CWE rule cards, severity badges, proposed diff viewer, 1-click Apply Fix / Sign Off controls, and a persistent Steward Security Dialogue pane. | `static/cockpit/aegis.html` + `anchor_gui.py` (`/steward/aegis`, `/api/aegis/scan`, `/api/aegis/remediate`, `/api/aegis/verify`) |
 | **AEG-REQ-06** | **Foreman & Tidy-Idy Portfolio Composition:** Run Aegis as Foreman's zero-LLM security fast-gate during multi-wave builds and as Tidy-Idy's pre-commit secret/PII guard (`AEG-06`). | `build_all_skill_maps.py` (`PEER_SKILL_CONNECTIONS['aegis']`, `foreman`, `tidyidy`) |
 | **AEG-REQ-07** | **Foundry Visual Identity (`aegis-icon.jpg`):** Bespoke Foundry-style classical indigo-and-gold shield emblem with glowing cyan AST circuit nodes and defensive lock core, wired across Foundry cards, Cockpit headers, and Poincaré maps. | `vendor/brand/aegis-icon.jpg` + `foundry_page.py` (`ICON_NAMES`, `DISPLAY_NAMES`) |
-| **AEG-REQ-08** | **Full Foundry Knowledge, Process & Anvil v2 Progressive Map Coverage:** Complete `NORTH-STAR.md`, `HUMAN.md`, `SKILL.md`, `library.json`, `process-map.json`, `knowledge-map.json`, and `ANVIL-MAP.json` with zero validation issues in Foundry. | `C:\dev\Skill Foundry\skills\aegis\` + `C:\dev\Skill Foundry\Foundry page and knowledge maps\aegis\` |
+| **AEG-REQ-08** | **Full Foundry Knowledge, Process & Anvil v2 Progressive Map Coverage:** Complete `NORTH-STAR.md`, `HUMAN.md`, `SKILL.md`, `library.json`, `process-map.json`, `knowledge-map.json`, and `ANVIL-MAP.json` with zero validation issues in Foundry. | `<path> Foundry\skills\aegis\` + `<path> Foundry\Foundry page and knowledge maps\aegis\` |

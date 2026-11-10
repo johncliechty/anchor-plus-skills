@@ -148,7 +148,7 @@ export async function runAnalysis(projectPath, options = {}) {
     // Wave-1 refactor-in-place (Wave-0 seam: hardcoded-path). The driver is no
     // longer a hardcoded absolute machine path — it is resolved from the
     // injected agent, config, or an env var, and an unresolvable driver fails
-    // LOUDLY at the call site instead of at an import of C:/dev/trio.
+    // LOUDLY at the call site instead of at an import of <path>
     const agentFn = resolveAgent({
       agent: options.agent,
       runAgent: options.runAgent,

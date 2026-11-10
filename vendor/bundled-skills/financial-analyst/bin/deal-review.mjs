@@ -45,7 +45,7 @@ function resolveTrioRoot() {
   const here = path.dirname(fileURLToPath(import.meta.url)); // <skill>/bin
   const sibling = path.resolve(here, '..', '..');
   if (fs.existsSync(path.join(sibling, 'crucible', 'bin', 'shark-tank.mjs'))) return sibling;
-  return 'C:/dev/trio';
+  return '<path>';
 }
 
 // ── The deterministic grounding gate (pure; exported for tests) ──────────────

@@ -59,11 +59,11 @@
     ],
     "kb_reference_resources": [
       "README",
+      "0028-worktree-png-churn-and-venue-award-certifier",
       "0027-mba-homework-ta-revision1-audit",
       "0026-all-souls-v33-conceptual-review",
       "0025-mba-quiz1-final-corrective",
-      "0024-mba-quiz1-final-complete",
-      "0023-mba-quiz1-expanded-bank"
+      "0024-mba-quiz1-final-complete"
     ]
   },
   "orange_split": {
@@ -393,8 +393,8 @@
         ],
         "kb_sources": [
           "README",
-          "0027-mba-homework-ta-revision1-audit",
-          "0026-all-souls-v33-conceptual-review"
+          "0028-worktree-png-churn-and-venue-award-certifier",
+          "0027-mba-homework-ta-revision1-audit"
         ]
       },
       "level2_mechanics": {
@@ -450,7 +450,7 @@
           "SKILL.md",
           "HUMAN.md",
           "README",
-          "0027-mba-homework-ta-revision1-audit"
+          "0028-worktree-png-churn-and-venue-award-certifier"
         ]
       },
       "level2_mechanics": {
@@ -503,8 +503,8 @@
         ],
         "kb_sources": [
           "README",
-          "0027-mba-homework-ta-revision1-audit",
-          "0026-all-souls-v33-conceptual-review"
+          "0028-worktree-png-churn-and-venue-award-certifier",
+          "0027-mba-homework-ta-revision1-audit"
         ]
       },
       "level2_mechanics": {
@@ -556,11 +556,11 @@
         ],
         "kb_sources": [
           "README",
+          "0028-worktree-png-churn-and-venue-award-certifier",
           "0027-mba-homework-ta-revision1-audit",
           "0026-all-souls-v33-conceptual-review",
           "0025-mba-quiz1-final-corrective",
-          "0024-mba-quiz1-final-complete",
-          "0023-mba-quiz1-expanded-bank"
+          "0024-mba-quiz1-final-complete"
         ]
       },
       "level2_mechanics": {
@@ -621,8 +621,8 @@
       ],
       "librarian_kb_reads": [
         "README",
-        "0027-mba-homework-ta-revision1-audit",
-        "0026-all-souls-v33-conceptual-review"
+        "0028-worktree-png-churn-and-venue-award-certifier",
+        "0027-mba-homework-ta-revision1-audit"
       ],
       "librarian_kb_writes": [],
       "source_anchor": {
@@ -666,8 +666,8 @@
       ],
       "librarian_kb_reads": [
         "README",
-        "0027-mba-homework-ta-revision1-audit",
-        "0026-all-souls-v33-conceptual-review"
+        "0028-worktree-png-churn-and-venue-award-certifier",
+        "0027-mba-homework-ta-revision1-audit"
       ],
       "librarian_kb_writes": [],
       "source_anchor": {
@@ -712,8 +712,8 @@
       ],
       "librarian_kb_reads": [
         "README",
-        "0027-mba-homework-ta-revision1-audit",
-        "0026-all-souls-v33-conceptual-review"
+        "0028-worktree-png-churn-and-venue-award-certifier",
+        "0027-mba-homework-ta-revision1-audit"
       ],
       "librarian_kb_writes": [],
       "source_anchor": {
@@ -757,8 +757,8 @@
       ],
       "librarian_kb_reads": [
         "README",
-        "0027-mba-homework-ta-revision1-audit",
-        "0026-all-souls-v33-conceptual-review"
+        "0028-worktree-png-churn-and-venue-award-certifier",
+        "0027-mba-homework-ta-revision1-audit"
       ],
       "librarian_kb_writes": [],
       "source_anchor": {

@@ -2,7 +2,7 @@ import json, struct, numpy as np
 from pathlib import Path
 
 path = Path(
-    r"C:\Users\example\.cache\huggingface\hub\models--gpt2\snapshots"
+    r"<path>"
     r"\607a30d783dfa663caf39e06633721c8d4cfcd7e\model.safetensors"
 )
 data = path.read_bytes()

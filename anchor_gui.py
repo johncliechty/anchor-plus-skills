@@ -2443,7 +2443,7 @@ def _trigger_project_session_summaries(folder_path, project_id):
             _trigger_session_summary(folder_path, project_id, trio_lane, s)
 
 
-def render_status_line_html(project_id: str) -> str:
+def render_status_line_html(project_id: str, sline=None) -> str:
     """Render the per-lane SESSION summary line (Research/Planning/Build/Deliv).
 
     Wave 3 contract: ``rnd_registry.status_line`` returns per-lane counts +
@@ -2453,7 +2453,7 @@ def render_status_line_html(project_id: str) -> str:
     zero sessions shows a dimmed ``0``; an imported count adds a small
     ``(N imported)`` provenance chip; a live job adds ``• N running``.
     """
-    line = _rnd.status_line(project_id)
+    line = sline if isinstance(sline, dict) else _rnd.status_line(project_id)
     chips = []
     for lane in _rnd.STATUS_LANES:
         counts = line.get(lane) or {}
@@ -2800,11 +2800,11 @@ def render_project_tile_html(entry: dict, facts=None, chrome: bool = True) -> st
     except Exception:
         due_block = ""
     # Per-lane mini-counts (compact form of the status line) + status dot.
-    status = render_status_line_html(pid_raw)
     try:
         sline = _rnd.status_line(pid_raw)
     except Exception:
         sline = {}
+    status = render_status_line_html(pid_raw, sline=sline)
     # v10.1 FIX 3 — pass the registry running count so a live MANAGED terminal
     # session (no job_runner record → status_line.running == 0) still greens the
     # home-row dot.
@@ -17817,9 +17817,10 @@ def _doctor_sync_live_code():
         pass
     try:
         import importlib
+        _mod_mtimes = globals().setdefault("_DOCTOR_MOD_MTIMES", {})
         for mod_name in ("proc_probe", "lanes", "deliverables_register", "home_rows", "high_seat_page",
                          "campaign_page", "desk", "desk_page", "mothership_collab", "website_portal",
-                         "foundry_page", "foundry_api", "usage_allowance_monitor",
+                         "foundry_page", "foundry_api", "usage_allowance_monitor", "usage_nightly_sync",
                          "steward_cockpit.gui_ingress_routes", "steward_cockpit.gui_domain_core",
                          "steward_cockpit.gui_surface_emit",
                          "steward_cockpit.steward_campaign", "steward_cockpit.steward_engine",
@@ -17829,7 +17830,13 @@ def _doctor_sync_live_code():
                          "terminal_session", "comms_connector", "doctor_plain"):
             if mod_name in sys.modules:
                 try:
-                    importlib.reload(sys.modules[mod_name])
+                    _m_obj = sys.modules[mod_name]
+                    _m_file = getattr(_m_obj, "__file__", None)
+                    _m_mt = os.stat(_m_file).st_mtime_ns if _m_file else None
+                    if _m_mt is None or _mod_mtimes.get(mod_name) != _m_mt:
+                        importlib.reload(_m_obj)
+                        if _m_mt is not None:
+                            _mod_mtimes[mod_name] = _m_mt
                 except Exception:
                     pass
     except Exception:

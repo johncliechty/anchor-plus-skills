@@ -1,0 +1,35 @@
+{
+  "triage_track": "FULL",
+  "triage": {
+    "locked": true,
+    "tier": "Heavy",
+    "depth": "FULL",
+    "rationale": "Ecgberht steward v3 Heavy. Project root = Ecgberht so vacuous-GREEN sees test imports of engine/scripts.",
+    "source": "stage2-handoff",
+    "lockedAt": "2026-08-02"
+  },
+  "docs": {
+    "description": "planning/steward-handoff-v3/DESCRIPTION.md",
+    "plan": "planning/steward-handoff-v3/IMPLEMENTATION-PLAN.md",
+    "execution_log": "planning/steward-handoff-v3/EXECUTION-LOG.md"
+  },
+  "git": {
+    "enabled": true,
+    "branch": "foreman/steward-v3-heavy"
+  },
+  "budget": {
+    "max_waves_per_run": 22,
+    "max_fix_iters_per_wave": 4
+  },
+  "seating": {
+    "coding_family": "grok",
+    "review_family": "claude",
+    "cross_model": true,
+    "trio_tier": "heavy"
+  },
+  "models": {
+    "execute": "grok-cli:grok-4.5",
+    "fix": "grok-cli:grok-4.5",
+    "review": "claude:claude-fable-5"
+  }
+}

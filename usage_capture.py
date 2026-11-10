@@ -917,7 +917,15 @@ def ingest_usage(engine_session_uuid, key, *, source, native_id, tokens,
         try:
             row = {f: entry[f] for f in INDEX_FIELDS}
             row["key"] = index_key or key
-            _ui.append_rows(entry["project_id"], [row])
+            if _ui.append_rows(entry["project_id"], [row]) > 0:
+                try:
+                    from steward_cockpit import steward_routes as _sr
+                    with _sr._ROLLUP_LOCK:
+                        _sr._ROLLUP_CACHE.clear()
+                    with _sr._STATE_LOCK:
+                        _sr._STATE_CACHE.clear()
+                except Exception:
+                    pass
         except Exception:
             pass
     return added

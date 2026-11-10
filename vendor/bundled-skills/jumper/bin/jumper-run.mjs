@@ -49,7 +49,7 @@ import { runAgent as trioRunAgent } from '../../../../trio/drivers/index.mjs';
 import {
   resolveJumperDepthKnobs,
   JUMPER_KILL_GATES_MIN,
-} from 'file:///C:/dev/Skill%20Foundry/foundry/triage/mapping.mjs';
+} from 'fil<path>';
 
 const USAGE =
   'usage: node bin/jumper-run.mjs --problem "<statement>" [--fan-out N] [--depth LITE|SPIKE|FULL] [--tier Heavy|Standard] [--retry-on-kill] [--no-live-refuter]\n' +

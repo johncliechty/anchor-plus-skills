@@ -58,7 +58,7 @@ function sortKeysDeep(value) {
  * Initialize the full pipeline state at the Stage-0 HALT boundary.
  *
  * @param {object} options
- * @param {import('C:/dev/trio/trio-shared/brownfield-intake/planArtifact.schema.mjs').PlanArtifact}
+ * @param {import('<path>').PlanArtifact}
  *   options.artifact The derived PlanArtifact (the shared module's end-to-end output).
  * @param {string} options.planBody The rendered prose plan body presented at the gate.
  * @param {string|null} [options.coverageSidecar] The advisory coverage sidecar (display only).
