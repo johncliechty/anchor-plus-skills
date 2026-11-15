@@ -43,6 +43,7 @@ import subprocess
 import threading
 from pathlib import Path
 
+import paths as _paths
 import pillar_flags as _pf
 import job_runner as _jr
 import gate_adapter as _ga
@@ -986,7 +987,11 @@ class ExternalSupervisor(Supervisor):
         req = urllib.request.Request(url, data=data, headers=headers,
                                      method=method)
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            if not url.startswith(("http://", "https://")):
+                raise _paths.DisallowedUrlSchemeError(
+                    "Blocked unsafe path traversal or disallowed URL scheme"
+                )
+            with _paths.safe_urlopen(req, timeout=min(float(self.timeout), 15.0)) as resp:
                 body = resp.read().decode("utf-8") or "{}"
                 return json.loads(body)
         except urllib.error.HTTPError as e:

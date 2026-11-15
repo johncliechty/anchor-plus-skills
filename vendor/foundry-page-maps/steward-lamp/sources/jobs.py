@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import subprocess
 import threading
 import time
@@ -36,6 +37,15 @@ def jobs_base():
     root = os.environ.get("ANCHOR_CODE_JOBS_DIR") or os.path.join(os.environ.get("LOCALAPPDATA") or str(Path.home()), "anchor-code-jobs")
     Path(root).mkdir(parents=True, exist_ok=True)
     return Path(root)
+
+
+def _split_cmd_argv(cmd):
+    if isinstance(cmd, str):
+        toks = shlex.split(cmd, posix=(os.name != "nt"))
+        if os.name == "nt":
+            return [tok[1:-1] if len(tok) >= 2 and tok[0] == tok[-1] and tok[0] in ('"', "'") else tok for tok in toks]
+        return toks
+    return list(cmd)
 
 
 def _git(repo, *args, timeout=120):
@@ -242,7 +252,7 @@ def _finish(cdir, job_id, job, result):
     check_out, check_ok = "", None
     if job.get("check") and not err:
         try:
-            r = subprocess.run(job["check"], cwd=wt, shell=True, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=CHECK_TIMEOUT_S)
+            r = subprocess.run(_split_cmd_argv(job["check"]), cwd=wt, shell=False, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=CHECK_TIMEOUT_S)
             check_ok = r.returncode == 0
             check_out = ((r.stdout or "") + (r.stderr or ""))[-1200:]
         except Exception as e:
@@ -311,7 +321,7 @@ def _land_under_lock(job, _gs):
         return False, "not landed: the work conflicts with newer changes in %s; it waits on branch %s" % (repo, job["branch"])
     if job.get("check"):
         try:
-            r = subprocess.run(job["check"], cwd=wt, shell=True, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=CHECK_TIMEOUT_S)
+            r = subprocess.run(_split_cmd_argv(job["check"]), cwd=wt, shell=False, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=CHECK_TIMEOUT_S)
             if r.returncode != 0:
                 return False, "not landed: the check failed after bringing in newer changes; the work waits on branch %s" % job["branch"]
         except Exception as e:

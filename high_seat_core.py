@@ -537,8 +537,8 @@ def proactive_triage_cards(ctx: dict[str, Any]) -> list[dict[str, Any]]:
         (
             (d, st, f)
             for d, st, f in dated_all
-            if "mba" in str(f.get("name") or "").lower()
-            or "teaching" in str(f.get("name") or "").lower()
+            if "teaching" in str(f.get("name") or "").lower()
+            or "course" in str(f.get("name") or "").lower()
             or "lecture" in str(st.get("name") or "").lower()
         ),
         None,
@@ -577,19 +577,13 @@ def proactive_triage_cards(ctx: dict[str, Any]) -> list[dict[str, Any]]:
             "step_id": "",
         }
 
-    # 2. Next 72h / External Counsel & Transfers
-    counsel_hit = (
+    # 2. Next 72h / Upcoming Milestones & External Dependencies
+    next_72h_hit = (
         next(
             (
                 (d, st, f)
                 for d, st, f in dated_all
-                if (d, st, f) != today_or_next
-                and (
-                    "stanford" in str(st.get("name") or "").lower()
-                    or "merrill" in str(st.get("name") or "").lower()
-                    or "exmera" in str(st.get("name") or "").lower()
-                )
-                and d >= today
+                if (d, st, f) != today_or_next and today <= d <= today + timedelta(days=3)
             ),
             None,
         )
@@ -597,38 +591,19 @@ def proactive_triage_cards(ctx: dict[str, Any]) -> list[dict[str, Any]]:
             (
                 (d, st, f)
                 for d, st, f in dated_all
-                if (d, st, f) != today_or_next
-                and (
-                    "trust" in str(f.get("name") or "").lower()
-                    or "stanford" in str(st.get("name") or "").lower()
-                    or "merrill" in str(st.get("name") or "").lower()
-                )
-                and d >= today
-            ),
-            None,
-        )
-        or next(
-            (
-                (d, st, f)
-                for d, st, f in dated_all
-                if (d, st, f) != today_or_next
-                and (
-                    "trust" in str(f.get("name") or "").lower()
-                    or "stanford" in str(st.get("name") or "").lower()
-                    or (today < d <= today + timedelta(days=7))
-                )
+                if (d, st, f) != today_or_next and today < d <= today + timedelta(days=7)
             ),
             None,
         )
     )
-    if counsel_hit:
-        d, st, f = counsel_hit
+    if next_72h_hit:
+        d, st, f = next_72h_hit
         card2 = {
             "id": "triage-counsel",
             "rule": "Rule · 72h & External Dependencies",
             "tone": "amber",
             "title": "%s — %s" % (f.get("name") or "Project", st.get("name") or "Milestone"),
-            "why": "Due %s · %s" % (short_date(st.get("due")), f.get("next") or "Track external turn-around and template handoff"),
+            "why": "Due %s · %s" % (short_date(st.get("due")), f.get("next") or "Track upcoming deliverable turn-around"),
             "pid": str(f.get("id") or ""),
             "folder": _folder_for(f),
             "step_id": str(st.get("step_id") or st.get("id") or st.get("name") or ""),
@@ -639,7 +614,7 @@ def proactive_triage_cards(ctx: dict[str, Any]) -> list[dict[str, Any]]:
             "rule": "Rule · 72h & External Dependencies",
             "tone": "sky",
             "title": "No external bottlenecks due in 72h",
-            "why": "All external counsel and dependency tracks are within window.",
+            "why": "All upcoming dependency tracks are within window.",
             "pid": "",
             "folder": "",
             "step_id": "",
@@ -807,306 +782,308 @@ def star_foresight_cards(ctx: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 
+def _infer_oranges_skill(category: str = "", title: str = "") -> str:
+    cat_l = str(category or "").strip().lower()
+    txt_l = f"{cat_l} {str(title or '').lower()}"
+    if any(k in txt_l for k in ("legal", "contract", "trust", "compliance", "counsel")):
+        return "Legal-Beagle"
+    if any(k in txt_l for k in ("financ", "budget", "tax", "valuation", "waterfall", "cap table", "invoice")):
+        return "Financial-Analyst"
+    if any(k in txt_l for k in ("teach", "course", "lecture", "curriculum", "student", "exam")):
+        return "Einstein"
+    if any(k in txt_l for k in ("novel", "book", "story", "chapter", "fiction", "writing")):
+        return "Chekhov"
+    if any(k in txt_l for k in ("email", "inbox", "reply", "correspondence")):
+        return "Scribe"
+    if any(k in txt_l for k in ("brainstorm", "ideat", "trip", "gift", "family", "personal")):
+        return "Superjump"
+    if any(k in txt_l for k in ("research", "paper", "grant", "citation", "proof", "experiment")):
+        return "researchPrime"
+    return "Gandalf"
+
+
 def chief_of_staff_horizon_efforts(ctx: dict[str, Any]) -> dict[str, Any]:
-    """Wave 21 (2026-11-02): Co-populated Cave of Wonders Steward x Star Chart Steward Next-Effort Engine.
-    Surfaces prioritized Next-Best Efforts (never a duplicate calendar/email viewer) across:
-      - Today (Widest 44%): Urgent & Important (Q1) clearances -> Unlocked Quadrant II Deep-Work slot
-      - This Week (Medium 28%): Soon-to-Be Urgent academic, commercial & Family/Relationship efforts
-      - This Month (Expandable 14%): Family Trips & Birthday Presents radar + 30-day Star Chart deliverables
-      - Quarter / Star Chart Q2 (Expandable 14%): Important, Not Urgent (Quadrant II) flagship value creation
-    Includes 'Parable of the Oranges' pre-staged Foundry skills and 'Break-Between-Cockpits' routing metadata."""
+    """Dynamic Chief-of-Staff Next-Effort Engine (Wave 2 — zero hardcoded dates or static mockups).
+    Co-populated dynamically from live *The List* (`working-list-spine.json`), `steward-watchlist.json`,
+    active AI Cockpits (`ctx['facts']`), genuine calendar/email signals, and Star Chart Goals (`ctx['initiatives']`)."""
     today = ctx.get("today") or date.today()
     facts = ctx.get("facts") or {}
     entries = ctx.get("entries") or ()
-    inits = [i for i in (ctx.get("initiatives") or ()) if i.get("status") not in ("done", "parked")]
-    working_pids = set(str(x) for x in (ctx.get("working") or ()))
+    inits = [i for i in (ctx.get("initiatives") or ()) if isinstance(i, dict) and i.get("status") not in ("done", "parked")]
+    working_pids = set(str(x) for x in (ctx.get("working") or ()) if x)
     desk_pid = str(ctx.get("desk_pid") or "")
+    camp_pid = str((ctx.get("campaign") or {}).get("pid") or "")
 
-    # Map project names/slugs to real project IDs & folders when available in ctx
-    pid_by_kw: dict[str, tuple[str, str]] = {}
+    entry_by_id: dict[str, dict[str, Any]] = {}
     for e in entries:
-        if not isinstance(e, dict):
-            continue
-        epid = str(e.get("id") or "")
-        efolder = str(e.get("folder_path") or "")
-        ename = str(e.get("name") or "").lower()
-        if epid:
-            pid_by_kw[ename] = (epid, efolder)
-    for f in facts.values():
-        if not isinstance(f, dict):
-            continue
-        fpid = str(f.get("id") or "")
-        ffolder = str(f.get("folder") or "")
-        fname = str(f.get("name") or "").lower()
-        if fpid and fname not in pid_by_kw:
-            pid_by_kw[fname] = (fpid, ffolder)
+        if isinstance(e, dict) and e.get("id"):
+            entry_by_id[str(e["id"])] = e
 
-    def _match_proj(*keywords: str) -> tuple[str, str]:
-        for kw in keywords:
-            kw_l = kw.lower()
-            for k, val in pid_by_kw.items():
-                if kw_l in k:
-                    return val
-        return ("", "")
-
-    mit_pid, mit_dir = _match_proj("mit", "ai club", "mktg")
-    trust_pid, trust_dir = _match_proj("trust", "family")
-    mba_pid, mba_dir = _match_proj("mba", "teaching", "815")
-    mkt_pid, mkt_dir = _match_proj("marketing", "moe", "demand", "collapse")
-    hnf_pid, hnf_dir = _match_proj("normalizing", "flow", "technical")
-    magi_pid, magi_dir = _match_proj("magi", "writing", "dragon", "brightheart")
-    phen_pid, phen_dir = _match_proj("parametric", "3d", "cheng", "phenom")
-    gwl_pid, gwl_dir = _match_proj("gwl", "harness", "foundry", "brain")
-    comm_pid, comm_dir = _match_proj("commercial", "opx", "nextgen", "axmra")
-
-    def _cockpit_href(pid: str, fallback_pid: str = "") -> str:
+    def _cockpit_href(pid: str, effort_dir: str = "", fallback_pid: str = "") -> str:
         use_pid = pid or fallback_pid or desk_pid
         if use_pid:
-            return "/steward/v1?pid=%s&dir=" % use_pid
+            from urllib.parse import quote as _url_quote
+            return "/steward/v1?pid=%s&dir=%s" % (use_pid, _url_quote(str(effort_dir or ""), safe=""))
         return "/steward/v1"
 
-    # Pull dynamic first-card step_id/folder from proactive_triage_cards so existing data-mark-done tests stay bound
     legacy_cards = proactive_triage_cards(ctx)
-    c1 = legacy_cards[0] if legacy_cards else {}
-    c2 = legacy_cards[1] if len(legacy_cards) > 1 else {}
 
-    # Pull dynamic recommendations directly from 'The List' (ordered by Priority #1, #2, #3...)
-    list_recs = []
+    wl_status = "ok"
+    wl_state: dict[str, Any] = {}
+    list_recs: list[dict[str, Any]] = []
+    wl_items: list[dict[str, Any]] = []
     try:
         import comms_connector as _cc_list
-        list_recs = _cc_list.build_chief_of_staff_recommendations_from_the_list()
+        wl_res, wl_code = _cc_list.handle_working_list_request(method="GET")
+        if not wl_res.get("ok") or wl_code >= 500:
+            wl_status = "unknown"
+        else:
+            wl_state = wl_res.get("working_list") if isinstance(wl_res.get("working_list"), dict) else {}
+            list_recs = list(wl_state.get("cos_recommendations") or _cc_list.build_chief_of_staff_recommendations_from_the_list())
+        w_res, w_code = _cc_list.get_watchlist_response(include_done=False, today=today)
+        if w_res.get("ok") and w_code == 200:
+            wl_items = [x for x in (w_res.get("items") or []) if isinstance(x, dict)]
+        elif w_code >= 500:
+            wl_status = "unknown"
     except Exception:
-        list_recs = []
+        wl_status = "unknown"
 
-    today_efforts = []
+    active_tiles = [
+        t for t in (wl_state.get("tiles") or [])
+        if isinstance(t, dict) and not t.get("archived") and not t.get("done")
+    ]
+    hz_counts_raw = wl_state.get("horizon_counts") if isinstance(wl_state.get("horizon_counts"), dict) else {}
+
+    # 1. TODAY (Urgent & Important — Clear the Deck + Top of The List)
+    today_efforts: list[dict[str, Any]] = []
     for idx_r, rec in enumerate(list_recs[:3]):
-        fallback_c = c1 if idx_r == 0 else (c2 if idx_r == 1 else {})
+        fallback_c = legacy_cards[idx_r] if idx_r < len(legacy_cards) else {}
         r_copy = dict(rec)
-        r_copy["pid"] = str(r_copy.get("pid") or fallback_c.get("pid") or mit_pid or mba_pid or "")
-        r_copy["folder"] = str(r_copy.get("folder") or fallback_c.get("folder") or mit_dir or mba_dir or "")
-        r_copy["step_id"] = str(r_copy.get("step_id") or fallback_c.get("step_id") or f"list-step-{idx_r+1}")
+        pid_r = str(r_copy.get("pid") or fallback_c.get("pid") or "")
+        skill_r = str(r_copy.get("oranges_skill") or _infer_oranges_skill(str(r_copy.get("category") or ""), str(r_copy.get("title") or "")))
+        r_copy["id"] = str(r_copy.get("id") or f"cos-today-{idx_r + 1}")
+        r_copy["tier_cls"] = str(r_copy.get("tier_cls") or ("q1-urgent" if idx_r == 0 else "q2-deep"))
+        r_copy["tier_badge"] = str(r_copy.get("tier_badge") or r_copy.get("list_badge") or f"The List · #{idx_r + 1}")
+        r_copy["tier_pill_cls"] = str(r_copy.get("tier_pill_cls") or ("red" if idx_r == 0 else "emerald"))
+        r_copy["break_badge"] = str(r_copy.get("break_badge") or "Active Focus")
+        r_copy["break_tags"] = str(r_copy.get("break_tags") or "all")
+        r_copy["pid"] = pid_r
+        r_copy["folder"] = str(r_copy.get("folder") or fallback_c.get("folder") or "")
+        r_copy["step_id"] = str(r_copy.get("step_id") or fallback_c.get("step_id") or "")
+        r_copy["href"] = str(r_copy.get("href") or _cockpit_href(pid_r))
+        r_copy["oranges_skill"] = skill_r
+        r_copy["oranges_text"] = str(r_copy.get("oranges_text") or f"Pre-stage {skill_r} in the linked AI Cockpit.")
+        r_copy["open_label"] = str(r_copy.get("open_label") or ("↗ Open AI Cockpit" if pid_r else "+ Create AI Cockpit"))
+        r_copy["skill_btn_label"] = str(r_copy.get("skill_btn_label") or f"🍊 Pre-Stage {skill_r}")
+        r_copy["skill_prompt"] = str(r_copy.get("skill_prompt") or f"Use {skill_r} to advance: {r_copy.get('title') or 'next step'}.")
         today_efforts.append(r_copy)
 
     if not today_efforts:
-        today_efforts = [
-            {
-                "id": "cos-today-mit",
-                "list_tile_id": "wl-archty-shutdown",
-                "list_badge": "📋 The List · #1 (1st)",
-                "tier_cls": "q1-urgent",
-                "tier_badge": "📋 The List · #1 (1st)",
-                "tier_pill_cls": "red",
-                "break_badge": "⚡ 20m Break",
-                "break_tags": "all 15m 30m",
-                "title": "Priority #1: Shut down my company Archty",
-                "driver": "The List (#1 · Business) — Next To Do: Confirm final stub-year federal & state tax return schedule with CPA.",
-                "oranges_skill": "Legal-Beagle + Financial-Analyst",
-                "oranges_text": "Steward Chief-of-Staff recommendation for #1: Execute stub-year tax tie-out in Archty Cockpit.",
-                "pid": mit_pid or str(c1.get("pid") or ""),
-                "folder": mit_dir or str(c1.get("folder") or ""),
-                "step_id": str(c1.get("step_id") or "mit-lecture-slides"),
-                "href": _cockpit_href(mit_pid or str(c1.get("pid") or "")),
-                "open_label": "↗ Open AI Cockpit",
-                "skill_btn_label": "🍊 Pre-Stage Legal-Beagle + Financial-Analyst",
-                "skill_prompt": "Run Legal-Beagle and Financial-Analyst on Archty final dissolution & stub-year tax schedule.",
-                "unlock_note": "Move to Things Done",
-            }
-        ]
+        for idx_c, c in enumerate(legacy_cards[:2]):
+            if not c.get("pid") and idx_c > 0:
+                continue
+            c_title = str(c.get("title") or "Today's schedule is clear")
+            c_skill = _infer_oranges_skill("", c_title)
+            c_pid = str(c.get("pid") or "")
+            today_efforts.append({
+                "id": f"cos-today-card-{idx_c + 1}",
+                "list_tile_id": "",
+                "list_badge": str(c.get("rule") or "Today"),
+                "tier_cls": "q1-urgent" if c.get("tone") == "amber" else "q2-deep",
+                "tier_badge": str(c.get("rule") or "Today"),
+                "tier_pill_cls": "amber" if c.get("tone") == "amber" else "emerald",
+                "break_badge": "Live Record",
+                "break_tags": "all",
+                "title": c_title,
+                "driver": str(c.get("why") or "Derived from live cockpit & schedule state."),
+                "oranges_skill": c_skill,
+                "oranges_text": f"{c_skill} ready to pre-stage when you open this cockpit.",
+                "pid": c_pid,
+                "folder": str(c.get("folder") or ""),
+                "step_id": str(c.get("step_id") or ""),
+                "href": _cockpit_href(c_pid),
+                "open_label": "↗ Open AI Cockpit" if c_pid else "+ Create AI Cockpit",
+                "skill_btn_label": f"🍊 Pre-Stage {c_skill}",
+                "skill_prompt": f"Run {c_skill} on {c_title}.",
+                "unlock_note": "Done" if c.get("step_id") else "",
+            })
 
-    week_efforts = [
-        {
-            "id": "cos-week-mba",
-            "tier_cls": "soon-urgent",
-            "tier_badge": "Tomorrow 8 AM",
-            "tier_pill_cls": "amber",
-            "break_tags": "all 30m",
-            "title": "Tue 8:00 AM: MBA Teaching AI (BA 815) — Lecture 6 & AI Supp 5",
-            "driver": "4.5-hr MBA teaching block tomorrow morning. Einstein pre-staged Lecture 6 regression walkthrough.",
-            "oranges_skill": "Einstein",
-            "pid": mba_pid,
-            "folder": mba_dir,
-            "step_id": "ba815-lec6",
-            "href": _cockpit_href(mba_pid),
-            "open_label": "↗ Open AI Cockpit (MBA Teaching)",
-            "skill_btn_label": "🎓 Einstein Prep Ready",
-            "skill_prompt": "Use Einstein to verify BA 815 Lecture 6 (Simple Linear Regression) and AI Supplement 5 worked examples.",
-            "is_create": False,
-        },
-        {
-            "id": "cos-week-jane",
-            "tier_cls": "family-rel",
-            "tier_badge": "Family · Wed & Sun",
-            "tier_pill_cls": "pink",
-            "break_tags": "all 15m 30m family",
-            "title": "🏠 Family & Jane: Sun Nov 8 Team Teach w/ Jane + Wed Youth Night",
-            "driver": "Calendar Wed 7 PM Youth Night + Sun 9 AM Team Teach with Jane. Prep now in a 15m break so the weekend is stress-free.",
-            "oranges_skill": "Einstein + Superjump",
-            "pid": trust_pid or desk_pid,
-            "folder": trust_dir,
-            "step_id": "team-teach-jane",
-            "href": _cockpit_href(trust_pid, desk_pid),
-            "open_label": "+ Create / Open Cockpit (Jane Team Teach)",
-            "skill_btn_label": "🍊 Pre-Stage Einstein + Superjump Outline",
-            "skill_prompt": "Create a 2-page joint lesson outline, object-lesson options (Superjump), and discussion questions (Einstein) for Sunday's Church Team Teach with Jane and Wednesday Youth Night.",
-            "is_create": True,
-        },
-        {
-            "id": "cos-week-openai",
-            "tier_cls": "soon-urgent",
-            "tier_badge": "Due Thu Nov 5",
-            "tier_pill_cls": "amber",
-            "break_tags": "all 30m deep",
-            "title": "Thu Nov 5 Deadline: OpenAI Academic Research Grant Application",
-            "driver": "Star Chart deadline in 3 days. researchPrime + Gandalf pre-staged proposal narrative & compute budget.",
-            "oranges_skill": "researchPrime + Gandalf",
-            "pid": hnf_pid or gwl_pid,
-            "folder": hnf_dir or gwl_dir,
-            "step_id": "openai-grant-nov5",
-            "href": _cockpit_href(hnf_pid or gwl_pid),
-            "open_label": "+ Create / Open Grant Cockpit",
-            "skill_btn_label": "🧙 Pre-Stage Gandalf + researchPrime",
-            "skill_prompt": "Synthesize the OpenAI Academic Research Program Grant narrative from Hierarchical Normalizing Flows and GWL Harnesses using researchPrime and stress-test with Gandalf.",
-            "is_create": True,
-        },
-        {
-            "id": "cos-week-nextgen",
-            "tier_cls": "soon-urgent",
-            "tier_badge": "⚡ 10m Break",
-            "tier_pill_cls": "sky",
-            "break_tags": "all 15m",
-            "title": "⚡ 10m Break Win: Stop NextGen Google Account Paid Status",
-            "driver": "Triggered by Google Workspace invoice email for nextgen-np.com + Commercial priority list.",
-            "oranges_skill": "Steward",
-            "pid": comm_pid or desk_pid,
-            "folder": comm_dir,
-            "step_id": "stop-nextgen-google",
-            "href": _cockpit_href(comm_pid, desk_pid),
-            "open_label": "↗ Open Commercial / Desk Cockpit",
-            "skill_btn_label": "✓ Quick Clear Checklist",
-            "skill_prompt": "Open the step-by-step checklist to cancel NextGen Google Workspace paid billing status.",
-            "is_create": False,
-        },
-    ]
+    # 2. THIS WEEK (Soon-to-Be Urgent: 7d Watchlist + 7d Dated Cockpit Steps + Remaining List Tiles)
+    week_efforts: list[dict[str, Any]] = []
+    hb = this_week_horizon_buckets(ctx)
+    seen_week_titles: set[str] = set()
+    for w_it in wl_items:
+        d_obj = _hr._iso(w_it.get("due"))
+        if d_obj is not None and d_obj <= today + timedelta(days=7):
+            w_title = str(w_it.get("title") or "Watchlist Deadline")
+            if w_title.lower() in seen_week_titles:
+                continue
+            seen_week_titles.add(w_title.lower())
+            w_skill = _infer_oranges_skill(str(w_it.get("project") or ""), w_title)
+            week_efforts.append({
+                "id": f"cos-week-wl-{w_it.get('id') or len(week_efforts) + 1}",
+                "list_tile_id": str(w_it.get("tile_id") or ""),
+                "list_badge": f"Watchlist · {short_date(w_it.get('due'))}",
+                "tier_cls": "soon-urgent",
+                "tier_badge": f"Due {short_date(w_it.get('due'))}",
+                "tier_pill_cls": "amber",
+                "break_tags": "all",
+                "title": w_title,
+                "driver": str(w_it.get("notes") or f"Steward Watchlist deadline ({w_it.get('due')})."),
+                "oranges_skill": w_skill,
+                "pid": desk_pid,
+                "folder": "",
+                "step_id": "",
+                "href": _cockpit_href(desk_pid),
+                "open_label": "+ Create / Open AI Cockpit",
+                "skill_btn_label": f"🍊 Pre-Stage {w_skill}",
+                "skill_prompt": f"Use {w_skill} to prepare for Watchlist deadline: {w_title} (due {w_it.get('due')}).",
+                "is_create": not bool(desk_pid),
+            })
+            if len(week_efforts) >= 4:
+                break
 
-    month_efforts = [
-        {
-            "id": "cos-month-family-trips",
-            "title": "🎁 Family Trips & Birthday Presents Radar",
-            "badge": "Family · T-21d",
-            "pill_cls": "pink",
-            "break_tags": "all 15m 30m family",
-            "meta": "🍊 Superjump gift & holiday travel options pre-staged before Nov cutoffs.",
-            "oranges_text": "Pre-staged 3 curated gift ideas per upcoming family birthday + Thanksgiving/holiday travel holds (domains/family.md).",
-            "href": _cockpit_href(trust_pid, desk_pid),
-            "open_label": "+ Create Family Trip & Gift Cockpit",
-            "skill_btn_label": "🚀 Run Superjump Gift/Trip Finder",
-            "skill_prompt": "Use Superjump to generate curated family birthday present options and Thanksgiving/holiday family trip itineraries.",
-            "is_create": True,
-        },
-        {
-            "id": "cos-month-hnf",
-            "title": "🧮 Normalizing Flows — Paper 1 (Nov 22)",
-            "badge": "🟢 Running",
-            "pill_cls": "emerald",
+    for bucket_items in (hb.get("col_72h") or [], hb.get("col_week") or [], hb.get("col_today") or []):
+        for it in bucket_items:
+            if len(week_efforts) >= 4:
+                break
+            nm = str(it.get("name") or "Milestone")
+            pnm = str(it.get("project_name") or "Project")
+            full_t = f"{pnm} — {nm}"
+            if full_t.lower() in seen_week_titles:
+                continue
+            seen_week_titles.add(full_t.lower())
+            it_pid = str(it.get("project_id") or "")
+            it_skill = _infer_oranges_skill(pnm, nm)
+            week_efforts.append({
+                "id": f"cos-week-step-{len(week_efforts) + 1}",
+                "list_tile_id": "",
+                "list_badge": f"Due {short_date(it.get('due'))}",
+                "tier_cls": "soon-urgent",
+                "tier_badge": short_date(it.get("due")) or "This Week",
+                "tier_pill_cls": "amber",
+                "break_tags": "all",
+                "title": full_t,
+                "driver": f"Upcoming 7-day roadmap step in {pnm}.",
+                "oranges_skill": it_skill,
+                "pid": it_pid,
+                "folder": str(it.get("folder") or ""),
+                "step_id": str(it.get("step_id") or ""),
+                "href": _cockpit_href(it_pid),
+                "open_label": "↗ Open AI Cockpit" if it_pid else "+ Create AI Cockpit",
+                "skill_btn_label": f"🍊 Pre-Stage {it_skill}",
+                "skill_prompt": f"Use {it_skill} to complete {nm} in {pnm}.",
+                "is_create": not bool(it_pid),
+            })
+
+    # 3. THIS MONTH (8..30d Watchlist + Seated Initiatives + Personal/Family lead-time tiles)
+    month_efforts: list[dict[str, Any]] = []
+    for w_it in wl_items:
+        d_obj = _hr._iso(w_it.get("due"))
+        if d_obj is not None and today + timedelta(days=7) < d_obj <= today + timedelta(days=31):
+            m_title = str(w_it.get("title") or "Monthly Milestone")
+            m_skill = _infer_oranges_skill(str(w_it.get("project") or ""), m_title)
+            month_efforts.append({
+                "id": f"cos-month-wl-{w_it.get('id') or len(month_efforts) + 1}",
+                "list_tile_id": str(w_it.get("tile_id") or ""),
+                "list_badge": short_date(w_it.get("due")) or "This Month",
+                "title": m_title,
+                "badge": short_date(w_it.get("due")) or "This Month",
+                "pill_cls": "amber",
+                "break_tags": "all",
+                "meta": f"🍊 {m_skill} pre-stage ready",
+                "oranges_text": str(w_it.get("notes") or f"Pre-stage {m_skill} ahead of {w_it.get('due')}."),
+                "href": _cockpit_href(desk_pid),
+                "open_label": "+ Create / Open AI Cockpit",
+                "skill_btn_label": f"🍊 Pre-Stage {m_skill}",
+                "skill_prompt": f"Use {m_skill} to prepare {m_title} ahead of {w_it.get('due')}.",
+                "is_create": True,
+            })
+            if len(month_efforts) >= 3:
+                break
+
+    for f_val in facts.values():
+        if len(month_efforts) >= 3:
+            break
+        if not isinstance(f_val, dict) or not f_val.get("has_record"):
+            continue
+        f_pid = str(f_val.get("id") or "")
+        if not f_pid or f_pid == camp_pid:
+            continue
+        f_name = str(f_val.get("name") or (entry_by_id.get(f_pid) or {}).get("name") or "Project")
+        f_skill = _infer_oranges_skill("", f_name)
+        is_run = f_pid in working_pids
+        month_efforts.append({
+            "id": f"cos-month-proj-{f_pid}",
+            "list_tile_id": "",
+            "list_badge": "🟢 Running" if is_run else "Active Record",
+            "title": f_name,
+            "badge": "🟢 Running" if is_run else "30d Horizon",
+            "pill_cls": "emerald" if is_run else "sky",
             "break_tags": "all deep",
-            "meta": "🍊 Ramanujan + researchPrime proof & citation pack ready.",
-            "oranges_text": "Ramanujan Jacobian bound checks and researchPrime related-work citations staged in cockpit.",
-            "href": _cockpit_href(hnf_pid),
-            "open_label": "↗ Open AI Cockpit (Normalizing Flows)",
-            "skill_btn_label": "🧮 Pre-Stage Ramanujan",
-            "skill_prompt": "Run Ramanujan proof obligation check and researchPrime citation verification for Hierarchical Normalizing Flows Paper 1.",
+            "meta": str(f_val.get("next") or f"🍊 {f_skill} ready")[:72],
+            "oranges_text": f"Pre-stage {f_skill} in {f_name} cockpit.",
+            "href": _cockpit_href(f_pid, str(f_val.get("effort") or "")),
+            "open_label": f"↗ Open AI Cockpit ({f_name[:22]})",
+            "skill_btn_label": f"🍊 Pre-Stage {f_skill}",
+            "skill_prompt": f"Use {f_skill} on next step for {f_name}.",
             "is_create": False,
-        },
-        {
-            "id": "cos-month-adio",
-            "title": "💼 OpX Redo & ADIO Road Show (Nov 24)",
-            "badge": "Nov 24",
-            "pill_cls": "amber",
-            "break_tags": "all 30m",
-            "meta": "🍊 Financial-Analyst + Gandalf pitch stress-test pre-staged.",
-            "oranges_text": "Financial-Analyst valuation model and Gandalf investor Q&A prep staged for Nov 24 road show.",
-            "href": _cockpit_href(comm_pid),
-            "open_label": "↗ Open Cockpit (OpX / ADIO)",
-            "skill_btn_label": "📊 Pre-Stage Financial-Analyst",
-            "skill_prompt": "Run Financial-Analyst model verification and Gandalf pitch review for OpX Redo and ADIO Road Show.",
-            "is_create": False,
-        },
-    ]
+        })
 
-    quarter_efforts = [
-        {
-            "id": "cos-qtr-magi",
-            "title": "📖 Artificial Magi (Book 1) & BrightHeart v2",
-            "badge": "Q2 Writing",
-            "pill_cls": "purple",
+    # 4. QUARTER / STAR CHART GOALS (Quadrant II Deep Work — Real Value Creation)
+    quarter_efforts: list[dict[str, Any]] = []
+    goals = goals_only(inits)
+    for g in (goals or inits)[:4]:
+        g_name = str(g.get("name") or g.get("title") or "Star Chart Goal")
+        g_done_when = str(g.get("done_when") or g.get("summary") or "Quadrant II Star Chart value creation.")
+        g_skill = _infer_oranges_skill(str(g.get("area") or ""), f"{g_name} {g_done_when}")
+        g_pid = ""
+        g_eff = ""
+        for p in (g.get("parts") or ()):
+            if isinstance(p, dict) and p.get("pid"):
+                g_pid = str(p["pid"])
+                g_eff = str(p.get("dir") or "")
+                break
+        quarter_efforts.append({
+            "id": f"cos-qtr-{g.get('id') or len(quarter_efforts) + 1}",
+            "list_tile_id": "",
+            "list_badge": f"Tier {g.get('tier') or 2} Goal",
+            "title": g_name,
+            "badge": f"Tier {g.get('tier') or 2} · Q2",
+            "pill_cls": "emerald" if g.get("tier") == 1 else "purple",
             "break_tags": "all deep",
-            "meta": "🍊 Chekhov story ledger + Superjump Act II beats ready.",
-            "oranges_text": "Chekhov continuity dossier and Superjump Act II structural beats pre-staged for creative deep work.",
-            "href": _cockpit_href(magi_pid),
-            "open_label": "↗ Open Writing AI Cockpit",
-            "skill_btn_label": "🎭 Pre-Stage Chekhov",
-            "skill_prompt": "Run Chekhov continuity ledger check on Artificial Magi Book 1 outline and Chronicles of the Dragon-Kept (BrightHeart v2).",
-            "is_create": False,
-        },
-        {
-            "id": "cos-qtr-3d",
-            "title": "🧬 3D Parametric Phenomics (Keith Cheng)",
-            "badge": "Q2 Research",
-            "pill_cls": "emerald",
-            "break_tags": "all deep",
-            "meta": "🍊 Superjump + Anvil spline representation prep ready.",
-            "oranges_text": "Superjump analogical transfer & Anvil codebase map pre-staged for 3D parametric spline representation.",
-            "href": _cockpit_href(phen_pid),
-            "open_label": "↗ Open 3D Parametric Cockpit",
-            "skill_btn_label": "🚀 Pre-Stage Superjump",
-            "skill_prompt": "Run Superjump and Anvil to evaluate 3D parametric spline representations for Keith Cheng phenomics.",
-            "is_create": False,
-        },
-        {
-            "id": "cos-qtr-gwl",
-            "title": "⚙️ GWL Harnesses (gwl-t2r-brain)",
-            "badge": "🟢 Running",
-            "pill_cls": "sky",
-            "break_tags": "all deep",
-            "meta": "🍊 Anvil + Aegis architecture & security audit staged.",
-            "oranges_text": "Anvil 3-level progressive abstraction map and Aegis security verification staged.",
-            "href": _cockpit_href(gwl_pid),
-            "open_label": "↗ Open GWL Harnesses Cockpit",
-            "skill_btn_label": "🔨 Pre-Stage Anvil + Aegis",
-            "skill_prompt": "Run Anvil progressive abstraction map and Aegis security check on gwl-t2r-brain.",
-            "is_create": False,
-        },
-    ]
+            "meta": f"🍊 {g_skill} · {g_done_when[:56]}",
+            "oranges_text": g_done_when[:140],
+            "href": _cockpit_href(g_pid, g_eff, fallback_pid=camp_pid),
+            "open_label": "↗ Open AI Cockpit" if g_pid else "+ Create Goal AI Cockpit",
+            "skill_btn_label": f"🍊 Pre-Stage {g_skill}",
+            "skill_prompt": f"Use {g_skill} to advance Star Chart goal '{g_name}': {g_done_when}",
+            "is_create": not bool(g_pid),
+        })
 
-    # Ensure every Chief of Staff recommendation (Today, Week, Month, Quarter) is tied to an item on The List
-    _default_list_map = [
-        ("wl-mba-ba815", "📋 The List · #1 (Teaching)"),
-        ("wl-family-trusts-jane", "📋 The List · #2 (Personal)"),
-        ("wl-hnf-grant", "📋 The List · #2 (Research)"),
-        ("wl-nextgen-billing", "📋 The List · #1 (Business)"),
-    ]
-    for _idx, _ef in enumerate(today_efforts):
-        _ef.setdefault("list_tile_id", _default_list_map[_idx % len(_default_list_map)][0])
-        _ef.setdefault("list_badge", _ef.get("tier_badge") or _default_list_map[_idx % len(_default_list_map)][1])
-    for _idx, _ef in enumerate(week_efforts):
-        _ef.setdefault("list_tile_id", _default_list_map[_idx % len(_default_list_map)][0])
-        _ef.setdefault("list_badge", _default_list_map[_idx % len(_default_list_map)][1])
-    for _idx, _ef in enumerate(month_efforts):
-        _ef.setdefault("list_tile_id", _default_list_map[(_idx + 1) % len(_default_list_map)][0])
-        _ef.setdefault("list_badge", _default_list_map[(_idx + 1) % len(_default_list_map)][1])
-    for _idx, _ef in enumerate(quarter_efforts):
-        _ef.setdefault("list_tile_id", _default_list_map[(_idx + 2) % len(_default_list_map)][0])
-        _ef.setdefault("list_badge", _default_list_map[(_idx + 2) % len(_default_list_map)][1])
+    prestaged_count = sum(
+        1 for t in active_tiles if isinstance(t.get("prestaged_skills"), list) and t.get("prestaged_skills")
+    )
+    horizon_counts = {
+        "today": int(hz_counts_raw.get("today") if "today" in hz_counts_raw else len(today_efforts)),
+        "this_week": int(hz_counts_raw.get("this_week") if "this_week" in hz_counts_raw else len(week_efforts)),
+        "this_month": int(hz_counts_raw.get("this_month") if "this_month" in hz_counts_raw else len(month_efforts)),
+        "star_chart_goals": int(
+            hz_counts_raw.get("star_chart_goals")
+            if "star_chart_goals" in hz_counts_raw
+            else max(len(quarter_efforts), len(goals))
+        ),
+    }
 
-    n_running = max(len(working_pids), 2)
     return {
+        "status": wl_status,
         "today_efforts": today_efforts,
         "week_efforts": week_efforts,
         "month_efforts": month_efforts,
         "quarter_efforts": quarter_efforts,
-        "running_cockpits": n_running,
-        "skills_prestaged": 6,
-        "urgent_count": 2,
-        "q2_unlocked_hours": "2.5 hrs",
+        "horizon_counts": horizon_counts,
+        "running_cockpits": len(working_pids),
+        "skills_prestaged": prestaged_count,
+        "urgent_count": sum(1 for e in today_efforts if e.get("tier_cls") == "q1-urgent"),
         "total_efforts": len(today_efforts) + len(week_efforts) + len(month_efforts) + len(quarter_efforts),
     }

@@ -174,12 +174,126 @@ STRATEGIC_ARENAS = [
 ]
 
 NOISE_DIR_NAMES = frozenset({
-    ".git", ".hg", ".svn", ".anchor", ".ecgberht", ".claude", ".grok", ".gemini",
+    ".git", ".hg", ".svn", ".anchor", ".ecgberht", ".claude", ".grok", ".gemini", ".codex",
     ".vscode", ".idea", ".pytest_cache", ".mypy_cache", ".ruff_cache",
     "__pycache__", "node_modules", "venv", ".venv", "env", "dist", "build",
     "Anchor-code-jobs", "$RECYCLE.BIN", "System Volume Information",
     "logs", "health_reports", "domains", "starter", "vendor",
+    "skills", "bundled-skills", "foundry-tools", "governance",
+    "bundle_staging", "_old-anchor-archive", "_archive",
 })
+
+FOUNDRY_SKILL_NAMES = frozenset({
+    "aegis", "agy-dispatch", "agy-customizations", "antigravity-guide",
+    "anvil", "chekhov", "crucible", "curriculum-developer", "ecgberht",
+    "einstein", "figure-designer", "financial-analyst", "foreman",
+    "gandalf", "jumper", "legal-beagle", "literature-review",
+    "native_swarm", "ramanujan", "researchprime", "scribe",
+    "skill-foundry", "superjump", "swarm", "swarm_monitor",
+    "tidy-idy", "zombie-hunter",
+})
+
+_ANCHOR_INSTALL_NAME_RE = re.compile(
+    r"^anchor(?:\s+\d+|\d+|[-_\s]+(?:backup.*|old.*|copy.*|update.*|v?\d.*|plus.*|home.*|app.*|share.*|merrill.*|code-jobs.*))?$",
+    re.IGNORECASE,
+)
+
+_SKILL_FOLDER_NAME_RE = re.compile(
+    r"^(?:skills?|bundled[-_\s]?skills|foundry[-_\s]?skills?|foundry[-_\s]?tools|"
+    + "|".join(re.escape(s) for s in sorted(FOUNDRY_SKILL_NAMES, key=len, reverse=True))
+    + r")(?:[-_\s]+(?:v?\d[\d\._-]*|old|backup|copy|archive|\d+))?$",
+    re.IGNORECASE,
+)
+
+
+def is_excluded_non_project_dir(
+    folder: Path | str,
+    *,
+    anchor_root: Path | str | None = None,
+) -> tuple[bool, str]:
+    """Return ``(True, reason)`` when ``folder`` is part of Anchor, an Anchor backup/install,
+    or a Foundry skill / skill-pack directory that must NEVER be discovered as a user project."""
+    try:
+        p = Path(folder).expanduser()
+        resolved = p.resolve()
+    except OSError:
+        p = Path(str(folder))
+        resolved = p
+
+    name = p.name.strip()
+    low_name = name.lower()
+    if not name or name.startswith(".") or name in NOISE_DIR_NAMES or low_name in {n.lower() for n in NOISE_DIR_NAMES}:
+        return True, "noise_or_system_dir"
+
+    # 1. Check if folder is Anchor itself or inside an Anchor installation
+    eff_anchor_roots: list[Path] = []
+    for cand_root in (anchor_root, paths.CODE_DIR):
+        if cand_root is not None:
+            try:
+                cr = Path(cand_root).expanduser().resolve()
+                if ((cr / "anchor_gui.py").is_file() or cr.name.lower() == "anchor") and cr not in eff_anchor_roots:
+                    eff_anchor_roots.append(cr)
+            except OSError:
+                continue
+
+    for ar in eff_anchor_roots:
+        if resolved == ar:
+            return True, "anchor_installation_root"
+        try:
+            resolved.relative_to(ar)
+            return True, "inside_anchor_installation"
+        except ValueError:
+            pass
+
+    # 2. Check if folder name or content matches an Anchor installation / backup / clone
+    if _ANCHOR_INSTALL_NAME_RE.match(low_name):
+        return True, "anchor_install_or_backup_folder"
+    if (p / "anchor_gui.py").is_file() and (
+        (p / "rnd_registry.py").is_file()
+        or (p / "onboard_wizard.py").is_file()
+        or (p / "paths.py").is_file()
+    ):
+        return True, "anchor_codebase_signature"
+
+    # 3. Check if folder is a Foundry Skill or skill collection
+    if _SKILL_FOLDER_NAME_RE.match(low_name):
+        return True, "foundry_skill_folder"
+    if (p / "SKILL.md").is_file():
+        return True, "contains_skill_md"
+    parent_low = p.parent.name.strip().lower() if p.parent else ""
+    if parent_low in ("skills", "bundled-skills", "foundry-tools"):
+        return True, "inside_skills_collection"
+    if (p / "bin" / "ecgberht.mjs").is_file() or (p / "scripts" / "seal-chamber-bridge.mjs").is_file():
+        return True, "ecgberht_engine_folder"
+
+    return False, ""
+
+
+def purge_spurious_registered_projects(*, anchor_root: Path | str | None = None) -> dict[str, Any]:
+    """Remove any registered R&D project entries that point to Foundry skill folders or Anchor subfolders/backups."""
+    reg = _rnd.load_registry()
+    removed_ids: list[str] = []
+    removed_names: list[str] = []
+    kept: dict[str, dict[str, Any]] = {}
+    for pid, entry in reg.items():
+        fp = str(entry.get("folder_path") or "").strip()
+        if not fp:
+            kept[pid] = entry
+            continue
+        excluded, _reason = is_excluded_non_project_dir(fp, anchor_root=anchor_root)
+        if excluded:
+            removed_ids.append(pid)
+            removed_names.append(str(entry.get("name") or Path(fp).name))
+        else:
+            kept[pid] = entry
+    if removed_ids:
+        _rnd.save_registry(kept)
+    return {
+        "ok": True,
+        "removed_count": len(removed_ids),
+        "removed_ids": removed_ids,
+        "removed_names": removed_names,
+    }
 
 
 def _utc_now_iso() -> str:
@@ -954,6 +1068,8 @@ def _discover_live_service_models(family: str, *, force: bool = False) -> list[d
                 "rank": 1,
             },
         ]
+    if fam == "gemini" and out_rows:
+        out_rows.sort(key=lambda r: (0 if r.get("model") == "gemini-4-argon" else 1, int(r.get("rank") or 0)))
     _LIVE_MODEL_CACHE[fam] = out_rows
     return out_rows
 
@@ -1896,6 +2012,8 @@ def discover_goal_resources(
                 continue
             if cand_dir.name in NOISE_DIR_NAMES or cand_dir.name.startswith("."):
                 continue
+            if is_excluded_non_project_dir(cand_dir)[0]:
+                continue
             blurb, sigs, _ = _read_folder_blurb_and_signals(cand_dir)
             sample_files: list[str] = []
             try:
@@ -2127,7 +2245,6 @@ def _read_folder_blurb_and_signals(folder: Path) -> tuple[str, list[str], bool]:
         ("pyproject.toml", "python"),
         ("package.json", "node"),
         ("Cargo.toml", "rust"),
-        ("SKILL.md", "foundry-skill"),
         ("DELIVERABLES.md", "deliverables"),
     ):
         if (folder / marker).is_file():
@@ -2201,13 +2318,17 @@ def scan_and_propose_projects(
     }
 
     # Check existing registry entries so we preserve known IDs and groups
+    anchor_base_dir = _resolve_base_dir(base_dir)
     existing_reg = {} if sandbox else _rnd.load_registry()
     by_folder_existing: dict[str, dict[str, Any]] = {}
     for e in existing_reg.values():
         fp = e.get("folder_path") or ""
         if fp:
             try:
-                k = str(Path(fp).resolve()).lower() if os.name == "nt" else str(Path(fp).resolve())
+                fp_path = Path(fp).resolve()
+                if is_excluded_non_project_dir(fp_path, anchor_root=anchor_base_dir)[0]:
+                    continue
+                k = str(fp_path).lower() if os.name == "nt" else str(fp_path)
                 by_folder_existing[k] = e
             except Exception:
                 continue
@@ -2223,7 +2344,10 @@ def scan_and_propose_projects(
                     if isinstance(raw_list, list):
                         for item in raw_list:
                             if isinstance(item, dict) and item.get("folder_path"):
-                                fk = str(Path(item["folder_path"]).resolve())
+                                fk_path = Path(item["folder_path"]).resolve()
+                                if is_excluded_non_project_dir(fk_path, anchor_root=anchor_base_dir)[0]:
+                                    continue
+                                fk = str(fk_path)
                                 fk_key = fk.lower() if os.name == "nt" else fk
                                 sibling_prior_entries.setdefault(fk_key, item)
                 except Exception:
@@ -2243,6 +2367,8 @@ def scan_and_propose_projects(
             if not child.is_dir():
                 continue
             if child.name in NOISE_DIR_NAMES or child.name.startswith("."):
+                continue
+            if is_excluded_non_project_dir(child, anchor_root=anchor_base_dir)[0]:
                 continue
             try:
                 resolved_str = str(child.resolve())
@@ -4135,6 +4261,21 @@ def build_or_resolve_exe_zip_package(
                     if collab_ov is not None:
                         zf.writestr("Anchor/anchor-core-overlay.zip", collab_ov)
                     zf.writestr("Anchor/README.txt", "Run shell/build_exe.ps1 on Mothership to populate Anchor.exe.\n")
+                repo_root = Path(__file__).resolve().parent
+                existing_names = set(zf.namelist())
+                for extra_name in (
+                    "install-mac-linux.sh",
+                    "Anchor.command",
+                    "USER-ONBOARD.md",
+                    "VERSION",
+                    "shell/anchor_shell.py",
+                    "shell/connect.py",
+                    "shell/build_unix.sh",
+                ):
+                    extra_file = repo_root / extra_name
+                    arc_name = f"Anchor/{extra_name}"
+                    if extra_file.is_file() and arc_name not in existing_names:
+                        zf.write(extra_file, arc_name)
         return prod_zip, "Anchor.zip"
 
     if package_kind == "admin":

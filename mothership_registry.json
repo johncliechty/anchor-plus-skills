@@ -1,0 +1,44 @@
+{
+  "schema": "anchor.mothership.registry.v1",
+  "latest_version": "1.5.2",
+  "canonical_github_repo": "https://github.com/johncliechty/ghostworldlabs-anchor.git",
+  "fallback_github_repo": "https://github.com/johncliechty/anchor-plus-skills.git",
+  "updated_at": "2026-11-15T20:40:00Z",
+  "motherships": [
+    {
+      "id": "gwl-server-lead",
+      "owner": "John",
+      "pseudonym": "Samwise Gamgee",
+      "role": "lead",
+      "hostname": "gwl-server",
+      "tailscale_url": "http://gwl-server:8777",
+      "github_repo": "https://github.com/johncliechty/ghostworldlabs-anchor.git",
+      "platform": "windows",
+      "install_dir": "C:/dev/Anchor",
+      "installed_version": "1.5.2",
+      "last_seen_at": "2026-11-15T20:40:00Z",
+      "last_push_at": "2026-11-15T20:40:00Z",
+      "pending_update": null
+    },
+    {
+      "id": "merrill-mothership",
+      "owner": "Merrill",
+      "pseudonym": "Aladdin",
+      "role": "collaborator",
+      "hostname": "merrill-mothership",
+      "tailscale_url": "https://merrill-mothership.ts.net",
+      "github_repo": "https://github.com/johncliechty/ghostworldlabs-anchor.git",
+      "platform": "windows",
+      "install_dir": "C:/dev/Anchor",
+      "installed_version": "1.5.1",
+      "last_seen_at": "2026-11-15T06:05:00Z",
+      "last_push_at": "2026-11-15T20:40:00Z",
+      "pending_update": {
+        "target_version": "1.5.2",
+        "pushed_by": "gwl-server-lead",
+        "pushed_at": "2026-11-15T20:40:00Z",
+        "notes": "v1.5.2: E1 turn preservation, non-project skill/Anchor folder exclusion, in-place installer & 20-skill sync, Mother Ship Push/Pull updater, and macOS/Linux turnkey launcher."
+      }
+    }
+  ]
+}

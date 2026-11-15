@@ -13,7 +13,7 @@
       },
       "instructions": {
         "path": "SKILL.md",
-        "heading": "# Anvil v2 \u2014 Programmatic Code Comprehension, Progressive Abstraction, Live Walkthrough & Software Beta-Reader Engine"
+        "heading": "# Anvil \u2014 Honest Polyglot Code Comprehension, Progressive Abstraction, Subprocess Walkthrough, Beta-Reader & Paper-to-Software Engine"
       },
       "resource_ids": [
         "anvil-mat-skill-md",
@@ -72,7 +72,7 @@
       },
       "instructions": {
         "path": "SKILL.md",
-        "heading": "# 1. Full 5-Stage Orchestrator State Machine (writes .anvil/RUN-STATE.json & .anvil/manifest.json)"
+        "heading": "## 3. Paper Sections, Step-by-Step Algorithms & Native MathML Equations \u21c4 Companion Software"
       },
       "resource_ids": [
         "anvil-peer-gandalf",
@@ -92,7 +92,7 @@
       },
       "instructions": {
         "path": "SKILL.md",
-        "heading": "# 2. Mode 1 + Anvil v2 3-Level Progressive Map, Beta-Reader Panel & Walkthrough Trace"
+        "heading": "## 4. Mandatory Pedagogical & Visual Report Standard"
       },
       "resource_ids": [
         "anvil-mat-north-star-md",

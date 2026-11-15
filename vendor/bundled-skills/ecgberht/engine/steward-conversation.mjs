@@ -1624,9 +1624,10 @@ export async function converse(projectPath, opts = {}) {
   // Record the exchange. Durable, append-only, and NEVER authoritative: this is how
   // John reads back why the plan changed, not where the plan currently stands.
   const recordTurns = (proposalHash, itemCount = 0, proposalKind = 'scaffold') => {
+    const humanRole = String(opts.who ?? 'john').trim().toLowerCase() || 'john';
     const appended = appendConversationTurns(
       projectPath,
-      [{ role: 'john', text: utterance }, { role: 'steward', text: reply.say }],
+      [{ role: humanRole, text: utterance }, { role: 'steward', text: reply.say }],
       {
         proposal_hash: proposalHash ?? null,
         kind: proposalHash ? `${proposalKind}_proposed` : 'conversation',

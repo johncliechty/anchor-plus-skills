@@ -151,9 +151,13 @@ def _settings_write_lock():
 def settings_path() -> Path:
     """Return the fixed primary settings path for this Anchor checkout/data dir.
 
-    Mirror content is never path authority.  In particular, its informational
-    ``primary_path`` field cannot redirect a later save to another host path.
+    Honors ``ANCHOR_SETTINGS_DIR`` when explicitly isolated (e.g., Foreman code-job
+    private Claude-pinned settings while ``ANCHOR_DATA_DIR`` stays pointed at the
+    real Anchor data store). Mirror content is never path authority.
     """
+    override = (os.environ.get("ANCHOR_SETTINGS_DIR") or "").strip()
+    if override:
+        return Path(override).expanduser().resolve() / SETTINGS_NAME
     return _paths.data_dir() / SETTINGS_NAME
 
 

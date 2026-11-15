@@ -260,6 +260,21 @@ def register(effort_dir, what, where, *, date=None, step=None,
                 raise
         if notify:                   # a caller that announces several rows in ONE line passes notify=False (W2)
             notify_receipt(effort_dir)
+            if re.match(r"^(?:[\u2605\u2b50]\s*)?(?:START\s+HERE|FOR\s+REVIEW|AWAITING\s+REVIEW|NEEDS\s+REVIEW|CURRENT)\b", what_n, re.I):
+                try:
+                    import comms_connector as _cc
+                    from steward_cockpit import steward_core as _sc
+                    pid_n, _rel_n = project_and_rel(d)
+                    clean_t = _sc.clean_human_deliverable_title(what_n, where_n.strip("`"))
+                    _cc.reconcile_working_list_activity(cockpit_events=[{
+                        "kind": "deliverable_for_review",
+                        "pid": pid_n or "",
+                        "cockpit_name": d.name,
+                        "deliverable_id": where_n.strip("`"),
+                        "title": clean_t,
+                    }])
+                except Exception:
+                    pass
         return {"written": True, "reason": "written"}
     except Exception as exc:
         return {"written": False,
@@ -361,6 +376,30 @@ def _route_pdf_is_current(path, pdf_query, deck_query):
         return False
 
 
+def _suggested_download_filename(product, target_path_or_ext: str) -> str:
+    """Compute a sanitized `<Clean Human Title>.<ext>` download filename for a deliverable."""
+    try:
+        from steward_cockpit import steward_core as _sc
+        explicit_sf = str((product or {}).get("suggested_filename") or "").strip()
+        if explicit_sf:
+            return _sc.sanitize_download_filename(explicit_sf, fallback_ext=target_path_or_ext)
+        readable_p = str((product or {}).get("readable_path") or "").replace("\\", "/").strip()
+        if readable_p:
+            base = readable_p.rsplit("/", 1)[-1]
+            return _sc.suggested_deliverable_filename(base, target_path_or_ext)
+        raw_label = (
+            (product or {}).get("human_title")
+            or (product or {}).get("what")
+            or (product or {}).get("title")
+            or (product or {}).get("product_id")
+            or ""
+        )
+        return _sc.suggested_deliverable_filename(raw_label, target_path_or_ext)
+    except Exception:
+        ext = os.path.splitext(str(target_path_or_ext or ""))[1].lower()
+        return ("Deliverable" + ext) if ext else "Deliverable"
+
+
 def reading_target(product, *, pid, effort_rel, effort_dir=None, registered=None, _root_real=None, _priv_homes=None):
     """How John reads one product version: ``{"read": url|None, "download": url|None, "preparing": bool}``.
 
@@ -382,7 +421,9 @@ def reading_target(product, *, pid, effort_rel, effort_dir=None, registered=None
         if url is None:
             return out
         if rext in _DOWNLOAD:
-            out["download"] = url + "&download=1"
+            dl_fn = _suggested_download_filename(product, rext)
+            sep = "&" if "?" in url else "?"
+            out["download"] = url + sep + "download=1&filename=" + quote(dl_fn, safe="")
         if rext == ".pptx":
             # a deck behind a route reads through the same-name PDF route only when the register declares that too
             from urllib.parse import urlsplit as _us, parse_qsl as _pq, urlencode as _ue
@@ -411,7 +452,8 @@ def reading_target(product, *, pid, effort_rel, effort_dir=None, registered=None
     file_hash = product.get("hash") if product.get("managed") else None
     ext = os.path.splitext(rel)[1].lower()
     if ext in _DOWNLOAD:
-        out["download"] = _file_url(pid, effort_rel, rel, file_hash, download="1")
+        dl_fn = _suggested_download_filename(product, rel)
+        out["download"] = _file_url(pid, effort_rel, rel, file_hash, download="1", filename=dl_fn)
     if ext in _RENDERED:
         out["read"] = _file_url(pid, effort_rel, rel, file_hash, render="1")
     elif ext in _INLINE:

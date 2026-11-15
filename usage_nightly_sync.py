@@ -338,21 +338,21 @@ def sync_all_usage(*, write_snapshot: bool = True, brain_dir: Path | None = None
                 raw_u["_reconciled_from_ledger"] = True
                 if se._update_state(skey, {"usage": raw_u}):
                     state_entries_updated += 1
-                # Also update in-memory idle Engine if loaded so it doesn't overwrite on next turn
-                eng = sr.ENGINES.get(skey)
-                if eng is not None and not getattr(eng, "busy", False):
-                    with eng._lock:
-                        eng.tokens = max(eng.tokens, int(raw_u.get("tokens") or 0))
-                        eng.cumulative_tokens = max(eng.cumulative_tokens, int(raw_u.get("cumulative_tokens") or 0))
-                        eng.turns = max(eng.turns, int(raw_u.get("turns") or 0))
-                        eng.unpriced_turns = max(eng.unpriced_turns, int(raw_u.get("unpriced_turns") or 0))
-                        eng.estimated_turns = max(eng.estimated_turns, int(raw_u.get("estimated_turns") or 0))
-                        eng.estimated_spend = max(eng.estimated_spend, float(raw_u.get("estimated_spend") or 0.0))
-                        eng.cumulative_estimated_spend = max(
-                            eng.cumulative_estimated_spend, float(raw_u.get("cumulative_estimated_spend") or 0.0)
-                        )
-                        if isinstance(raw_u.get("last_session_usage"), dict):
-                            eng._last_session_usage = dict(raw_u["last_session_usage"])
+            # Always keep idle in-memory Engine counters in sync with any higher persisted usage
+            eng = sr.ENGINES.get(skey)
+            if eng is not None and not getattr(eng, "busy", False):
+                with eng._lock:
+                    eng.tokens = max(eng.tokens, int(raw_u.get("tokens") or 0))
+                    eng.cumulative_tokens = max(eng.cumulative_tokens, int(raw_u.get("cumulative_tokens") or 0))
+                    eng.turns = max(eng.turns, int(raw_u.get("turns") or 0))
+                    eng.unpriced_turns = max(eng.unpriced_turns, int(raw_u.get("unpriced_turns") or 0))
+                    eng.estimated_turns = max(eng.estimated_turns, int(raw_u.get("estimated_turns") or 0))
+                    eng.estimated_spend = max(eng.estimated_spend, float(raw_u.get("estimated_spend") or 0.0))
+                    eng.cumulative_estimated_spend = max(
+                        eng.cumulative_estimated_spend, float(raw_u.get("cumulative_estimated_spend") or 0.0)
+                    )
+                    if isinstance(raw_u.get("last_session_usage"), dict):
+                        eng._last_session_usage = dict(raw_u["last_session_usage"])
 
         if state_entries_updated > 0 or ledger_entries_added > 0:
             # Clear caches when usage figures actually changed so the next UI read serves fresh figures

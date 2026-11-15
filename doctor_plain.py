@@ -281,10 +281,15 @@ def _sync_live_steward_modules():
     saved_job_status = dict(getattr(old_scr, "_JOB_STATUS", {}) or {})
     saved_global_usage = dict(getattr(old_scr, "_GLOBAL_USAGE_CACHE", {}) or {})
     saved_state_cache = dict(getattr(old_scr, "_STATE_CACHE", {}) or {})
+    saved_ledger_cache = dict(getattr(old_scr, "_LEDGER_DOC_CACHE", {}) or {})
+    saved_index_cache = dict(getattr(old_scr, "_USAGE_INDEX_CACHE", {}) or {})
+    saved_agent_cache = dict(getattr(old_scr, "_CLAUDE_AGENT_USAGE_CACHE", {}) or {})
     for mod_name in (
         "deliverables_register",
-        "usage_allowance_monitor",
+        "usage_ledger",
+        "usage_index",
         "usage_capacity",
+        "usage_allowance_monitor",
         "steward_cockpit.steward_campaign",
         "steward_cockpit.steward_engine",
         "steward_cockpit.anvil_session",
@@ -299,6 +304,7 @@ def _sync_live_steward_modules():
         except Exception:
             pass
     new_scr = sys.modules.get("steward_cockpit.steward_routes")
+    new_se = sys.modules.get("steward_cockpit.steward_engine")
     if new_scr is not None:
         if hasattr(new_scr, "CONFIG") and isinstance(new_scr.CONFIG, dict) and getattr(main_mod, "BUILD_ID", ""):
             new_scr.CONFIG["build"] = main_mod.BUILD_ID
@@ -308,6 +314,23 @@ def _sync_live_steward_modules():
             new_scr._GLOBAL_USAGE_CACHE.update(saved_global_usage)
         if saved_state_cache and hasattr(new_scr, "_STATE_CACHE"):
             new_scr._STATE_CACHE.update(saved_state_cache)
+        if saved_ledger_cache and hasattr(new_scr, "_LEDGER_DOC_CACHE"):
+            new_scr._LEDGER_DOC_CACHE.update(saved_ledger_cache)
+        if saved_index_cache and hasattr(new_scr, "_USAGE_INDEX_CACHE"):
+            new_scr._USAGE_INDEX_CACHE.update(saved_index_cache)
+        if saved_agent_cache and hasattr(new_scr, "_CLAUDE_AGENT_USAGE_CACHE"):
+            new_scr._CLAUDE_AGENT_USAGE_CACHE.update(saved_agent_cache)
+        if new_se is not None and hasattr(new_se, "Engine"):
+            _seen_eng_cls = set()
+            for _eng in list((getattr(new_scr, "ENGINES", None) or {}).values()):
+                _ecls = type(_eng)
+                if _ecls is not new_se.Engine and _ecls not in _seen_eng_cls:
+                    _seen_eng_cls.add(_ecls)
+                    try:
+                        _ecls._attention = new_se.Engine._attention
+                        _ecls.light = new_se.Engine.light
+                    except Exception:
+                        pass
     try:
         def _fast_live_steward_estate():
             from steward_cockpit import steward_engine as _se

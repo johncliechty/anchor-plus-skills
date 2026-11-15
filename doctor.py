@@ -174,9 +174,12 @@ def probe_token(data_dir=None):
 
 def probe_server(url="http://127.0.0.1:8777/api/status", timeout=2.0):
     """Is a local Anchor server answering? Loopback only; never raises."""
-    from urllib.request import Request, urlopen
+    from urllib.request import Request
     try:
-        with urlopen(Request(url, method="GET"), timeout=timeout) as resp:
+        import paths as _paths
+        if not str(url or "").startswith(("http://", "https://")):
+            return {"up": False, "error": "Blocked unsafe path traversal or disallowed URL scheme"}
+        with _paths.safe_urlopen(Request(url, method="GET"), timeout=min(float(timeout), 15.0)) as resp:
             code = int(getattr(resp, "status", None) or resp.getcode() or 0)
             return {"up": 200 <= code < 500, "status_code": code}
     except Exception as exc:

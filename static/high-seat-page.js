@@ -144,7 +144,12 @@
   // what he is doing now: a key or dictated text in the last ten seconds, or a box he is in with words in it
   var lastKey = 0, lastCardKey = 0; function markKey(e) { lastKey = Date.now(); if (e && e.target && e.target.closest && e.target.closest('.tile')) lastCardKey = lastKey; }
   document.addEventListener('keydown', markKey); document.addEventListener('input', markKey, true);
-  function typingNow() { var a = document.activeElement; return (Date.now() - lastKey < 10000) || !!(a && a.tagName === 'TEXTAREA' && a.value && a.value.trim()) || $$('.tile.open').some(function (c) { return !!c._typing; }); }   // his words in an open tile's cockpit view count (2026-10-02)
+  function typingNow() {
+    var a = document.activeElement;
+    var inCommsInput = !!(a && a.closest && a.closest('#caveSpeedRacerTile, #caveCommsDialogueTile') && (a.tagName === 'TEXTAREA' || a.tagName === 'INPUT'));
+    var recentSrEdit = !!(window._srLastEditTs && (Date.now() - window._srLastEditTs < 20000));
+    return (Date.now() - lastKey < 10000) || inCommsInput || recentSrEdit || !!(a && a.tagName === 'TEXTAREA' && a.value && a.value.trim()) || $$('.tile.open').some(function (c) { return !!c._typing; });
+  }   // his words in an open tile's cockpit view or Speed Racer count (2026-10-02)
   function tileOpen() { return !!$('.tile.open'); }   // an open terminal does not hold it: its tabs re-attach after the reload (Grok, 2026-10-02); typingNow covers his keys in it
   // W3b (his word, 2026-10-01: dictating into an open tile, "the tile collapses down and whatever I was dictating gets
   // lost"); W4 (his word, 2026-10-08: "Anchor is rebuilding AI Cockpits, I thought that was not supposed to happen for
@@ -220,22 +225,17 @@
     if (drillBtn) {
       e.preventDefault();
       var col = drillBtn.getAttribute('data-cos-drill') || 'today';
-      var bodyEl = document.getElementById('cosExpandableBody');
-      var isAlreadyOpen = bodyEl && !bodyEl.hidden;
-      var wasActive = drillBtn.classList.contains('active-drill');
-      if (isAlreadyOpen && wasActive) {
-        _setCosBodyExpanded(false, '');
-      } else {
-        _setCosBodyExpanded(true, col);
-      }
+      var drw = document.getElementById('hzDrawer-' + col);
+      var wasOpen = !!(drw && !drw.hidden);
+      _setCosBodyExpanded(!wasOpen, !wasOpen ? col : '');
       return;
     }
 
     var toggleBodyBtn = e.target.closest && e.target.closest('[data-cos-toggle-body]');
     if (toggleBodyBtn && !e.target.closest('a')) {
       e.preventDefault();
-      var bEl = document.getElementById('cosExpandableBody');
-      var nowOpen = bEl ? bEl.hidden : true;
+      var dToday = document.getElementById('hzDrawer-today');
+      var nowOpen = dToday ? dToday.hidden : true;
       _setCosBodyExpanded(nowOpen, nowOpen ? 'today' : '');
       return;
     }
@@ -751,7 +751,12 @@
   }
   // he is typing or dictating in an open card (its view reports it, or his keys went into it in the last ten seconds):
   // nothing on the page moves under his words until he is idle (E5, 2026-10-07)
-  function placeWait() { return $$('.tile.open').some(function (c) { return !!c._typing || (busyIn(c) && Date.now() - lastCardKey < 10000); }); }   // keys IN a card, not the composer
+  function placeWait() {
+    var srTile = document.getElementById('caveSpeedRacerTile');
+    var dlgTile = document.getElementById('caveCommsDialogueTile');
+    var inSrOrDlg = busyIn(srTile) || busyIn(dlgTile) || !!(window._srLastEditTs && (Date.now() - window._srLastEditTs < 15000));
+    return inSrOrDlg || $$('.tile.open').some(function (c) { return !!c._typing || (busyIn(c) && Date.now() - lastCardKey < 10000); });
+  }   // keys IN a card or Speed Racer, not the composer
   function held(card) { return card.classList.contains('open') || busyIn(card); }
   function morph(a, b) {   // the same element, carrying the fresh attributes and content; an open section stays open
     if (busyIn(a)) { placeSkipped = true; return false; }   // retried when he leaves it (below)
@@ -787,6 +792,7 @@
     var calWasLayout = ($('#commsGrid') && $('#commsGrid').getAttribute('data-layout')) || 'split';
     var mailWasFolder = ($('#caveMailBucketsGrid') && $('#caveMailBucketsGrid').getAttribute('data-mail-folder-mode')) || 'all';
     var calBusyUi = !!(
+      (window._caveEmailActionInFlight && window._caveEmailActionInFlight > 0) ||
       ($('#caveSpeedRacerBody') && !$('#caveSpeedRacerBody').hidden) ||
       ($('#caveCommsDialogueTile') && !$('#caveCommsDialogueTile').hidden) ||
       ($('#caveCommsSetupDrawer') && $('#caveCommsSetupDrawer').open) ||
@@ -807,8 +813,11 @@
     if (calWasOpen && $('#cal')) { $('#cal').classList.add('open'); if ($('#calTog')) $('#calTog').textContent = 'Collapse'; }
     if (typeof window._applyCaveCommsLayout === 'function') window._applyCaveCommsLayout(calWasLayout);
     if (typeof window._applyCaveMailFolderMode === 'function') window._applyCaveMailFolderMode(mailWasFolder);
-    if (typeof window._ensureCaveCommsDataLoaded === 'function') window._ensureCaveCommsDataLoaded(true);
-    if (typeof window._applySourceFilterToDOM === 'function') window._applySourceFilterToDOM();
+    if (!calBusyUi && typeof window._ensureCaveCommsDataLoaded === 'function') {
+      window._ensureCaveCommsDataLoaded(true);
+    } else if (typeof window._applySourceFilterToDOM === 'function') {
+      window._applySourceFilterToDOM();
+    }
     if (typeof _renderCaveSpeedRacerTile === 'function') _renderCaveSpeedRacerTile();
     if (typeof _renderWorkingListSpine === 'function') _renderWorkingListSpine();
     if (collabWasOpen && $('#caveCollabStrip')) {
@@ -1252,6 +1261,9 @@
   document.addEventListener('click', function (e) {
     var headEl = e.target.closest && e.target.closest('#calHead');
     if (!headEl) return;
+    if (e.target.closest('[data-cave-open-speed-racer], [data-cave-mail-folder]')) {
+      return;
+    }
     var calSec = document.getElementById('cal');
     var togBtn = document.getElementById('calTog');
     if (!calSec) return;
@@ -1615,10 +1627,10 @@
         return;
       }
       saveCaveCommsBtn.disabled = true;
-      var isM365Client = (cFam === 'outlook' || cEm.toLowerCase().indexOf('psu.edu') >= 0 || cEm.toLowerCase().indexOf('axmra.com') >= 0);
+      var isM365Client = (cFam === 'outlook' || cEm.toLowerCase().indexOf('.edu') >= 0 || cEm.toLowerCase().indexOf('outlook.') >= 0);
       var isRawPwForM365 = isM365Client && cMode === 'app_password' && !cIcs && !(cSec.indexOf('{') === 0 && cSec.slice(-1) === '}');
       if (isRawPwForM365) {
-        if (cStat) cStat.textContent = 'Starting safe Microsoft 365 + Duo 2FA browser sign-in for ' + cEm + '\u2026';
+        if (cStat) cStat.textContent = 'Starting safe Microsoft 365 + 2FA browser sign-in for ' + cEm + '\u2026';
         var matchedExistingId = '';
         if (_caveCommsData && Array.isArray(_caveCommsData.accounts)) {
           var exAcc = _caveCommsData.accounts.find(function (a) { return String(a.email || '').toLowerCase() === cEm.toLowerCase(); });
@@ -1646,7 +1658,7 @@
             if (d1.device_flow && d1.device_flow.user_code) {
               var df = d1.device_flow;
               if (cStat) {
-                cStat.innerHTML = '<b style="color:#fde68a">\ud83d\udd11 Penn State / Microsoft 365 requires Duo 2FA browser sign-in (raw password IMAP is blocked for account safety). Enter code <u>' + _escH(df.user_code) + '</u> in the Microsoft tab &amp; sign in with your new password!</b>';
+                cStat.innerHTML = '<b style="color:#fde68a">\ud83d\udd11 Institutional / Microsoft 365 requires 2FA browser sign-in (raw password IMAP is blocked for account safety). Enter code <u>' + _escH(df.user_code) + '</u> in the Microsoft tab &amp; sign in with your password!</b>';
               }
               var devBox0 = document.getElementById('caveCommsDeviceFlowBox');
               if (devBox0) {
@@ -1657,9 +1669,9 @@
                 try { if (navigator.clipboard && uCode0) navigator.clipboard.writeText(uCode0); } catch (err) {}
                 devBox0.innerHTML =
                   '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">' +
-                  '<div><div style="font-size:13px;font-weight:700;color:#c4b5fd">\ud83d\udd11 Microsoft 365 + Duo 2FA Sign-In (' + _escH(df.email || cEm || 'Outlook / Penn State') + ')</div>' +
+                  '<div><div style="font-size:13px;font-weight:700;color:#c4b5fd">\ud83d\udd11 Microsoft 365 + 2FA Sign-In (' + _escH(df.email || cEm || 'Outlook / Microsoft 365') + ')</div>' +
                   '<div style="font-size:12px;color:#cbd5e1;margin-top:4px">1. Click <b>Open Microsoft Login</b> below (code <b>' + _escH(uCode0) + '</b> is copied to your clipboard).<br>' +
-                  '2. Sign in with your <b>new PSU password + Duo 2FA</b> in the browser tab. Anchor will detect completion automatically!</div></div>' +
+                  '2. Sign in with your <b>Microsoft 365 password + 2FA</b> in the browser tab. Anchor will detect completion automatically!</div></div>' +
                   '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
                   '<code style="font-size:18px;font-weight:800;letter-spacing:2px;padding:6px 12px;border-radius:8px;background:#0d1117;border:1px solid #a78bfa;color:#fde68a">' + _escH(uCode0) + '</code>' +
                   '<a href="' + _escH(vUri0) + '" target="_blank" rel="noopener" class="mini" style="border-color:#10b981;color:#6ee7b7;font-weight:700;padding:6px 12px;text-decoration:none">\ud83d\udd17 Open ' + _escH(vUri0) + ' \u2197</a>' +
@@ -1736,7 +1748,7 @@
           if (d1 && d1.device_flow && d1.device_flow.user_code) {
             var df = d1.device_flow;
             if (cStat) {
-              cStat.innerHTML = '<b style="color:#fde68a">\ud83d\udd11 Penn State / Microsoft 365 requires Duo 2FA browser sign-in (raw password IMAP is blocked for account safety). Enter code <u>' + _escH(df.user_code) + '</u> in the Microsoft tab!</b>';
+              cStat.innerHTML = '<b style="color:#fde68a">\ud83d\udd11 Institutional / Microsoft 365 requires 2FA browser sign-in (raw password IMAP is blocked for account safety). Enter code <u>' + _escH(df.user_code) + '</u> in the Microsoft tab!</b>';
             }
             var fakeBtn = document.querySelector('[data-comms-ms-device-auth="' + (d1.account_id || '') + '"]') || document.querySelector('[data-comms-ms-device-auth]');
             var devBox0 = document.getElementById('caveCommsDeviceFlowBox');
@@ -1748,9 +1760,9 @@
               try { if (navigator.clipboard && uCode0) navigator.clipboard.writeText(uCode0); } catch (err) {}
               devBox0.innerHTML =
                 '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">' +
-                '<div><div style="font-size:13px;font-weight:700;color:#c4b5fd">\ud83d\udd11 Microsoft 365 + Duo 2FA Sign-In (' + _escH(df.email || cEm || 'Outlook / Penn State') + ')</div>' +
+                '<div><div style="font-size:13px;font-weight:700;color:#c4b5fd">\ud83d\udd11 Microsoft 365 + 2FA Sign-In (' + _escH(df.email || cEm || 'Outlook / Microsoft 365') + ')</div>' +
                 '<div style="font-size:12px;color:#cbd5e1;margin-top:4px">1. Click <b>Open Microsoft Login</b> below (code <b>' + _escH(uCode0) + '</b> is copied to your clipboard).<br>' +
-                '2. Sign in with your new PSU password + Duo 2FA in the browser tab. Anchor will detect completion automatically!</div></div>' +
+                '2. Sign in with your Microsoft 365 password + 2FA in the browser tab. Anchor will detect completion automatically!</div></div>' +
                 '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
                 '<code style="font-size:18px;font-weight:800;letter-spacing:2px;padding:6px 12px;border-radius:8px;background:#0d1117;border:1px solid #a78bfa;color:#fde68a">' + _escH(uCode0) + '</code>' +
                 '<a href="' + _escH(vUri0) + '" target="_blank" rel="noopener" class="mini" style="border-color:#10b981;color:#6ee7b7;font-weight:700;padding:6px 12px;text-decoration:none">\ud83d\udd17 Open ' + _escH(vUri0) + ' \u2197</a>' +
@@ -1899,13 +1911,13 @@
       if (modeEl) modeEl.value = 'app_password';
       if (secEl) {
         secEl.placeholder = eFam === 'outlook'
-          ? ('Enter new password for ' + (eEm || 'Outlook / PSU') + ' (or click Sign In with Microsoft 365 + 2FA below)')
+          ? ('Enter new password for ' + (eEm || 'Outlook / M365') + ' (or click Sign In with Microsoft 365 + 2FA below)')
           : ('Enter password or 16-char App Password for ' + (eEm || 'Gmail'));
         secEl.focus();
       }
       if (stEl) {
         if (eFam === 'outlook') {
-          stEl.innerHTML = '\ud83d\udd11 Updating <b>' + _escH(eEm || 'Outlook / Penn State') + '</b>: enter your new password above and click <b>Save to OS Vault, Test &amp; Sync</b> (or click <b>\ud83d\udd11 Sign In with Microsoft 365 + 2FA</b>) to complete Penn State Duo 2FA in your browser.';
+          stEl.innerHTML = '\ud83d\udd11 Updating <b>' + _escH(eEm || 'Outlook / Microsoft 365') + '</b>: enter your new password above and click <b>Save to OS Vault, Test &amp; Sync</b> (or click <b>\ud83d\udd11 Sign In with Microsoft 365 + 2FA</b>) to complete 2FA in your browser.';
         } else {
           stEl.innerHTML = '\ud83d\udd11 Updating <b>' + _escH(eEm || 'Gmail') + '</b>: paste your password or 16-character App Password above and click <b>Save to OS Vault, Test &amp; Sync</b>.';
         }
@@ -1921,7 +1933,7 @@
       var devBox = document.getElementById('caveCommsDeviceFlowBox');
       if (devBox) {
         devBox.hidden = false;
-        devBox.innerHTML = '\u23f3 Requesting Microsoft 365 + 2FA Device Sign-In code for <b>' + (devEmail || 'Outlook / Penn State M365') + '</b>\u2026';
+        devBox.innerHTML = '\u23f3 Requesting Microsoft 365 + 2FA Device Sign-In code for <b>' + (devEmail || 'Outlook / Microsoft 365') + '</b>\u2026';
       }
       fetch('/api/steward/comms', {
         method: 'POST',
@@ -1946,9 +1958,9 @@
           if (devBox) {
             devBox.innerHTML =
               '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">' +
-              '<div><div style="font-size:13px;font-weight:700;color:#c4b5fd">\ud83d\udd11 Microsoft 365 + 2FA Sign-In (' + (d.email || 'Outlook / Penn State') + ')</div>' +
+              '<div><div style="font-size:13px;font-weight:700;color:#c4b5fd">\ud83d\udd11 Microsoft 365 + 2FA Sign-In (' + (d.email || 'Outlook / Microsoft 365') + ')</div>' +
               '<div style="font-size:12px;color:#cbd5e1;margin-top:4px">1. Click <b>Open Microsoft Login</b> below (code <b>' + uCode + '</b> is copied to your clipboard).<br>' +
-              '2. Complete your normal Penn State (Duo) or Axmra login + 2FA in the browser tab. Anchor will detect completion automatically!</div></div>' +
+              '2. Complete your Microsoft 365 login + 2FA in the browser tab. Anchor will detect completion automatically!</div></div>' +
               '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
               '<code style="font-size:18px;font-weight:800;letter-spacing:2px;padding:6px 12px;border-radius:8px;background:#0d1117;border:1px solid #a78bfa;color:#fde68a">' + uCode + '</code>' +
               '<a href="' + vUri + '" target="_blank" rel="noopener" class="mini" style="border-color:#10b981;color:#6ee7b7;font-weight:700;padding:6px 12px;text-decoration:none">\ud83d\udd17 Open ' + vUri + ' \u2197</a>' +
@@ -2024,19 +2036,19 @@
         });
       return;
     }
-    var merrillPresetBtn = e.target.closest('[data-collab-preset-merrill]');
-    if (merrillPresetBtn) {
+    var peerPresetBtn = e.target.closest('[data-collab-preset-merrill], [data-collab-preset-peer]');
+    if (peerPresetBtn) {
       e.preventDefault(); e.stopPropagation();
       var pIdIn = document.getElementById('collabPeerId');
       var pLblIn = document.getElementById('collabPeerLabel');
       var pTrIn = document.getElementById('collabPeerTransport');
       var pEpIn = document.getElementById('collabPeerEndpoint');
-      if (pIdIn) pIdIn.value = 'merrill-mothership';
-      if (pLblIn) pLblIn.value = 'Merrill Liechty (Collaborator Mothership)';
+      if (pIdIn) pIdIn.value = 'peer-mothership';
+      if (pLblIn) pLblIn.value = 'Collaborator Mothership';
       if (pTrIn) pTrIn.value = 'tailscale_http';
       if (pEpIn && !pEpIn.value) pEpIn.focus();
       var stC = document.getElementById('collabModalStatus');
-      if (stC) stC.textContent = 'Pre-filled Merrill Liechty peer details. Paste his Tailscale/Git endpoint (or leave blank to register for packet handoff) and click Save Peer.';
+      if (stC) stC.textContent = 'Pre-filled Collaborator peer details. Paste Tailscale/Git endpoint (or leave blank to register for packet handoff) and click Save Peer.';
       return;
     }
     var synthBtn = e.target.closest('[data-triage-synthesize]');
@@ -2073,6 +2085,8 @@
       if (modal) {
         modal.hidden = false;
         var toIn = document.getElementById('commsDraftTo');
+        var ccIn = document.getElementById('commsDraftCc');
+        var bccIn = document.getElementById('commsDraftBcc');
         var subIn = document.getElementById('commsDraftSubject');
         var bodyIn = document.getElementById('commsDraftBody');
         var stSpan = document.getElementById('commsDraftStatus');
@@ -2083,9 +2097,11 @@
         modal.setAttribute('data-project-name', proj);
         modal.setAttribute('data-step-id', step);
         if (toIn) toIn.value = to;
+        if (ccIn) ccIn.value = '';
+        if (bccIn) bccIn.value = '';
         if (subIn) subIn.value = sub && !/^re:/i.test(sub) ? ('Re: ' + sub) : sub;
         if (bodyIn && !bodyIn.value) {
-          bodyIn.value = 'Hi' + (to ? ' ' + to : '') + ',\n\nFollowing up on ' + (sub || proj || 'our next milestone') + ':\n- \n\nBest,\nJohn';
+          bodyIn.value = 'Hi' + (to ? ' ' + to : '') + ',\n\nFollowing up on ' + (sub || proj || 'our next milestone') + ':\n- \n\nBest regards';
         }
         if (stSpan) stSpan.textContent = '';
         if (bodyIn) bodyIn.focus();
@@ -2103,6 +2119,8 @@
       e.preventDefault(); e.stopPropagation();
       var m1 = document.getElementById('caveCommsDraftModal');
       var toVal = (document.getElementById('commsDraftTo') || {}).value || '';
+      var ccVal = (document.getElementById('commsDraftCc') || {}).value || '';
+      var bccVal = (document.getElementById('commsDraftBcc') || {}).value || '';
       var subVal = (document.getElementById('commsDraftSubject') || {}).value || '';
       var bodyVal = (document.getElementById('commsDraftBody') || {}).value || '';
       var stEl = document.getElementById('commsDraftStatus');
@@ -2114,6 +2132,9 @@
         body: JSON.stringify({
           action: 'create_draft',
           to_addr: toVal,
+          to: toVal,
+          cc: ccVal,
+          bcc: bccVal,
           subject: subVal,
           body: bodyVal,
           project_name: m1 ? (m1.getAttribute('data-project-name') || '') : '',
@@ -2486,7 +2507,7 @@
 
   // Option 1 + Click-to-Full (Mockup 3): Interactive 4-View Calendar (iPhone Rolling Stream, Day, Week, Month)
   // & Steward 2-Bucket Email Triage (Seen, Downgrade, Upgrade, Open Body, Save Attachment)
-  var _caveCommsData = null;
+  var _caveCommsData = window.ANCHOR_CAVE_COMMS_BOOT || null;
   var _caveCalView = (window.innerWidth > 680 ? 'week' : 'iphone');
   try {
     var savedView = localStorage.getItem('anchor_cave_cal_view_v2');
@@ -2559,8 +2580,8 @@
   function _matchesSourceKey(badgeOrSourceStr) {
     var s = String(badgeOrSourceStr || '').toLowerCase();
     if (!s) return true;
-    var hasPsu = s.indexOf('psu') >= 0 || s.indexOf('penn state') >= 0 || (s.indexOf('outlook') >= 0 && s.indexOf('axmra') < 0);
-    var hasAxmra = s.indexOf('axmra') >= 0;
+    var hasPsu = s.indexOf('institutional') >= 0 || s.indexOf('psu') >= 0 || (s.indexOf('outlook') >= 0 && s.indexOf('commercial') < 0 && s.indexOf('axmra') < 0);
+    var hasAxmra = s.indexOf('commercial') >= 0 || s.indexOf('axmra') >= 0;
     var hasGmail = s.indexOf('gmail') >= 0 || s.indexOf('google') >= 0;
     if (!hasPsu && !hasAxmra && !hasGmail) return true;
     return (hasPsu && _caveSources.psu) || (hasAxmra && _caveSources.axmra) || (hasGmail && _caveSources.gmail);
@@ -2572,7 +2593,7 @@
     return _matchesSourceKey(cals);
   }
 
-  var _currentMailFolderMode = 'inbox';
+  var _currentMailFolderMode = 'prime';
   var _pendingNextEmailSelection = null;
 
   function _mergeStableEmailOrder(prevList, nextList) {
@@ -2603,7 +2624,9 @@
 
   function _getVisibleEmailListForMode(mode, d) {
     if (!d) return [];
-    var m = mode || _currentMailFolderMode || 'inbox';
+    var m = mode || _currentMailFolderMode || 'prime';
+    if (m === 'inbox') m = 'prime';
+    if (m === 'other') m = 'irrational';
     var filt = function (em) {
       return em && _matchesSourceKey(em.account_badge || em.account_id || '');
     };
@@ -2611,11 +2634,11 @@
       d.important_emails = _interleaveEmailsByBadge(d.important_emails.slice());
       d._interleavedOnce = true;
     }
-    var imp = Array.isArray(d.important_emails) ? d.important_emails.slice(0, 30).filter(filt) : [];
-    var oth = Array.isArray(d.other_emails) ? d.other_emails.slice(0, 20).filter(filt) : [];
-    var act = Array.isArray(d.acted_upon_emails) ? d.acted_upon_emails.slice(0, 35).filter(filt) : [];
-    var snt = Array.isArray(d.sent_emails) ? d.sent_emails.slice(0, 25).filter(filt) : [];
-    if (m === 'other') return oth;
+    var imp = Array.isArray(d.important_emails) ? d.important_emails.filter(filt).slice(0, 60) : [];
+    var oth = Array.isArray(d.other_emails) ? d.other_emails.filter(filt).slice(0, 50) : [];
+    var act = Array.isArray(d.acted_upon_emails) ? d.acted_upon_emails.filter(filt).slice(0, 200) : [];
+    var snt = Array.isArray(d.sent_emails) ? d.sent_emails.filter(filt).slice(0, 100) : [];
+    if (m === 'irrational') return oth;
     if (m === 'acted') return act;
     if (m === 'sent') return snt;
     if (m === 'all') return imp.concat(act, snt, oth);
@@ -2639,30 +2662,36 @@
       ? visibleCards[idx + 1]
       : ((idx > 0) ? visibleCards[idx - 1] : null);
     _pendingNextEmailSelection = {
-      folderMode: _currentMailFolderMode || 'inbox',
+      folderMode: _currentMailFolderMode || 'prime',
       nextUid: nextCard ? (nextCard.getAttribute('data-mail-uid') || '') : '',
       index: idx >= 0 ? idx : 0
     };
   }
 
   function _applyCaveMailFolderMode(mode, autoSelectFirst) {
-    var m = (mode === 'inbox' || mode === 'other' || mode === 'acted' || mode === 'sent' || mode === 'all') ? mode : 'inbox';
+    var rawM = String(mode || 'prime').toLowerCase();
+    if (rawM === 'inbox') rawM = 'prime';
+    if (rawM === 'other') rawM = 'irrational';
+    var m = (rawM === 'prime' || rawM === 'irrational' || rawM === 'acted' || rawM === 'sent' || rawM === 'all') ? rawM : 'prime';
     _currentMailFolderMode = m;
     var grid = document.getElementById('caveMailBucketsGrid');
     if (grid) grid.setAttribute('data-mail-folder-mode', m);
     $$('[data-cave-mail-folder]').forEach(function (btn) {
-      btn.classList.toggle('on', btn.getAttribute('data-cave-mail-folder') === m);
+      var bVal = String(btn.getAttribute('data-cave-mail-folder') || '').toLowerCase();
+      if (bVal === 'inbox') bVal = 'prime';
+      if (bVal === 'other') bVal = 'irrational';
+      btn.classList.toggle('on', bVal === m);
     });
     var impCol = document.getElementById('caveMailImportantCol');
     var othCol = document.getElementById('caveMailOtherCol');
     var actCol = document.getElementById('caveMailActedCol');
     var sentCol = document.getElementById('caveMailSentCol');
-    if (impCol) impCol.hidden = !(m === 'inbox' || m === 'all');
+    if (impCol) impCol.hidden = !(m === 'prime' || m === 'all');
     if (othCol) {
-      othCol.hidden = !(m === 'other' || m === 'all');
-      othCol.style.marginTop = (m === 'other') ? '0px' : '8px';
-      othCol.style.paddingTop = (m === 'other') ? '0px' : '8px';
-      othCol.style.borderTop = (m === 'other') ? 'none' : '1px dashed var(--line)';
+      othCol.hidden = !(m === 'irrational' || m === 'all');
+      othCol.style.marginTop = (m === 'irrational') ? '0px' : '8px';
+      othCol.style.paddingTop = (m === 'irrational') ? '0px' : '8px';
+      othCol.style.borderTop = (m === 'irrational') ? 'none' : '1px dashed var(--line)';
     }
     if (actCol) {
       actCol.hidden = !(m === 'acted' || m === 'all');
@@ -2739,7 +2768,7 @@
     });
     var impB = document.getElementById('caveImpCountBadge');
     if (impB && document.querySelectorAll('#caveMailImportantList .cave-mail-card').length) {
-      impB.innerHTML = '\u26a1 ' + visImp + ' to Address';
+      impB.innerHTML = '\u26a1 ' + visImp + ' Prime';
     }
     var sentB = document.getElementById('caveSentCountBadge');
     if (sentB && document.querySelectorAll('#caveMailSentList .cave-mail-card').length) {
@@ -2747,18 +2776,11 @@
     }
     var othB = document.getElementById('caveOthCountBadge');
     if (othB && document.querySelectorAll('#caveMailOtherList .cave-mail-card').length) {
-      othB.innerHTML = '\ud83d\udce5 ' + visOth + ' Not Important';
+      othB.textContent = String(visOth);
     }
-    var visPrep = 0;
-    $$('#caveUpcomingPrepStrip .cave-prep-card').forEach(function (card) {
-      var src = card.getAttribute('data-cal-source') || '';
-      var show = _matchesSourceKey(src);
-      card.hidden = !show;
-      if (show) visPrep++;
-    });
-    var prepStrip = document.getElementById('caveUpcomingPrepStrip');
-    if (prepStrip && document.querySelectorAll('#caveUpcomingPrepStrip .cave-prep-card').length) {
-      prepStrip.hidden = (visPrep === 0);
+    var hdrOthB = document.getElementById('caveHdrOthBadge');
+    if (hdrOthB && document.querySelectorAll('#caveMailOtherList .cave-mail-card').length) {
+      hdrOthB.innerHTML = '\ud83d\udce5 ' + visOth + ' Irrational';
     }
     $$('#caveCalViewport .cave-cal-card').forEach(function (card) {
       var src = card.getAttribute('data-cal-source') || '';
@@ -2922,7 +2944,7 @@
     var st = String((ev && ev.rsvp_status) || '').toLowerCase();
     if (!st) {
       var tLow = String((ev && ev.title) || '').toLowerCase();
-      var ownTeaching = ['ba 815', 'mba teaching', 'team teach', 'ta meeting'].some(function (h) { return tLow.indexOf(h) >= 0; });
+      var ownTeaching = ['seminar', 'lecture', 'team teach', 'ta meeting', 'office hours'].some(function (h) { return tLow.indexOf(h) >= 0; });
       st = ownTeaching ? 'responded' : 'not_responded';
     }
     if (st === 'accepted' || st === 'attending') st = 'responded';
@@ -2978,9 +3000,55 @@
     );
   }
 
+  function _extractCalendarEventLinks(ev) {
+    if (!ev) return { joinUrl: '', links: [] };
+    var seen = {};
+    var out = [];
+    var addUrl = function (rawU, explicitLbl, explicitMeeting) {
+      var u = _unwrapSafeLinkClient(String(rawU || '').trim().replace(/[.,;:!?)>\]]+$/, ''));
+      if (!u || !/^https?:\/\//i.test(u)) return;
+      var k = u.toLowerCase();
+      if (seen[k]) return;
+      seen[k] = true;
+      var low = k;
+      var isMtg = explicitMeeting !== undefined ? !!explicitMeeting : (
+        low.indexOf('zoom.us') >= 0 ||
+        low.indexOf('teams.microsoft.com') >= 0 ||
+        low.indexOf('meet.google.com') >= 0 ||
+        low.indexOf('webex.com') >= 0
+      );
+      var lbl = explicitLbl || (
+        low.indexOf('zoom.us') >= 0 ? 'Join Zoom Meeting' :
+        low.indexOf('teams.microsoft.com') >= 0 ? 'Join Teams Meeting' :
+        low.indexOf('meet.google.com') >= 0 ? 'Join Google Meet' :
+        low.indexOf('webex.com') >= 0 ? 'Join Webex' :
+        _friendlyUrlLabel(u)
+      );
+      out.push({ url: u, label: lbl, is_meeting: isMtg });
+    };
+    if (Array.isArray(ev.links)) {
+      ev.links.forEach(function (lk) {
+        if (lk && typeof lk === 'object') addUrl(lk.url, lk.label, lk.is_meeting);
+        else if (typeof lk === 'string') addUrl(lk);
+      });
+    }
+    if (ev.join_url) addUrl(ev.join_url, '', true);
+    [ev.location, ev.description, ev.notes, ev.title].forEach(function (txt) {
+      var matches = String(txt || '').match(/https?:\/\/[^\s<>"'\)]+/gi) || [];
+      matches.forEach(function (m) { addUrl(m); });
+    });
+    var joinUrl = (ev.join_url && _unwrapSafeLinkClient(ev.join_url)) || '';
+    if (!joinUrl && out.length) {
+      var mtg = out.find(function (x) { return x.is_meeting; }) || out[0];
+      joinUrl = mtg ? mtg.url : '';
+    }
+    return { joinUrl: joinUrl, links: out };
+  }
+
   function _renderCaveCalEventRow(ev) {
     var sp = _eventSpanInfo(ev);
     var ri = _eventRsvpInfo(ev);
+    var lkInfo = _extractCalendarEventLinks(ev);
     var tone = ev.tone || (String(ev.calendar_badge || '').toLowerCase().indexOf('axmra') >= 0 ? 'emerald' : 'sky');
     var mergedHtml = ev.merged_badge
       ? '<span class="comms-badge amber" title="Smart-merged across multiple calendars">' + _escH(ev.merged_badge) + '</span>'
@@ -2988,10 +3056,21 @@
     var doneHtml = (ev.folder && ev.step_id)
       ? '<button type="button" class="tw-btn done" data-mark-done="1" data-target-dir="' + _escH(ev.folder) + '" data-target-step="' + _escH(ev.step_id) + '">\u2713 Done</button>'
       : '';
+    var joinBtnHtml = lkInfo.joinUrl
+      ? '<a class="tw-btn cave-email-link-pill" href="' + _escH(lkInfo.joinUrl) + '" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation();" style="border-color:rgba(56,189,248,0.75);background:rgba(56,189,248,0.22);color:#e0f2fe;font-weight:800;font-size:10px;padding:1px 7px;text-decoration:none" title="Open meeting / web link in browser">&#128279; Join / Open Link &#8599;</a>'
+      : '';
     var projHtml = ev.project_id
       ? '<a class="tw-proj" href="/project/' + _escH(ev.project_id) + '" target="_blank" rel="noopener">' + _escH(ev.project_name || 'Project') + '</a>'
       : '<span class="tw-proj">' + _escH(ev.calendar_badge || ev.project_name || 'Calendar') + '</span>';
-    var locHtml = ev.location ? '<div class="comms-item-sub">\ud83d\udccd ' + _escH(String(ev.location).slice(0, 90)) + '</div>' : '';
+    var locHtml = '';
+    if (ev.location) {
+      var locStr = String(ev.location);
+      if (/https?:\/\//i.test(locStr) && lkInfo.joinUrl) {
+        locHtml = '<div class="comms-item-sub">\ud83d\udccd <a href="' + _escH(lkInfo.joinUrl) + '" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation();" style="color:#7dd3fc;text-decoration:underline;font-weight:700">' + _escH(locStr.slice(0, 90)) + ' &#8599;</a></div>';
+      } else {
+        locHtml = '<div class="comms-item-sub">\ud83d\udccd ' + _escH(locStr.slice(0, 90)) + '</div>';
+      }
+    }
     var calsJoined = (ev.calendars && ev.calendars.length) ? ev.calendars.join(' + ') : (ev.calendar_badge || ev.project_name || 'Calendar');
     var rsvpBtn = sp.isMarker
       ? '<span class="comms-badge" style="border-color:rgba(167,139,250,0.65);background:rgba(167,139,250,0.16);color:#ddd6fe;font-weight:750" title="Follow-Up Marker — does not block meeting slots">\ud83d\udccc Non-Blocking Marker \u00b7 Slot Open</span>'
@@ -3003,7 +3082,7 @@
       '<div class="comms-item ' + _escH(tone) + ' cave-cal-card" data-cave-cal-open="' + _escH(ev.id || ev.uid || '') + '" data-cal-title="' + _escH(ev.title || '') + '" data-cal-date="' + _escH(ev.date || '') + '" data-cal-start="' + _escH(sp.startHm || ev.start_time || '') + '" data-cal-end="' + _escH(sp.endHm || ev.end_time || '') + '" data-cal-loc="' + _escH(ev.location || '') + '" data-cal-source="' + _escH(calsJoined) + '" data-cal-rsvp="' + _escH(ri.status) + '" style="' + cardStyle + '" title="Click to blow up Calendar Event Dialogue Tile">' +
       '<div class="comms-item-top">' +
       '<span class="comms-badge ' + _escH(tone) + '">' + _escH(_fmtFriendlyDate(ev.date)) + ' \u00b7 ' + _escH(sp.rangeLabel) + '</span>' +
-      rsvpBtn + projHtml + mergedHtml + doneHtml +
+      rsvpBtn + joinBtnHtml + projHtml + mergedHtml + doneHtml +
       '</div>' +
       '<div class="comms-item-title">' + _escH(ev.title || '') + '</div>' +
       locHtml +
@@ -3077,6 +3156,7 @@
       setTimeout(function () {
         var anch = document.getElementById('caveIphoneNowAnchor');
         if (anch && vp) vp.scrollTop = Math.max(0, anch.offsetTop - vp.offsetTop - 60);
+        _syncCaveMailOvalScrollbar();
       }, 30);
       return;
     }
@@ -3117,16 +3197,16 @@
         cl.items.forEach(function (it) { it.colCount = colEnds.length; });
       });
 
-      var startHour = 7, endHour = 20, pxPerHour = 52;
+      var startHour = 6, endHour = 22, pxPerHour = 52;
       var totalHeight = (endHour - startHour + 1) * pxPerHour;
       var out = [];
       if (!dayEvs.length) {
-        out.push('<div class="tw-empty" style="margin-bottom:8px">No events scheduled on ' + _escH(_fmtFriendlyDate(_caveCalDay)) + '. Click <b>+ Add Calendar Event</b> or <b>Next \u25b6</b>.</div>');
+        out.push('<div class="tw-empty" style="margin-bottom:8px;flex-shrink:0">No events scheduled on ' + _escH(_fmtFriendlyDate(_caveCalDay)) + '. Click <b>+ Add Calendar Event</b> or <b>Next \u25b6</b>.</div>');
       }
       if (allDayEvs.length) {
-        out.push('<div style="margin-bottom:8px">' + allDayEvs.map(function (x) { return _renderCaveCalEventRow(x.ev); }).join('') + '</div>');
+        out.push('<div style="margin-bottom:8px;flex-shrink:0">' + allDayEvs.map(function (x) { return _renderCaveCalEventRow(x.ev); }).join('') + '</div>');
       }
-      out.push('<div class="cave-day-timegrid" style="position:relative;height:' + totalHeight + 'px;border:1px solid #1e293b;border-radius:10px;background:#090d16;overflow:hidden">');
+      out.push('<div class="cave-day-timegrid" style="position:relative;flex-shrink:0;height:' + totalHeight + 'px;min-height:' + totalHeight + 'px;border:1px solid #1e293b;border-radius:10px;background:#090d16;overflow:hidden">');
       for (var hr = startHour; hr <= endHour; hr++) {
         var topPx = (hr - startHour) * pxPerHour;
         var hDisp = (hr > 12 ? (hr - 12) : hr) + ':00 ' + (hr >= 12 ? 'PM' : 'AM');
@@ -3138,6 +3218,7 @@
       }
       timedEvs.forEach(function (it) {
         var ev = it.ev, sp = it.sp;
+        var lkInfo = _extractCalendarEventLinks(ev);
         var clampedStart = Math.max(startHour * 60, Math.min(endHour * 60, sp.startMins));
         var clampedEnd = Math.max(clampedStart + 30, Math.min((endHour + 1) * 60, sp.endMins));
         var topPx = Math.round(((clampedStart - startHour * 60) / 60) * pxPerHour);
@@ -3150,6 +3231,9 @@
         var isGoogleOnly = calsJoined.toLowerCase().indexOf('google') >= 0 && calsJoined.toLowerCase().indexOf('psu') < 0 && !isMerged;
         var borderCol = isMerged ? '#f59e0b' : (isAxmra ? '#10b981' : (isGoogleOnly ? '#eab308' : '#38bdf8'));
         var bgCol = isMerged ? 'rgba(245,158,11,0.22)' : (isAxmra ? 'rgba(16,185,129,0.20)' : (isGoogleOnly ? 'rgba(234,179,8,0.18)' : 'rgba(56,189,248,0.20)'));
+        var dayJoinBtn = lkInfo.joinUrl
+          ? '<a href="' + _escH(lkInfo.joinUrl) + '" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation();" style="padding:1px 6px;border-radius:4px;background:rgba(56,189,248,0.24);border:1px solid rgba(56,189,248,0.75);color:#e0f2fe;font-size:9.5px;font-weight:800;text-decoration:none" title="Open meeting / web link in browser">&#128279; Join &#8599;</a>'
+          : '';
         out.push(
           '<div class="cave-cal-card" data-cave-cal-open="' + _escH(ev.id || ev.uid || '') + '" data-cal-title="' + _escH(ev.title || '') + '" data-cal-date="' + _escH(ev.date || '') + '" data-cal-start="' + _escH(sp.startHm) + '" data-cal-end="' + _escH(sp.endHm) + '" data-cal-loc="' + _escH(ev.location || '') + '" data-cal-source="' + _escH(calsJoined) + '" ' +
           'title="' + _escH(sp.rangeLabel + ' \u00b7 ' + (ev.title || '') + ' (' + calsJoined + ')') + '" ' +
@@ -3157,7 +3241,7 @@
           'background:' + bgCol + ';border:1px solid ' + borderCol + ';border-left:4px solid ' + borderCol + ';border-radius:7px;padding:4px 8px;box-sizing:border-box;overflow:hidden;cursor:pointer;z-index:2;box-shadow:0 2px 8px rgba(0,0,0,0.35)">' +
             '<div style="display:flex;align-items:center;justify-content:space-between;gap:4px;flex-wrap:wrap;font-size:10.5px;line-height:1.2">' +
               '<b style="color:#7dd3fc">' + _escH(sp.rangeLabel) + '</b>' +
-              '<span style="display:inline-flex;align-items:center;gap:4px">' + _renderRsvpToggleBtnHtml(ev, true) + '<span style="font-size:9.5px;color:#fde68a;font-weight:700">' + _escH(ev.merged_badge || calsJoined) + '</span></span>' +
+              '<span style="display:inline-flex;align-items:center;gap:4px">' + dayJoinBtn + _renderRsvpToggleBtnHtml(ev, true) + '<span style="font-size:9.5px;color:#fde68a;font-weight:700">' + _escH(ev.merged_badge || calsJoined) + '</span></span>' +
             '</div>' +
             '<div style="font-weight:750;font-size:12px;color:#f8fafc;margin-top:2px;line-height:1.25">' + _escH(ev.title || '') + '</div>' +
             (ev.location && heightPx >= 52 ? '<div style="font-size:10px;color:#cbd5e1;margin-top:2px">\ud83d\udccd ' + _escH(String(ev.location).slice(0, 70)) + '</div>' : '') +
@@ -3166,6 +3250,13 @@
       });
       out.push('</div>');
       vp.innerHTML = out.join('');
+      setTimeout(function () {
+        if (vp) {
+          var firstMin = timedEvs.length ? Math.max(startHour * 60, timedEvs[0].sp.startMins - 45) : (8 * 60);
+          vp.scrollTop = Math.max(0, Math.round(((firstMin - startHour * 60) / 60) * pxPerHour));
+        }
+        _syncCaveMailOvalScrollbar();
+      }, 30);
       return;
     }
 
@@ -3173,8 +3264,12 @@
       var p = _caveCalDay.split('-');
       var baseD = new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10));
       var dow = baseD.getDay();
-      var diffMon = (dow === 0 ? -6 : 1 - dow);
-      baseD.setDate(baseD.getDate() + diffMon);
+      if (_caveCalDay === nowIso && (dow === 6 || dow === 0)) {
+        // On Saturday/Sunday when anchored at Today, start the 7-day window on Today so upcoming Mon-Fri events are visible immediately
+      } else {
+        var diffMon = (dow === 0 ? -6 : 1 - dow);
+        baseD.setDate(baseD.getDate() + diffMon);
+      }
       var monIso = baseD.getFullYear() + '-' + String(baseD.getMonth() + 1).padStart(2, '0') + '-' + String(baseD.getDate()).padStart(2, '0');
       var sunIso = _shiftIsoDate(monIso, 6);
       if (lbl) lbl.textContent = '\ud83d\udcc6 Week View (Full Event Duration Blocks) \u2014 ' + _fmtFriendlyDate(monIso) + ' \u2013 ' + _fmtFriendlyDate(sunIso);
@@ -3189,6 +3284,10 @@
           (cEvs.length
             ? cEvs.map(function (ev) {
                 var sp = _eventSpanInfo(ev);
+                var lkInfo = _extractCalendarEventLinks(ev);
+                var wkJoinBtn = lkInfo.joinUrl
+                  ? '<a href="' + _escH(lkInfo.joinUrl) + '" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation();" style="padding:0px 5px;border-radius:4px;background:rgba(56,189,248,0.22);border:1px solid rgba(56,189,248,0.7);color:#e0f2fe;font-size:9px;font-weight:800;text-decoration:none" title="Open meeting / web link in browser">&#128279; Join &#8599;</a>'
+                  : '';
                 var t = ev.merged_badge ? 'amber' : (ev.tone || 'sky');
                 var calsJoined = (ev.calendars && ev.calendars.length) ? ev.calendars.join(' + ') : (ev.calendar_badge || 'Calendar');
                 if (sp.isMarker) {
@@ -3208,7 +3307,7 @@
                   '</div>' +
                   '<div style="display:flex;align-items:center;justify-content:space-between;gap:3px;flex-wrap:wrap;font-size:9px;color:' + (ev.merged_badge ? '#fde68a' : 'var(--text-dim)') + ';margin-top:3px;font-weight:' + (ev.merged_badge ? '700' : '500') + '">' +
                     '<span>' + (ev.merged_badge ? ('\ud83d\udd17 ' + _escH(calsJoined)) : _escH(calsJoined)) + '</span>' +
-                    _renderRsvpToggleBtnHtml(ev, true) +
+                    '<span style="display:inline-flex;align-items:center;gap:3px">' + wkJoinBtn + _renderRsvpToggleBtnHtml(ev, true) + '</span>' +
                   '</div>' +
                   '</div>'
                 );
@@ -3219,6 +3318,7 @@
       }
       cols.push('</div>');
       vp.innerHTML = cols.join('');
+      setTimeout(_syncCaveMailOvalScrollbar, 30);
       return;
     }
 
@@ -3255,6 +3355,7 @@
       }
       mCells.push('</div>');
       vp.innerHTML = mCells.join('');
+      setTimeout(_syncCaveMailOvalScrollbar, 30);
     }
   }
 
@@ -3380,6 +3481,168 @@
     return mainHtml;
   }
 
+  function _autoGrowTextarea(el) {
+    if (!el || el.tagName !== 'TEXTAREA') return;
+    el.style.height = 'auto';
+    el.style.height = Math.min(150, Math.max(30, el.scrollHeight || 30)) + 'px';
+  }
+
+  function _stewardDirDraftKey(uid) {
+    return 'anchor_cave_steward_dir_' + String(uid || 'none');
+  }
+
+  function _srFeedbackDraftKey(idOrUid) {
+    return 'anchor_cave_sr_fb_' + String(idOrUid || 'none');
+  }
+
+  function _loadLocalDraft(key) {
+    try { return localStorage.getItem(key) || ''; } catch (e) { return ''; }
+  }
+
+  function _saveLocalDraft(key, val) {
+    try {
+      var v = String(val || '');
+      if (v.trim()) localStorage.setItem(key, v);
+      else localStorage.removeItem(key);
+    } catch (e) {}
+  }
+
+  function _clearLocalDraft(key) {
+    try { localStorage.removeItem(key); } catch (e) {}
+  }
+
+  document.addEventListener('input', function (e) {
+    var t = e && e.target;
+    if (!t || !t.classList || !t.classList.contains('cave-autogrow-ta')) return;
+    _autoGrowTextarea(t);
+    if (t.id === 'caveDlgStewardDirectionsInput') {
+      var curE = _resolveRightPaneEmailCtx() || _activeEmailDialogue || {};
+      _saveLocalDraft(_stewardDirDraftKey(curE.uid || ''), t.value || '');
+    } else if (t.id === 'caveSrFeedbackInput') {
+      var qSr = (_srState && Array.isArray(_srState.queue)) ? (_srState.queue[_srIdx] || _srState.queue[0] || {}) : {};
+      _saveLocalDraft(_srFeedbackDraftKey(qSr.id || qSr.uid || ''), t.value || '');
+    }
+  });
+
+  function _splitRecipientPrefixAndToken(rawVal) {
+    var s = String(rawVal || '');
+    var inQuote = false;
+    var lastSep = -1;
+    for (var i = 0; i < s.length; i++) {
+      var ch = s.charAt(i);
+      if (ch === '"' && (i === 0 || s.charAt(i - 1) !== '\\')) inQuote = !inQuote;
+      else if (!inQuote && (ch === ',' || ch === ';')) lastSep = i;
+    }
+    if (lastSep < 0) return { prefix: '', token: s.trim() };
+    return { prefix: s.slice(0, lastSep + 1) + ' ', token: s.slice(lastSep + 1).trim() };
+  }
+
+  var _contactAcMenu = null;
+  var _contactAcInput = null;
+  var _contactAcTimer = 0;
+  var _contactAcItems = [];
+  var _contactAcIdx = 0;
+
+  function _hideContactAcMenu() {
+    if (_contactAcMenu) _contactAcMenu.hidden = true;
+    _contactAcInput = null;
+    _contactAcItems = [];
+    _contactAcIdx = 0;
+  }
+
+  function _ensureContactAcMenu() {
+    if (_contactAcMenu) return _contactAcMenu;
+    var el = document.createElement('div');
+    el.className = 'comms-contact-ac-menu';
+    el.id = 'commsContactAutocompleteMenu';
+    el.hidden = true;
+    document.body.appendChild(el);
+    el.addEventListener('mousedown', function (ev) {
+      var itemEl = ev.target && ev.target.closest && ev.target.closest('[data-ac-idx]');
+      if (!itemEl || !_contactAcInput) return;
+      ev.preventDefault();
+      var idx = parseInt(itemEl.getAttribute('data-ac-idx') || '0', 10);
+      var picked = _contactAcItems[idx];
+      if (picked) _applyContactAcChoice(_contactAcInput, picked);
+    });
+    _contactAcMenu = el;
+    return el;
+  }
+
+  function _applyContactAcChoice(inp, contact) {
+    if (!inp || !contact || !contact.email) return;
+    var parts = _splitRecipientPrefixAndToken(inp.value || '');
+    var formatted = contact.name ? (contact.name + ' <' + contact.email + '>') : contact.email;
+    inp.value = parts.prefix + formatted + ', ';
+    _hideContactAcMenu();
+    inp.focus();
+  }
+
+  function _renderContactAcMatches(inp, matches) {
+    var menu = _ensureContactAcMenu();
+    if (!inp || !matches || !matches.length || document.activeElement !== inp) {
+      _hideContactAcMenu();
+      return;
+    }
+    _contactAcInput = inp;
+    _contactAcItems = matches.slice(0, 8);
+    _contactAcIdx = 0;
+    var rect = inp.getBoundingClientRect();
+    menu.style.position = 'fixed';
+    menu.style.left = Math.max(8, Math.round(rect.left)) + 'px';
+    menu.style.top = Math.round(rect.bottom + 3) + 'px';
+    menu.style.width = Math.max(240, Math.round(rect.width)) + 'px';
+    menu.innerHTML = _contactAcItems.map(function (c, i) {
+      return (
+        '<div class="comms-contact-ac-item' + (i === _contactAcIdx ? ' is-active' : '') + '" data-ac-idx="' + i + '">' +
+          '<b>' + _escH(c.name || c.email) + '</b>' +
+          (c.name ? (' <span>&lt;' + _escH(c.email) + '&gt;</span>') : '') +
+        '</div>'
+      );
+    }).join('');
+    menu.hidden = false;
+  }
+
+  var _RECIPIENT_INPUT_IDS = {
+    caveReplyTo: 1, caveReplyCc: 1, caveReplyBcc: 1,
+    caveSrToInput: 1, caveSrCcInput: 1, caveSrBccInput: 1,
+    commsDraftTo: 1, commsDraftCc: 1, commsDraftBcc: 1
+  };
+
+  document.addEventListener('input', function (e) {
+    var inp = e && e.target;
+    if (!inp || !inp.id || !_RECIPIENT_INPUT_IDS[inp.id]) return;
+    var parts = _splitRecipientPrefixAndToken(inp.value || '');
+    var q = parts.token.toLowerCase();
+    if (!q || q.length < 1) {
+      _hideContactAcMenu();
+      return;
+    }
+    var localPool = Array.isArray(window.ANCHOR_UNIFIED_ADDRESS_BOOK) ? window.ANCHOR_UNIFIED_ADDRESS_BOOK : [];
+    var localHits = localPool.filter(function (c) {
+      if (!c || !c.email) return false;
+      return String(c.email).toLowerCase().indexOf(q) >= 0 || String(c.name || '').toLowerCase().indexOf(q) >= 0;
+    });
+    if (localHits.length) _renderContactAcMatches(inp, localHits);
+    clearTimeout(_contactAcTimer);
+    _contactAcTimer = setTimeout(function () {
+      fetch('/api/steward/comms?view=contacts&q=' + encodeURIComponent(parts.token), { headers: headers(), cache: 'no-store' })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d && d.ok && Array.isArray(d.contacts) && document.activeElement === inp) {
+            _renderContactAcMatches(inp, d.contacts);
+          }
+        })
+        .catch(function () {});
+    }, 120);
+  });
+
+  document.addEventListener('focusout', function (e) {
+    if (e && e.target && e.target.id && _RECIPIENT_INPUT_IDS[e.target.id]) {
+      setTimeout(_hideContactAcMenu, 140);
+    }
+  });
+
   function _populateEmailPaneFromItem(d, fallbackSubj, fallbackSender, fallbackSource) {
     var subjEl = document.getElementById('caveDlgMailSubject');
     var badgeEl = document.getElementById('caveDlgMailBadge');
@@ -3388,10 +3651,10 @@
     var noteEl = document.getElementById('caveDlgStewardNote');
     var preloadBadge = document.getElementById('caveDlgPreloadBadge');
     if (subjEl) subjEl.textContent = _decodeEntitiesClient(_sanitizeEmailSandboxText(d.subject || fallbackSubj || '(No Subject)'));
-    if (badgeEl) badgeEl.textContent = (d.account_badge || fallbackSource || 'Inbox') + ' \u00b7 \ud83d\udd12 Sandboxed';
+    if (badgeEl) badgeEl.textContent = (d.account_badge || fallbackSource || 'Inbox');
     if (metaEl) metaEl.textContent = 'From: ' + _decodeEntitiesClient(d.from || d.sender_email || fallbackSender || '') + (d.date ? (' \u00b7 ' + d.date) : '');
     if (preloadBadge) {
-      preloadBadge.textContent = d.body_preloaded ? '\u26a1 Preloaded Locally (0ms)' : '\u2713 Loaded & Cached Locally';
+      preloadBadge.textContent = d.body_preloaded ? '\u26a1 0ms' : '\u2713 Cached';
     }
     var attBtn = document.getElementById('btnCaveDlgDownloadAtt');
     if (attBtn) {
@@ -3400,9 +3663,10 @@
       attBtn.setAttribute('data-comms-att-subject', d.subject || '');
     }
     var dirIn = document.getElementById('caveDlgStewardDirectionsInput');
-    if (dirIn) dirIn.value = '';
-    var actIn = document.getElementById('caveDlgStewardActionInput');
-    if (actIn) actIn.value = '';
+    if (dirIn) {
+      dirIn.value = _loadLocalDraft(_stewardDirDraftKey(d.uid || ''));
+      _autoGrowTextarea(dirIn);
+    }
     var dlgPrevHost = document.getElementById('caveDlgAttachmentPreviewHost');
     if (dlgPrevHost) { dlgPrevHost.hidden = true; dlgPrevHost.innerHTML = ''; }
     var dlgAttBar = document.getElementById('caveDlgAttachmentsBar');
@@ -3458,29 +3722,154 @@
             quoted_history: d.quoted_history || '',
             is_current: true
           }];
-      thList.innerHTML = msgs.map(function (m) {
-        var isSent = m.direction === 'sent';
-        var borderCol = isSent ? '#10b981' : (m.is_current ? '#38bdf8' : '#334155');
-        return (
-          '<div style="padding:11px 14px;border-radius:9px;background:' + (isSent ? 'rgba(16,185,129,0.08)' : '#111827') + ';border:1px solid #1e293b;border-left:4px solid ' + borderCol + '">' +
-            '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;font-size:11.5px;color:#94a3b8;margin-bottom:7px;padding-bottom:5px;border-bottom:1px solid rgba(51,65,85,0.45)">' +
-              '<b style="color:' + (isSent ? '#6ee7b7' : '#f8fafc') + ';font-size:12.5px">' + _escH(_decodeEntitiesClient(m.from || 'Message')) + '</b>' +
-              '<span>' + _escH(m.account_badge || '') + (m.date ? (' \u00b7 ' + _escH(m.date)) : '') + '</span>' +
-            '</div>' +
-            _renderCleanEmailBodyHtml(m.body || '', m.quoted_history || d.quoted_history || '') +
-          '</div>'
-        );
-      }).join('');
+      if (msgs.length <= 1) {
+        var m0 = msgs[0] || {};
+        var isSent0 = m0.direction === 'sent';
+        var bCol0 = isSent0 ? '#10b981' : '#38bdf8';
+        thList.innerHTML =
+          '<div class="cave-single-msg-card" style="padding:8px 10px;border-radius:8px;background:' + (isSent0 ? 'rgba(16,185,129,0.08)' : '#111827') + ';border:1px solid #1e293b;border-left:3px solid ' + bCol0 + '">' +
+            _renderCleanEmailBodyHtml(m0.body || m0.snippet || d.body || d.snippet || '', m0.quoted_history || d.quoted_history || '') +
+          '</div>';
+      } else {
+        thList.innerHTML = msgs.map(function (m) {
+          var isSent = m.direction === 'sent';
+          var borderCol = isSent ? '#10b981' : (m.is_current ? '#38bdf8' : '#334155');
+          return (
+            '<div style="padding:9px 12px;border-radius:8px;background:' + (isSent ? 'rgba(16,185,129,0.08)' : '#111827') + ';border:1px solid #1e293b;border-left:4px solid ' + borderCol + '">' +
+              '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px;color:#94a3b8;margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid rgba(51,65,85,0.45)">' +
+                '<b style="color:' + (isSent ? '#6ee7b7' : '#f8fafc') + ';font-size:12px">' + _escH(_decodeEntitiesClient(m.from || 'Message')) + '</b>' +
+                '<span>' + _escH(m.account_badge || '') + (m.date ? (' \u00b7 ' + _escH(m.date)) : '') + '</span>' +
+              '</div>' +
+              _renderCleanEmailBodyHtml(m.body || m.snippet || d.body || d.snippet || '', m.quoted_history || d.quoted_history || '') +
+            '</div>'
+          );
+        }).join('');
+      }
     }
     var toIn = document.getElementById('caveReplyTo');
+    var ccIn = document.getElementById('caveReplyCc');
+    var bccIn = document.getElementById('caveReplyBcc');
     var subIn = document.getElementById('caveReplySubject');
     var bodyIn = document.getElementById('caveReplyBody');
     var rawSubj = _decodeEntitiesClient(d.subject || fallbackSubj || '');
-    if (toIn) toIn.value = d.sender_email || d.from || fallbackSender || '';
+    if (d && Array.isArray(d.address_book) && d.address_book.length) {
+      _syncAddressBookDatalist(d.address_book);
+    }
+    if (toIn) toIn.value = d.reply_to || d.sender_email || d.from || fallbackSender || '';
+    if (ccIn) ccIn.value = '';
+    if (bccIn) bccIn.value = '';
     if (subIn) subIn.value = /^re:/i.test(rawSubj) ? rawSubj : ('Re: ' + rawSubj);
     if (bodyIn) bodyIn.value = '';
-    if (noteEl) noteEl.textContent = 'Type a quick direct reply below, or enter directions above and click Send to Speed Racer for Scribe to craft & style a draft.';
+    var drwInit = document.getElementById('caveDlgDirectReplyDrawer');
+    if (drwInit) drwInit.open = false;
+    _applyDlgReplyModeBtnStyles('reply');
+    if (noteEl) noteEl.textContent = 'Type a manual response below or refine with Scribe.';
     setTimeout(_syncCaveMailOvalScrollbar, 25);
+  }
+
+  function _syncAddressBookDatalist(addrBook) {
+    var list = Array.isArray(addrBook) ? addrBook : (window.ANCHOR_UNIFIED_ADDRESS_BOOK || []);
+    if (!list.length) return;
+    window.ANCHOR_UNIFIED_ADDRESS_BOOK = list;
+    var dl = document.getElementById('caveUnifiedAddressBookList');
+    if (!dl) return;
+    var html = [];
+    var seen = {};
+    list.slice(0, 250).forEach(function (c) {
+      if (!c || !c.email) return;
+      var em = String(c.email).trim();
+      var nm = String(c.name || '').trim();
+      var val = nm ? (nm + ' <' + em + '>') : em;
+      var k = val.toLowerCase();
+      if (seen[k]) return;
+      seen[k] = true;
+      var lbl = c.label || ((nm ? (nm + ' \u00b7 ') : '') + em);
+      html.push('<option value="' + _escH(val) + '">' + _escH(lbl) + '</option>');
+    });
+    dl.innerHTML = html.join('');
+  }
+
+  function _computeClientReplyRecipients(item, mode) {
+    var d = item || {};
+    var m = String(mode || 'reply').toLowerCase();
+    var rawSubj = _decodeEntitiesClient(d.subject || '');
+    var baseSubj = rawSubj.replace(/^(?:re|fwd|fw)\s*:\s*/i, '').trim() || '(No Subject)';
+    var selfSet = {};
+    var connectedAccounts = (_caveCommsData && Array.isArray(_caveCommsData.accounts)) ? _caveCommsData.accounts : [];
+    connectedAccounts.forEach(function (acc) {
+      if (acc && acc.email) selfSet[String(acc.email).trim().toLowerCase()] = true;
+    });
+    var parseAddrs = function (raw) {
+      if (!raw) return [];
+      return String(raw).split(/[,;]+/).map(function (s) { return s.trim(); }).filter(Boolean);
+    };
+    var extractEm = function (tok) {
+      var mt = String(tok || '').match(/<([^>]+@[^>]+)>/);
+      if (mt) return mt[1].trim().toLowerCase();
+      var mt2 = String(tok || '').match(/([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)/);
+      return mt2 ? mt2[1].trim().toLowerCase() : String(tok || '').trim().toLowerCase();
+    };
+    var replyTo = d.reply_to || d.sender_email || d.from || d.to || '';
+    if (m === 'forward') {
+      var fwdHdr =
+        '\n\n---------- Forwarded message ---------\n' +
+        'From: ' + (d.from || d.sender_email || '') + '\n' +
+        (d.date ? ('Date: ' + d.date + '\n') : '') +
+        'Subject: ' + rawSubj + '\n' +
+        (d.to ? ('To: ' + d.to + '\n') : '') +
+        (d.cc ? ('Cc: ' + d.cc + '\n') : '') +
+        '\n' + (d.body || d.incoming_snippet || d.snippet || '');
+      return {
+        to: '',
+        cc: '',
+        subject: 'Fwd: ' + baseSubj,
+        bodyPrefix: fwdHdr
+      };
+    }
+    if (m === 'reply_all') {
+      if (d.reply_all_to || d.reply_all_cc) {
+        return {
+          to: d.reply_all_to || replyTo,
+          cc: d.reply_all_cc || d.cc || '',
+          subject: 'Re: ' + baseSubj,
+          bodyPrefix: ''
+        };
+      }
+      var seenEm = {};
+      var primaryEm = extractEm(replyTo);
+      if (primaryEm) seenEm[primaryEm] = true;
+      var ccList = [];
+      parseAddrs(d.to).concat(parseAddrs(d.cc)).forEach(function (tok) {
+        var em = extractEm(tok);
+        if (!em || selfSet[em] || seenEm[em]) return;
+        seenEm[em] = true;
+        ccList.push(tok);
+      });
+      return {
+        to: replyTo,
+        cc: ccList.join(', '),
+        subject: 'Re: ' + baseSubj,
+        bodyPrefix: ''
+      };
+    }
+    return {
+      to: replyTo,
+      cc: '',
+      subject: 'Re: ' + baseSubj,
+      bodyPrefix: ''
+    };
+  }
+
+  function _applyDlgReplyModeBtnStyles(mode) {
+    var m = String(mode || 'reply').toLowerCase();
+    $$('[data-dlg-reply-mode]').forEach(function (b) {
+      var on = b.getAttribute('data-dlg-reply-mode') === m;
+      b.classList.toggle('active', on);
+      b.style.borderColor = on ? '#38bdf8' : '#334155';
+      b.style.background = on ? 'rgba(56,189,248,0.18)' : '';
+      b.style.color = on ? '#e0f2fe' : '#cbd5e1';
+      b.style.fontWeight = on ? '800' : '700';
+    });
   }
 
   function _setEmailDialogueOpen(open, reasonMsg) {
@@ -3511,8 +3900,7 @@
     var prevUid = (_activeEmailDialogue && _activeEmailDialogue.uid) ? String(_activeEmailDialogue.uid) : '';
     var isSameUid = prevUid && prevUid === String(uid || '');
     var savedReplyDraft = isSameUid ? ((document.getElementById('caveReplyBody') || {}).value || '') : '';
-    var savedDirs = isSameUid ? ((document.getElementById('caveDlgStewardDirectionsInput') || {}).value || '') : '';
-    var savedActComment = isSameUid ? ((document.getElementById('caveDlgStewardActionInput') || {}).value || '') : '';
+    var savedDirs = isSameUid ? ((document.getElementById('caveDlgStewardDirectionsInput') || {}).value || '') : _loadLocalDraft(_stewardDirDraftKey(uid));
     _setEmailDialogueOpen(true);
     $$('#caveMailBucketsGrid .cave-mail-card').forEach(function (c) {
       c.classList.toggle('is-selected', c.getAttribute('data-mail-uid') === String(uid || ''));
@@ -3520,6 +3908,12 @@
 
     var stMsg = document.getElementById('caveReplyStatusMsg');
     if (stMsg && !isSameUid) stMsg.textContent = '';
+    if (!isSameUid) {
+      var rbReset = document.getElementById('caveReplyBody');
+      if (rbReset) rbReset.value = '';
+      var drwReset = document.getElementById('caveDlgDirectReplyDrawer');
+      if (drwReset) drwReset.open = false;
+    }
 
     // 1. Instant 0ms render from local preloaded cache if available
     var cachedEm = null;
@@ -3536,8 +3930,7 @@
       _activeEmailDialogue = cachedEm;
       _populateEmailPaneFromItem(cachedEm, fallbackSubj, fallbackSender, fallbackSource);
       if (savedReplyDraft) { var rb0 = document.getElementById('caveReplyBody'); if (rb0) rb0.value = savedReplyDraft; }
-      if (savedDirs) { var di0 = document.getElementById('caveDlgStewardDirectionsInput'); if (di0) di0.value = savedDirs; }
-      if (savedActComment) { var ai0 = document.getElementById('caveDlgStewardActionInput'); if (ai0) ai0.value = savedActComment; }
+      if (savedDirs) { var di0 = document.getElementById('caveDlgStewardDirectionsInput'); if (di0) { di0.value = savedDirs; _autoGrowTextarea(di0); } }
     } else {
       _activeEmailDialogue = {
         uid: String(uid || ''),
@@ -3560,7 +3953,12 @@
       try { mailPane.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (err) {}
     }
 
-    // 2. Background sync of opened state (and full body only if not yet preloaded)
+    // 2. Background sync of opened state (and full body only if not yet preloaded).
+    // When quietAutoSelect is true (e.g. auto-advancing after a triage click) and body is already preloaded,
+    // skip firing an immediate background POST so we never contend with in-flight triage writes.
+    if (quietAutoSelect && cachedEm && cachedEm.body_preloaded) {
+      return;
+    }
     fetch('/api/steward/comms', {
       method: 'POST',
       headers: headers(),
@@ -3575,25 +3973,40 @@
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (!d || !d.ok) return;
-        // Guard against stale response if user already clicked a different email
-        if (_activeEmailDialogue && _activeEmailDialogue.uid && String(_activeEmailDialogue.uid) !== String(uid || '')) {
+        // Guard against stale response if dialogue was closed, email was acted/replied, or user switched emails
+        if (window._emailDlgClosed || !_activeEmailDialogue) {
+          return;
+        }
+        if (window._caveSessionActedUids && window._caveSessionActedUids.has(String(uid || ''))) {
+          return;
+        }
+        if (_activeEmailDialogue.uid && String(_activeEmailDialogue.uid) !== String(uid || '')) {
           return;
         }
         _activeEmailDialogue = d;
-        var wasPreloaded = !!(cachedEm && cachedEm.body_preloaded);
+        var wasPreloaded = !!(cachedEm && (cachedEm.body_preloaded || cachedEm.body));
+        var preloadedThreadLen = (cachedEm && Array.isArray(cachedEm.thread_messages)) ? cachedEm.thread_messages.length : 0;
         if (cachedEm) {
           cachedEm.body = d.body || cachedEm.body;
           cachedEm.quoted_history = d.quoted_history || cachedEm.quoted_history;
           cachedEm.links = d.links || cachedEm.links;
           cachedEm.attachments = d.attachments || cachedEm.attachments;
+          if (Array.isArray(d.thread_messages) && d.thread_messages.length >= preloadedThreadLen) {
+            cachedEm.thread_messages = d.thread_messages;
+          }
           cachedEm.body_preloaded = true;
         }
-        // Only re-render if it wasn't preloaded or if new attachments/thread messages arrived
-        if (!wasPreloaded || (Array.isArray(d.attachments) && d.attachments.length) || (Array.isArray(d.thread_messages) && d.thread_messages.length > 1)) {
+        if (d.address_book && Array.isArray(d.address_book)) {
+          _syncAddressBookDatalist(d.address_book);
+        }
+        if (d.reply_to && cachedEm) cachedEm.reply_to = d.reply_to;
+        if (d.reply_all_to && cachedEm) cachedEm.reply_all_to = d.reply_all_to;
+        if (d.reply_all_cc !== undefined && cachedEm) cachedEm.reply_all_cc = d.reply_all_cc;
+        // Only re-render if it wasn't preloaded or if additional thread messages/attachments arrived
+        if (!wasPreloaded || (Array.isArray(d.thread_messages) && d.thread_messages.length > preloadedThreadLen)) {
           var curReplyDraft = ((document.getElementById('caveReplyBody') || {}).value || '');
           var curNoteText = ((document.getElementById('caveDlgStewardNote') || {}).textContent || '');
           var curDirs = ((document.getElementById('caveDlgStewardDirectionsInput') || {}).value || '');
-          var curActComment = ((document.getElementById('caveDlgStewardActionInput') || {}).value || '');
           _populateEmailPaneFromItem(d, fallbackSubj, fallbackSender, fallbackSource);
           if (curReplyDraft) {
             var rb = document.getElementById('caveReplyBody');
@@ -3603,11 +4016,7 @@
           }
           if (curDirs) {
             var di = document.getElementById('caveDlgStewardDirectionsInput');
-            if (di) di.value = curDirs;
-          }
-          if (curActComment) {
-            var ai = document.getElementById('caveDlgStewardActionInput');
-            if (ai) ai.value = curActComment;
+            if (di) { di.value = curDirs; _autoGrowTextarea(di); }
           }
         }
       })
@@ -3639,28 +4048,56 @@
     var relBox = document.getElementById('caveCalDialogueEmails');
 
     var nowIso = new Date().toISOString().slice(0, 10);
-    if (tIn) tIn.value = (opts && opts.title) || '';
-    if (dIn) dIn.value = (opts && opts.date) || _caveCalDay || nowIso;
-    if (sIn) sIn.value = ((opts && opts.start) || '10:00').slice(0, 5);
-    if (eIn) eIn.value = ((opts && opts.end) || '10:30').slice(0, 5);
-    if (lIn) lIn.value = (opts && opts.location) || '';
-    if (nIn) nIn.value = (opts && opts.notes) || '';
+    var fullEv = null;
+    if (!isNew && _caveCommsData) {
+      var evPool = (_caveCommsData.calendar_events_all || []).concat(_caveCommsData.calendar_events || []);
+      var targetUid = String((opts && opts.uid) || '');
+      var targetTitle = String((opts && opts.title) || '');
+      var targetDate = String((opts && opts.date) || '');
+      fullEv = evPool.find(function (e) {
+        if (!e) return false;
+        if (targetUid && (String(e.id || '') === targetUid || String(e.uid || '') === targetUid)) return true;
+        return targetTitle && e.title === targetTitle && (!targetDate || e.date === targetDate);
+      }) || null;
+    }
+    if (tIn) tIn.value = (opts && opts.title) || (fullEv && fullEv.title) || '';
+    if (dIn) dIn.value = (opts && opts.date) || (fullEv && fullEv.date) || _caveCalDay || nowIso;
+    if (sIn) sIn.value = ((opts && opts.start) || (fullEv && fullEv.start_time) || '10:00').slice(0, 5);
+    if (eIn) eIn.value = ((opts && opts.end) || (fullEv && fullEv.end_time) || '10:30').slice(0, 5);
+    if (lIn) lIn.value = (opts && opts.location) || (fullEv && fullEv.location) || '';
+    if (nIn) nIn.value = (opts && opts.notes) || (fullEv && (fullEv.description || fullEv.notes)) || '';
     if (stEl) stEl.textContent = '';
 
-    var srcStr = String((opts && opts.source) || 'PSU 365').toLowerCase();
+    var calLinksBar = document.getElementById('caveCalEvLinksBar');
+    if (calLinksBar) {
+      var lkInfo = isNew ? { joinUrl: '', links: [] } : _extractCalendarEventLinks(fullEv || opts || {});
+      if (lkInfo.links && lkInfo.links.length) {
+        calLinksBar.hidden = false;
+        calLinksBar.innerHTML =
+          '<span style="font-size:11px;font-weight:800;color:#7dd3fc">&#128279; Meeting &amp; Event Links:</span> ' +
+          lkInfo.links.map(function (lk) {
+            return '<a class="tw-btn cave-email-link-pill" href="' + _escH(lk.url) + '" target="_blank" rel="noopener noreferrer" style="border-color:rgba(56,189,248,0.75);background:rgba(56,189,248,0.20);color:#e0f2fe;font-weight:800;font-size:11px;padding:2px 9px;text-decoration:none" title="Open ' + _escH(lk.url) + ' in browser">&#128279; ' + _escH(lk.label || 'Open Link') + ' &#8599;</a>';
+          }).join(' ');
+      } else {
+        calLinksBar.hidden = true;
+        calLinksBar.innerHTML = '';
+      }
+    }
+
+    var srcStr = String((opts && opts.source) || 'Institutional 365').toLowerCase();
     $$('[data-cave-cal-target]').forEach(function (cb) {
       var k = cb.getAttribute('data-cave-cal-target') || '';
       if (isNew) {
         cb.checked = (k === 'psu' || k === 'axmra');
       } else {
-        cb.checked = srcStr.indexOf(k) >= 0 || (k === 'psu' && srcStr.indexOf('axmra') < 0 && srcStr.indexOf('gmail') < 0);
+        cb.checked = srcStr.indexOf(k) >= 0 || (k === 'psu' && srcStr.indexOf('axmra') < 0 && srcStr.indexOf('commercial') < 0 && srcStr.indexOf('gmail') < 0);
       }
     });
     calPane.setAttribute('data-cal-ev-uid', (opts && opts.uid) || '');
     try { dlg.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (err) {}
 
     if (isNew) {
-      if (relBox) relBox.innerHTML = '<div style="color:#94a3b8;font-size:11.5px">Fill in the event details on the left and check which calendars (<b>PSU 365</b>, <b>Axmra 365</b>, <b>Gmail</b>) should receive this event.</div>';
+      if (relBox) relBox.innerHTML = '<div style="color:#94a3b8;font-size:11.5px">Fill in the event details on the left and check which calendars (<b>Institutional 365</b>, <b>Commercial 365</b>, <b>Gmail</b>) should receive this event.</div>';
       if (tIn) tIn.focus();
       return;
     }
@@ -3747,8 +4184,8 @@
   function _shortAcctBadge(raw) {
     var s = String(raw || 'Inbox').trim();
     var sl = s.toLowerCase();
-    if (sl.indexOf('psu') >= 0) return 'PSU';
-    if (sl.indexOf('axmra') >= 0) return 'Axmra';
+    if (sl.indexOf('institutional') >= 0 || sl.indexOf('psu') >= 0) return 'Inst';
+    if (sl.indexOf('commercial') >= 0 || sl.indexOf('axmra') >= 0) return 'Comm';
     if (sl.indexOf('gmail') >= 0) return 'Gmail';
     return s.slice(0, 6);
   }
@@ -3869,10 +4306,10 @@
         '</div>' +
         '<div class="comms-acts cave-mail-row-acts">' +
           '<span class="comms-meta cave-mail-date">' + dtShort + '</span>' +
-          '<button type="button" class="tw-btn cave-mail-act-pill sr-pill" data-speed-racer-queue="1" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" data-mail-from="' + frmClean + '" data-mail-subject="' + subj + '" data-mail-account="' + acctB + '" data-mail-source="' + acctB + '" data-mail-snippet="' + snip + '" title="Jump into Speed Racer and remove from active Focused list">&#127950;&#65039;</button>' +
-          '<button type="button" class="tw-btn done cave-mail-act-pill" data-cave-mail-triage="seen_important" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" title="Seen &amp; Important: remove from active Focused list, and teach Steward that emails like this are Important">&#11088;</button>' +
-          '<button type="button" class="tw-btn cave-mail-act-pill" data-cave-mail-triage="seen" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" title="Mark Looked At / Ignore (marks Read in Outlook/Gmail and removes from Focused)">&#128065;</button>' +
-          '<button type="button" class="tw-btn cave-mail-act-pill cal" data-cave-mail-triage="calendar_done" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" data-mail-subject="' + subj + '" title="Place confirmation/invitation info on Calendar and remove from Focused">&#128197;</button>' +
+          '<button type="button" class="tw-btn cave-mail-act-pill sr-pill" data-speed-racer-queue="1" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" data-mail-from="' + frmClean + '" data-mail-subject="' + subj + '" data-mail-account="' + acctB + '" data-mail-source="' + acctB + '" data-mail-snippet="' + snip + '" title="Jump into Speed Racer and remove from Prime">&#127950;&#65039;</button>' +
+          '<button type="button" class="tw-btn done cave-mail-act-pill" data-cave-mail-triage="seen_important" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" data-mail-subject="' + subj + '" title="Seen &amp; Important: remove from Prime and teach Steward that emails like this belong in Prime">&#11088;</button>' +
+          '<button type="button" class="tw-btn cave-mail-act-pill" data-cave-mail-triage="seen" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" data-mail-subject="' + subj + '" title="Mark Looked At / Ignore (marks Read and removes from Prime)">&#128065;</button>' +
+          '<button type="button" class="tw-btn done cave-mail-act-pill" data-cave-mail-triage="done" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" data-mail-subject="' + subj + '" title="Mark Done and remove from Prime">&#10003;</button>' +
         '</div>' +
       '</div>'
     );
@@ -3899,10 +4336,10 @@
         '</div>' +
         '<div class="comms-acts cave-mail-row-acts">' +
           '<span class="comms-meta cave-mail-date">' + dtShort + '</span>' +
-          '<button type="button" class="tw-btn cave-mail-act-pill sr-pill" data-speed-racer-queue="1" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" data-mail-from="' + frmClean + '" data-mail-subject="' + subj + '" data-mail-account="' + acctB + '" data-mail-source="' + acctB + '" data-mail-snippet="' + snip + '" title="Send to Speed Racer (moves out of Active Inbox)">&#127950;&#65039;</button>' +
-          '<button type="button" class="tw-btn done cave-mail-act-pill" data-cave-mail-triage="seen_important" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" title="Seen &amp; Important: remove from active Inbox, and teach Steward that emails like this are Important">&#11088;</button>' +
-          '<button type="button" class="tw-btn cave-mail-act-pill" data-cave-mail-triage="seen" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" title="Mark Looked At / Seen">&#128065;</button>' +
-          '<button type="button" class="tw-btn done cave-mail-act-pill" data-cave-mail-triage="upgrade" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" title="Promote to Focused &amp; teach Steward">&#11014;</button>' +
+          '<button type="button" class="tw-btn cave-mail-act-pill sr-pill" data-speed-racer-queue="1" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" data-mail-from="' + frmClean + '" data-mail-subject="' + subj + '" data-mail-account="' + acctB + '" data-mail-source="' + acctB + '" data-mail-snippet="' + snip + '" title="Send to Speed Racer (moves out of Irrational)">&#127950;&#65039;</button>' +
+          '<button type="button" class="tw-btn done cave-mail-act-pill" data-cave-mail-triage="seen_important" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" data-mail-subject="' + subj + '" title="Seen &amp; Important: remove from Irrational and teach Steward">&#11088;</button>' +
+          '<button type="button" class="tw-btn cave-mail-act-pill" data-cave-mail-triage="seen" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" data-mail-subject="' + subj + '" title="Mark Looked At / Ignore">&#128065;</button>' +
+          '<button type="button" class="tw-btn done cave-mail-act-pill" data-cave-mail-triage="upgrade" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" data-mail-subject="' + subj + '" title="Promote to Prime &amp; teach Steward">&#11014;</button>' +
         '</div>' +
       '</div>'
     );
@@ -3963,8 +4400,25 @@
     );
   }
 
+  window._caveSessionActedUids = window._caveSessionActedUids || new Map();
+  window._caveEmailActionInFlight = window._caveEmailActionInFlight || 0;
+
   function _hydrateMailCardsFromCommsData(d) {
     if (!d || !d.ok) return;
+    if (Array.isArray(d.important_emails)) {
+      d.important_emails = d.important_emails.filter(function (em) {
+        if (!em || em.is_read === true || em.acted_upon === true) return false;
+        if (window._caveSessionActedUids && window._caveSessionActedUids.has(String(em.uid || ''))) return false;
+        return true;
+      });
+    }
+    if (Array.isArray(d.other_emails)) {
+      d.other_emails = d.other_emails.filter(function (em) {
+        if (!em || em.is_read === true || em.acted_upon === true) return false;
+        if (window._caveSessionActedUids && window._caveSessionActedUids.has(String(em.uid || ''))) return false;
+        return true;
+      });
+    }
     var impBox = document.getElementById('caveMailImportantList');
     if (impBox && Array.isArray(d.important_emails)) {
       if (!d._interleavedOnce) {
@@ -3972,25 +4426,25 @@
         d._interleavedOnce = true;
       }
       if (d.important_emails.length) {
-        impBox.innerHTML = d.important_emails.slice(0, 30).map(_renderImportantMailCardHtml).join('');
+        impBox.innerHTML = d.important_emails.slice(0, 60).map(_renderImportantMailCardHtml).join('');
       } else {
-        impBox.innerHTML = '<div class="tw-empty">&#10003; Active Important Inbox is clear! All replied, seen, and Speed Racer emails have moved to Acted Upon.</div>';
+        impBox.innerHTML = '<div class="tw-empty">&#10003; Prime Inbox is clear! All replied, seen, and Speed Racer emails have moved to Acted Upon.</div>';
       }
     }
     var othBox = document.getElementById('caveMailOtherList');
     if (othBox && Array.isArray(d.other_emails)) {
       if (d.other_emails.length) {
-        othBox.innerHTML = d.other_emails.slice(0, 20).map(_renderOtherMailCardHtml).join('');
+        othBox.innerHTML = d.other_emails.slice(0, 50).map(_renderOtherMailCardHtml).join('');
       } else {
-        othBox.innerHTML = '<div class="tw-empty">No other unacted emails.</div>';
+        othBox.innerHTML = '<div class="tw-empty">No Irrational emails pending.</div>';
       }
     }
     var actBox = document.getElementById('caveMailActedList');
     if (actBox && Array.isArray(d.acted_upon_emails)) {
       if (d.acted_upon_emails.length) {
-        actBox.innerHTML = d.acted_upon_emails.slice(0, 35).map(_renderActedMailCardHtml).join('');
+        actBox.innerHTML = d.acted_upon_emails.slice(0, 200).map(_renderActedMailCardHtml).join('');
       } else {
-        actBox.innerHTML = '<div class="tw-empty">No acted-upon emails yet. Mark an email Seen, send a reply, or queue it to Speed Racer to move it here.</div>';
+        actBox.innerHTML = '<div class="tw-empty">No acted-upon emails yet. Mark an email Seen, Done, send a reply, or queue it to Speed Racer to move it here.</div>';
       }
       var actCntB = document.getElementById('caveActedCountBadge');
       if (actCntB) actCntB.textContent = String(d.acted_upon_emails.length);
@@ -4003,11 +4457,15 @@
     }
     var impBadge = document.getElementById('caveImpCountBadge');
     if (impBadge && Array.isArray(d.important_emails)) {
-      impBadge.innerHTML = '&#9889; ' + d.important_emails.length + ' Focused';
+      impBadge.innerHTML = '&#9889; ' + d.important_emails.length + ' Prime';
     }
     var othBadge = document.getElementById('caveOthCountBadge');
     if (othBadge && Array.isArray(d.other_emails)) {
-      othBadge.innerHTML = '&#128229; ' + d.other_emails.length + ' Other';
+      othBadge.textContent = String(d.other_emails.length);
+    }
+    var hdrOthBadge = document.getElementById('caveHdrOthBadge');
+    if (hdrOthBadge && Array.isArray(d.other_emails)) {
+      hdrOthBadge.innerHTML = '&#128229; ' + d.other_emails.length + ' Irrational';
     }
     var sentBox = document.getElementById('caveMailSentList');
     if (sentBox && Array.isArray(d.sent_emails)) {
@@ -4160,7 +4618,7 @@
     if (!selCard) return null;
     var cUid = selCard.getAttribute('data-mail-uid') || '';
     var cSender = selCard.getAttribute('data-mail-sender') || '';
-    var cBadge = selCard.getAttribute('data-mail-source') || 'PSU 365';
+    var cBadge = selCard.getAttribute('data-mail-source') || 'Institutional 365';
     var tEl = selCard.querySelector('.comms-item-title, .cave-mail-subj');
     var cSubj = (tEl && tEl.textContent) || ((document.getElementById('caveDlgMailSubject') || {}).textContent || '');
     return {
@@ -4174,20 +4632,99 @@
   }
   window._resolveRightPaneEmailCtx = _resolveRightPaneEmailCtx;
 
-  function _optimisticallyRemoveEmailFromLists(uid, actedStatus, actedReason) {
+  function _normThreadSubjClient(rawSubj) {
+    return String(rawSubj || '').replace(/^(?:\s*(?:re|fwd|fw)\s*:\s*)+/i, '').trim().toLowerCase();
+  }
+
+  function _extractEmailAddrClient(rawStr) {
+    var s = String(rawStr || '').trim().toLowerCase();
+    var m = s.match(/<([^>]+@[^>]+)>/);
+    if (m) return m[1].trim();
+    var m2 = s.match(/([a-z0-9_.+-]+@[a-z0-9-]+\.[a-z0-9-.]+)/i);
+    return m2 ? m2[1].trim().toLowerCase() : s;
+  }
+
+  function _optimisticallyRemoveEmailFromLists(uid, actedStatus, actedReason, matchMeta) {
     var u = String(uid || '').trim();
-    if (!u || !_caveCommsData) return;
-    _captureNextEmailInCurrentList(u);
+    var meta = (matchMeta && typeof matchMeta === 'object') ? matchMeta : {};
+    var wantSubj = _normThreadSubjClient(meta.subject || '');
+    var wantAddr = _extractEmailAddrClient(meta.recipient || '');
+    var matchedSet = {};
+    if (u) matchedSet[u] = true;
+    if (!u && _activeEmailDialogue && _activeEmailDialogue.uid) {
+      matchedSet[String(_activeEmailDialogue.uid)] = true;
+      u = String(_activeEmailDialogue.uid);
+    }
+    var itemMatches = function (em) {
+      if (!em) return false;
+      var emUid = String(em.uid || '').trim();
+      if (emUid && matchedSet[emUid]) return true;
+      if (wantSubj && wantSubj.length >= 3) {
+        var emSubj = _normThreadSubjClient(em.subject || '');
+        if (emSubj === wantSubj) {
+          if (!wantAddr) return true;
+          var emFrom = _extractEmailAddrClient((em.sender_email || '') + ' ' + (em.from || ''));
+          if (!emFrom || emFrom === wantAddr || String(em.from || '').toLowerCase().indexOf(wantAddr) >= 0) {
+            if (emUid) matchedSet[emUid] = true;
+            return true;
+          }
+        }
+      }
+      return false;
+    };
+    if (_caveCommsData) {
+      (_caveCommsData.important_emails || []).forEach(itemMatches);
+      (_caveCommsData.other_emails || []).forEach(itemMatches);
+    }
+    var matchedUids = Object.keys(matchedSet);
+    var primaryUid = u || matchedUids[0] || '';
+    if (!primaryUid && !meta.forceAdvance) return;
+    if (window._caveSessionActedUids) {
+      matchedUids.forEach(function (mu) {
+        if (mu) window._caveSessionActedUids.set(mu, Date.now());
+      });
+    }
+    window._caveEmailActionInFlight = (window._caveEmailActionInFlight || 0) + 1;
+    setTimeout(function () {
+      window._caveEmailActionInFlight = Math.max(0, (window._caveEmailActionInFlight || 1) - 1);
+    }, 2500);
+    if (primaryUid) {
+      _captureNextEmailInCurrentList(primaryUid);
+    }
+    if (!_caveCommsData) {
+      if (primaryUid) {
+        $$('#caveMailBucketsGrid .cave-mail-card').forEach(function (c) {
+          if (matchedSet[c.getAttribute('data-mail-uid') || '']) c.remove();
+        });
+      }
+      if (_pendingNextEmailSelection && _pendingNextEmailSelection.nextUid) {
+        var nxtC = document.querySelector('#caveMailBucketsGrid .cave-mail-card[data-mail-uid="' + _pendingNextEmailSelection.nextUid + '"]');
+        _pendingNextEmailSelection = null;
+        if (nxtC) {
+          var tSub = nxtC.querySelector('.comms-item-title, .cave-mail-subj');
+          _openEmailDialogueTile(
+            nxtC.getAttribute('data-mail-uid') || '',
+            (tSub && tSub.textContent) || '',
+            nxtC.getAttribute('data-mail-sender') || '',
+            nxtC.getAttribute('data-mail-source') || 'Inbox',
+            true
+          );
+          return;
+        }
+      }
+      _setEmailDialogueOpen(false, '\u2713 All emails in this list have been handled \u2014 Email dialogue closed.');
+      return;
+    }
     var removedItem = null;
     if (Array.isArray(_caveCommsData.important_emails)) {
       _caveCommsData.important_emails = _caveCommsData.important_emails.filter(function (em) {
-        if (em && String(em.uid || '') === u) { removedItem = em; return false; }
+        if (itemMatches(em)) { if (!removedItem) removedItem = em; return false; }
         return true;
       });
     }
     if (Array.isArray(_caveCommsData.other_emails)) {
       _caveCommsData.other_emails = _caveCommsData.other_emails.filter(function (em) {
-        if (em && String(em.uid || '') === u) { if (!removedItem) removedItem = em; return false; }
+        if (itemMatches(em)) { if (!removedItem) removedItem = em; return false; }
         return true;
       });
     }
@@ -4199,10 +4736,15 @@
       });
       if (!Array.isArray(_caveCommsData.acted_upon_emails)) _caveCommsData.acted_upon_emails = [];
       _caveCommsData.acted_upon_emails = [actedCopy].concat(
-        _caveCommsData.acted_upon_emails.filter(function (em) { return em && String(em.uid || '') !== u; })
+        _caveCommsData.acted_upon_emails.filter(function (em) {
+          return em && !matchedSet[String(em.uid || '')];
+        })
       );
     }
-    if (_activeEmailDialogue && String(_activeEmailDialogue.uid || '') === u) {
+    if (
+      meta.forceAdvance ||
+      (_activeEmailDialogue && (matchedSet[String(_activeEmailDialogue.uid || '')] || itemMatches(_activeEmailDialogue)))
+    ) {
       _activeEmailDialogue = null;
     }
     _hydrateMailCardsFromCommsData(_caveCommsData);
@@ -4293,7 +4835,7 @@
         start: openCalEl.getAttribute('data-cal-start') || '10:00',
         end: openCalEl.getAttribute('data-cal-end') || '10:30',
         location: openCalEl.getAttribute('data-cal-loc') || '',
-        source: openCalEl.getAttribute('data-cal-source') || 'PSU 365'
+        source: openCalEl.getAttribute('data-cal-source') || 'Institutional 365'
       });
       return;
     }
@@ -4365,6 +4907,29 @@
         b.innerHTML = willDock ? '&#8644; Float Over Steward' : '&#8644; Floating Over Steward &#10003;';
       });
       setTimeout(_syncCaveMailOvalScrollbar, 40);
+      return;
+    }
+
+    var dlgReplyModeBtn = e.target.closest && e.target.closest('[data-dlg-reply-mode]');
+    if (dlgReplyModeBtn) {
+      e.preventDefault(); e.stopPropagation();
+      var rMode = dlgReplyModeBtn.getAttribute('data-dlg-reply-mode') || 'reply';
+      _applyDlgReplyModeBtnStyles(rMode);
+      var curDMode = _resolveRightPaneEmailCtx() || _activeEmailDialogue || {};
+      var recips = _computeClientReplyRecipients(curDMode, rMode);
+      var toInM = document.getElementById('caveReplyTo');
+      var ccInM = document.getElementById('caveReplyCc');
+      var subInM = document.getElementById('caveReplySubject');
+      var bodyInM = document.getElementById('caveReplyBody');
+      if (toInM) toInM.value = recips.to || '';
+      if (ccInM) ccInM.value = recips.cc || '';
+      if (subInM) subInM.value = recips.subject || '';
+      if (rMode === 'forward') {
+        if (bodyInM && bodyInM.value.indexOf('Forwarded message') < 0) {
+          bodyInM.value = (bodyInM.value ? (bodyInM.value + recips.bodyPrefix) : recips.bodyPrefix.replace(/^\n+/, ''));
+        }
+        if (toInM) toInM.focus();
+      }
       return;
     }
 
@@ -4442,10 +5007,18 @@
     if (sendReplyBtn) {
       e.preventDefault(); e.stopPropagation();
       var curM = _resolveRightPaneEmailCtx() || _activeEmailDialogue || {};
-      var toVal = ((document.getElementById('caveReplyTo') || {}).value || '').trim();
-      var ccVal = ((document.getElementById('caveReplyCc') || {}).value || '').trim();
-      var subVal = ((document.getElementById('caveReplySubject') || {}).value || '').trim();
-      var bodyVal = ((document.getElementById('caveReplyBody') || {}).value || '').trim();
+      var toElR = document.getElementById('caveReplyTo');
+      var ccElR = document.getElementById('caveReplyCc');
+      var bccElR = document.getElementById('caveReplyBcc');
+      var subElR = document.getElementById('caveReplySubject');
+      var bodyElR = document.getElementById('caveReplyBody');
+      var drwElR = document.getElementById('caveDlgDirectReplyDrawer');
+      var dirElR = document.getElementById('caveDlgStewardDirectionsInput');
+      var toVal = (toElR && toElR.value || '').trim();
+      var ccVal = (ccElR && ccElR.value || '').trim();
+      var bccVal = (bccElR && bccElR.value || '').trim();
+      var subVal = (subElR && subElR.value || '').trim();
+      var bodyVal = (bodyElR && bodyElR.value || '').trim();
       var stMsg = document.getElementById('caveReplyStatusMsg');
       if (!toVal || !bodyVal) {
         if (stMsg) stMsg.textContent = '\u26a0 Recipient (To) and message body are required.';
@@ -4454,8 +5027,20 @@
       sendReplyBtn.disabled = true;
       var sendingUid = curM.uid || '';
       var sendingAcctId = curM.account_id || '';
-      if (stMsg) stMsg.textContent = '\u23f3 Sending reply\u2026';
-      _optimisticallyRemoveEmailFromLists(sendingUid, '\u21a9 Replied', 'Answered directly via Quick Reply to ' + toVal);
+      var prevActiveEm = Object.assign({}, curM);
+      // Immediately clear reply drawer and optimistically close/advance the email (0ms UI response)
+      if (bodyElR) bodyElR.value = '';
+      if (dirElR) { dirElR.value = ''; _autoGrowTextarea(dirElR); }
+      if (sendingUid) _clearLocalDraft(_stewardDirDraftKey(sendingUid));
+      if (drwElR) drwElR.open = false;
+      if (stMsg) stMsg.textContent = '';
+      _optimisticallyRemoveEmailFromLists(
+        sendingUid,
+        '\u21a9 Replied',
+        'Answered via Direct Reply to ' + toVal,
+        { subject: subVal || curM.subject || '', recipient: toVal, forceAdvance: true }
+      );
+      receipt('\u23f3 Sending reply to ' + toVal + '\u2026');
       fetch('/api/steward/comms', {
         method: 'POST',
         headers: headers(),
@@ -4465,15 +5050,24 @@
           account_id: sendingAcctId,
           to: toVal,
           cc: ccVal,
+          bcc: bccVal,
           subject: subVal,
           body: bodyVal
         })
       })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
+        .then(function (r) { return r.json().then(function (d) { return { status: r.status, data: d }; }); })
+        .then(function (res) {
           sendReplyBtn.disabled = false;
-          if (d && d.ok) {
-            if (stMsg) stMsg.innerHTML = '<b style="color:#6ee7b7">\u2713 Sent via ' + _escH(d.transport || d.from || 'Account') + '!</b>';
+          var d = res.data || {};
+          if (res.status < 400 && d && d.ok) {
+            if (window._caveSessionActedUids) {
+              if (d.uid) window._caveSessionActedUids.set(String(d.uid), Date.now());
+              if (Array.isArray(d.matched_uids)) {
+                d.matched_uids.forEach(function (mu) {
+                  if (mu) window._caveSessionActedUids.set(String(mu), Date.now());
+                });
+              }
+            }
             if (!_caveCommsData) _caveCommsData = { ok: true };
             if (Array.isArray(d.sent_emails)) _caveCommsData.sent_emails = d.sent_emails;
             if (Array.isArray(d.important_emails)) _caveCommsData.important_emails = _mergeStableEmailOrder(_caveCommsData.important_emails, d.important_emails);
@@ -4481,15 +5075,38 @@
             if (Array.isArray(d.acted_upon_emails)) _caveCommsData.acted_upon_emails = d.acted_upon_emails;
             _caveCommsData._interleavedOnce = true;
             if (d.speed_racer) _caveCommsData.speed_racer = d.speed_racer;
+            if (d.working_list) { _wlState = d.working_list; _renderWorkingListSpine(); }
             _hydrateMailCardsFromCommsData(_caveCommsData);
-            receipt('\u2713 Reply sent directly to ' + toVal + ' (' + subVal + ') — moved out of Active Focused Inbox to Acted Upon & Sent!');
+            receipt('\u2713 Reply sent directly to ' + toVal + ' (' + subVal + ') \u2014 moved out of Prime Inbox to Acted Upon & Sent!');
           } else {
-            if (stMsg) stMsg.textContent = '\u26a0 ' + ((d && d.error) || 'Send failed.');
+            var errTxt = (d && (d.message || d.error)) || 'Send failed.';
+            if (sendingUid && window._caveSessionActedUids) {
+              window._caveSessionActedUids.delete(String(sendingUid));
+            }
+            if (prevActiveEm && prevActiveEm.uid) {
+              _openEmailDialogueTile(prevActiveEm.uid, prevActiveEm.subject, prevActiveEm.sender_email || prevActiveEm.from, prevActiveEm.account_badge || 'Inbox', true);
+            } else {
+              _setEmailDialogueOpen(true);
+            }
+            if (drwElR) drwElR.open = true;
+            if (toElR) toElR.value = toVal;
+            if (ccElR) ccElR.value = ccVal;
+            if (bccElR) bccElR.value = bccVal;
+            if (subElR) subElR.value = subVal;
+            if (bodyElR) bodyElR.value = bodyVal;
+            if (stMsg) stMsg.textContent = '\u26a0 ' + errTxt;
+            receipt(errTxt, true);
           }
         })
         .catch(function () {
           sendReplyBtn.disabled = false;
+          if (sendingUid && window._caveSessionActedUids) {
+            window._caveSessionActedUids.delete(String(sendingUid));
+          }
+          if (drwElR) drwElR.open = true;
+          if (bodyElR && !bodyElR.value) bodyElR.value = bodyVal;
           if (stMsg) stMsg.textContent = 'Send request did not reach Anchor.';
+          receipt('Send request did not reach Anchor.', true);
         });
       return;
     }
@@ -4497,19 +5114,26 @@
     if (saveReplyDraftBtn) {
       e.preventDefault(); e.stopPropagation();
       var toValD = ((document.getElementById('caveReplyTo') || {}).value || '').trim();
+      var ccValD = ((document.getElementById('caveReplyCc') || {}).value || '').trim();
+      var bccValD = ((document.getElementById('caveReplyBcc') || {}).value || '').trim();
       var subValD = ((document.getElementById('caveReplySubject') || {}).value || '').trim();
       var bodyValD = ((document.getElementById('caveReplyBody') || {}).value || '').trim();
       var stMsgD = document.getElementById('caveReplyStatusMsg');
       fetch('/api/steward/comms', {
         method: 'POST',
         headers: headers(),
-        body: JSON.stringify({ action: 'create_draft', to: toValD, subject: subValD, body: bodyValD })
+        body: JSON.stringify({ action: 'create_draft', to: toValD, cc: ccValD, bcc: bccValD, subject: subValD, body: bodyValD })
       })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-          if (d && d.ok) {
+        .then(function (r) { return r.json().then(function (d) { return { status: r.status, data: d }; }); })
+        .then(function (res) {
+          var d = res.data || {};
+          if (res.status < 400 && d && d.ok) {
             if (stMsgD) stMsgD.innerHTML = '<b style="color:#7dd3fc">\u2713 Draft saved to .anchor/drafts/</b>';
             receipt('Saved reply draft to .anchor/drafts/.');
+          } else {
+            var errD = (d && d.error) || 'Could not save draft.';
+            if (stMsgD) stMsgD.textContent = '\u26a0 ' + errD;
+            receipt(errD, true);
           }
         });
       return;
@@ -4591,20 +5215,28 @@
       _setEmailDialogueOpen(false, 'Closed Email dialogue.');
       return;
     }
-    var dlgStewardActionBtn = e.target.closest && e.target.closest('#btnCaveDlgSendStewardAction');
+    var dlgStewardActionBtn = e.target.closest && e.target.closest('#btnCaveDlgSendStewardAction, #btnCaveDlgMullSteward');
     if (dlgStewardActionBtn) {
-      var curActE = _resolveRightPaneEmailCtx();
-      if (!curActE) return;
       e.preventDefault(); e.stopPropagation();
-      var actInput = document.getElementById('caveDlgStewardActionInput');
+      var isMullBtn = (dlgStewardActionBtn.id === 'btnCaveDlgMullSteward');
+      var actInput = document.getElementById('caveDlgStewardDirectionsInput');
       var commentTxt = actInput ? actInput.value.trim() : '';
       if (!commentTxt) {
-        receipt('Please enter a comment or task instruction for the Steward first.', true);
-        if (actInput) actInput.focus();
+        if (isMullBtn) {
+          commentTxt = 'Mull over this email with me and propose concrete next steps.';
+        } else {
+          receipt('Please enter an instruction or task for the Cave of Wonders Steward first.', true);
+          if (actInput) actInput.focus();
+          return;
+        }
+      }
+      var curActE = _resolveRightPaneEmailCtx() || _activeEmailDialogue;
+      if (!curActE) {
+        receipt('Select an email first so the Cave of Wonders Steward can attach its context.', true);
         return;
       }
-      var actUid = curActE.uid || '';
-      _optimisticallyRemoveEmailFromLists(actUid, '\ud83d\udccb Steward Action', commentTxt);
+      var actUid = curActE.uid || curActE.id || '';
+      var fullBody = curActE.body || curActE.incoming_body || curActE.incoming_snippet || curActE.snippet || '';
       dlgStewardActionBtn.disabled = true;
       fetch('/api/steward/comms', {
         method: 'POST',
@@ -4613,20 +5245,37 @@
           action: 'email_steward_action',
           uid: actUid,
           account_id: curActE.account_id || '',
-          account_badge: curActE.account_badge || 'PSU 365',
-          from: curActE.from || curActE.sender_email || '',
-          sender_email: curActE.sender_email || curActE.from || '',
+          account_badge: curActE.account_badge || curActE.account || 'Institutional 365',
+          from: curActE.from || curActE.to || curActE.sender_email || '',
+          sender_email: curActE.sender_email || curActE.from || curActE.to || '',
           subject: curActE.subject || '',
           date: curActE.date || '',
-          snippet: (curActE.body || curActE.snippet || '').slice(0, 320),
-          comment: commentTxt
+          body: fullBody,
+          snippet: fullBody.slice(0, 4000),
+          comment: commentTxt,
+          also_queue_speed_racer: false
         })
       })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
+        .then(function (r) { return r.json().then(function (d) { return { status: r.status, data: d }; }); })
+        .then(function (res) {
           dlgStewardActionBtn.disabled = false;
-          if (d && d.ok) {
-            if (actInput) actInput.value = '';
+          var d = res.data || {};
+          if (res.status === 503) {
+            _clearLocalDraft(_stewardDirDraftKey(actUid));
+            if (actInput) { actInput.value = ''; _autoGrowTextarea(actInput); }
+            if (d.working_list && typeof _renderWorkingListSpine === 'function') {
+              _wlState = d.working_list;
+              _renderWorkingListSpine();
+            }
+            receipt((d && d.error) || 'Cave Steward engine unavailable \u2014 message queued safely', true);
+            return;
+          }
+          if (res.status < 400 && d && d.ok) {
+            if (actUid) {
+              _optimisticallyRemoveEmailFromLists(actUid, '\ud83e\udded Steward', commentTxt);
+            }
+            _clearLocalDraft(_stewardDirDraftKey(actUid));
+            if (actInput) { actInput.value = ''; _autoGrowTextarea(actInput); }
             if (d.working_list && typeof _renderWorkingListSpine === 'function') {
               _wlState = d.working_list;
               _renderWorkingListSpine();
@@ -4636,14 +5285,24 @@
             if (Array.isArray(d.other_emails)) _caveCommsData.other_emails = d.other_emails;
             if (Array.isArray(d.acted_upon_emails)) _caveCommsData.acted_upon_emails = d.acted_upon_emails;
             if (Array.isArray(d.all_emails)) _caveCommsData.all_emails = d.all_emails;
+            if (d.speed_racer) {
+              _caveCommsData.speed_racer = d.speed_racer;
+              _syncSpeedRacerFromServer(d.speed_racer);
+            }
             _caveCommsData._interleavedOnce = true;
             _hydrateMailCardsFromCommsData(_caveCommsData);
-            if (dlg && typeof dlg.reload === 'function') {
-              try { dlg.reload(); } catch (err) {}
+            if (dlg && typeof dlg.resume === 'function') {
+              try { dlg.resume(); } catch (err) {}
             }
-            receipt(d.note || '\ud83d\udccb Sent comment to Steward & added task to The List!');
+            var caveStewardFrame = document.querySelector('#dialogue iframe.cview-frame');
+            if (caveStewardFrame && caveStewardFrame.contentWindow) {
+              try {
+                caveStewardFrame.contentWindow.postMessage({ type: 'anchor-steward-refresh', source: 'email_steward_action' }, '*');
+              } catch (err) {}
+            }
+            receipt(d.note || '\ud83e\udded Sent email & directive to Cave of Wonders Steward.');
           } else {
-            receipt((d && d.error) || 'Could not record Steward action.', true);
+            receipt((d && d.error) || 'Could not dispatch to Cave Steward.', true);
           }
         })
         .catch(function () {
@@ -4652,7 +5311,7 @@
         });
       return;
     }
-    var dlgSrBtn = e.target.closest && e.target.closest('#btnCaveDlgToSpeedRacer, #btnCaveDlgSendDirectionsToSr');
+    var dlgSrBtn = e.target.closest && e.target.closest('#btnCaveDlgSendDirectionsToSr');
     if (dlgSrBtn) {
       var curE = _resolveRightPaneEmailCtx();
       if (!curE) return;
@@ -4664,10 +5323,12 @@
       var sdAtts = (curE.steward_draft && Array.isArray(curE.steward_draft.attachments)) ? curE.steward_draft.attachments : [];
       var srUid = curE.uid || '';
       var srTo = ((document.getElementById('caveReplyTo') || {}).value || curE.sender_email || curE.from || '').trim();
+      var srCc = ((document.getElementById('caveReplyCc') || {}).value || curE.cc || '').trim();
+      var srBcc = ((document.getElementById('caveReplyBcc') || {}).value || '').trim();
       var srSubj = ((document.getElementById('caveReplySubject') || {}).value || ('Re: ' + (curE.subject || ''))).trim();
-      var srBody = curE.body || '';
+      var srBody = curE.body || curE.snippet || '';
       var srAcctId = curE.account_id || '';
-      var srAcctBadge = curE.account_badge || 'PSU 365';
+      var srAcctBadge = curE.account_badge || 'Institutional 365';
       _optimisticallyRemoveEmailFromLists(srUid, '\ud83c\udfce\ufe0f Speed Racer', 'Queued in Speed Racer for review');
       dlgSrBtn.disabled = true;
       fetch('/api/steward/comms', {
@@ -4679,19 +5340,23 @@
           account_id: srAcctId,
           account: srAcctBadge,
           to: srTo,
+          cc: srCc,
+          bcc: srBcc,
           subject: srSubj,
-          incoming_snippet: srBody.slice(0, 360),
+          incoming_snippet: srBody.slice(0, 12000),
           steward_directions: userDirs,
           draft_body: userDirs ? '' : curDraftBody,
           attachments: sdAtts,
-          queued_by: userDirs ? ('Steward Directions: "' + userDirs.slice(0, 50) + '"') : 'Expanded Email [-> Speed Racer]'
+          queued_by: userDirs ? ('Scribe Directions: "' + userDirs.slice(0, 50) + '"') : 'Expanded Email [Scribe -> Speed Racer]'
         })
       })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
+        .then(function (r) { return r.json().then(function (d) { return { status: r.status, data: d }; }); })
+        .then(function (res) {
           dlgSrBtn.disabled = false;
-          if (d && d.ok) {
-            if (dirInput) dirInput.value = '';
+          var d = res.data || {};
+          if (res.status < 400 && d && d.ok) {
+            _clearLocalDraft(_stewardDirDraftKey(srUid));
+            if (dirInput) { dirInput.value = ''; _autoGrowTextarea(dirInput); }
             if (!_caveCommsData) _caveCommsData = { ok: true };
             if (Array.isArray(d.important_emails)) _caveCommsData.important_emails = _mergeStableEmailOrder(_caveCommsData.important_emails, d.important_emails);
             if (Array.isArray(d.other_emails)) _caveCommsData.other_emails = d.other_emails;
@@ -4702,18 +5367,21 @@
             if (d.speed_racer) {
               _srState = d.speed_racer;
               _srIdx = 0;
+              window._srUserCollapsed = false;
               _setSpeedRacerExpanded(true);
               _renderCaveSpeedRacerTile();
               var srTile = document.getElementById('caveSpeedRacerTile');
               if (srTile && srTile.scrollIntoView) srTile.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }
-            receipt('\ud83c\udfce\ufe0f Sent to Speed Racer' + (userDirs ? ' with your Steward directions' : '') + ' & moved email out of Active Inbox to Acted Upon!');
+            receipt('\ud83c\udfce\ufe0f Drafted in Speed Racer' + (userDirs ? ' with your Scribe directions' : '') + ' & moved email out of Prime to Acted Upon!');
+          } else {
+            receipt((d && d.error) || 'Could not queue draft in Speed Racer.', true);
           }
         })
         .catch(function () { dlgSrBtn.disabled = false; });
       return;
     }
-    var dlgTriageBtn = e.target.closest && e.target.closest('#btnCaveDlgSeen, #btnCaveDlgSeenImportant, #btnCaveDlgCalendarDone, #btnCaveDlgAlreadyReplied, #btnCaveDlgDowngrade, #btnCaveDlgUpgrade');
+    var dlgTriageBtn = e.target.closest && e.target.closest('#btnCaveDlgSeen, #btnCaveDlgSeenImportant, #btnCaveDlgDone, #btnCaveDlgAlreadyReplied, #btnCaveDlgDowngrade, #btnCaveDlgUpgrade');
     if (dlgTriageBtn) {
       var curTriageE = _resolveRightPaneEmailCtx();
       if (!curTriageE) return;
@@ -4721,7 +5389,7 @@
       var actMap = {
         btnCaveDlgSeen: 'seen',
         btnCaveDlgSeenImportant: 'seen_important',
-        btnCaveDlgCalendarDone: 'calendar_done',
+        btnCaveDlgDone: 'done',
         btnCaveDlgAlreadyReplied: 'already_replied',
         btnCaveDlgDowngrade: 'downgrade',
         btnCaveDlgUpgrade: 'upgrade'
@@ -4731,7 +5399,11 @@
       var curSender = curTriageE.sender_email || curTriageE.from || '';
       var curSubj = curTriageE.subject || '';
       var curBadge = curTriageE.account_badge || '';
-      _optimisticallyRemoveEmailFromLists(curUid, fb === 'already_replied' ? '\u2713 Answered' : '\u2713 Acted', 'Marked ' + fb);
+      if (fb === 'upgrade') {
+        if (window._caveSessionActedUids) window._caveSessionActedUids.delete(String(curUid || ''));
+      } else {
+        _optimisticallyRemoveEmailFromLists(curUid, fb === 'already_replied' ? '\u2713 Answered' : (fb === 'done' ? '\u2713 Done' : '\u2713 Acted'), 'Marked ' + fb);
+      }
       fetch('/api/steward/comms', {
         method: 'POST',
         headers: headers(),
@@ -4754,7 +5426,7 @@
             if (Array.isArray(d.acted_upon_emails)) _caveCommsData.acted_upon_emails = d.acted_upon_emails;
             _caveCommsData._interleavedOnce = true;
             _hydrateMailCardsFromCommsData(_caveCommsData);
-            receipt(d.note || 'Email moved out of Focused Inbox to Acted Upon.');
+            receipt(d.note || 'Email moved out of Prime Inbox to Acted Upon.');
           }
         });
       return;
@@ -4763,7 +5435,29 @@
     if (mailFolderBtn) {
       e.preventDefault(); e.stopPropagation();
       var fMode = mailFolderBtn.getAttribute('data-cave-mail-folder') || 'all';
+      var calSecF = document.getElementById('cal');
+      var togBtnF = document.getElementById('calTog');
+      if (calSecF && !calSecF.classList.contains('open')) {
+        calSecF.classList.add('open');
+        if (togBtnF) togBtnF.textContent = 'Collapse';
+      }
+      var curGridF = document.getElementById('commsGrid');
+      var curLayoutF = (curGridF && curGridF.getAttribute('data-layout')) || 'split';
+      if (mailFolderBtn.closest('#calHead') || curLayoutF === 'cal') {
+        applyCommsLayout(mailFolderBtn.closest('#calHead') ? 'mail' : 'split');
+      }
+      if (typeof _setSpeedRacerExpanded === 'function') {
+        window._srUserCollapsed = true;
+        _setSpeedRacerExpanded(false);
+      }
+      if (typeof window._ensureCaveCommsDataLoaded === 'function') {
+        window._ensureCaveCommsDataLoaded(false);
+      }
       _applyCaveMailFolderMode(fMode, true);
+      var mailSplitEl = document.getElementById('caveOutlookMailSplit');
+      if (mailSplitEl) {
+        setTimeout(function () { try { mailSplitEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (_) {} }, 60);
+      }
       setTimeout(_syncCaveMailOvalScrollbar, 30);
       return;
     }
@@ -4853,11 +5547,12 @@
       var wasOpened = mCard ? (mCard.getAttribute('data-mail-opened') === '1') : false;
       triageBtn.disabled = true;
       var tSubj = triageBtn.getAttribute('data-mail-subject') || '';
-      if (tAct !== 'unact' && window._optimisticallyRemoveEmailFromLists) {
-        window._optimisticallyRemoveEmailFromLists(tUid, '\u2713 Acted', 'Marked ' + tAct);
-      } else {
+      if (tAct === 'unact' || tAct === 'upgrade') {
+        if (window._caveSessionActedUids) window._caveSessionActedUids.delete(String(tUid || ''));
         _captureNextEmailInCurrentList(tUid);
         if (_activeEmailDialogue && _activeEmailDialogue.uid === tUid) _activeEmailDialogue = null;
+      } else if (window._optimisticallyRemoveEmailFromLists) {
+        window._optimisticallyRemoveEmailFromLists(tUid, '\u2713 Acted', 'Marked ' + tAct);
       }
       fetch('/api/steward/comms', {
         method: 'POST',
@@ -4931,17 +5626,24 @@
     var body = document.getElementById('cosExpandableBody');
     var strip = document.getElementById('shTriage');
     var btn = document.getElementById('btnCosToggleExpand');
-    if (!body) return;
-    body.hidden = !open;
-    if (strip) strip.classList.toggle('is-collapsed', !open);
+    var targetCol = focusCol || 'today';
+    if (body) body.hidden = !open;
+    if (strip) {
+      strip.classList.toggle('is-collapsed', !open);
+      $$('#shTriage .chz-drawer').forEach(function (d) {
+        d.hidden = !(open && d.id === ('hzDrawer-' + targetCol));
+      });
+    }
     if (btn) {
       btn.setAttribute('aria-expanded', open ? 'true' : 'false');
       var cntMatch = (btn.textContent || '').match(/\(\d+\)/);
       var cntStr = cntMatch ? (' ' + cntMatch[0]) : '';
-      btn.innerHTML = (open ? '&#9652; Collapse Recommendations' : '&#9662; Expand Recommendations') + cntStr;
+      btn.innerHTML = (open ? '&#9652; Collapse Recommendations' : '&#9662; Recommendations') + cntStr;
     }
     $$('#cosCompactSummaryRow .cos-cs-pill').forEach(function (p) {
-      p.classList.toggle('active-drill', !!(open && focusCol && p.getAttribute('data-cos-drill') === focusCol));
+      var isMatch = !!(open && p.getAttribute('data-cos-drill') === targetCol);
+      p.classList.toggle('active-drill', isMatch);
+      p.setAttribute('aria-expanded', isMatch ? 'true' : 'false');
     });
     if (open && focusCol) {
       _expandCosColumn(focusCol);
@@ -5063,15 +5765,9 @@
       var rId = rotBtn.getAttribute('data-cos-rotate') || '';
       var rCard = document.getElementById(rId) || rotBtn.closest('.cos-effort-card');
       if (rCard) {
-        var nmEl = rCard.querySelector('.cos-ef-name');
-        if (rId === 'cos-today-q2-moe' && nmEl) {
-          nmEl.textContent = '3. [2:15 PM Protected Q2 Deep Work] Spring 2027 AI Class Proposal (w/ Min) & GWL Harnesses';
-          receipt('\u23ed Rotated Q2 Deep-Work slot to next Star Chart priority: Spring 2027 AI Class Proposal (Superjump + Gandalf pre-staged).');
-        } else {
-          var parentCol = rCard.parentElement;
-          if (parentCol) parentCol.appendChild(rCard);
-          receipt('\u23ed Rotated effort — promoted next candidate in Steward queue!');
-        }
+        var parentCol = rCard.parentElement;
+        if (parentCol) parentCol.appendChild(rCard);
+        receipt('\u23ed Rotated effort — promoted next candidate in Steward queue!');
       }
       return;
     }
@@ -5106,6 +5802,261 @@
   var _srIdx = 0;
   var _srLastAutoOpenTs = Number(_srState.auto_open_ts || 0);
   var _srLastSentDraft = null;
+  var _srLocalEditsById = {};
+  var _srClosedById = {};
+  var _srAutoSaveTimer = 0;
+
+  function _markSrDraftClosed(idOrUid) {
+    var k = String(idOrUid || '');
+    if (!k) return;
+    _srClosedById[k] = Date.now();
+    _clearSrLocalEdit(k);
+  }
+
+  function _unmarkSrDraftClosed(idOrUid) {
+    var k = String(idOrUid || '');
+    if (!k) return;
+    delete _srClosedById[k];
+  }
+
+  function _isSrDraftClosed(idOrUid) {
+    var k = String(idOrUid || '');
+    if (!k || !_srClosedById[k]) return false;
+    if ((Date.now() - _srClosedById[k]) > 60000) {
+      delete _srClosedById[k];
+      return false;
+    }
+    return true;
+  }
+
+  function _srEditStorageKey(idOrUid) {
+    return 'anchor_cave_sr_edit_' + String(idOrUid || 'none');
+  }
+
+  function _loadSrLocalEdit(idOrUid) {
+    var k = String(idOrUid || '');
+    if (!k) return null;
+    if (_srLocalEditsById[k]) return _srLocalEditsById[k];
+    try {
+      var raw = localStorage.getItem(_srEditStorageKey(k));
+      if (!raw) return null;
+      var parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        _srLocalEditsById[k] = parsed;
+        return parsed;
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  function _saveSrLocalEdit(idOrUid, editObj) {
+    var k = String(idOrUid || '');
+    if (!k || !editObj) return;
+    _srLocalEditsById[k] = editObj;
+    try {
+      localStorage.setItem(_srEditStorageKey(k), JSON.stringify(editObj));
+    } catch (e) {}
+  }
+
+  function _clearSrLocalEdit(idOrUid) {
+    var k = String(idOrUid || '');
+    if (!k) return;
+    delete _srLocalEditsById[k];
+    try {
+      localStorage.removeItem(_srEditStorageKey(k));
+    } catch (e) {}
+  }
+
+  function _applySrLocalEditToItem(it) {
+    if (!it || typeof it !== 'object') return it;
+    var key = String(it.id || it.uid || '');
+    var loc = _loadSrLocalEdit(key);
+    if (!loc) return it;
+    var srvTs = Number(it.updated_at_ts || 0);
+    var locTs = Number(loc.updated_at_ts || 0);
+    if (loc._dirty || (loc.user_edited && locTs >= srvTs)) {
+      if (typeof loc.draft_body === 'string') it.draft_body = loc.draft_body;
+      if (typeof loc.to === 'string' && loc.to) it.to = loc.to;
+      if (typeof loc.cc === 'string') it.cc = loc.cc;
+      if (typeof loc.bcc === 'string') it.bcc = loc.bcc;
+      if (typeof loc.subject === 'string' && loc.subject) it.subject = loc.subject;
+      if (loc.scribe_learned_note) it.scribe_learned_note = loc.scribe_learned_note;
+      it.user_edited = true;
+      it._dirty = !!loc._dirty;
+      it.updated_at_ts = Math.max(srvTs, locTs);
+    }
+    return it;
+  }
+
+  function _captureActiveSpeedRacerDomEdits() {
+    var host = document.getElementById('caveSpeedRacerDeckHost');
+    if (!host) return null;
+    var card = host.querySelector('.sr-card[data-sr-active-id]');
+    var bEl = document.getElementById('caveSrBodyInput');
+    if (!card || !bEl) return null;
+    var activeId = card.getAttribute('data-sr-active-id') || '';
+    if (!activeId || _isSrDraftClosed(activeId)) return null;
+    var q = (_srState && Array.isArray(_srState.queue)) ? _srState.queue : [];
+    var target = null;
+    for (var i = 0; i < q.length; i++) {
+      if (q[i] && String(q[i].id || '') === activeId) {
+        target = q[i];
+        break;
+      }
+    }
+    if (!target) return null;
+
+    var toEl = document.getElementById('caveSrToInput');
+    var ccEl = document.getElementById('caveSrCcInput');
+    var bccEl = document.getElementById('caveSrBccInput');
+    var subjEl = document.getElementById('caveSrSubjInput');
+
+    var nextBody = bEl.value;
+    var nextTo = toEl ? toEl.value.trim() : String(target.to || '');
+    var nextCc = ccEl ? ccEl.value.trim() : String(target.cc || '');
+    var nextBcc = bccEl ? bccEl.value.trim() : String(target.bcc || '');
+    var nextSubj = subjEl ? subjEl.value.trim() : String(target.subject || '');
+
+    var changed = (
+      nextBody !== String(target.draft_body || '') ||
+      nextTo !== String(target.to || '') ||
+      nextCc !== String(target.cc || '') ||
+      nextBcc !== String(target.bcc || '') ||
+      nextSubj !== String(target.subject || '')
+    );
+    if (changed) {
+      var nowTs = Date.now() / 1000;
+      target.draft_body = nextBody;
+      if (nextTo) target.to = nextTo;
+      target.cc = nextCc;
+      target.bcc = nextBcc;
+      if (nextSubj) target.subject = nextSubj;
+      target.user_edited = true;
+      target._dirty = true;
+      target.updated_at_ts = nowTs;
+      _saveSrLocalEdit(target.id || target.uid || activeId, {
+        id: target.id || activeId,
+        to: target.to || '',
+        cc: target.cc || '',
+        bcc: target.bcc || '',
+        subject: target.subject || '',
+        draft_body: target.draft_body || '',
+        scribe_learned_note: target.scribe_learned_note || '',
+        user_edited: true,
+        _dirty: true,
+        updated_at_ts: nowTs
+      });
+    }
+    return target;
+  }
+
+  function _updateSrSaveStatusUi(statusText, learnedNote) {
+    var stEl = document.getElementById('caveSrSaveStatus');
+    if (stEl && typeof statusText === 'string') {
+      stEl.textContent = statusText;
+    }
+    var lrnEl = document.getElementById('caveSrScribeLearnedBadge');
+    if (lrnEl && learnedNote) {
+      lrnEl.textContent = learnedNote;
+      lrnEl.hidden = false;
+    }
+  }
+
+  function _persistSpeedRacerEditToServer(targetItem, silent) {
+    var item = targetItem || _captureActiveSpeedRacerDomEdits();
+    if (!item || !item.id) return Promise.resolve(null);
+    var sentBody = String(item.draft_body || '');
+    var sentTo = String(item.to || '');
+    var sentCc = String(item.cc || '');
+    var sentBcc = String(item.bcc || '');
+    var sentSubj = String(item.subject || '');
+    _updateSrSaveStatusUi('\u270e Saving edits & teaching Scribe\u2026', '');
+    return fetch('/api/steward/comms', {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({
+        action: 'speed_racer_act',
+        sr_action: 'edit',
+        id: item.id,
+        to: sentTo,
+        cc: sentCc,
+        bcc: sentBcc,
+        subject: sentSubj,
+        draft_body: sentBody
+      })
+    })
+      .then(function (r) { return r.json().then(function (d) { return { status: r.status, data: d }; }); })
+      .then(function (res) {
+        var d = res.data;
+        if (res.status >= 400 || !d || !d.ok) {
+          if (!silent) receipt((d && (d.message || d.error)) || 'Could not save Speed Racer draft.', true);
+          _updateSrSaveStatusUi('\u26a0 Local edit kept (retry save)', '');
+          return d;
+        }
+        var nowTs = Date.now() / 1000;
+        var stillSame = (String(item.draft_body || '') === sentBody);
+        if (stillSame) {
+          item._dirty = false;
+        }
+        item.user_edited = true;
+        item.updated_at_ts = Math.max(Number(item.updated_at_ts || 0), nowTs);
+        var learnedNote = '';
+        if (d.draft && d.draft.scribe_learned_note) {
+          learnedNote = String(d.draft.scribe_learned_note);
+          item.scribe_learned_note = learnedNote;
+        } else if (d.scribe_learning && d.scribe_learning.changed && Array.isArray(d.scribe_learning.learned_rules) && d.scribe_learning.learned_rules.length) {
+          learnedNote = '\ud83e\udeb6 Scribe learned: ' + d.scribe_learning.learned_rules.slice(0, 3).join('; ');
+          item.scribe_learned_note = learnedNote;
+        }
+        _saveSrLocalEdit(item.id || item.uid, {
+          id: item.id,
+          to: item.to || sentTo,
+          cc: item.cc || sentCc,
+          bcc: item.bcc || sentBcc,
+          subject: item.subject || sentSubj,
+          draft_body: item.draft_body || sentBody,
+          scribe_learned_note: item.scribe_learned_note || '',
+          user_edited: true,
+          _dirty: !stillSame,
+          updated_at_ts: item.updated_at_ts
+        });
+        _updateSrSaveStatusUi(
+          learnedNote ? '\u2713 Saved & Scribe learned from your edits' : '\u2713 Edits saved',
+          learnedNote
+        );
+        if (!silent) {
+          receipt(learnedNote ? ('\u2713 Saved modifications (' + learnedNote + ')') : '\u2713 Saved modifications to Speed Racer draft.');
+        }
+        return d;
+      })
+      .catch(function () {
+        if (!silent) receipt('Could not reach Anchor to save modifications.', true);
+        _updateSrSaveStatusUi('\u26a0 Saved locally in browser', '');
+        return null;
+      });
+  }
+
+  function _scheduleSpeedRacerAutoSave(delayMs) {
+    if (_srAutoSaveTimer) clearTimeout(_srAutoSaveTimer);
+    _srAutoSaveTimer = setTimeout(function () {
+      _srAutoSaveTimer = 0;
+      var target = _captureActiveSpeedRacerDomEdits();
+      if (target && target._dirty) {
+        _persistSpeedRacerEditToServer(target, true);
+      }
+    }, typeof delayMs === 'number' ? delayMs : 800);
+  }
+
+  function _flushSpeedRacerAutoSaveNow() {
+    if (_srAutoSaveTimer) {
+      clearTimeout(_srAutoSaveTimer);
+      _srAutoSaveTimer = 0;
+    }
+    var target = _captureActiveSpeedRacerDomEdits();
+    if (target && target._dirty) {
+      _persistSpeedRacerEditToServer(target, true);
+    }
+  }
 
   function _updateSrBadges() {
     var q = (_srState && Array.isArray(_srState.queue)) ? _srState.queue : [];
@@ -5165,7 +6116,10 @@
       rows;
   }
 
-  function _renderCaveSpeedRacerTile() {
+  function _renderCaveSpeedRacerTile(forceRebuild, skipCapture) {
+    if (!skipCapture) {
+      _captureActiveSpeedRacerDomEdits();
+    }
     _updateSrBadges();
     var host = document.getElementById('caveSpeedRacerDeckHost');
     if (!host) return;
@@ -5184,7 +6138,12 @@
     }
     if (_srIdx >= q.length) _srIdx = 0;
     if (_srIdx < 0) _srIdx = q.length - 1;
-    var item = q[_srIdx];
+    var item = _applySrLocalEditToItem(q[_srIdx]);
+    var activeCard = host.querySelector('.sr-card[data-sr-active-id]');
+    var activeBodyEl = document.getElementById('caveSrBodyInput');
+    if (!forceRebuild && activeCard && activeBodyEl && String(activeCard.getAttribute('data-sr-active-id') || '') === String(item.id || '')) {
+      return;
+    }
     var navPills = q.map(function (it, idx) {
       var on = idx === _srIdx;
       var shortTo = String(it.to || 'Draft').split('<')[0].replace(/^["'\\s]+|["'\\s]+$/g, '').slice(0, 18) || ('#' + (idx + 1));
@@ -5196,14 +6155,20 @@
     }).join('');
 
     var ratingLbl = String(item.instruction_rating_label || '5/5 \u00b7 Read Full Email & Thread');
+    var srSavedFb = _loadLocalDraft(_srFeedbackDraftKey(item.id || item.uid || ''));
+    var learnedNote = String(item.scribe_learned_note || '');
+    var saveStatusInit = item._dirty
+      ? '\u270e Editing \u2014 auto-saving\u2026'
+      : (item.user_edited ? '\u2713 Edits saved & Scribe updated' : '\u2713 Direct edits auto-save & teach Scribe');
     host.innerHTML =
       '<div class="sr-card" data-sr-active-id="' + _escH(item.id || '') + '">' +
         '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding-bottom:7px;border-bottom:1px solid #1e293b">' +
           '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
             '<span class="comms-badge amber" style="font-weight:800">Draft ' + (_srIdx + 1) + ' of ' + q.length + '</span>' +
-            '<span class="comms-badge sky">' + _escH(item.account || 'PSU 365') + '</span>' +
+            '<span class="comms-badge sky">' + _escH(item.account || 'Institutional 365') + '</span>' +
             '<span class="comms-badge emerald">' + _escH(item.urgency || 'Steward Staged') + '</span>' +
             '<span class="comms-badge emerald" id="caveSrInstructionRatingBadge" style="border:1px solid rgba(16,185,129,0.55);background:rgba(16,185,129,0.22);color:#ecfdf5;font-weight:800" title="Scribe reads the full incoming email, past correspondence, and rates/executes every instruction before creating a draft">&#127919; Instruction &amp; Email Check: ' + _escH(ratingLbl) + '</span>' +
+            '<span class="comms-badge sky" id="caveSrScribeLearnedBadge"' + (learnedNote ? '' : ' hidden') + ' style="border:1px solid rgba(56,189,248,0.55);background:rgba(56,189,248,0.18);color:#e0f2fe;font-weight:750">' + _escH(learnedNote) + '</span>' +
             (item.queued_by ? '<span style="font-size:10.5px;color:#c4b5fd">Queued via ' + _escH(item.queued_by) + '</span>' : '') +
           '</div>' +
           '<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">' +
@@ -5214,36 +6179,53 @@
           '</div>' +
         '</div>' +
         '<div class="sr-diff-grid">' +
-          '<div style="background:#070b12;border:1px solid #1e293b;border-radius:7px;padding:8px 10px;display:flex;flex-direction:column;justify-content:space-between;gap:8px">' +
-            '<div>' +
-              '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;margin-bottom:4px">&#128233; Incoming Context / Prompt</div>' +
-              '<div style="font-size:11.5px;font-weight:700;color:#f8fafc;margin-bottom:4px">' + _escH(item.subject || '(No Subject)') + '</div>' +
-              '<div style="font-size:11.5px;color:#cbd5e1;white-space:pre-wrap;line-height:1.45">' + _escH(_sanitizeEmailSandboxText(item.incoming_snippet || '')) + '</div>' +
+          '<div style="background:#070b12;border:1px solid #1e293b;border-radius:7px;padding:10px 12px;display:flex;flex-direction:column;justify-content:space-between;gap:8px">' +
+            '<div style="display:flex;flex-direction:column;flex:1 1 auto">' +
+              '<div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:#7dd3fc;margin-bottom:4px">&#128233; Full Incoming Email / Prompt (Scroll or Drag Corner to Resize)</div>' +
+              '<div style="font-size:12px;font-weight:750;color:#f8fafc;margin-bottom:6px">' + _escH(item.subject || '(No Subject)') + '</div>' +
+              '<div id="caveSrIncomingBodyBox" style="font-size:12.5px;color:#e2e8f0;line-height:1.58;min-height:420px;max-height:calc(100vh - 180px);overflow-y:auto;resize:vertical;padding:8px 10px;border-radius:6px;background:#0b111e;border:1px solid #1e293b">' +
+                _renderCleanEmailBodyHtml(item.incoming_body || item.incoming_snippet || '', '') +
+              '</div>' +
             '</div>' +
-            '<div style="padding:6px 8px;border-radius:6px;background:rgba(56,189,248,0.1);border:1px solid rgba(56,189,248,0.3);font-size:10.5px;color:#7dd3fc">' +
-              '&#10024; <b>Steward Reasoning &amp; Instruction Rating (' + _escH(ratingLbl) + '):</b> ' + _escH(item.context_reason || 'Drafted for rapid approval in Speed Racer.') +
+            '<div style="padding:7px 9px;border-radius:6px;background:rgba(56,189,248,0.1);border:1px solid rgba(56,189,248,0.3);font-size:11px;color:#7dd3fc">' +
+              '&#10024; <b>Scribe Reasoning &amp; Background Check (' + _escH(ratingLbl) + '):</b> ' + _escH(item.context_reason || 'Drafted for rapid approval in Speed Racer.') +
             '</div>' +
           '</div>' +
-          '<div style="background:#0d1524;border:1px solid #283548;border-radius:7px;padding:8px 10px;display:flex;flex-direction:column;gap:6px">' +
-            '<div style="display:grid;grid-template-columns:1fr 0.85fr 1fr;gap:6px">' +
+          '<div style="background:#0d1524;border:1px solid #283548;border-radius:7px;padding:10px 12px;display:flex;flex-direction:column;gap:7px">' +
+            '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">' +
+              '<div style="display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap">' +
+                '<span style="font-size:10px;font-weight:800;color:#94a3b8;text-transform:uppercase">Mode:</span>' +
+                '<button type="button" class="tw-btn' + ((!item.reply_mode || item.reply_mode === 'reply') ? ' active' : '') + '" data-sr-reply-mode="reply" style="font-size:10px;padding:1px 8px;' + ((!item.reply_mode || item.reply_mode === 'reply') ? 'border-color:#38bdf8;background:rgba(56,189,248,0.18);color:#e0f2fe;font-weight:800' : 'border-color:#334155;color:#cbd5e1') + '">&#8617; Reply</button>' +
+                '<button type="button" class="tw-btn' + (item.reply_mode === 'reply_all' ? ' active' : '') + '" data-sr-reply-mode="reply_all" style="font-size:10px;padding:1px 8px;' + (item.reply_mode === 'reply_all' ? 'border-color:#38bdf8;background:rgba(56,189,248,0.18);color:#e0f2fe;font-weight:800' : 'border-color:#334155;color:#cbd5e1') + '">&#8617;&#8617; Reply All</button>' +
+                '<button type="button" class="tw-btn' + (item.reply_mode === 'forward' ? ' active' : '') + '" data-sr-reply-mode="forward" style="font-size:10px;padding:1px 8px;' + (item.reply_mode === 'forward' ? 'border-color:#38bdf8;background:rgba(56,189,248,0.18);color:#e0f2fe;font-weight:800' : 'border-color:#334155;color:#cbd5e1') + '">&#10150; Forward</button>' +
+              '</div>' +
+              '<span style="font-size:10px;color:#7dd3fc">&#128214; Unified Address Book active on To, Cc &amp; Bcc</span>' +
+            '</div>' +
+            '<div style="display:grid;grid-template-columns:1fr 0.85fr 0.85fr 1fr;gap:6px">' +
               '<div><label style="font-size:10px;color:#94a3b8;display:block">To</label>' +
-              '<input type="text" id="caveSrToInput" value="' + _escH(item.to || '') + '" style="width:100%;box-sizing:border-box;padding:4px 7px;border-radius:5px;border:1px solid #334155;background:#070b12;color:#f8fafc;font-size:11.5px"></div>' +
+              '<input type="text" id="caveSrToInput" list="caveUnifiedAddressBookList" value="' + _escH(item.to || '') + '" placeholder="recipient@example.org (or type a name)" style="width:100%;box-sizing:border-box;padding:4px 7px;border-radius:5px;border:1px solid #334155;background:#070b12;color:#f8fafc;font-size:11.5px"></div>' +
               '<div><label style="font-size:10px;color:#94a3b8;display:block">Cc (Optional)</label>' +
-              '<input type="text" id="caveSrCcInput" value="' + _escH(item.cc || '') + '" placeholder="cc@..." style="width:100%;box-sizing:border-box;padding:4px 7px;border-radius:5px;border:1px solid #334155;background:#070b12;color:#f8fafc;font-size:11.5px"></div>' +
+              '<input type="text" id="caveSrCcInput" list="caveUnifiedAddressBookList" value="' + _escH(item.cc || '') + '" placeholder="cc@example.org (optional)" style="width:100%;box-sizing:border-box;padding:4px 7px;border-radius:5px;border:1px solid #334155;background:#070b12;color:#f8fafc;font-size:11.5px"></div>' +
+              '<div><label style="font-size:10px;color:#94a3b8;display:block">Bcc (Optional)</label>' +
+              '<input type="text" id="caveSrBccInput" list="caveUnifiedAddressBookList" value="' + _escH(item.bcc || '') + '" placeholder="bcc@example.org (blind copy)" style="width:100%;box-sizing:border-box;padding:4px 7px;border-radius:5px;border:1px solid #334155;background:#070b12;color:#f8fafc;font-size:11.5px"></div>' +
               '<div><label style="font-size:10px;color:#94a3b8;display:block">Subject</label>' +
               '<input type="text" id="caveSrSubjInput" value="' + _escH(item.subject || '') + '" style="width:100%;box-sizing:border-box;padding:4px 7px;border-radius:5px;border:1px solid #334155;background:#070b12;color:#f8fafc;font-size:11.5px"></div>' +
             '</div>' +
-            '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px">' +
-              '<label style="font-size:10px;font-weight:700;color:#6ee7b7">&#9998; Steward Draft (Edit Freely Before Approving)</label>' +
-              '<div style="display:inline-flex;gap:4px;flex-wrap:wrap">' +
-                '<button type="button" class="tw-btn" data-sr-tone="warmer" style="font-size:10px;padding:1px 6px" title="Make warmer and more informal">&#129309; Warmer / Informal</button>' +
-                '<button type="button" class="tw-btn" data-sr-tone="formal" style="font-size:10px;padding:1px 6px" title="Make more formal and executive">&#127913; More Formal</button>' +
-                '<button type="button" class="tw-btn" data-sr-tone="simpler" style="font-size:10px;padding:1px 6px" title="Make simpler and more concise">&#9986;&#65039; Make Simpler</button>' +
-                '<button type="button" class="tw-btn" data-sr-tone="more_detail" style="font-size:10px;padding:1px 6px" title="Add more context-grounded detail from the email">&#128221; Add More Detail</button>' +
-                '<button type="button" class="tw-btn" data-sr-tone="async_email" style="font-size:10px;padding:1px 6px" title="Handle by email without setting up a call">&#9993;&#65039; Handle by Email (No Call)</button>' +
+            '<div style="padding:7px 9px;border-radius:7px;background:rgba(16,185,129,0.10);border:1px solid rgba(16,185,129,0.45);display:flex;flex-direction:column;gap:5px">' +
+              '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">' +
+                '<label style="font-size:11px;font-weight:800;color:#6ee7b7"><img src="/vendor/brand/scribe-icon.jpg" alt="Scribe" style="width:15px;height:15px;border-radius:3px;vertical-align:-2px;margin-right:4px">&#129718; Scribe Tone &amp; Revision Controls (Background Read As Needed):</label>' +
+                '<span style="font-size:10px;color:#a7f3d0">Click any mode below for Scribe to rewrite</span>' +
+              '</div>' +
+              '<div style="display:flex;gap:5px;flex-wrap:wrap">' +
+                '<button type="button" class="tw-btn" data-sr-tone="warmer" style="font-size:10.5px;padding:3px 9px;border-color:rgba(245,158,11,0.55);background:rgba(245,158,11,0.16);color:#fef08a;font-weight:750" title="Scribe rewrites in a warmer, more conversational tone">&#129309; Warmer</button>' +
+                '<button type="button" class="tw-btn" data-sr-tone="formal" style="font-size:10.5px;padding:3px 9px;border-color:rgba(56,189,248,0.55);background:rgba(56,189,248,0.16);color:#e0f2fe;font-weight:750" title="Scribe rewrites in a more formal, executive tone">&#127913; More Formal</button>' +
+                '<button type="button" class="tw-btn" data-sr-tone="simpler" style="font-size:10.5px;padding:3px 9px;border-color:rgba(16,185,129,0.55);background:rgba(16,185,129,0.16);color:#d1fae5;font-weight:750" title="Scribe makes the draft simpler, shorter, and more direct">&#9986;&#65039; Simpler</button>' +
+                '<button type="button" class="tw-btn" data-sr-tone="more_detail" style="font-size:10.5px;padding:3px 9px;border-color:rgba(167,139,250,0.55);background:rgba(167,139,250,0.16);color:#ede9fe;font-weight:750" title="Scribe adds grounded detail from the email thread &amp; AI Cockpits">&#128221; More Detail</button>' +
+                '<button type="button" class="tw-btn" data-sr-tone="redraft" style="font-size:10.5px;padding:3px 9px;border-color:rgba(16,185,129,0.65);background:rgba(16,185,129,0.22);color:#ecfdf5;font-weight:800" title="Scribe re-reads background files, past emails &amp; AI Cockpits as needed and redrafts">&#128260; Redraft (Background Read)</button>' +
+                '<button type="button" class="tw-btn" data-sr-tone="async_email" style="font-size:10.5px;padding:3px 9px;border-color:#475569;color:#cbd5e1;font-weight:700" title="Handle by email without setting up a call">&#9993;&#65039; Handle by Email (No Call)</button>' +
               '</div>' +
             '</div>' +
-            '<textarea id="caveSrBodyInput" rows="5" style="width:100%;box-sizing:border-box;padding:7px 9px;border-radius:6px;border:1px solid #3b4f6b;background:#070b12;color:#f8fafc;font-size:12px;line-height:1.45">' + _escH(item.draft_body || '') + '</textarea>' +
+            '<textarea id="caveSrBodyInput" rows="16" style="width:100%;box-sizing:border-box;min-height:380px;resize:vertical;padding:10px 12px;border-radius:7px;border:1px solid #3b4f6b;background:#070b12;color:#f8fafc;font-size:13px;line-height:1.58">' + _escH(item.draft_body || '') + '</textarea>' +
             (Array.isArray(item.attachments) && item.attachments.length
               ? '<div style="padding:6px 8px;border-radius:6px;border:1px solid rgba(245,158,11,0.45);background:rgba(245,158,11,0.12);font-size:10.5px;color:#fde68a;display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
                   '<span>&#128206; <b>Attached (' + item.attachments.length + ' &mdash; click to view):</b></span> ' +
@@ -5251,16 +6233,19 @@
                 '</div>'
               : '') +
             '<div id="caveSrAttachmentPreviewHost" hidden style="margin-top:4px"></div>' +
-            '<div style="display:flex;gap:5px;align-items:center">' +
-              '<input type="text" id="caveSrFeedbackInput" placeholder="Or give Steward quick feedback (e.g. Mention we will review the K-1 on Thursday)..." style="flex:1;padding:4px 7px;border-radius:5px;border:1px solid #283548;background:#070b12;color:#e2e8f0;font-size:11px">' +
-              '<button type="button" class="tw-btn" id="btnCaveSrApplyFeedback" style="border-color:#a78bfa;color:#c4b5fd;font-weight:700">&#10024; Refine</button>' +
+            '<div style="display:flex;gap:5px;align-items:flex-start">' +
+              '<textarea id="caveSrFeedbackInput" rows="1" class="cave-autogrow-ta" placeholder="Give Scribe instructions to redraft/refine this email (auto-saved per draft)..." style="flex:1">' + _escH(srSavedFb) + '</textarea>' +
+              '<button type="button" class="tw-btn" id="btnCaveSrApplyFeedback" style="border-color:#a78bfa;background:rgba(167,139,250,0.18);color:#e9d5ff;font-weight:800;padding:5px 11px">&#10024; Refine with Scribe</button>' +
             '</div>' +
           '</div>' +
         '</div>' +
         '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid #1e293b">' +
-          '<span style="font-size:11px;color:#fde68a;font-weight:650">&#128274; Permission Gate: Steward holds this draft until you click <b>Approve &amp; Send</b></span>' +
+          '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+            '<span style="font-size:11px;color:#fde68a;font-weight:650">&#128274; Permission Gate: Steward holds this draft until you click <b>Approve &amp; Send</b></span>' +
+            '<span id="caveSrSaveStatus" style="font-size:10.5px;color:#6ee7b7;font-weight:700">' + _escH(saveStatusInit) + '</span>' +
+          '</div>' +
           '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
-            '<button type="button" class="tw-btn" id="btnCaveSrSaveModified" style="border-color:rgba(56,189,248,0.55);color:#7dd3fc;font-weight:750" title="Save any modifications you made to To, Subject, or Draft Body">&#128190; Save Modifications</button>' +
+            '<button type="button" class="tw-btn" id="btnCaveSrSaveModified" style="border-color:rgba(56,189,248,0.55);color:#7dd3fc;font-weight:750" title="Save any modifications you made to To, Cc, Bcc, Subject, or Draft Body">&#128190; Save Modifications</button>' +
             '<button type="button" class="tw-btn" id="btnCaveSrSkip" title="Keep in queue and move to next draft">&#9197; Skip / Later</button>' +
             '<button type="button" class="tw-btn" id="btnCaveSrDiscard" style="border-color:rgba(244,63,94,0.55);background:rgba(244,63,94,0.12);color:#fda4af;font-weight:750" title="Cancel and remove this draft from Speed Racer without sending">&#10005; Cancel / Discard</button>' +
             '<button type="button" class="tw-btn done" id="btnCaveSrApproveSend" style="border-color:#10b981;background:rgba(16,185,129,0.24);color:#ecfdf5;font-weight:800;padding:4px 12px">&#10003; Approve &amp; Send</button>' +
@@ -5268,6 +6253,7 @@
           '</div>' +
         '</div>' +
       '</div>';
+    _autoGrowTextarea(document.getElementById('caveSrFeedbackInput'));
   }
 
   function _setSpeedRacerExpanded(open) {
@@ -5282,15 +6268,64 @@
     }
   }
 
-  function _syncSpeedRacerFromServer(srObj) {
+  function _mergeSrStateKeepLocal(srObj, skipCapture) {
+    if (!srObj || typeof srObj !== 'object') return _srState;
+    if (!skipCapture) {
+      _captureActiveSpeedRacerDomEdits();
+    }
+    var prevQ = (_srState && Array.isArray(_srState.queue)) ? _srState.queue : [];
+    var prevById = {};
+    for (var i = 0; i < prevQ.length; i++) {
+      if (prevQ[i] && prevQ[i].id) {
+        prevById[String(prevQ[i].id)] = prevQ[i];
+      }
+    }
+    var rawQueue = Array.isArray(srObj.queue) ? srObj.queue.filter(function (srvIt) {
+      if (!srvIt || typeof srvIt !== 'object') return false;
+      if (_isSrDraftClosed(srvIt.id || '')) return false;
+      return true;
+    }) : [];
+    var nextQ = rawQueue.map(function (srvIt) {
+      var copy = Object.assign({}, srvIt);
+      var prevIt = prevById[String(copy.id || '')];
+      var srvTs = Number(copy.updated_at_ts || 0);
+      var prevTs = prevIt ? Number(prevIt.updated_at_ts || 0) : 0;
+      if (prevIt && (prevIt._dirty || (prevIt.user_edited && prevTs >= srvTs))) {
+        copy.draft_body = prevIt.draft_body;
+        copy.to = prevIt.to || copy.to;
+        copy.cc = typeof prevIt.cc === 'string' ? prevIt.cc : copy.cc;
+        copy.bcc = typeof prevIt.bcc === 'string' ? prevIt.bcc : copy.bcc;
+        copy.subject = prevIt.subject || copy.subject;
+        copy.user_edited = true;
+        copy._dirty = !!prevIt._dirty;
+        copy.updated_at_ts = Math.max(srvTs, prevTs);
+        if (prevIt.scribe_learned_note) copy.scribe_learned_note = prevIt.scribe_learned_note;
+      }
+      return _applySrLocalEditToItem(copy);
+    });
+    return Object.assign({}, srObj, { queue: nextQ });
+  }
+
+  function _syncSpeedRacerFromServer(srObj, forceRebuild) {
     if (!srObj || typeof srObj !== 'object') return;
-    _srState = srObj;
+    var prevQ = (_srState && Array.isArray(_srState.queue)) ? _srState.queue : [];
+    var activeItem = prevQ[_srIdx] || null;
+    var activeId = activeItem ? String(activeItem.id || '') : '';
+    _srState = _mergeSrStateKeepLocal(srObj);
+    if (activeId && Array.isArray(_srState.queue)) {
+      for (var i = 0; i < _srState.queue.length; i++) {
+        if (_srState.queue[i] && String(_srState.queue[i].id || '') === activeId) {
+          _srIdx = i;
+          break;
+        }
+      }
+    }
     if (Array.isArray(_srState.queue) && _srState.queue.length > 0 && !window._srUserCollapsed) {
       _setSpeedRacerExpanded(true);
     } else if (!Array.isArray(_srState.queue) || _srState.queue.length === 0) {
       _setSpeedRacerExpanded(false);
     }
-    _renderCaveSpeedRacerTile();
+    _renderCaveSpeedRacerTile(!!forceRebuild);
     var ts = Number(srObj.auto_open_ts || 0);
     if (ts > _srLastAutoOpenTs) {
       _srLastAutoOpenTs = ts;
@@ -5311,7 +6346,7 @@
     }
     window._srUserCollapsed = false;
     _setSpeedRacerExpanded(true);
-    _renderCaveSpeedRacerTile();
+    _renderCaveSpeedRacerTile(false);
     fetch('/api/steward/comms', {
       method: 'POST',
       headers: headers(),
@@ -5320,7 +6355,7 @@
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (d && d.speed_racer) {
-          _srState = d.speed_racer;
+          _srState = _mergeSrStateKeepLocal(d.speed_racer);
           _srLastAutoOpenTs = Number(_srState.auto_open_ts || _srLastAutoOpenTs);
         }
         var q = (_srState && Array.isArray(_srState.queue)) ? _srState.queue : [];
@@ -5331,17 +6366,15 @@
               break;
             }
           }
-        } else {
-          _srIdx = 0;
         }
-        _renderCaveSpeedRacerTile();
+        _renderCaveSpeedRacerTile(!!draftId);
         var tile = document.getElementById('caveSpeedRacerTile');
         if (tile) {
           try { tile.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (err) {}
         }
       })
       .catch(function () {
-        _renderCaveSpeedRacerTile();
+        _renderCaveSpeedRacerTile(false);
       });
   };
 
@@ -5497,55 +6530,34 @@
       var nextOpen = body ? body.hidden : true;
       window._srUserCollapsed = !nextOpen;
       _setSpeedRacerExpanded(nextOpen);
-      if (nextOpen) _renderCaveSpeedRacerTile();
+      if (nextOpen) _renderCaveSpeedRacerTile(false);
       return;
     }
     var srSaveModBtn = e.target.closest && e.target.closest('#btnCaveSrSaveModified');
     if (srSaveModBtn) {
       e.preventDefault();
-      var qMod = (_srState && Array.isArray(_srState.queue)) ? _srState.queue : [];
-      var curMod = qMod[_srIdx] || qMod[0];
+      var curMod = _captureActiveSpeedRacerDomEdits();
+      if (!curMod) {
+        var qMod = (_srState && Array.isArray(_srState.queue)) ? _srState.queue : [];
+        curMod = qMod[_srIdx] || qMod[0] || null;
+      }
       if (!curMod) return;
-      var modTo = ((document.getElementById('caveSrToInput') || {}).value || curMod.to || '').trim();
-      var modCc = ((document.getElementById('caveSrCcInput') || {}).value || curMod.cc || '').trim();
-      var modSubj = ((document.getElementById('caveSrSubjInput') || {}).value || curMod.subject || '').trim();
-      var modBody = ((document.getElementById('caveSrBodyInput') || {}).value || curMod.draft_body || '');
-      curMod.to = modTo;
-      curMod.cc = modCc;
-      curMod.subject = modSubj;
-      curMod.draft_body = modBody;
-      fetch('/api/steward/comms', {
-        method: 'POST',
-        headers: headers(),
-        body: JSON.stringify({
-          action: 'speed_racer_act',
-          sr_action: 'edit',
-          id: curMod.id,
-          to: modTo,
-          cc: modCc,
-          subject: modSubj,
-          draft_body: modBody
-        })
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-          if (d && d.speed_racer) {
-            _srState = d.speed_racer;
-            _renderCaveSpeedRacerTile();
-          }
-          receipt('\u2713 Saved modifications to Speed Racer draft.');
-        })
-        .catch(function () {
-          receipt('\u2713 Saved modifications in Speed Racer.');
-        });
+      if (_srAutoSaveTimer) {
+        clearTimeout(_srAutoSaveTimer);
+        _srAutoSaveTimer = 0;
+      }
+      _persistSpeedRacerEditToServer(curMod, false);
       return;
     }
     var openSrBtn = e.target.closest && e.target.closest('[data-cave-open-speed-racer]');
     if (openSrBtn) {
       e.preventDefault(); e.stopPropagation();
+      var calSecSr = document.getElementById('cal');
+      var calWasOpen = !!(calSecSr && calSecSr.classList.contains('open'));
       var srTileToggle = document.getElementById('caveSpeedRacerTile');
       var srBodyToggle = document.getElementById('caveSpeedRacerBody');
-      if (srTileToggle && srTileToggle.classList.contains('open') && srBodyToggle && !srBodyToggle.hidden) {
+      if (calWasOpen && srTileToggle && srTileToggle.classList.contains('open') && srBodyToggle && !srBodyToggle.hidden) {
+        _flushSpeedRacerAutoSaveNow();
         window._srUserCollapsed = true;
         _setSpeedRacerExpanded(false);
         receipt('Closed Speed Racer dialogue.');
@@ -5557,11 +6569,12 @@
     var queueMailBtn = e.target.closest && e.target.closest('[data-speed-racer-queue]');
     if (queueMailBtn) {
       e.preventDefault(); e.stopPropagation();
+      _flushSpeedRacerAutoSaveNow();
       var mUid = queueMailBtn.getAttribute('data-mail-uid') || '';
       var mTo = queueMailBtn.getAttribute('data-mail-sender') || queueMailBtn.getAttribute('data-mail-from') || '';
       var mFrom = queueMailBtn.getAttribute('data-mail-from') || mTo;
       var mSubj = queueMailBtn.getAttribute('data-mail-subject') || '(No Subject)';
-      var mAcct = queueMailBtn.getAttribute('data-mail-account') || 'PSU 365';
+      var mAcct = queueMailBtn.getAttribute('data-mail-account') || 'Institutional 365';
       var mSnip = queueMailBtn.getAttribute('data-mail-snippet') || '';
       if (window._optimisticallyRemoveEmailFromLists) {
         window._optimisticallyRemoveEmailFromLists(mUid, '\ud83c\udfce\ufe0f Speed Racer', 'Queued in Speed Racer for review');
@@ -5582,20 +6595,26 @@
           queued_by: 'Inbox [-> Speed Racer] button'
         })
       })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
+        .then(function (r) { return r.json().then(function (d) { return { status: r.status, data: d }; }); })
+        .then(function (res) {
+          var d = res.data;
           queueMailBtn.disabled = false;
-          if (d && d.ok && d.speed_racer) {
+          if (res.status >= 400 || !d || !d.ok) {
+            receipt((d && d.error) || 'Could not queue Speed Racer draft.', true);
+            return;
+          }
+          if (d.speed_racer) {
             if (!_caveCommsData) _caveCommsData = { ok: true };
             if (Array.isArray(d.important_emails)) _caveCommsData.important_emails = _mergeStableEmailOrder(_caveCommsData.important_emails, d.important_emails);
             if (Array.isArray(d.other_emails)) _caveCommsData.other_emails = d.other_emails;
             if (Array.isArray(d.acted_upon_emails)) _caveCommsData.acted_upon_emails = d.acted_upon_emails;
             _caveCommsData._interleavedOnce = true;
             _hydrateMailCardsFromCommsData(_caveCommsData);
-            _srState = d.speed_racer;
+            _srState = _mergeSrStateKeepLocal(d.speed_racer);
             _srIdx = 0;
+            window._srUserCollapsed = false;
             _setSpeedRacerExpanded(true);
-            _renderCaveSpeedRacerTile();
+            _renderCaveSpeedRacerTile(true);
             var srTile = document.getElementById('caveSpeedRacerTile');
             if (srTile) {
               try { srTile.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (err) {}
@@ -5606,35 +6625,88 @@
         .catch(function () { queueMailBtn.disabled = false; });
       return;
     }
+    var srReplyModeBtn = e.target.closest && e.target.closest('[data-sr-reply-mode]');
+    if (srReplyModeBtn) {
+      e.preventDefault(); e.stopPropagation();
+      _captureActiveSpeedRacerDomEdits();
+      var srMode = srReplyModeBtn.getAttribute('data-sr-reply-mode') || 'reply';
+      var qMode = (_srState && Array.isArray(_srState.queue)) ? _srState.queue : [];
+      var curSrItem = qMode[_srIdx] || qMode[0] || {};
+      curSrItem.reply_mode = srMode;
+      var srRecips = _computeClientReplyRecipients(curSrItem, srMode);
+      curSrItem.to = srRecips.to || '';
+      curSrItem.cc = srRecips.cc || '';
+      curSrItem.bcc = curSrItem.bcc || '';
+      curSrItem.subject = srRecips.subject || curSrItem.subject || '';
+      if (srMode === 'forward' && curSrItem.draft_body && curSrItem.draft_body.indexOf('Forwarded message') < 0) {
+        curSrItem.draft_body = curSrItem.draft_body + srRecips.bodyPrefix;
+      }
+      if (curSrItem.id) {
+        _saveSrLocalEdit(curSrItem.id, {
+          id: curSrItem.id,
+          to: curSrItem.to || '',
+          cc: curSrItem.cc || '',
+          bcc: curSrItem.bcc || '',
+          subject: curSrItem.subject || '',
+          draft_body: curSrItem.draft_body || '',
+          scribe_learned_note: curSrItem.scribe_learned_note || '',
+          user_edited: true,
+          _dirty: true,
+          updated_at_ts: Date.now() / 1000
+        });
+      }
+      _renderCaveSpeedRacerTile(true);
+      if (srMode === 'forward') {
+        var srToF = document.getElementById('caveSrToInput');
+        if (srToF) srToF.focus();
+      }
+      return;
+    }
     var srStewardBtn = e.target.closest && e.target.closest('#btnCaveSrStewardDraft');
     if (srStewardBtn) {
       e.preventDefault(); e.stopPropagation();
+      _flushSpeedRacerAutoSaveNow();
       var pIn = document.getElementById('caveSrStewardPromptInput');
       var promptTxt = pIn ? pIn.value.trim() : '';
       if (!promptTxt) return;
+      var activeEmCtx = _resolveRightPaneEmailCtx() || _activeEmailDialogue || null;
+      var qSrCur = (_srState && Array.isArray(_srState.queue)) ? (_srState.queue[_srIdx] || _srState.queue[0] || null) : null;
+      var ctxItem = activeEmCtx || qSrCur || {};
       srStewardBtn.disabled = true;
       fetch('/api/steward/comms', {
         method: 'POST',
         headers: headers(),
         body: JSON.stringify({
           action: 'speed_racer_queue',
-          to: 'Recipient <contact@example.com>',
-          subject: promptTxt.slice(0, 72),
-          incoming_snippet: 'Steward instruction: ' + promptTxt,
-          context_reason: 'Drafted by Cave of Wonders Steward from your Speed Racer instruction.',
-          draft_body: 'Hi,\n\nFollowing up regarding: ' + promptTxt + '\n\nPlease let me know if you need any additional materials from my side.\n\nBest,\nJohn',
-          queued_by: 'Steward Prompt'
+          uid: ctxItem.uid || '',
+          account_id: ctxItem.account_id || '',
+          account: ctxItem.account_badge || ctxItem.account || 'Institutional 365',
+          to: ctxItem.sender_email || ctxItem.from || ctxItem.to || '',
+          cc: ctxItem.cc || '',
+          bcc: ctxItem.bcc || '',
+          subject: ctxItem.subject || '',
+          incoming_snippet: (ctxItem.body || ctxItem.incoming_body || ctxItem.incoming_snippet || ctxItem.snippet || '').slice(0, 12000),
+          steward_directions: promptTxt,
+          draft_body: '',
+          queued_by: 'Speed Racer Steward Instruction'
         })
       })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
+        .then(function (r) { return r.json().then(function (d) { return { status: r.status, data: d }; }); })
+        .then(function (res) {
+          var d = res.data;
           srStewardBtn.disabled = false;
+          if (res.status >= 400 || !d || !d.ok) {
+            receipt((d && d.error) || 'Could not queue Speed Racer draft.', true);
+            return;
+          }
           if (pIn) pIn.value = '';
-          if (d && d.ok && d.speed_racer) {
-            _srState = d.speed_racer;
+          if (d.speed_racer) {
+            _srState = _mergeSrStateKeepLocal(d.speed_racer);
             _srIdx = 0;
-            _renderCaveSpeedRacerTile();
-            receipt('\ud83c\udfce\ufe0f Steward drafted & queued email in Speed Racer.');
+            window._srUserCollapsed = false;
+            _setSpeedRacerExpanded(true);
+            _renderCaveSpeedRacerTile(true);
+            receipt('\ud83e\udeb6 Scribe read email, thread & AI Cockpit context and drafted response in Speed Racer!');
           }
         })
         .catch(function () { srStewardBtn.disabled = false; });
@@ -5643,16 +6715,18 @@
     var srNavBtn = e.target.closest && e.target.closest('[data-sr-nav]');
     if (srNavBtn) {
       e.preventDefault();
+      _flushSpeedRacerAutoSaveNow();
       var delta = parseInt(srNavBtn.getAttribute('data-sr-nav') || '1', 10);
       _srIdx += delta;
-      _renderCaveSpeedRacerTile();
+      _renderCaveSpeedRacerTile(true);
       return;
     }
     var srPickBtn = e.target.closest && e.target.closest('[data-sr-pick-idx]');
     if (srPickBtn) {
       e.preventDefault();
+      _flushSpeedRacerAutoSaveNow();
       _srIdx = parseInt(srPickBtn.getAttribute('data-sr-pick-idx') || '0', 10);
-      _renderCaveSpeedRacerTile();
+      _renderCaveSpeedRacerTile(true);
       return;
     }
     var srToneBtn = e.target.closest && e.target.closest('[data-sr-tone]');
@@ -5662,12 +6736,21 @@
       var bEl = document.getElementById('caveSrBodyInput');
       var toInT = document.getElementById('caveSrToInput');
       var ccInT = document.getElementById('caveSrCcInput');
+      var bccInT = document.getElementById('caveSrBccInput');
       var subjInT = document.getElementById('caveSrSubjInput');
       var qTone = (_srState && Array.isArray(_srState.queue)) ? _srState.queue : [];
       var curToneItem = qTone[_srIdx] || qTone[0];
       if (!bEl) return;
       var cur = bEl.value || '';
-      srToneBtn.disabled = true;
+      if (_srAutoSaveTimer) {
+        clearTimeout(_srAutoSaveTimer);
+        _srAutoSaveTimer = 0;
+      }
+      var origToneHtml = srToneBtn.innerHTML;
+      var allToneBtns = $$('[data-sr-tone]');
+      allToneBtns.forEach(function (b) { b.disabled = true; });
+      srToneBtn.innerHTML = '&#9203; Rewriting&hellip;';
+      _updateSrSaveStatusUi('\ud83e\udeb6 Scribe rewriting (' + tone.replace('_', ' ') + ')\u2026', '');
       fetch('/api/steward/comms', {
         method: 'POST',
         headers: headers(),
@@ -5680,20 +6763,43 @@
           current_draft: cur,
           to: toInT ? toInT.value.trim() : (curToneItem ? curToneItem.to : ''),
           cc: ccInT ? ccInT.value.trim() : (curToneItem ? (curToneItem.cc || '') : ''),
+          bcc: bccInT ? bccInT.value.trim() : (curToneItem ? (curToneItem.bcc || '') : ''),
           subject: subjInT ? subjInT.value.trim() : (curToneItem ? curToneItem.subject : '')
         })
       })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-          srToneBtn.disabled = false;
-          if (d && d.speed_racer) {
-            _srState = d.speed_racer;
-            _renderCaveSpeedRacerTile();
+        .then(function (r) { return r.json().then(function (d) { return { status: r.status, data: d }; }); })
+        .then(function (res) {
+          var d = res.data;
+          allToneBtns.forEach(function (b) { b.disabled = false; });
+          srToneBtn.innerHTML = origToneHtml;
+          if (res.status >= 400 || !d || !d.ok) {
+            var errMsg = (d && (d.message || d.error)) || 'Could not rewrite Speed Racer draft.';
+            _updateSrSaveStatusUi('\u26a0 ' + errMsg, '');
+            receipt(errMsg, true);
+            return;
+          }
+          if (curToneItem) {
+            curToneItem._dirty = false;
+            curToneItem.user_edited = false;
+            curToneItem.updated_at_ts = 0;
+            if (curToneItem.id || curToneItem.uid) {
+              _clearSrLocalEdit(curToneItem.id || curToneItem.uid);
+            }
+          }
+          if (d.draft && typeof d.draft.draft_body === 'string' && bEl) {
+            bEl.value = d.draft.draft_body;
+          }
+          if (d.speed_racer) {
+            _srState = _mergeSrStateKeepLocal(d.speed_racer, true);
+            _renderCaveSpeedRacerTile(true, true);
           }
           receipt('\u2728 Scribe crafted ' + tone.replace('_', ' ') + ' version in Speed Racer.');
         })
         .catch(function () {
-          srToneBtn.disabled = false;
+          allToneBtns.forEach(function (b) { b.disabled = false; });
+          srToneBtn.innerHTML = origToneHtml;
+          _updateSrSaveStatusUi('\u26a0 Speed Racer rewrite request timed out or failed.', '');
+          receipt('Speed Racer rewrite request timed out or failed.', true);
         });
       return;
     }
@@ -5704,12 +6810,20 @@
       var bIn = document.getElementById('caveSrBodyInput');
       var toIn = document.getElementById('caveSrToInput');
       var ccIn = document.getElementById('caveSrCcInput');
+      var bccIn = document.getElementById('caveSrBccInput');
       var subjIn = document.getElementById('caveSrSubjInput');
       var qRef = (_srState && Array.isArray(_srState.queue)) ? _srState.queue : [];
       var curRef = qRef[_srIdx] || qRef[0];
       if (fbIn && bIn && fbIn.value.trim()) {
         var note = fbIn.value.trim();
+        if (_srAutoSaveTimer) {
+          clearTimeout(_srAutoSaveTimer);
+          _srAutoSaveTimer = 0;
+        }
+        var origRefineHtml = srRefineBtn.innerHTML;
         srRefineBtn.disabled = true;
+        srRefineBtn.innerHTML = '&#9203; Rewriting&hellip;';
+        _updateSrSaveStatusUi('\ud83e\udeb6 Scribe applying instructions\u2026', '');
         fetch('/api/steward/comms', {
           method: 'POST',
           headers: headers(),
@@ -5721,21 +6835,46 @@
             current_draft: bIn.value || '',
             to: toIn ? toIn.value.trim() : (curRef ? curRef.to : ''),
             cc: ccIn ? ccIn.value.trim() : (curRef ? (curRef.cc || '') : ''),
+            bcc: bccIn ? bccIn.value.trim() : (curRef ? (curRef.bcc || '') : ''),
             subject: subjIn ? subjIn.value.trim() : (curRef ? curRef.subject : '')
           })
         })
-          .then(function (r) { return r.json(); })
-          .then(function (d) {
+          .then(function (r) { return r.json().then(function (d) { return { status: r.status, data: d }; }); })
+          .then(function (res) {
+            var d = res.data;
             srRefineBtn.disabled = false;
+            srRefineBtn.innerHTML = origRefineHtml;
+            if (res.status >= 400 || !d || !d.ok) {
+              var errRefMsg = (d && (d.message || d.error)) || 'Could not refine Speed Racer draft.';
+              _updateSrSaveStatusUi('\u26a0 ' + errRefMsg, '');
+              receipt(errRefMsg, true);
+              return;
+            }
+            _clearLocalDraft(_srFeedbackDraftKey(curRef ? (curRef.id || curRef.uid || '') : ''));
+            if (curRef) {
+              curRef._dirty = false;
+              curRef.user_edited = false;
+              curRef.updated_at_ts = 0;
+              if (curRef.id || curRef.uid) {
+                _clearSrLocalEdit(curRef.id || curRef.uid);
+              }
+            }
+            if (d.draft && typeof d.draft.draft_body === 'string' && bIn) {
+              bIn.value = d.draft.draft_body;
+            }
             fbIn.value = '';
-            if (d && d.speed_racer) {
-              _srState = d.speed_racer;
-              _renderCaveSpeedRacerTile();
+            _autoGrowTextarea(fbIn);
+            if (d.speed_racer) {
+              _srState = _mergeSrStateKeepLocal(d.speed_racer, true);
+              _renderCaveSpeedRacerTile(true, true);
             }
             receipt('\u2728 Steward redrafted the email in Speed Racer based on your instructions.');
           })
           .catch(function () {
             srRefineBtn.disabled = false;
+            srRefineBtn.innerHTML = origRefineHtml;
+            _updateSrSaveStatusUi('\u26a0 Speed Racer rewrite request timed out or failed.', '');
+            receipt('Speed Racer rewrite request timed out or failed.', true);
           });
       }
       return;
@@ -5743,9 +6882,20 @@
     var srSkipBtn = e.target.closest && e.target.closest('#btnCaveSrSkip');
     if (srSkipBtn) {
       e.preventDefault();
+      _flushSpeedRacerAutoSaveNow();
       var qSkip = (_srState && Array.isArray(_srState.queue)) ? _srState.queue : [];
       var curSkip = qSkip[_srIdx];
       if (!curSkip) return;
+      if (qSkip.length > 1) {
+        var nextSkipQ = qSkip.slice();
+        var skippedItem = nextSkipQ.splice(_srIdx, 1)[0];
+        nextSkipQ.push(skippedItem);
+        _srState.queue = nextSkipQ;
+        _srIdx = Math.min(_srIdx, Math.max(0, _srState.queue.length - 1));
+        var activeSkipCard = document.querySelector('#caveSpeedRacerBody .sr-card[data-sr-active-id]');
+        if (activeSkipCard) activeSkipCard.removeAttribute('data-sr-active-id');
+        _renderCaveSpeedRacerTile(true, true);
+      }
       fetch('/api/steward/comms', {
         method: 'POST',
         headers: headers(),
@@ -5754,8 +6904,8 @@
         .then(function (r) { return r.json(); })
         .then(function (d) {
           if (d && d.speed_racer) {
-            _srState = d.speed_racer;
-            _renderCaveSpeedRacerTile();
+            _srState = _mergeSrStateKeepLocal(d.speed_racer, true);
+            _renderCaveSpeedRacerTile(true, true);
           }
         });
       return;
@@ -5763,19 +6913,49 @@
     var srDiscardBtn = e.target.closest && e.target.closest('#btnCaveSrDiscard');
     if (srDiscardBtn) {
       e.preventDefault();
+      if (_srAutoSaveTimer) {
+        clearTimeout(_srAutoSaveTimer);
+        _srAutoSaveTimer = 0;
+      }
       var qDisc = (_srState && Array.isArray(_srState.queue)) ? _srState.queue : [];
-      var curDisc = qDisc[_srIdx];
+      var curDisc = qDisc[_srIdx] || qDisc[0];
       if (!curDisc) return;
+      var discId = String(curDisc.id || '');
+      _markSrDraftClosed(discId);
+      _clearSrLocalEdit(discId || curDisc.uid || '');
+      if (curDisc.uid) _clearSrLocalEdit(curDisc.uid);
+      _clearLocalDraft(_srFeedbackDraftKey(discId || curDisc.uid || ''));
+      var activeDiscCard = document.querySelector('#caveSpeedRacerBody .sr-card[data-sr-active-id]');
+      if (activeDiscCard) activeDiscCard.removeAttribute('data-sr-active-id');
+      if (window._optimisticallyRemoveEmailFromLists) {
+        window._optimisticallyRemoveEmailFromLists(curDisc.uid || '', '\u2713 Settled', 'Removed from Speed Racer queue', {
+          subject: curDisc.subject || '',
+          recipient: curDisc.to || ''
+        });
+      }
+      _srState.queue = qDisc.filter(function (it) { return it && String(it.id || '') !== discId; });
+      _srIdx = Math.min(_srIdx, Math.max(0, _srState.queue.length - 1));
+      _renderCaveSpeedRacerTile(true, true);
+      if (!_srState.queue.length) {
+        var archDiscNow = document.getElementById('caveSpeedRacerArchiveDrawer');
+        if (archDiscNow) archDiscNow.hidden = true;
+        window._srUserCollapsed = true;
+        _setSpeedRacerExpanded(false);
+      }
+      receipt('Removed draft from Speed Racer queue.');
       fetch('/api/steward/comms', {
         method: 'POST',
         headers: headers(),
-        body: JSON.stringify({ action: 'speed_racer_act', sr_action: 'discard', id: curDisc.id })
+        body: JSON.stringify({ action: 'speed_racer_act', sr_action: 'discard', id: discId })
       })
         .then(function (r) { return r.json(); })
         .then(function (d) {
           if (d && d.speed_racer) {
-            _srState = d.speed_racer;
-            _renderCaveSpeedRacerTile();
+            _srState = _mergeSrStateKeepLocal(d.speed_racer, true);
+            if (Array.isArray(_srState.queue)) {
+              _srState.queue = _srState.queue.filter(function (it) { return it && String(it.id || '') !== discId; });
+            }
+            _renderCaveSpeedRacerTile(true, true);
             var remDisc = (_srState && Array.isArray(_srState.queue)) ? _srState.queue : [];
             if (!remDisc.length) {
               var archDisc = document.getElementById('caveSpeedRacerArchiveDrawer');
@@ -5783,7 +6963,6 @@
               window._srUserCollapsed = true;
               _setSpeedRacerExpanded(false);
             }
-            receipt('Removed draft from Speed Racer queue.');
           }
         });
       return;
@@ -5791,34 +6970,50 @@
     var srApproveBtn = e.target.closest && e.target.closest('#btnCaveSrApproveSend');
     if (srApproveBtn) {
       e.preventDefault();
+      if (_srAutoSaveTimer) {
+        clearTimeout(_srAutoSaveTimer);
+        _srAutoSaveTimer = 0;
+      }
       var qApp = (_srState && Array.isArray(_srState.queue)) ? _srState.queue : [];
       var curApp = qApp[_srIdx] || qApp[0];
       if (!curApp) return;
       var approvedId = String(curApp.id || 'sr-' + Date.now());
       var toV = ((document.getElementById('caveSrToInput') || {}).value || curApp.to || '').trim();
       var ccV = ((document.getElementById('caveSrCcInput') || {}).value || curApp.cc || '').trim();
+      var bccV = ((document.getElementById('caveSrBccInput') || {}).value || curApp.bcc || '').trim();
       var subV = ((document.getElementById('caveSrSubjInput') || {}).value || curApp.subject || '').trim();
       var bodyV = ((document.getElementById('caveSrBodyInput') || {}).value || curApp.draft_body || '').trim();
       srApproveBtn.disabled = true;
+      _markSrDraftClosed(approvedId);
+      _clearSrLocalEdit(approvedId);
+      if (curApp.uid) _clearSrLocalEdit(curApp.uid);
+      _clearLocalDraft(_srFeedbackDraftKey(curApp.id || curApp.uid || ''));
+      var activeAppCard = document.querySelector('#caveSpeedRacerBody .sr-card[data-sr-active-id]');
+      if (activeAppCard) activeAppCard.removeAttribute('data-sr-active-id');
       var optimisticApproved = Object.assign({}, curApp, {
         id: approvedId,
         to: toV,
         cc: ccV,
+        bcc: bccV,
         subject: subV,
         draft_body: bodyV,
         status: 'Approved & Sent',
         approved_at: new Date().toISOString().slice(0, 16).replace('T', ' ')
       });
+      var prevQueueSnap = qApp.slice();
+      var prevArchiveSnap = Array.isArray(_srState.archive) ? _srState.archive.slice() : [];
       _srLastSentDraft = optimisticApproved;
-      if (curApp.uid && window._optimisticallyRemoveEmailFromLists) {
-        window._optimisticallyRemoveEmailFromLists(curApp.uid, '\u21a9 Replied', 'Approved & Sent via Speed Racer to ' + toV);
+      if (window._optimisticallyRemoveEmailFromLists) {
+        window._optimisticallyRemoveEmailFromLists(curApp.uid || '', '\u21a9 Replied', 'Approved & Sent via Speed Racer to ' + toV, {
+          subject: subV,
+          recipient: toV
+        });
       }
-      // Immediately clear the approved item from the active Speed Racer queue and move it into the Speed Racer Archive
-      _srState.queue = qApp.filter(function (it) { return it && it.id !== approvedId; });
+      _srState.queue = qApp.filter(function (it) { return it && String(it.id || '') !== approvedId; });
       if (!Array.isArray(_srState.archive)) _srState.archive = [];
-      _srState.archive = [optimisticApproved].concat(_srState.archive.filter(function (it) { return it && it.id !== approvedId; }));
+      _srState.archive = [optimisticApproved].concat(_srState.archive.filter(function (it) { return it && String(it.id || '') !== approvedId; }));
       _srIdx = Math.min(_srIdx, Math.max(0, _srState.queue.length - 1));
-      _renderCaveSpeedRacerTile();
+      _renderCaveSpeedRacerTile(true, true);
       var archDrawerNow = document.getElementById('caveSpeedRacerArchiveDrawer');
       if (archDrawerNow) {
         archDrawerNow.hidden = true;
@@ -5838,39 +7033,63 @@
           uid: curApp.uid || '',
           to: toV,
           cc: ccV,
+          bcc: bccV,
           subject: subV,
           draft_body: bodyV,
-          account: curApp.account || curApp.account_badge || 'PSU 365',
+          account: curApp.account || curApp.account_badge || 'Institutional 365',
           account_id: curApp.account_id || '',
           attachments: curApp.attachments || [],
           incoming_snippet: curApp.incoming_snippet || '',
           context_reason: curApp.context_reason || ''
         })
       })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
+        .then(function (r) { return r.json().then(function (d) { return { status: r.status, data: d }; }); })
+        .then(function (res) {
+          var d = res.data;
           srApproveBtn.disabled = false;
-          if (d && d.ok) {
-            if (!_caveCommsData) _caveCommsData = { ok: true };
-            if (Array.isArray(d.important_emails)) _caveCommsData.important_emails = _mergeStableEmailOrder(_caveCommsData.important_emails, d.important_emails);
-            if (Array.isArray(d.other_emails)) _caveCommsData.other_emails = d.other_emails;
-            if (Array.isArray(d.acted_upon_emails)) _caveCommsData.acted_upon_emails = d.acted_upon_emails;
-            _caveCommsData._interleavedOnce = true;
-            if (Array.isArray(d.sent_emails)) _caveCommsData.sent_emails = d.sent_emails;
-            _hydrateMailCardsFromCommsData(_caveCommsData);
+          if (res.status >= 400 || !d || !d.ok) {
+            _unmarkSrDraftClosed(approvedId);
+            _srState.queue = prevQueueSnap;
+            _srState.archive = prevArchiveSnap;
+            _srLastSentDraft = null;
+            window._srUserCollapsed = false;
+            _setSpeedRacerExpanded(true);
+            _renderCaveSpeedRacerTile(true, true);
+            receipt((d && (d.message || d.error)) || 'Could not send Speed Racer draft.', true);
+            return;
           }
-          if (d && d.speed_racer) {
-            _srState = d.speed_racer;
+          _clearLocalDraft(_srFeedbackDraftKey(curApp.id || curApp.uid || ''));
+          _clearSrLocalEdit(approvedId);
+          if (curApp.uid) _clearSrLocalEdit(curApp.uid);
+          if (d.uid) window._caveSessionActedUids.add(String(d.uid));
+          if (Array.isArray(d.matched_uids)) {
+            d.matched_uids.forEach(function (u) {
+              if (u) window._caveSessionActedUids.add(String(u));
+            });
+          }
+          if (!_caveCommsData) _caveCommsData = { ok: true };
+          if (Array.isArray(d.important_emails)) _caveCommsData.important_emails = _mergeStableEmailOrder(_caveCommsData.important_emails, d.important_emails);
+          if (Array.isArray(d.other_emails)) _caveCommsData.other_emails = d.other_emails;
+          if (Array.isArray(d.acted_upon_emails)) _caveCommsData.acted_upon_emails = d.acted_upon_emails;
+          _caveCommsData._interleavedOnce = true;
+          if (Array.isArray(d.sent_emails)) _caveCommsData.sent_emails = d.sent_emails;
+          _hydrateMailCardsFromCommsData(_caveCommsData);
+          if (d.working_list) {
+            _wlState = d.working_list;
+            _renderWorkingListSpine();
+          }
+          if (d.speed_racer) {
+            _srState = _mergeSrStateKeepLocal(d.speed_racer, true);
             if (Array.isArray(_srState.queue)) {
-              _srState.queue = _srState.queue.filter(function (it) { return it && it.id !== approvedId; });
+              _srState.queue = _srState.queue.filter(function (it) { return it && String(it.id || '') !== approvedId; });
             }
-            if (!Array.isArray(_srState.archive) || !_srState.archive.some(function (it) { return it && it.id === approvedId; })) {
+            if (!Array.isArray(_srState.archive) || !_srState.archive.some(function (it) { return it && String(it.id || '') === approvedId; })) {
               _srState.archive = [optimisticApproved].concat(_srState.archive || []);
             }
           }
           var remQ = (_srState && Array.isArray(_srState.queue)) ? _srState.queue : [];
           _srIdx = Math.min(_srIdx, Math.max(0, remQ.length - 1));
-          _renderCaveSpeedRacerTile();
+          _renderCaveSpeedRacerTile(true, true);
           var archDrawer = document.getElementById('caveSpeedRacerArchiveDrawer');
           if (archDrawer) {
             archDrawer.hidden = true;
@@ -5904,6 +7123,8 @@
         body: JSON.stringify({
           action: 'speed_racer_queue',
           to: restoreItem.to,
+          cc: restoreItem.cc || '',
+          bcc: restoreItem.bcc || '',
           subject: restoreItem.subject,
           account: restoreItem.account,
           incoming_snippet: restoreItem.incoming_snippet,
@@ -5915,9 +7136,11 @@
         .then(function (r) { return r.json(); })
         .then(function (d) {
           if (d && d.speed_racer) {
-            _srState = d.speed_racer;
+            _srState = _mergeSrStateKeepLocal(d.speed_racer, true);
             _srIdx = 0;
-            _renderCaveSpeedRacerTile();
+            window._srUserCollapsed = false;
+            _setSpeedRacerExpanded(true);
+            _renderCaveSpeedRacerTile(true, true);
             receipt('\u21a9 Undid send — draft restored to Speed Racer queue.');
           }
         });
@@ -5925,18 +7148,76 @@
     }
   });
 
+  function _isSpeedRacerField(el) {
+    if (!el || !el.id) return false;
+    return (
+      el.id === 'caveSrBodyInput' ||
+      el.id === 'caveSrToInput' ||
+      el.id === 'caveSrCcInput' ||
+      el.id === 'caveSrBccInput' ||
+      el.id === 'caveSrSubjInput'
+    );
+  }
+
+  document.addEventListener('input', function (e) {
+    var t = e && e.target;
+    if (!_isSpeedRacerField(t)) return;
+    window._srLastEditTs = Date.now();
+    _captureActiveSpeedRacerDomEdits();
+    _updateSrSaveStatusUi('\u270e Editing \u2014 auto-saving\u2026', '');
+    _scheduleSpeedRacerAutoSave(800);
+  });
+
+  document.addEventListener('change', function (e) {
+    var t = e && e.target;
+    if (!_isSpeedRacerField(t)) return;
+    window._srLastEditTs = Date.now();
+    _captureActiveSpeedRacerDomEdits();
+    _scheduleSpeedRacerAutoSave(250);
+  });
+
+  document.addEventListener('focusout', function (e) {
+    var t = e && e.target;
+    if (!_isSpeedRacerField(t)) return;
+    var rel = e && e.relatedTarget;
+    if (rel && rel.closest && rel.closest('#btnCaveSrApproveSend, #btnCaveSrDiscard, [data-sr-tone], #btnCaveSrApplyFeedback')) {
+      return;
+    }
+    window._srLastEditTs = Date.now();
+    _captureActiveSpeedRacerDomEdits();
+    _scheduleSpeedRacerAutoSave(250);
+  });
+
   document.addEventListener('keydown', function (e) {
-    if (e.key !== 'Enter') return;
+    if (_contactAcMenu && !_contactAcMenu.hidden && _contactAcInput && _contactAcInput === e.target && _contactAcItems.length) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        var dir = e.key === 'ArrowDown' ? 1 : -1;
+        _contactAcIdx = (_contactAcIdx + dir + _contactAcItems.length) % _contactAcItems.length;
+        Array.prototype.forEach.call(_contactAcMenu.querySelectorAll('[data-ac-idx]'), function (el, idx) {
+          el.classList.toggle('is-active', idx === _contactAcIdx);
+        });
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        var picked = _contactAcItems[_contactAcIdx] || _contactAcItems[0];
+        if (picked) _applyContactAcChoice(_contactAcInput, picked);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        _hideContactAcMenu();
+        return;
+      }
+    }
+    if (e.key !== 'Enter' || e.shiftKey) return;
     var t = e.target;
     if (!t || !t.id) return;
-    if (t.id === 'caveDlgStewardActionInput') {
+    if (t.id === 'caveDlgStewardDirectionsInput') {
       e.preventDefault();
       var actBtn = document.getElementById('btnCaveDlgSendStewardAction');
       if (actBtn && !actBtn.disabled) actBtn.click();
-    } else if (t.id === 'caveDlgStewardDirectionsInput') {
-      e.preventDefault();
-      var srDirBtn = document.getElementById('btnCaveDlgSendDirectionsToSr');
-      if (srDirBtn && !srDirBtn.disabled) srDirBtn.click();
     } else if (t.id === 'caveSrFeedbackInput') {
       e.preventDefault();
       var srRefBtn = document.getElementById('btnCaveSrApplyFeedback');
@@ -5954,8 +7235,10 @@
   // 2) Steward (Chief of Staff) populates Things To Do from The List
   // 3) Checking off items moves them into Things Done (archived)
   // -------------------------------------------------------------------------
-  var _wlState = window.ANCHOR_WORKING_LIST_INIT || { tiles: [], cockpits_catalog: [], goals_catalog: [], project_folders_catalog: [], cockpit_items_catalog: [], initiative_items_catalog: [], cos_recommendations: [] };
-  // Ensure all items on The List start collapsed as single-line tiles on initial load
+  var _wlState = window.ANCHOR_WORKING_LIST_INIT || { tiles: [], proposals: [], auto_checked: [], horizon_counts: { today: 0, week: 0, month: 0, star_chart: 0 }, cockpits_catalog: [], goals_catalog: [], project_folders_catalog: [], cockpit_items_catalog: [], initiative_items_catalog: [], cos_recommendations: [] };
+  // Single-open accordion state: clicking one item collapses any previously open sibling
+  var _wlExpandedIds = new Set();
+  var _wlEditingProposalId = '';
   if (_wlState && Array.isArray(_wlState.tiles)) {
     _wlState.tiles.forEach(function (t) { if (t && typeof t === 'object') t.expanded = false; });
   }
@@ -5981,6 +7264,16 @@
     return '#' + num + ' (' + num + suf + ')';
   }
 
+  function _showWlUnknownState(errMsg) {
+    var unkBanner = document.getElementById('wlUnknownBanner');
+    var unkTxt = document.getElementById('wlUnknownBannerText');
+    var hdrCnt = document.getElementById('wlHeaderCounts');
+    var msg = errMsg || 'The List / Watchlist unreadable (unknown) \u2014 inspect Doctor';
+    if (unkBanner) unkBanner.hidden = false;
+    if (unkTxt) unkTxt.textContent = msg;
+    if (hdrCnt) hdrCnt.textContent = 'Unknown (Store Unreadable)';
+  }
+
   function _wlMutate(op, payload) {
     var bodyObj = Object.assign({ action: 'working_list_mutate', wl_op: op }, payload || {});
     return fetch('/api/steward/comms', {
@@ -5988,15 +7281,31 @@
       headers: headers(),
       body: JSON.stringify(bodyObj)
     })
-      .then(function (r) { return r.json(); })
-      .then(function (d) {
-        if (d && d.working_list) {
+      .then(function (r) {
+        return r.json().then(function (d) { return { status: r.status, data: d }; });
+      })
+      .then(function (res) {
+        var d = res.data || {};
+        if (res.status === 500 || d.unknown) {
+          _showWlUnknownState(d.error);
+          receipt(d.error || 'The List / Watchlist unreadable (unknown) \u2014 inspect Doctor', true);
+          return d;
+        }
+        if (res.status >= 400 || !d.ok) {
+          receipt(d.error || 'List update failed.', true);
+          return d;
+        }
+        var unkBanner = document.getElementById('wlUnknownBanner');
+        if (unkBanner) unkBanner.hidden = true;
+        if (d.working_list) {
           _wlState = d.working_list;
           _renderWorkingListSpine();
         }
         return d;
       })
-      .catch(function () {});
+      .catch(function () {
+        receipt('List request did not reach Anchor.', true);
+      });
   }
 
   function _buildCockpitOptionsHtml(selectedKey) {
@@ -6091,7 +7400,7 @@
   function _buildProjectFolderOptionsHtml() {
     var folders = (_wlState && Array.isArray(_wlState.project_folders_catalog)) ? _wlState.project_folders_catalog : [];
     if (!folders.length) {
-      folders = ['Axmra', 'Business', 'Teaching', 'Research', 'Personal', 'Writing'];
+      folders = ['Commercial', 'Business', 'Teaching', 'Research', 'Personal', 'Writing'];
     }
     return folders.map(function (f) {
       if (typeof f === 'string') {
@@ -6223,12 +7532,111 @@
   function _renderWorkingListSpine() {
     var container = document.getElementById('wlTilesContainer');
     if (!container) return;
+    if (_wlState && _wlState.unknown) {
+      var errTxt = String(_wlState.error || 'The List / Watchlist unreadable (unknown) \u2014 inspect Doctor');
+      _showWlUnknownState(errTxt);
+      container.innerHTML = '<div class="tw-empty wl-unknown-empty">' + _escH(errTxt) + '</div>';
+      return;
+    }
+    var unkBanner = document.getElementById('wlUnknownBanner');
+    if (unkBanner) unkBanner.hidden = true;
+
     var rawTiles = (_wlState && Array.isArray(_wlState.tiles)) ? _wlState.tiles : [];
     var activeTiles = rawTiles
       .filter(function (t) { return !t.archived; })
       .slice()
       .sort(function (a, b) { return _normPrioNum(a.priority || a.prio) - _normPrioNum(b.priority || b.prio); });
     var archTiles = rawTiles.filter(function (t) { return !!t.archived; });
+
+    var hz = (_wlState && _wlState.horizon_counts && typeof _wlState.horizon_counts === 'object') ? _wlState.horizon_counts : {};
+    var hzT = document.getElementById('wlHzToday');
+    var hzW = document.getElementById('wlHzWeek');
+    var hzM = document.getElementById('wlHzMonth');
+    var hzS = document.getElementById('wlHzStarChart');
+    if (hzT) hzT.textContent = String(Number(hz.today || 0));
+    if (hzW) hzW.textContent = String(Number((hz.this_week !== undefined ? hz.this_week : hz.week) || 0));
+    if (hzM) hzM.textContent = String(Number((hz.this_month !== undefined ? hz.this_month : hz.month) || 0));
+    if (hzS) hzS.textContent = String(Number((hz.star_chart_goals !== undefined ? hz.star_chart_goals : hz.star_chart) || 0));
+
+    var acStrip = document.getElementById('wlAutoCheckedStrip');
+    if (acStrip) {
+      var autoItems = ((_wlState && Array.isArray(_wlState.auto_checked)) ? _wlState.auto_checked : [])
+        .filter(function (a) { return a && !a.undone; });
+      if (autoItems.length) {
+        acStrip.hidden = false;
+        acStrip.innerHTML = autoItems.slice(0, 5).map(function (ac) {
+          var aid = _escH(ac.id || '');
+          var atitle = _escH(ac.tile_title || ac.step_text || 'Completed step');
+          var astep = _escH(ac.step_text || '');
+          var asrc = _escH(ac.reason || ac.source || 'Steward auto-check');
+          return (
+            '<span class="wl-autocheck-pill" data-autocheck-id="' + aid + '">' +
+              '&#10003; Auto-checked <b>' + atitle + '</b>' + ((astep && astep !== atitle) ? (' &mdash; ' + astep) : '') +
+              ' <span style="opacity:0.8">(' + asrc + ')</span> ' +
+              '<button type="button" class="mini" data-wl-undo-autocheck="' + aid + '" title="Undo automatic check-off">&#8634; Undo</button>' +
+            '</span>'
+          );
+        }).join('');
+      } else {
+        acStrip.hidden = true;
+        acStrip.innerHTML = '';
+      }
+    }
+
+    var propTray = document.getElementById('wlProposalTray');
+    var propCnt = document.getElementById('wlProposalCount');
+    var propHost = document.getElementById('wlProposalCardsHost');
+    var pendingProps = ((_wlState && Array.isArray(_wlState.proposals)) ? _wlState.proposals : [])
+      .filter(function (p) { return p && (!p.status || p.status === 'pending'); });
+    if (propCnt) propCnt.textContent = String(pendingProps.length);
+    if (propTray && propHost) {
+      if (pendingProps.length) {
+        propTray.hidden = false;
+        propHost.innerHTML = pendingProps.slice(0, 25).map(function (pr) {
+          var prId = String(pr.id || '');
+          var prIdEsc = _escH(prId);
+          var prKind = _escH(pr.proposal_op || pr.kind || 'add_tile');
+          var prTitle = _escH(pr.title || pr.step_text || 'Proposed List Change');
+          var prReason = _escH(pr.reason || 'Steward reactive proposal');
+          var prPrio = _normPrioNum(pr.priority || 2);
+          var prCat = String(pr.category || 'Business');
+          var editRowHtml = '';
+          if (_wlEditingProposalId && _wlEditingProposalId === prId) {
+            editRowHtml =
+              '<div style="width:100%;margin-top:6px;padding-top:6px;border-top:1px dashed rgba(245,158,11,0.4);display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
+                '<input type="text" id="wlPropEditTitle-' + prIdEsc + '" value="' + prTitle + '" style="flex:1;min-width:170px;padding:4px 7px;border-radius:5px;border:1px solid #334155;background:#070b12;color:#f8fafc;font-size:11.5px">' +
+                '<select id="wlPropEditPrio-' + prIdEsc + '" style="padding:4px 6px;border-radius:5px;border:1px solid #334155;background:#070b12;color:#f8fafc;font-size:11px">' +
+                  [1, 2, 3, 4, 5].map(function (n) { return '<option value="' + n + '"' + (n === prPrio ? ' selected' : '') + '>#' + n + '</option>'; }).join('') +
+                '</select>' +
+                '<select id="wlPropEditCat-' + prIdEsc + '" style="padding:4px 6px;border-radius:5px;border:1px solid #334155;background:#070b12;color:#f8fafc;font-size:11px">' +
+                  ['Business', 'Teaching', 'Research', 'Personal'].map(function (c) { return '<option value="' + c + '"' + (c === prCat ? ' selected' : '') + '>' + c + '</option>'; }).join('') +
+                '</select>' +
+                '<button type="button" class="tw-btn done" data-wl-save-proposal-edit="' + prIdEsc + '">&#10003; Save &amp; Accept</button>' +
+                '<button type="button" class="tw-btn" data-wl-cancel-proposal-edit="1">Cancel</button>' +
+              '</div>';
+          }
+          return (
+            '<div class="wl-proposal-card" data-proposal-id="' + prIdEsc + '">' +
+              '<div class="wl-proposal-main">' +
+                '<span class="comms-badge amber">' + prKind + '</span>' +
+                '<b class="wl-proposal-title">' + prTitle + '</b>' +
+                '<span class="wl-pill">#' + prPrio + ' &middot; ' + _escH(prCat) + '</span>' +
+                '<span class="wl-proposal-reason">' + prReason + '</span>' +
+              '</div>' +
+              '<div class="wl-proposal-acts">' +
+                '<button type="button" class="tw-btn done" data-wl-accept-proposal="' + prIdEsc + '">&#10003; Accept</button>' +
+                '<button type="button" class="tw-btn" data-wl-edit-proposal="' + prIdEsc + '">&#9998; Edit</button>' +
+                '<button type="button" class="tw-btn" data-wl-dismiss-proposal="' + prIdEsc + '">&#10005; Dismiss</button>' +
+              '</div>' +
+              editRowHtml +
+            '</div>'
+          );
+        }).join('');
+      } else {
+        propTray.hidden = true;
+        propHost.innerHTML = '';
+      }
+    }
 
     var cAll = document.getElementById('wlCntAll');
     var cBus = document.getElementById('wlCntBusiness');
@@ -6254,10 +7662,11 @@
     }
     if (colBtnInit && bodyInit) { colBtnInit.innerHTML = bodyInit.hidden ? ('&#9662; Expand (' + activeTiles.length + ')') : '&#9652; Collapse The List'; }
 
-    // Update Compact Summary Row (#theListCompactRow) inside The List tile
+    // Update Compact Summary Row (#theListCompactRow) inside The List tile (top 2-3 items when collapsed)
     var compactRow = document.getElementById('theListCompactRow');
     if (compactRow) {
-      var pillsHtml = activeTiles.slice(0, 4).map(function (t) {
+      compactRow.hidden = !!(bodyInit && !bodyInit.hidden);
+      var pillsHtml = activeTiles.slice(0, 3).map(function (t) {
         var tid = _escH(t.id || '');
         var pNum = _normPrioNum(t.priority || t.prio);
         var pCls = pNum === 1 ? 'red' : (pNum === 2 ? 'amber' : 'emerald');
@@ -6271,6 +7680,17 @@
           '</button>'
         );
       });
+      if (!activeTiles.length) {
+        pillsHtml.push('<span class="tw-empty" style="padding:2px 8px;font-size:11.5px">The List is clear (0 active items)</span>');
+      } else if (activeTiles.length > 3) {
+        pillsHtml.push(
+          '<button type="button" class="cos-cs-pill" data-wl-toggle-spine="1" title="Click to expand all ' + activeTiles.length + ' items on The List">' +
+            '<span class="cos-cs-tag sky">+' + (activeTiles.length - 3) + ' more</span>' +
+            '<span class="cos-cs-text">Expand full list (' + activeTiles.length + ' items)</span>' +
+            '<span class="cos-cs-caret">&#9662;</span>' +
+          '</button>'
+        );
+      }
       pillsHtml.push(
         '<button type="button" class="cos-cs-pill" data-wl-open-things-done="1" title="Click to view checked-off items in Things Done">' +
           '<span class="cos-cs-tag emerald">&#10003; Things Done (' + archTiles.length + ')</span>' +
@@ -6298,12 +7718,14 @@
     if (!visible.length) {
       container.innerHTML = _wlCatFilter === 'archived'
         ? '<div class="tw-empty">No items in Things Done yet. Check off any item on The List to move it here.</div>'
-        : '<div class="tw-empty">No active items in this category view on The List. Use the input bar above to add an item and set its priority number (#1, #2, #3...).</div>';
+        : '<div class="tw-empty">The List is clear (0 active items)</div>';
       return;
     }
 
     container.innerHTML = visible.map(function (t) {
-      var tid = _escH(t.id || '');
+      var rawTid = String(t.id || '');
+      var tid = _escH(rawTid);
+      var isExp = _wlExpandedIds.has(rawTid);
       var pNum = _normPrioNum(t.priority || t.prio);
       var ordLbl = _ordPrioLabel(pNum);
       var pCls = pNum === 1 ? 'prio-a' : (pNum === 2 ? 'prio-b' : 'prio-c');
@@ -6327,7 +7749,7 @@
         var inItem = (typeof rawIn === 'string' && rawIn)
           ? { initiativeName: rawIn, role: 'Initiative', href: s.initiativeUrl || '/?view=cave' }
           : rawIn;
-        var drawerKey = (t.id || '') + '::' + sIdx;
+        var drawerKey = rawTid + '::' + sIdx;
         var isDrawerOpen = !!_wlOpenConnDrawer[drawerKey];
         var selCkKey = (ckItem && ckItem.cockpitName) ? ((ckItem.cockpitName || '') + '||' + (ckItem.itemLabel || '')) : '';
         var selInKey = (inItem && inItem.initiativeName) ? (inItem.initiativeName || '') : '';
@@ -6390,9 +7812,9 @@
         );
       }).join('');
 
-      var showNewCk = !!_wlShowCreateCockpitBox[t.id || ''];
+      var showNewCk = !!_wlShowCreateCockpitBox[rawTid];
       var detailsHtml = '';
-      if (t.expanded) {
+      if (isExp) {
         detailsHtml =
           '<div class="wl-details" id="wlDetails-' + tid + '">' +
             '<div class="wl-assign-bar" style="margin-bottom:10px;padding:9px 11px;border-radius:8px;background:#070b12;border:1px solid rgba(56,189,248,0.35)">' +
@@ -6459,8 +7881,8 @@
                 '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px">' +
                   '<button type="button" class="tw-btn" data-wl-brainstorm="' + tid + '" style="border-color:rgba(167,139,250,0.55);color:#c4b5fd;font-weight:700">&#10024; Brainstorm Connected Steps</button>' +
                   '<button type="button" class="tw-btn" data-wl-draft-sr="' + tid + '" style="border-color:rgba(245,158,11,0.55);color:#fde68a;font-weight:700">&#127950;&#65039; Draft Related Email in Speed Racer</button>' +
-                  (t.cockpitHref ? ('<a class="tw-btn" href="' + _escH(t.cockpitHref) + '" target="_blank" rel="noopener" style="border-color:rgba(56,189,248,0.55);color:#7dd3fc;text-decoration:none;font-weight:700">&#128760; Open ' + _escH(t.cockpitName || 'AI Cockpit') + ' &#8599;</a>') : '') +
-                  (t.goalHref ? ('<a class="tw-btn" href="' + _escH(t.goalHref) + '" target="_blank" rel="noopener" style="border-color:rgba(167,139,250,0.55);color:#c4b5fd;text-decoration:none;font-weight:700">&#127775; View Star Chart Goal &#8599;</a>') : '') +
+                  (t.cockpitHref ? ('<a class="tw-btn" href="' + _escH(t.cockpitHref) + '" target="_blank" rel="noopener" style="border-color:rgba(56,189,248,0.55);color:#7dd3fc;text-decoration:none;font-weight:750">&#128760; Open ' + _escH(t.cockpitName || 'AI Cockpit') + ' &#8599;</a>') : '') +
+                  (t.goalHref ? ('<a class="tw-btn" href="' + _escH(t.goalHref) + '" target="_blank" rel="noopener" style="border-color:rgba(167,139,250,0.55);color:#c4b5fd;text-decoration:none;font-weight:750">&#127775; View Star Chart Goal &#8599;</a>') : '') +
                 '</div>' +
               '</div>' +
             '</div>' +
@@ -6476,7 +7898,7 @@
         : '';
 
       return (
-        '<article class="wl-tile ' + pCls + (t.expanded ? ' is-expanded' : '') + (t.done ? ' is-done' : '') + '" data-wl-tile-id="' + tid + '" data-wl-priority="' + pNum + '" style="padding:4px 8px">' +
+        '<article class="wl-tile ' + pCls + (isExp ? ' is-expanded' : '') + (t.done ? ' is-done' : '') + '" data-wl-tile-id="' + tid + '" data-wl-priority="' + pNum + '" style="padding:4px 8px">' +
           '<div class="wl-summary" data-wl-toggle-expand="' + tid + '" style="display:flex;align-items:center;gap:5px;flex-wrap:nowrap;min-height:26px;padding:3px 4px">' +
             '<div class="wl-move-col" style="flex-direction:row;gap:2px;flex-shrink:0">' +
               '<button type="button" class="wl-move-btn" data-wl-move="up" data-wl-id="' + tid + '" title="Move item up on The List">&#9650;</button>' +
@@ -6493,7 +7915,7 @@
             '</div>' +
             '<div class="wl-acts" style="flex-shrink:0;gap:4px">' +
               '<button type="button" class="mini" data-wl-archive="' + tid + '" style="' + (t.archived ? 'border-color:#f59e0b;color:#fde68a' : 'border-color:#10b981;color:#6ee7b7;font-weight:700') + ';font-size:10px;padding:2px 6px" title="' + (t.archived ? 'Restore back to active items on The List' : 'Mark done and move to Things Done') + '">' + (t.archived ? '&#8617; Restore' : '&#10003; Done') + '</button>' +
-              '<button type="button" class="mini" data-wl-toggle-expand="' + tid + '" style="border-color:#38bdf8;color:#7dd3fc;font-weight:700;font-size:10px;padding:2px 6px">' + (t.expanded ? '&#9652;' : '&#9662; Expand') + '</button>' +
+              '<button type="button" class="mini" data-wl-toggle-expand="' + tid + '" style="border-color:#38bdf8;color:#7dd3fc;font-weight:700;font-size:10px;padding:2px 6px">' + (isExp ? '&#9652;' : '&#9662; Expand') + '</button>' +
             '</div>' +
           '</div>' +
           detailsHtml +
@@ -6506,10 +7928,20 @@
     var sec = document.getElementById('caveWorkingListSpine');
     var body = document.getElementById('wlSpineBody');
     var colBtn = document.getElementById('wlSpineCollapseBtn');
+    var compactRow = document.getElementById('theListCompactRow');
     if (!body) return;
     var openState = typeof wantOpen === 'boolean' ? wantOpen : body.hidden;
     body.hidden = !openState;
-    if (sec) sec.classList.toggle('is-collapsed', !openState);
+    if (compactRow) {
+      compactRow.hidden = openState;
+    }
+    if (sec) {
+      sec.classList.toggle('is-collapsed', !openState);
+      sec.classList.toggle('is-open', openState);
+      sec.setAttribute('data-open', openState ? '1' : '0');
+      if (openState) sec.setAttribute('open', '');
+      else sec.removeAttribute('open');
+    }
     var actCnt = ((_wlState && Array.isArray(_wlState.tiles)) ? _wlState.tiles.filter(function(x){return !x.archived;}).length : 0);
     var archCnt = ((_wlState && Array.isArray(_wlState.tiles)) ? _wlState.tiles.filter(function(x){return !!x.archived;}).length : 0);
     if (colBtn) {
@@ -6520,11 +7952,105 @@
     if (hdrSub) {
       hdrSub.textContent = openState
         ? (actCnt + ' single-line items (click any item to expand details, Cockpit & Star Chart Goal dropdowns) · ' + archCnt + ' Things Done')
-        : ('Click to expand ' + actCnt + ' single-line items · ' + archCnt + ' Things Done');
+        : ('Top ' + Math.min(3, actCnt) + ' of ' + actCnt + ' active shown below · Click to expand full list (' + archCnt + ' Things Done)');
     }
   }
 
   document.addEventListener('click', function (e) {
+    var acceptAllBtn = e.target.closest && e.target.closest('[data-wl-accept-all]');
+    if (acceptAllBtn) {
+      e.preventDefault(); e.stopPropagation();
+      _wlEditingProposalId = '';
+      _wlMutate('accept_all_proposals', {}).then(function (d) {
+        if (d && d.ok) receipt('\u2713 Accepted all pending Steward proposals onto The List.');
+      });
+      return;
+    }
+    var acceptPropBtn = e.target.closest && e.target.closest('[data-wl-accept-proposal]');
+    if (acceptPropBtn) {
+      e.preventDefault(); e.stopPropagation();
+      var pIdAcc = acceptPropBtn.getAttribute('data-wl-accept-proposal') || '';
+      if (_wlEditingProposalId === pIdAcc) _wlEditingProposalId = '';
+      _wlMutate('accept_proposal', { proposal_id: pIdAcc }).then(function (d) {
+        if (d && d.ok) receipt('\u2713 Accepted Steward proposal onto The List.');
+      });
+      return;
+    }
+    var editPropBtn = e.target.closest && e.target.closest('[data-wl-edit-proposal]');
+    if (editPropBtn) {
+      e.preventDefault(); e.stopPropagation();
+      var pIdEdit = editPropBtn.getAttribute('data-wl-edit-proposal') || '';
+      _wlEditingProposalId = (_wlEditingProposalId === pIdEdit) ? '' : pIdEdit;
+      _renderWorkingListSpine();
+      return;
+    }
+    var cancelPropEditBtn = e.target.closest && e.target.closest('[data-wl-cancel-proposal-edit]');
+    if (cancelPropEditBtn) {
+      e.preventDefault(); e.stopPropagation();
+      _wlEditingProposalId = '';
+      _renderWorkingListSpine();
+      return;
+    }
+    var savePropEditBtn = e.target.closest && e.target.closest('[data-wl-save-proposal-edit]');
+    if (savePropEditBtn) {
+      e.preventDefault(); e.stopPropagation();
+      var pIdSave = savePropEditBtn.getAttribute('data-wl-save-proposal-edit') || '';
+      var tEditIn = document.getElementById('wlPropEditTitle-' + pIdSave);
+      var prEditIn = document.getElementById('wlPropEditPrio-' + pIdSave);
+      var catEditIn = document.getElementById('wlPropEditCat-' + pIdSave);
+      var editsObj = {};
+      if (tEditIn && tEditIn.value.trim()) editsObj.title = tEditIn.value.trim();
+      if (prEditIn && prEditIn.value) editsObj.priority = _normPrioNum(prEditIn.value);
+      if (catEditIn && catEditIn.value) editsObj.category = catEditIn.value;
+      _wlEditingProposalId = '';
+      _wlMutate('accept_proposal', { proposal_id: pIdSave, edits: editsObj }).then(function (d) {
+        if (d && d.ok) receipt('\u2713 Saved edits and accepted Steward proposal onto The List.');
+      });
+      return;
+    }
+    var dismissPropBtn = e.target.closest && e.target.closest('[data-wl-dismiss-proposal]');
+    if (dismissPropBtn) {
+      e.preventDefault(); e.stopPropagation();
+      var pIdDis = dismissPropBtn.getAttribute('data-wl-dismiss-proposal') || '';
+      if (_wlEditingProposalId === pIdDis) _wlEditingProposalId = '';
+      _wlMutate('dismiss_proposal', { proposal_id: pIdDis }).then(function (d) {
+        if (d && d.ok) receipt('Dismissed Steward proposal.');
+      });
+      return;
+    }
+    var undoAcBtn = e.target.closest && e.target.closest('[data-wl-undo-autocheck]');
+    if (undoAcBtn) {
+      e.preventDefault(); e.stopPropagation();
+      var acId = undoAcBtn.getAttribute('data-wl-undo-autocheck') || '';
+      _wlMutate('undo_autocheck', { autocheck_id: acId }).then(function (d) {
+        if (d && d.ok) receipt('\u21ba Undid automatic step check-off on The List.');
+      });
+      return;
+    }
+    var preSkillBtn = e.target.closest && e.target.closest('[data-wl-prestage-skill]');
+    if (preSkillBtn) {
+      e.preventDefault(); e.stopPropagation();
+      var skName = preSkillBtn.getAttribute('data-wl-prestage-skill') || 'researchPrime';
+      var openIds = Array.from(_wlExpandedIds);
+      var tilesPool = (_wlState && Array.isArray(_wlState.tiles)) ? _wlState.tiles : [];
+      var targetTile = (openIds.length && tilesPool.find(function (x) { return x && String(x.id) === openIds[0]; })) ||
+        tilesPool.find(function (x) { return x && !x.archived; }) || null;
+      var selTid = targetTile ? String(targetTile.id || '') : '';
+      var selTitle = targetTile ? String(targetTile.title || 'active effort') : 'active effort';
+      if (say) {
+        say.value = 'Pre-stage /' + skName + ' for "' + selTitle + '" on The List so its AI Cockpit is ready.';
+        say.dispatchEvent(new Event('input'));
+        say.focus();
+      }
+      if (selTid) {
+        _wlMutate('prestage_skill', { tile_id: selTid, skill: skName }).then(function (d) {
+          if (d && d.ok) receipt('\ud83c\udf4a Pre-staged ' + skName + ' on "' + selTitle + '"!');
+        });
+      } else {
+        receipt('\ud83c\udf4a Pre-staged /' + skName + ' in Steward composer.');
+      }
+      return;
+    }
     var catBtn = e.target.closest && e.target.closest('#wlCatTabs [data-wl-cat]');
     if (catBtn) {
       e.preventDefault();
@@ -6562,7 +8088,7 @@
       var nmIn = document.getElementById('wlNewCkName-' + tidCC);
       var fldIn = document.getElementById('wlNewCkFolder-' + tidCC);
       var ckName = nmIn ? nmIn.value.trim() : '';
-      var projFolder = fldIn ? fldIn.value.trim() : 'C:\\dev\\Campaign';
+      var projFolder = fldIn ? fldIn.value.trim() : 'Campaign';
       if (!ckName) {
         receipt('Please enter a name for the new AI Cockpit.', true);
         return;
@@ -6593,30 +8119,21 @@
     var focusTileBtn = e.target.closest && e.target.closest('[data-wl-focus-tile]');
     if (focusTileBtn) {
       e.preventDefault(); e.stopPropagation();
-      var focusTid = focusTileBtn.getAttribute('data-wl-focus-tile') || '';
+      var focusTid = String(focusTileBtn.getAttribute('data-wl-focus-tile') || '');
       _wlCatFilter = 'all';
+      _wlExpandedIds.clear();
+      if (focusTid) _wlExpandedIds.add(focusTid);
       _setTheListSpineOpen(true);
-      _wlMutate('toggle_expand', { tile_id: focusTid, expanded: true }).then(function () {
-        var elT = document.querySelector('[data-wl-tile-id="' + focusTid + '"]');
-        if (elT && elT.scrollIntoView) elT.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      });
+      _renderWorkingListSpine();
+      var elT = focusTid ? document.querySelector('[data-wl-tile-id="' + focusTid + '"]') : null;
+      if (elT && elT.scrollIntoView) elT.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
     var popCosBtn = e.target.closest && e.target.closest('[data-wl-populate-cos]');
     if (popCosBtn) {
       e.preventDefault(); e.stopPropagation();
       _wlMutate('steward_populate_cos', {}).then(function () {
-        var cosExp = document.getElementById('cosExpandableBody');
-        var cosSec = document.getElementById('shTriage');
-        var cosBtn = document.getElementById('btnCosToggleExpand');
-        if (cosExp && cosExp.hidden) {
-          cosExp.hidden = false;
-          if (cosSec) cosSec.classList.remove('is-collapsed');
-          if (cosBtn) {
-            cosBtn.setAttribute('aria-expanded', 'true');
-            cosBtn.innerHTML = '&#9652; Collapse Recommendations';
-          }
-        }
+        _setCosBodyExpanded(true, 'today');
         receipt('\u26a1 Steward (Chief of Staff) populated Things To Do directly from your priority order on The List (#1 \u2192 #2 \u2192 #3)!');
       });
       return;
@@ -6659,8 +8176,8 @@
         priority: pNum,
         prio: String(pNum),
         insert_top: isTop
-      }).then(function () {
-        receipt('\ud83d\udccb Added "' + title + '" to The List as Priority #' + pNum + ' & updated Chief of Staff!');
+      }).then(function (d) {
+        if (d && d.ok) receipt('\ud83d\udccb Added "' + title + '" to The List as Priority #' + pNum + ' & updated Chief of Staff!');
       });
       return;
     }
@@ -6682,7 +8199,9 @@
     var archBtn = e.target.closest && e.target.closest('[data-wl-archive]');
     if (archBtn) {
       e.preventDefault(); e.stopPropagation();
-      _wlMutate('archive_tile', { tile_id: archBtn.getAttribute('data-wl-archive') || '' }).then(function (d) {
+      var archTid = String(archBtn.getAttribute('data-wl-archive') || '');
+      _wlExpandedIds.delete(archTid);
+      _wlMutate('archive_tile', { tile_id: archTid }).then(function (d) {
         var wasArch = d && d.tile && d.tile.archived;
         receipt(wasArch ? '\u2713 Checked off & moved to Things Done!' : '\u21a9 Restored item to The List.');
       });
@@ -6691,7 +8210,9 @@
     var chkTile = e.target.closest && e.target.closest('[data-wl-check-tile]');
     if (chkTile) {
       e.stopPropagation();
-      _wlMutate('toggle_tile_done', { tile_id: chkTile.getAttribute('data-wl-check-tile') || '' }).then(function (d) {
+      var chkTid = String(chkTile.getAttribute('data-wl-check-tile') || '');
+      _wlExpandedIds.delete(chkTid);
+      _wlMutate('toggle_tile_done', { tile_id: chkTid }).then(function (d) {
         var isDone = d && d.tile && d.tile.done;
         receipt(isDone ? '\u2713 Checked off item on The List \u2192 moved to Things Done!' : '\u21a9 Reopened item on The List.');
       });
@@ -6700,15 +8221,15 @@
     var expToggle = e.target.closest && e.target.closest('[data-wl-toggle-expand]');
     if (expToggle && !e.target.closest('a, input, select, [data-wl-move], [data-wl-cycle-prio], [data-wl-set-prio], [data-wl-set-cat], [data-wl-assign-cockpit], [data-wl-assign-goal], [data-wl-archive]')) {
       e.preventDefault(); e.stopPropagation();
-      var targetTid = expToggle.getAttribute('data-wl-toggle-expand') || '';
-      var curTiles = (_wlState && Array.isArray(_wlState.tiles)) ? _wlState.tiles : [];
-      var curTileObj = curTiles.find(function (x) { return x && x.id === targetTid; });
-      var nextExp = !(curTileObj && curTileObj.expanded);
-      if (curTileObj) {
-        curTileObj.expanded = nextExp;
-        _renderWorkingListSpine();
+      var targetTid = String(expToggle.getAttribute('data-wl-toggle-expand') || '');
+      if (!targetTid) return;
+      if (_wlExpandedIds.has(targetTid)) {
+        _wlExpandedIds.delete(targetTid);
+      } else {
+        _wlExpandedIds.clear();
+        _wlExpandedIds.add(targetTid);
       }
-      _wlMutate('toggle_expand', { tile_id: targetTid, expanded: nextExp });
+      _renderWorkingListSpine();
       return;
     }
     var stepChk = e.target.closest && e.target.closest('[data-wl-step-check]');
@@ -6851,10 +8372,10 @@
           action: 'speed_racer_queue',
           to: 'Counterparty <contact@example.com>',
           subject: 'Action & Next Steps: ' + (tObjSr.title || 'The List Effort'),
-          account: tObjSr.category === 'Business' ? 'Axmra 365' : 'PSU 365',
+          account: tObjSr.category === 'Business' ? 'Commercial 365' : 'Institutional 365',
           incoming_snippet: 'The List (Priority #' + _normPrioNum(tObjSr.priority || tObjSr.prio) + '): ' + (tObjSr.title || '') + ' — Next Step: ' + stepDesc,
           context_reason: 'Queued directly from The List ("' + (tObjSr.title || '') + '") for rapid review & approval.',
-          draft_body: 'Hi,\n\nI am writing to follow up on "' + (tObjSr.title || '') + '", specifically regarding our next step:\n- ' + stepDesc + '\n\nPlease let me know once this is ready so we can finalize.\n\nBest,\nJohn',
+          draft_body: 'Hi,\n\nI am writing to follow up on "' + (tObjSr.title || '') + '", specifically regarding our next step:\n- ' + stepDesc + '\n\nPlease let me know once this is ready so we can finalize.\n\nBest regards',
           queued_by: 'The List'
         })
       })
@@ -6952,7 +8473,7 @@
   });
 
   window.refreshCaveWorkingList = function (wlData) {
-    if (wlData && wlData.tiles) {
+    if (wlData && (wlData.tiles || wlData.unknown)) {
       _wlState = wlData;
       _renderWorkingListSpine();
     } else {
@@ -6962,16 +8483,20 @@
   if (_srState && Array.isArray(_srState.queue) && _srState.queue.length > 0) {
     _setSpeedRacerExpanded(true);
   }
+  _setTheListSpineOpen(false);
   _renderCaveSpeedRacerTile();
   _renderWorkingListSpine();
 
-  // Initialize source filters & check for active Gmail 2FA prompt on startup
+  // Initialize source filters & hydrate local preloaded email cache immediately (0ms) on startup
+  if (_caveCommsData && _caveCommsData.ok) {
+    _hydrateMailCardsFromCommsData(_caveCommsData);
+  }
   _applySourceFilterToDOM();
-  setTimeout(function () { _ensureCaveCommsDataLoaded(false); }, 400);
+  setTimeout(function () { _ensureCaveCommsDataLoaded(true); }, 400);
 
-  // Auto-refresh Comms every 5 minutes in background when idle
+  // Auto-refresh Comms every 1 minute (60s) in background when idle without clobbering active focus/drafts
   setInterval(function () {
-    if (document.hidden || tileOpen() || typingNow()) return;
+    if (document.hidden || typingNow() || window._caveEmailActionInFlight > 0) return;
     fetch('/api/steward/comms', {
       method: 'POST',
       headers: headers(),
@@ -6981,9 +8506,15 @@
       .then(function (d) {
         if (d && d.ok) {
           _caveCommsData = d;
-          renewInPlace();
+          _hydrateMailCardsFromCommsData(d);
+          _renderCaveCalendarViewport();
+          if (d.speed_racer) _syncSpeedRacerFromServer(d.speed_racer);
+          if (d.working_list) {
+            _wlState = d.working_list;
+            _renderWorkingListSpine();
+          }
         }
       })
       .catch(function () {});
-  }, 300000);
+  }, 60000);
 })();

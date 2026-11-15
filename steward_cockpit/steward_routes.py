@@ -31,7 +31,7 @@ import importlib
 from pathlib import Path
 
 _HOT_MOD_MTIMES = globals().get("_HOT_MOD_MTIMES") if isinstance(globals().get("_HOT_MOD_MTIMES"), dict) else {}
-for _hot_mod in ("anchor_settings", "usage_allowance_monitor", "usage_nightly_sync", "deliverables_register", "steward_cockpit.spellcheck_engine", "steward_cockpit.dictation_engine", "steward_cockpit.steward_campaign", "steward_cockpit.campaign_acts", "steward_cockpit.campaign_say", "high_seat_page", "report_viewer"):
+for _hot_mod in ("paths", "office_preview", "anchor_settings", "usage_allowance_monitor", "usage_nightly_sync", "deliverables_register", "steward_cockpit.steward_core", "tools.steward_plan", "steward_cockpit.spellcheck_engine", "steward_cockpit.dictation_engine", "steward_cockpit.steward_campaign", "steward_cockpit.campaign_acts", "steward_cockpit.campaign_say", "high_seat_page", "report_viewer", "scribe_engine", "comms_connector"):
     if _hot_mod in sys.modules:
         try:
             _m_obj = sys.modules[_hot_mod]
@@ -83,6 +83,8 @@ def _resolve_named_cockpit_dir(raw_pid):
         return str(cand)
     return None
 
+_ROUTE_TLS = globals().get("_ROUTE_TLS") or threading.local()
+
 for _main_mod_name in ("__main__", "anchor_gui"):
     _m = sys.modules.get(_main_mod_name)
     _ah = getattr(_m, "AnchorHandler", None) if _m else None
@@ -90,17 +92,49 @@ for _main_mod_name in ("__main__", "anchor_gui"):
         _orig_spd = getattr(_ah, "_orig_steward_pid_dir", _ah._steward_pid_dir)
         _ah._orig_steward_pid_dir = _orig_spd
         def _patched_steward_pid_dir(self, pid, _orig=_orig_spd):
+            import urllib.parse as _up
+            _ROUTE_TLS.pending_cd = None
+            _ROUTE_TLS.req_query = _up.urlparse(str(getattr(self, "path", "") or "")).query
             res = _orig(self, pid)
             if res is None:
                 res = _resolve_named_cockpit_dir(pid)
             return res
         _ah._steward_pid_dir = _patched_steward_pid_dir
+    if _ah is not None and hasattr(_ah, "send_header"):
+        _orig_sh = getattr(_ah, "_orig_steward_send_header", _ah.send_header)
+        _ah._orig_steward_send_header = _orig_sh
+        def _patched_send_header(self, keyword, value, _orig=_orig_sh):
+            if str(keyword or "").lower() == "content-disposition":
+                cd_override = getattr(_ROUTE_TLS, "pending_cd", None)
+                if cd_override:
+                    _ROUTE_TLS.pending_cd = None
+                    value = cd_override
+            return _orig(self, keyword, value)
+        _ah.send_header = _patched_send_header
+    if _ah is not None and hasattr(_ah, "_send_json"):
+        _orig_sj = getattr(_ah, "_orig_steward_send_json", _ah._send_json)
+        _ah._orig_steward_send_json = _orig_sj
+        def _patched_send_json(self, data, code=200, _orig=_orig_sj):
+            _ROUTE_TLS.req_query = ""
+            _ROUTE_TLS.pending_cd = None
+            if code == 404 and isinstance(data, dict) and "failure_state" not in data:
+                _req_path = str(getattr(self, "path", "") or "").split("?", 1)[0]
+                if _req_path in ("/api/steward/plan", "/api/plan"):
+                    data = {
+                        "ok": False,
+                        "failure_state": "dependency-missing",
+                        "error": "Campaign directory not found",
+                        "message": "Campaign directory not found",
+                    }
+            return _orig(self, data, code)
+        _ah._send_json = _patched_send_json
     if _m is not None:
         try:
             _m._BOOT_RELEASE_VERSION = "1.4.3"
         except Exception:
             pass
 
+import paths
 from steward_cockpit import steward_campaign as campaign
 from steward_cockpit.steward_engine import Engine
 
@@ -190,6 +224,8 @@ def _deliverables_cached(cdir, qs, read, annotate):
         before = _identity(cdir, _offered_paths(data))
         annotate(data)                                # the links are checked here, between the two snapshots
         after = _identity(cdir, _offered_paths(data))
+        if isinstance(data, dict) and data.get("failure_state") == "backing-store-unreadable":
+            return data
         if before != after or stamp[1] is None:
             return data                               # changed under the check: answered, never kept
         with _DELIV_LOCK:
@@ -367,9 +403,18 @@ window.STEWARD_MODE = %s;
   // token: prefer one arriving in the URL (the beta-link / bounce), else the
   // stored one; persist a URL token so later fetches stay authed
   var TOK="";
-  try{TOK=(new URLSearchParams(location.search)).get('token')||'';}catch(_){}
+  var _PAGE_PID=window.STEWARD_PID||'';
+  var _PAGE_DIR=window.STEWARD_EFFORT_DIR||'';
+  try{
+    var _sp0=new URLSearchParams(location.search);
+    TOK=_sp0.get('token')||'';
+    if(!_PAGE_PID)_PAGE_PID=_sp0.get('pid')||'';
+    if(!_PAGE_DIR)_PAGE_DIR=_sp0.get('dir')||'';
+  }catch(_){}
   try{if(TOK){localStorage.setItem('anchor_token',TOK);}else{TOK=localStorage.getItem('anchor_token')||'';}}catch(_){}
   window.STEWARD_TOKEN=TOK;
+  window.STEWARD_EFFORT_DIR=_PAGE_DIR;
+  window.STEWARD_FULL_COCKPIT_URL='/steward/v1?pid='+encodeURIComponent(_PAGE_PID)+'&dir='+encodeURIComponent(_PAGE_DIR)+(TOK?'&token='+encodeURIComponent(TOK):'');
   function auth(o){o=o||{};if(TOK){o.headers=Object.assign({},o.headers||{},{'Authorization':'Bearer '+TOK});}return o;}
   var _f=window.fetch;window.fetch=function(u,o){
     if(typeof u==='string'){
@@ -378,10 +423,16 @@ window.STEWARD_MODE = %s;
         if(u.indexOf('pid=')<0 && window.STEWARD_PID){
           u+=(u.indexOf('?')<0?'?':'&')+'pid='+encodeURIComponent(window.STEWARD_PID);
         }
+        if(u.indexOf('dir=')<0 && _PAGE_DIR && u.indexOf('/api/steward/plan')===0){
+          u+=(u.indexOf('?')<0?'?':'&')+'dir='+encodeURIComponent(_PAGE_DIR);
+        }
         o=auth(o);
       }
       else if(u.indexOf('/api/')===0){u='/api/steward/'+u.slice(5);
         u+=(u.indexOf('?')<0?'?':'&')+'pid='+encodeURIComponent(window.STEWARD_PID);
+        if(u.indexOf('dir=')<0 && _PAGE_DIR && u.indexOf('/api/steward/plan')===0){
+          u+='&dir='+encodeURIComponent(_PAGE_DIR);
+        }
         o=auth(o);}
       else if(u.indexOf('/static/')===0){u='/steward-static/'+u.slice(8);}
       else if(u.indexOf('/report')===0){u='/steward'+u;
@@ -438,8 +489,19 @@ window.STEWARD_MODE = %s;
 </script>"""
 
 
-def serve_cockpit_doc(pid=""):
-    return serve_page_doc("cockpit", pid)
+def full_cockpit_url(pid="", effort_dir="", token=""):
+    """Build the direct full-cockpit URL (/steward/v1) preserving exact pid + dir per AGENTS.md."""
+    import urllib.parse as _up
+    q_pid = _up.quote(str(pid or ""), safe="")
+    q_dir = _up.quote(str(effort_dir or ""), safe="")
+    url = f"/steward/v1?pid={q_pid}&dir={q_dir}"
+    if token:
+        url += "&token=" + _up.quote(str(token), safe="")
+    return url
+
+
+def serve_cockpit_doc(pid="", effort_dir="", embed=False, view=""):
+    return serve_page_doc("cockpit", pid, effort_dir=effort_dir, embed=embed, view=view)
 
 
 def serve_report_doc(pid, path):
@@ -450,6 +512,185 @@ def serve_report_doc(pid, path):
 # as iframes; Anchor serves them under /steward/<page> with the shim injected
 _PAGES = {"v1": "v1.html", "v3": "v3.html", "report": "report.html",
           "cockpit": "cockpit.html"}
+
+
+def _load_aegis_session_module():
+    """Load (and hot-reload if changed on disk) ``steward_cockpit.aegis_session``."""
+    import importlib as _il
+    from steward_cockpit import aegis_session as _aeg
+    if _aeg is None:
+        raise ImportError("Security scanner module unavailable")
+    try:
+        _aeg_file = getattr(_aeg, "__file__", None)
+        if _aeg_file:
+            _aeg_mtime = Path(_aeg_file).stat().st_mtime_ns
+            _prev_mtime = getattr(_aeg, "_LOADED_MTIME_NS", None)
+            if _prev_mtime is None:
+                _aeg._LOADED_MTIME_NS = _aeg_mtime
+            elif _prev_mtime != _aeg_mtime:
+                _aeg = _il.reload(_aeg)
+                _aeg._LOADED_MTIME_NS = _aeg_mtime
+    except Exception:
+        pass
+    return _aeg
+
+
+def _verify_aegis_scanner_available(_aeg, *, verify_exec: bool = True):
+    """Ensure the Aegis scanner engine module is available; raise ImportError otherwise."""
+    if _aeg is None:
+        raise ImportError("Security scanner module unavailable")
+    if "load_aegis_engine_module" in vars(_aeg):
+        loader = getattr(_aeg, "load_aegis_engine_module", None)
+        if loader is None or not callable(loader):
+            raise ImportError("Security scanner module unavailable")
+        eng = loader()
+        if eng is None:
+            raise ImportError("Security scanner module unavailable")
+        return eng
+    loader = getattr(_aeg, "_load_aegis_engine", None)
+    if loader is None or not callable(loader):
+        raise ImportError("Security scanner module unavailable")
+    if verify_exec:
+        try:
+            eng = loader()
+        except (TimeoutError,):
+            raise
+        except (ImportError, ModuleNotFoundError, FileNotFoundError, OSError, RuntimeError) as exc:
+            raise ImportError("Security scanner module unavailable") from exc
+        if eng is None:
+            raise ImportError("Security scanner module unavailable")
+        return eng
+    return None
+
+
+def _run_aegis_route_contract(cdir, params, run_fn, *, verify_scanner_exec: bool = True):
+    """Execute an Aegis cockpit route action under Wave 6's 5-state failure contract (unknown != empty)."""
+    import socket as _socket
+    import urllib.error as _urlerr
+    import urllib.parse as _urlparse
+    from provider_native import private_account_path
+
+    if not isinstance(params, dict):
+        return {
+            "ok": False,
+            "failure_state": "dependency-returns-garbage",
+            "error": "Blocked unsafe path traversal or disallowed URL scheme",
+            "message": "Blocked unsafe path traversal or disallowed URL scheme",
+        }, 400
+
+    try:
+        raw_url = str(params.get("url") or "").strip()
+        if raw_url:
+            parsed_u = _urlparse.urlparse(raw_url)
+            if parsed_u.scheme.lower() not in ("http", "https") or not parsed_u.netloc:
+                raise paths.DisallowedUrlSchemeError("Blocked unsafe path traversal or disallowed URL scheme")
+            req_timeout = float(params.get("timeout", 15.0))
+            with paths.safe_urlopen(raw_url, timeout=req_timeout) as _u_resp:
+                _u_resp.read(4096)
+
+        target_spec = str(params.get("target") or ".").strip()
+        cdir_str = str(cdir or "").strip()
+        if not cdir_str:
+            raise FileNotFoundError("Target file unreadable (unknown)")
+        cdir_path = Path(cdir_str)
+        if target_spec not in ("", "."):
+            # Check unsafe path syntax/containment BEFORE verifying backing store existence when possible,
+            # while still letting missing contained files raise FileNotFoundError -> 500.
+            resolved_target = paths.resolve_contained_path(
+                cdir_path if cdir_path.exists() else Path(os.path.abspath(cdir_str)),
+                target_spec,
+                allow_missing=True,
+            )
+            if private_account_path(str(resolved_target)):
+                raise paths.UnsafePathError("Blocked unsafe path traversal or disallowed URL scheme")
+
+        _aeg = _load_aegis_session_module()
+        _verify_aegis_scanner_available(_aeg, verify_exec=verify_scanner_exec)
+
+        if not cdir_path.exists() or not cdir_path.is_dir():
+            raise FileNotFoundError("Target file unreadable (unknown)")
+        os.listdir(cdir_path)
+
+        if target_spec not in ("", "."):
+            resolved_target = paths.resolve_contained_path(cdir_path, target_spec, allow_missing=False)
+            if private_account_path(str(resolved_target)):
+                raise paths.UnsafePathError("Blocked unsafe path traversal or disallowed URL scheme")
+            if resolved_target.is_file():
+                resolved_target.read_text(encoding="utf-8")
+            elif resolved_target.is_dir():
+                os.listdir(resolved_target)
+
+        sess_file = cdir_path / ".aegis" / "session.json"
+        if sess_file.exists():
+            sess_raw = sess_file.read_text(encoding="utf-8")
+            sess_parsed = json.loads(sess_raw)
+            if not isinstance(sess_parsed, dict):
+                raise OSError("Target file unreadable (unknown)")
+
+        res = run_fn(_aeg)
+    except (ImportError, ModuleNotFoundError):
+        return {
+            "ok": False,
+            "failure_state": "dependency-missing",
+            "error": "Security scanner module unavailable",
+            "message": "Security scanner module unavailable",
+        }, 503
+    except (TimeoutError, _socket.timeout):
+        return {
+            "ok": False,
+            "failure_state": "dependency-slow-or-killed",
+            "error": "Upstream URL fetch exceeded 15s timeout",
+            "message": "Upstream URL fetch exceeded 15s timeout",
+        }, 504
+    except _urlerr.URLError as exc:
+        if isinstance(getattr(exc, "reason", None), (TimeoutError, _socket.timeout)):
+            return {
+                "ok": False,
+                "failure_state": "dependency-slow-or-killed",
+                "error": "Upstream URL fetch exceeded 15s timeout",
+                "message": "Upstream URL fetch exceeded 15s timeout",
+            }, 504
+        return {
+            "ok": False,
+            "failure_state": "backing-store-unreadable",
+            "error": "Target file unreadable (unknown)",
+            "message": "Target file unreadable (unknown)",
+        }, 500
+    except (paths.UnsafePathError, paths.DisallowedUrlSchemeError):
+        return {
+            "ok": False,
+            "failure_state": "dependency-returns-garbage",
+            "error": "Blocked unsafe path traversal or disallowed URL scheme",
+            "message": "Blocked unsafe path traversal or disallowed URL scheme",
+        }, 403
+    except (FileNotFoundError, PermissionError, OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return {
+            "ok": False,
+            "failure_state": "backing-store-unreadable",
+            "error": "Target file unreadable (unknown)",
+            "message": "Target file unreadable (unknown)",
+        }, 500
+    except ValueError:
+        return {
+            "ok": False,
+            "failure_state": "dependency-returns-garbage",
+            "error": "Blocked unsafe path traversal or disallowed URL scheme",
+            "message": "Blocked unsafe path traversal or disallowed URL scheme",
+        }, 400
+
+    if isinstance(res, dict):
+        sc = (res.get("session") or {}).get("scan") or res.get("scan") or {}
+        if isinstance(sc, dict):
+            sev = sc.get("severity_counts") or {}
+            crit_cnt = int(sev.get("CRITICAL", sc.get("critical_count", 0)) or 0)
+            high_cnt = int(sev.get("HIGH", sc.get("high_count", 0)) or 0)
+            res.setdefault("critical_count", crit_cnt)
+            res.setdefault("high_count", high_cnt)
+            if crit_cnt + high_cnt == 0:
+                res["failure_state"] = "empty-but-valid"
+                res["status_message"] = "Aegis scan clean (0 CRITICAL/HIGH findings)"
+                res.setdefault("message", "Aegis scan clean (0 CRITICAL/HIGH findings)")
+    return res, 200
 
 
 def _mode_name():
@@ -475,25 +716,61 @@ def _persona_name():
         return str(CONFIG.get("steward") or "Aladdin")
 
 
-def serve_page_doc(page, pid=""):
+_STATIC_ASSET_HASH_CACHE: dict[str, tuple[int, int, str]] = {}
+
+
+def _static_asset_version(rel_name: str, fallback: str = "") -> str:
+    """Compute 12-char SHA-256 content hash for a steward static asset, cached by ``(mtime_ns, size)``."""
+    clean = str(rel_name or "").split("?", 1)[0].split("#", 1)[0].strip()
+    for pfx in ("/steward-static/", "/static/"):
+        if clean.startswith(pfx):
+            clean = clean[len(pfx):]
+            break
+    clean = clean.lstrip("/")
+    if not clean:
+        return fallback or ("0" * 12)
+    fpath = STATIC / clean
+    try:
+        st = fpath.stat()
+        key = str(fpath)
+        cached = _STATIC_ASSET_HASH_CACHE.get(key)
+        if cached and cached[0] == st.st_mtime_ns and cached[1] == st.st_size:
+            return cached[2]
+        digest = hashlib.sha256(fpath.read_bytes()).hexdigest()[:12]
+        _STATIC_ASSET_HASH_CACHE[key] = (st.st_mtime_ns, st.st_size, digest)
+        return digest
+    except OSError:
+        return fallback or ("0" * 12)
+
+
+def serve_page_doc(page="v1", pid="", effort_dir="", embed=False, view="", *, mount_prefix="/steward", api_prefix="/api/steward"):
     fname = _PAGES.get(page)
     if not fname:
         return None
     build = str(CONFIG.get("build") or getattr(sys.modules.get("anchor_gui") or sys.modules.get("__main__"), "BUILD_ID", "") or "")
     html = (STATIC / fname).read_text(encoding="utf-8")
-    html = (html.replace('href="/static/', 'href="/steward-static/')
-                .replace('src="/static/', 'src="/steward-static/')
-                # Anchor serves brand marks at /vendor/brand/, not /brand/;
-                # rewrite both the static hrefs and the JS "/brand/" base
-                # without double-rewriting existing "/vendor/brand/" paths
-                .replace('"/brand/', '"/vendor/brand/')
-                .replace("'/brand/", "'/vendor/brand/"))
-    if build:
-        html = re.sub(
-            r'((?:href|src)="/steward-static/[^"?]+\.(?:js|css))"',
-            lambda m: m.group(1) + "?v=" + build + '"',
-            html,
-        )
+    use_mounted_static = str(mount_prefix or "").strip() != ""
+    static_url_prefix = "/steward-static/" if use_mounted_static else "/static/"
+    if use_mounted_static:
+        html = (html.replace('href="/static/', 'href="/steward-static/')
+                    .replace('src="/static/', 'src="/steward-static/')
+                    # Anchor serves brand marks at /vendor/brand/, not /brand/;
+                    # rewrite both the static hrefs and the JS "/brand/" base
+                    # without double-rewriting existing "/vendor/brand/" paths
+                    .replace('"/brand/', '"/vendor/brand/')
+                    .replace("'/brand/", "'/vendor/brand/"))
+
+    def _stamp_asset_attr(m):
+        attr_and_url = m.group(1)
+        asset_rel = m.group(2)
+        ver = _static_asset_version(asset_rel, fallback=build)
+        return f'{attr_and_url}?v={ver}"'
+
+    html = re.sub(
+        r'((?:href|src)="(?:/steward-static/|/static/)([^"?]+\.(?:js|css)))(?:\?v=[^"]*)?"',
+        _stamp_asset_attr,
+        html,
+    )
     user_display_name = "John"
     try:
         import onboard_wizard as _ow
@@ -502,13 +779,22 @@ def serve_page_doc(page, pid=""):
             user_display_name = str(_uprof["display_name"]).strip()
     except Exception:
         pass
-    shim = (_CLIENT_SHIM % (json.dumps(pid),
+    is_embed = bool(embed) or str(view or "").strip().lower() == "tile"
+    eff_str = str(effort_dir or "")
+    extra_boot = "<script>window.STEWARD_EFFORT_DIR=%s;window.STEWARD_EMBED=%s;</script>" % (
+        json.dumps(eff_str),
+        "true" if is_embed else "false",
+    )
+    shim = extra_boot + (_CLIENT_SHIM % (json.dumps(pid),
                             json.dumps(build), json.dumps(_mode_name()))) + (
         "<script>window.STEWARD_NAME=%s;window.USER_DISPLAY_NAME=%s;</script>" % (
             json.dumps(_persona_name()), json.dumps(user_display_name)
         )
     )
-    nb_src = '/steward-static/notebook-actions.js' + (("?v=" + build) if build else "")
+    if api_prefix and api_prefix != "/api/steward":
+        shim = shim.replace("/api/steward", str(api_prefix).rstrip("/"))
+    nb_ver = _static_asset_version("notebook-actions.js", fallback=build)
+    nb_src = f"{static_url_prefix}notebook-actions.js?v={nb_ver}"
     return html.replace("<script", shim + '<script src="' + nb_src + '"></script><script', 1)
 
 
@@ -538,12 +824,81 @@ _PROJECT_VERBS = {"efforts", "grass", "boneyard", "skills", "gandalf",
 # was full (2026-08-28).
 _PROJECT_FILE_VERBS = {"files", "filetext", "upload", "open", "notebook-open",
                        "notebook-register", "notebook-status", "deliverable-file", "anvil",
-                       "anvil/walkthrough", "spellcheck", "dictate", "fleet-brief", "fleet-relay"}
+                       "anvil/walkthrough", "anvil/source", "spellcheck", "dictate", "fleet-brief", "fleet-relay"}
 
 
 _PROJECT_TERMINAL_VERBS = {"term_new", "term_archive", "term_restore"}
-_GENERAL_READ_VERBS = {"map", "history", "state", "events", "deliverables"}
-_GENERAL_POST_VERBS = {"say", "engine", "dismiss-deliverable", "deliverables/dismiss"}
+_GENERAL_READ_VERBS = {"map", "history", "state", "events", "deliverables", "plan", "spend"}
+_GENERAL_POST_VERBS = {"say", "engine", "dismiss-deliverable", "deliverables/dismiss",
+                       "approve-deliverable", "deliverables/approve", "plan"}
+
+
+def _plan_missing_response():
+    return {
+        "ok": False,
+        "failure_state": "dependency-missing",
+        "error": "Campaign directory not found",
+        "message": "Campaign directory not found",
+    }, 404
+
+
+def _plan_garbage_response():
+    return {
+        "ok": False,
+        "failure_state": "dependency-returns-garbage",
+        "error": "Invalid plan mutation or step cap (>200) exceeded",
+        "message": "Invalid plan mutation or step cap (>200) exceeded",
+    }, 400
+
+
+def _plan_http_error(exc):
+    from tools import steward_plan as _splan
+    if isinstance(exc, _splan.PlanMissingDirError):
+        return exc.to_dict(), 404
+    if isinstance(exc, (_splan.PlanLockTimeoutError, TimeoutError)):
+        return {
+            "ok": False,
+            "failure_state": "dependency-slow-or-killed",
+            "error": "Plan state lock busy (>2.0s) — retry",
+            "message": "Plan state lock busy (>2.0s) — retry",
+        }, 504
+    if isinstance(exc, (_splan.PlanValidationError, ValueError)):
+        return _plan_garbage_response()
+    if isinstance(exc, _splan.PlanStoreUnreadableError):
+        return exc.to_dict(), 500
+    return {
+        "ok": False,
+        "failure_state": "backing-store-unreadable",
+        "error": "Plan/Deliverables unreadable (unknown) — inspect roadmap.json",
+        "message": "Plan/Deliverables unreadable (unknown) — inspect roadmap.json",
+    }, 500
+
+
+def _resolve_plan_cdir(proot, rel):
+    """Resolve the effort directory for /api/plan safely (allowing valid project/effort dirs
+    even before ECGBERHT.md exists so empty-but-valid and init/add_step work immediately)."""
+    if not proot or not os.path.isdir(str(proot)):
+        return None
+    rel = str(rel or "").strip()
+    if not rel:
+        if campaign.is_retired_in_place(str(proot)):
+            return None
+        return str(proot)
+    if ":" in rel or rel.startswith(("/", "\\")):
+        return None
+    norm_rel = rel.replace("\\", "/").strip("/")
+    parts = [p for p in norm_rel.split("/") if p]
+    if not parts or any(p in (".", "..") or p.startswith((".", "_")) for p in parts):
+        return None
+    ed = _effort_dir(proot, rel)
+    if ed and os.path.isdir(ed):
+        return ed
+    proot_real = os.path.realpath(str(proot))
+    cand_real = os.path.realpath(str(Path(proot) / norm_rel))
+    if cand_real.startswith(proot_real + os.sep) and os.path.isdir(cand_real):
+        if not campaign.is_retired_in_place(cand_real):
+            return cand_real
+    return None
 
 
 def _registered_project_terminal(proot, raw_tid):
@@ -555,10 +910,37 @@ def _registered_project_terminal(proot, raw_tid):
 
 
 def api_get(proot, verb, qs):
+    _ROUTE_TLS.req_query = ""
+    qs = qs or {}
     if verb == "usage-summary":
         return global_usage_summary(qs)
     if verb == "usage-allowance":
         return usage_allowance_get(qs)
+    if verb == "plan":
+        if qs.get("general") == "1" and not (qs.get("dir") or "").strip():
+            if not proot or not os.path.isdir(str(proot)):
+                return _plan_missing_response()
+            if not _registered_project_terminal(proot, qs.get("term")):
+                return {"error": "no such project terminal"}, 404
+            return handle_get(proot, "plan", qs)
+        cdir = _resolve_plan_cdir(proot, qs.get("dir", ""))
+        if cdir is None:
+            return _plan_missing_response()
+        return handle_get(cdir, "plan", qs)
+    if verb == "spend":
+        if qs.get("general") == "1" and not (qs.get("dir") or "").strip():
+            if not proot or not os.path.isdir(str(proot)):
+                return {"error": "unknown effort"}, 404
+            if not _registered_project_terminal(proot, qs.get("term")):
+                return {"error": "no such project terminal"}, 404
+            return handle_get(proot, "spend", qs)
+        rel_s = (qs.get("dir") or "").strip()
+        cdir = _effort_dir(proot, rel_s) or _resolve_plan_cdir(proot, rel_s)
+        if cdir is None and (qs.get("project_id") or qs.get("pid")):
+            return spend_http_response("", qs=qs)
+        if cdir is None:
+            return {"error": "unknown effort"}, 404
+        return handle_get(cdir, "spend", qs)
     if qs.get("general") == "1" and not (qs.get("dir") or "").strip():
         if verb in _GENERAL_READ_VERBS:
             if not _registered_project_terminal(proot, qs.get("term")):
@@ -569,14 +951,41 @@ def api_get(proot, verb, qs):
         if cdir is None:
             return {"error": "unknown effort"}, 404
         return events(cdir, qs)
-    if verb in ("spellcheck", "dictate", "fleet-brief", "fleet-relay", "anvil", "anvil/walkthrough", "mothership-files"):
+    if verb in ("spellcheck", "dictate", "fleet-brief", "fleet-relay", "anvil", "anvil/walkthrough", "anvil/source", "mothership-files"):
         rel = (qs.get("dir") or "").strip()
         cdir = _effort_dir(proot, rel) or _resolve_named_cockpit_dir(rel) or proot
+        return handle_get(cdir, verb, qs)
+    if verb == "aegis":
+        rel = (qs.get("dir") or "").strip()
+        if rel:
+            try:
+                cand_eff = paths.resolve_contained_path(proot, rel, allow_missing=True)
+            except paths.UnsafePathError:
+                return {
+                    "ok": False,
+                    "failure_state": "dependency-returns-garbage",
+                    "error": "Blocked unsafe path traversal or disallowed URL scheme",
+                    "message": "Blocked unsafe path traversal or disallowed URL scheme",
+                }, 403
+            cdir = _effort_dir(proot, rel) or _resolve_plan_cdir(proot, rel) or str(cand_eff)
+        else:
+            cdir = str(proot or "")
         return handle_get(cdir, verb, qs)
     if verb in _PROJECT_VERBS or verb in ("terms",) or verb in _PROJECT_FILE_VERBS:
         rel = (qs.get("dir") or "").strip()
         if verb in _PROJECT_FILE_VERBS and rel:
-            cdir = _effort_dir(proot, rel)
+            if verb == "deliverable-file":
+                try:
+                    paths.resolve_contained_path(proot, rel, allow_missing=True)
+                except paths.UnsafePathError:
+                    return {
+                        "ok": False,
+                        "failure_state": "dependency-returns-garbage",
+                        "error": "Blocked unsafe path traversal or disallowed URL scheme",
+                    }, 403
+                cdir = _effort_dir(proot, rel) or _resolve_plan_cdir(proot, rel)
+            else:
+                cdir = _effort_dir(proot, rel)
             if cdir is None:
                 return {"error": "unknown effort"}, 404
             return handle_get(cdir, verb, qs)
@@ -661,9 +1070,54 @@ def _running_record_ids_locked(jr):
 
 
 def api_post(proot, verb, body):
+    _req_q = str(getattr(_ROUTE_TLS, "req_query", "") or "")
+    _ROUTE_TLS.req_query = ""
+    if verb == "plan":
+        if not isinstance(body, dict):
+            return _plan_garbage_response()
+        if "dir" in body:
+            rel_p = str(body.get("dir") or "").strip()
+        elif _req_q:
+            import urllib.parse as _up
+            rel_p = str((_up.parse_qs(_req_q, keep_blank_values=True).get("dir") or [""])[0] or "").strip()
+        else:
+            rel_p = ""
+        if not rel_p and body.get("general") is True:
+            if not proot or not os.path.isdir(str(proot)):
+                return _plan_missing_response()
+            if not _registered_project_terminal(proot, body.get("term")):
+                return {"ok": False, "error": "no such project terminal"}, 404
+            return handle_post(proot, "plan", body)
+        cdir_p = _resolve_plan_cdir(proot, rel_p)
+        if cdir_p is None:
+            return _plan_missing_response()
+        return handle_post(cdir_p, "plan", body)
     if verb in ("new_effort", "boneyard_restore", "boneyard_move",
                 "rename_effort"):
         return _project_post(proot, verb, body)
+    if verb == "aegis":
+        if not isinstance(body, dict):
+            return {
+                "ok": False,
+                "failure_state": "dependency-returns-garbage",
+                "error": "Blocked unsafe path traversal or disallowed URL scheme",
+                "message": "Blocked unsafe path traversal or disallowed URL scheme",
+            }, 400
+        rel_a = str(body.get("dir") or "").strip()
+        if rel_a:
+            try:
+                cand_eff = paths.resolve_contained_path(proot, rel_a, allow_missing=True)
+            except paths.UnsafePathError:
+                return {
+                    "ok": False,
+                    "failure_state": "dependency-returns-garbage",
+                    "error": "Blocked unsafe path traversal or disallowed URL scheme",
+                    "message": "Blocked unsafe path traversal or disallowed URL scheme",
+                }, 403
+            cdir_a = _effort_dir(proot, rel_a) or _resolve_plan_cdir(proot, rel_a) or str(cand_eff)
+        else:
+            cdir_a = str(proot or "")
+        return handle_post(cdir_a, verb, body)
     rel = (body.get("dir") or "").strip()
     if not rel and verb in _PROJECT_TERMINAL_VERBS:
         return handle_post(proot, verb, body)
@@ -1029,11 +1483,51 @@ def _usage_rollup(cdir, estate=None):
         if hit and now - hit[0] < ttl:
             return copy.deepcopy(hit[1])
     value = _usage_rollup_fresh(cdir)
-    with _ROLLUP_LOCK:
-        if len(_ROLLUP_CACHE) > 256:
-            _ROLLUP_CACHE.clear()
-        _ROLLUP_CACHE[key] = (now, value)
+    if value.get("ok") is not False:
+        with _ROLLUP_LOCK:
+            if len(_ROLLUP_CACHE) > 256:
+                _ROLLUP_CACHE.clear()
+            _ROLLUP_CACHE[key] = (now, value)
     return copy.deepcopy(value)
+
+
+def _fmt_compact_tok(n) -> str:
+    try:
+        v = max(0, int(round(float(n or 0))))
+    except (TypeError, ValueError):
+        v = 0
+    if v >= 1_000_000:
+        m_str = f"{v / 1e6:.2f}".removesuffix(".00")
+        return f"{v:,} ({m_str}M)"
+    if v >= 1_000:
+        return f"{v:,} ({round(v / 1e3)}k)"
+    return f"{v:,}"
+
+
+def _row_usage_dict(row_d):
+    if not isinstance(row_d, dict):
+        return None
+    u_d = row_d.get("usage")
+    if isinstance(u_d, dict) and any(
+        k in u_d for k in ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens", "cached_input_tokens")
+    ):
+        return u_d
+    if any(
+        row_d.get(k) is not None
+        for k in ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens", "cached_input_tokens")
+    ):
+        out_u = {
+            "input_tokens": int(row_d.get("input_tokens") or 0),
+            "output_tokens": int(row_d.get("output_tokens") or 0),
+        }
+        if row_d.get("cached_input_tokens") is not None:
+            out_u["cached_input_tokens"] = int(row_d.get("cached_input_tokens") or 0)
+        if row_d.get("cache_read_input_tokens") is not None:
+            out_u["cache_read_input_tokens"] = int(row_d.get("cache_read_input_tokens") or 0)
+        if row_d.get("cache_creation_input_tokens") is not None:
+            out_u["cache_creation_input_tokens"] = int(row_d.get("cache_creation_input_tokens") or 0)
+        return out_u
+    return None
 
 
 _REALPATH_CACHE = globals().get("_REALPATH_CACHE") if isinstance(globals().get("_REALPATH_CACHE"), dict) else {}
@@ -1053,7 +1547,7 @@ def _realpath_fast(p):
     return res
 
 
-def _usage_rollup_fresh(cdir, estate=None):
+def _usage_rollup_fresh(cdir, estate=None, *, lock_timeout: float = 5.0, project_id=None):
     numeric_fields = ("reported_spend", "unpriced_turns", "estimated_spend", "estimated_turns",
                       "tokens", "secs", "turns", "cumulative_tokens", "cumulative_estimated_spend")
     coverage_fields = ("tracked_invocations", "reported_invocations", "partial_invocations",
@@ -1068,21 +1562,56 @@ def _usage_rollup_fresh(cdir, estate=None):
     def number(value):
         return isinstance(value, (int, float)) and not isinstance(value, bool) and 0 <= value < float("inf")
     from steward_cockpit.steward_engine import (
-        _backfill_usage_estimate, _read_all_state, _usage_snapshot, estimate_list_price_usd, fmt_usage_cost_text, infer_subscription_cli)
+        _backfill_usage_estimate, _read_all_state, _usage_snapshot, estimate_list_price_usd,
+        fmt_usage_cost_text, infer_subscription_cli, load_usage_baseline)
+    lock_busy = False
+    backing_unreadable = False
+    quarantined_count = 0
     if estate is None:
         from steward_cockpit import steward_engine as _se_mod
+        import paths as _p_reloc
         if _se_mod.STATE_FILE == _se_mod.HERE / "proto-state.json" and "PYTEST_CURRENT_TEST" not in os.environ:
             try:
-                import paths as _p_reloc
                 _se_mod.relocate_state(_p_reloc.data_dir() / "steward-cockpit-state.json")
             except Exception:
                 pass
-        estate = _read_all_state()
+        st_candidate = Path(_se_mod.STATE_FILE)
+        if (
+            st_candidate == _se_mod.HERE / "proto-state.json"
+            and "ANCHOR_DATA_DIR" in os.environ
+            and (_p_reloc.data_dir() / "steward-cockpit-state.json").exists()
+        ):
+            st_candidate = _p_reloc.data_dir() / "steward-cockpit-state.json"
+        if st_candidate.exists():
+            try:
+                if st_candidate.is_dir():
+                    raise OSError("state file is a directory")
+                raw_st_txt = st_candidate.read_text(encoding="utf-8")
+                if "\x00" in raw_st_txt:
+                    raise ValueError("null byte in state file")
+                parsed_st = json.loads(raw_st_txt)
+                if not isinstance(parsed_st, dict):
+                    raise ValueError("state file root is not a JSON object")
+                estate = parsed_st if st_candidate != Path(_se_mod.STATE_FILE) else _read_all_state()
+            except (OSError, ValueError, TypeError):
+                backing_unreadable = True
+                estate = {}
+        else:
+            estate = _read_all_state()
+    try:
+        baseline_doc = load_usage_baseline(strict=True)
+    except (OSError, ValueError, TypeError):
+        backing_unreadable = True
+        baseline_doc = {}
     stew, term = zero(), zero()
-    cdir_n = _realpath_fast(cdir)
-    discovered = campaign.discover_efforts(cdir_n)
+    cdir_str = str(cdir or "").strip()
+    cdir_is_dir = bool(cdir_str and os.path.isdir(cdir_str))
+    cdir_n = _realpath_fast(cdir_str) if cdir_str else ""
+    discovered = campaign.discover_efforts(cdir_n) if cdir_is_dir else []
     allowed_roots = ({cdir_n} | {_realpath_fast(str(Path(cdir_n) / e["rel"])) for e in discovered if e.get("rel")}) if discovered else None
-    for key, entry in estate.items():
+    for key, entry in (estate or {}).items():
+        if not cdir_n or not isinstance(entry, dict):
+            continue
         base = _realpath_fast(key.split("||")[0])
         # exact boundary, not a string prefix: '.../foo' must not match '.../foobar'
         if base != cdir_n and not base.startswith(cdir_n + os.sep):
@@ -1143,74 +1672,118 @@ def _usage_rollup_fresh(cdir, estate=None):
                     b["_sub_clis"].append(family)
             else:
                 b["_other_unpriced"] += u["unpriced_turns"]
-    # (Wave 2 S1) delegated jobs are a source of their own, beside the total the
-    # dashboard already reads as the steward's figure: the rows the seam indexed
-    # for this effort's project, joined by the folder the job ran in (this effort
-    # dir or under it). One small doc per project — never a scan of rnd_jobs or
-    # the ledger on a poll. Shown only when rows exist; "unknown" counts jobs
-    # whose usage never reached us, never a zero.
     jobs = zero()
     jobs["count"], jobs["unknown"] = 0, 0
-    # (S2) sub-agents the stewards of this effort spawned: count, tokens, unknown
     children = zero()
     children["count"], children["unknown"] = 0, 0
-    # (S3) trio seats the skills of this effort ran: priced, unpriced or unknown, like
-    # jobs; a seat that is a job's own engine session or a recorded child is not
-    # counted twice (the job or the child wins)
     seats = zero()
     seats["count"], seats["unknown"] = 0, 0
+    resolved_pid, folder_path = None, None
+    rows = []
     try:
         import usage_capture as _uc
         import usage_index as _ui
-        project_id = _uc.resolve_project(cdir)[0]
-        rows = _ui.load_rows(project_id) if project_id else []
-    except Exception:
+        if cdir_str:
+            resolved_pid, folder_path = _uc.resolve_project(cdir_str)
+        eff_pid = project_id or resolved_pid
+        if not eff_pid and cdir_str:
+            if not cdir_is_dir:
+                eff_pid = cdir_str
+            else:
+                cand_name = Path(cdir_str).name
+                if _ui.index_path(cand_name).exists() or (_ui.index_dir() / f"{_ui._safe_id(cand_name)}.meta.json").exists():
+                    eff_pid = cand_name
+        if eff_pid:
+            if hasattr(_ui, "inspect_project_index"):
+                insp = _ui.inspect_project_index(eff_pid, lock_timeout=lock_timeout)
+                rows = list(insp.get("rows") or [])
+                quarantined_count = int(insp.get("quarantined_count") or 0)
+            else:
+                rows = _ui.load_rows(eff_pid)
+    except Exception as exc:
+        try:
+            import usage_index as _ui_err
+            lock_cls = getattr(_ui_err, "LockBusyError", TimeoutError)
+            unread_cls = getattr(_ui_err, "IndexUnreadableError", OSError)
+        except Exception:
+            lock_cls = TimeoutError
+            unread_cls = OSError
+        if isinstance(exc, (lock_cls, TimeoutError)):
+            lock_busy = True
+        elif isinstance(exc, (unread_cls, OSError, ValueError)):
+            backing_unreadable = True
         rows = []
+    else:
+        eff_pid = locals().get("eff_pid")
+    eff_pid = locals().get("eff_pid") or project_id or resolved_pid
     owned = {row.get("engine_session_uuid") for row in rows
              if isinstance(row, dict) and row.get("source") == "job" and row.get("engine_session_uuid")}
     owned |= {row.get("native_id") for row in rows
               if isinstance(row, dict) and row.get("source") == "subagent" and row.get("native_id")}
-    cdir_c = os.path.normcase(cdir_n)
-    cdir_prefix = cdir_c.rstrip(os.sep) + os.sep
+    cdir_c = os.path.normcase(cdir_n) if cdir_n else ""
+    cdir_prefix = (cdir_c.rstrip(os.sep) + os.sep) if cdir_c else ""
 
     def in_scope(scope):
+        if not cdir_is_dir:
+            return True
         return isinstance(scope, str) and (scope == cdir_c or scope.startswith(cdir_prefix))
+
+    def _norm_scope_val(val):
+        if not isinstance(val, str) or not val.strip():
+            return None
+        return os.path.normcase(_realpath_fast(val))
+
     for row in rows:
         if not isinstance(row, dict):
             continue
         if row.get("source") == "subagent":
-            if not in_scope(row.get("scope")):
+            row_sc = row.get("scope") or _norm_scope_val(row.get("effort_dir"))
+            if row_sc:
+                if not in_scope(row_sc):
+                    continue
+            elif not in_scope(row.get("folder_scope")):
                 continue
-            tokens = row.get("tokens")
+            tokens, cost = row.get("tokens"), row.get("cost_usd")
             children["count"] += 1
             if number(tokens):
                 children["tokens"] += tokens
+            if number(row.get("duration_ms")):
+                children["secs"] += row["duration_ms"] / 1000
             if row.get("usage_state") == "unknown":
                 children["unknown"] += 1
                 children["_tokens_unknown"] += 1
+                children["_cost_unknown"] += 1
+            elif (row.get("usage_state") == "measured" and number(cost)) or (number(cost) and cost > 0):
+                children["reported_spend"] += cost
+                children["_cost_known"] += 1
+                children["_tokens_known"] += 1
             else:
                 children["unpriced_turns"] += 1
                 children["_tokens_known"] += 1
-                est_c = estimate_list_price_usd(row.get("model") or "claude-opus-4-6", row.get("usage"))
+                children["_cost_unknown"] += 1
+                c_fam = str(row.get("cli") or "").strip().lower()
+                c_mod = row.get("model") or (_FAMILY_DEFAULT_MODELS.get(c_fam) if c_fam else "claude-opus-4-6")
+                est_c = estimate_list_price_usd(c_mod, _row_usage_dict(row))
                 if est_c is None and number(tokens) and tokens > 0:
-                    in_t = int(tokens * 0.90)
                     est_c = estimate_list_price_usd(
-                        row.get("model") or "claude-opus-4-6",
-                        {"input_tokens": in_t, "cached_input_tokens": int(tokens * 0.50), "output_tokens": max(0, int(tokens) - in_t)},
+                        c_mod,
+                        {
+                            "input_tokens": int(tokens * 0.95),
+                            "cached_input_tokens": int(tokens * 0.85),
+                            "output_tokens": max(1, int(tokens * 0.05)),
+                        },
                     )
                 if est_c is not None:
                     children["estimated_spend"] += est_c
                     children["estimated_turns"] += 1
-            children["_cost_unknown"] += 1
             stamp = row.get("recorded_at")
             if isinstance(stamp, str) and stamp:
                 children["usage_updated_at"] = max(children["usage_updated_at"] or stamp, stamp)
             continue
         if row.get("source") not in ("job", "seat"):
             continue
-        # a job that ran in a worktree outside the project folder joins at the
-        # project folder (Grok R1 F2); scopes were stamped at write time (F5)
-        if not (in_scope(row.get("scope")) or in_scope(row.get("folder_scope"))):
+        eff_sc = _norm_scope_val(row.get("effort_dir"))
+        if not (in_scope(row.get("scope")) or (eff_sc and in_scope(eff_sc)) or in_scope(row.get("folder_scope"))):
             continue
         if row.get("source") == "seat" and (row.get("engine_session_uuid") in owned or row.get("native_id") in owned):
             continue
@@ -1221,22 +1794,25 @@ def _usage_rollup_fresh(cdir, estate=None):
             b["tokens"] += tokens
         if number(row.get("duration_ms")):
             b["secs"] += row["duration_ms"] / 1000
-        if state == "measured" and number(cost):
+        if (state == "measured" and number(cost)) or (state not in ("unknown", "unpriced", "unmeasured") and number(cost) and cost > 0):
             b["reported_spend"] += cost
             b["_cost_known"] += 1
             b["_tokens_known"] += 1
-        elif state == "unpriced":
+        elif state == "unpriced" or (state != "unknown" and number(tokens) and tokens > 0):
             b["unpriced_turns"] += 1
             b["_cost_unknown"] += 1
             b["_tokens_known"] += 1
             row_fam = str(row.get("cli") or "").strip().lower()
-            row_mod = row.get("model") or _FAMILY_DEFAULT_MODELS.get(row_fam, "claude-opus-5-5")
-            est = estimate_list_price_usd(row_mod, row.get("usage"))
+            row_mod = row.get("model") or (_FAMILY_DEFAULT_MODELS.get(row_fam) if row_fam else "claude-opus-5-5")
+            est = estimate_list_price_usd(row_mod, _row_usage_dict(row))
             if est is None and number(tokens) and tokens > 0:
-                in_t = int(tokens * 0.90)
                 est = estimate_list_price_usd(
                     row_mod,
-                    {"input_tokens": in_t, "cached_input_tokens": int(tokens * 0.50), "output_tokens": max(0, int(tokens) - in_t)},
+                    {
+                        "input_tokens": int(tokens * 0.95),
+                        "cached_input_tokens": int(tokens * 0.85),
+                        "output_tokens": max(1, int(tokens * 0.05)),
+                    },
                 )
             if est is not None:
                 b["estimated_spend"] += est
@@ -1248,6 +1824,8 @@ def _usage_rollup_fresh(cdir, estate=None):
                     b["_sub_clis"].append(family)
             else:
                 b["_other_unpriced"] += 1
+        elif state == "unmeasured":
+            b["_tokens_known"] += 1
         else:
             b["unknown"] += 1
             b["_cost_unknown"] += 1
@@ -1255,11 +1833,8 @@ def _usage_rollup_fresh(cdir, estate=None):
         stamp = row.get("recorded_at")
         if isinstance(stamp, str) and stamp:
             b["usage_updated_at"] = max(b["usage_updated_at"] or stamp, stamp)
-    # Also join any delegated code jobs recorded in <effort>/.ecgberht/code-jobs.json whose engine
-    # usage lives in estate under *anchor-code-jobs*<job_id>* (so efforts like Artificial Magi\Book 1
-    # whose code jobs ran against the parent repo root still have their exact job tokens & spend included).
     try:
-        roots_for_jobs = allowed_roots if allowed_roots is not None else {cdir_n}
+        roots_for_jobs = allowed_roots if allowed_roots is not None else ({cdir_n} if cdir_n else set())
         effort_job_ids: set[str] = set()
         for rdir in roots_for_jobs:
             cj_file = Path(rdir) / ".ecgberht" / "code-jobs.json"
@@ -1273,7 +1848,7 @@ def _usage_rollup_fresh(cdir, estate=None):
                 for r in rows
                 if isinstance(r, dict) and r.get("source") == "job" and (in_scope(r.get("scope")) or in_scope(r.get("folder_scope")))
             }
-            for ekey, eentry in estate.items():
+            for ekey, eentry in (estate or {}).items():
                 if "anchor-code-jobs" not in ekey.lower() or not isinstance(eentry, dict):
                     continue
                 ebase_name = Path(ekey.split("||")[0]).name
@@ -1323,11 +1898,62 @@ def _usage_rollup_fresh(cdir, estate=None):
         if family not in clis:
             clis.append(family)
     total["_sub_clis"] = clis
+    matched_floor = None
+    if isinstance(baseline_doc, dict) and baseline_doc:
+        raw_floors = baseline_doc.get("floors") if isinstance(baseline_doc.get("floors"), dict) else baseline_doc
+        norm_floors = {}
+        for fk, fv in raw_floors.items():
+            if not isinstance(fv, dict):
+                continue
+            fk_s = str(fk)
+            if "::" in fk_s:
+                p_part, d_part = fk_s.split("::", 1)
+                nk = p_part.strip().lower() + "::" + d_part.replace("\\", "/").rstrip("/").lower()
+            else:
+                nk = fk_s.replace("\\", "/").rstrip("/").lower()
+            norm_floors[nk] = fv
+        if norm_floors:
+            raw_norm = cdir_str.replace("\\", "/").rstrip("/").lower()
+            real_norm = str(cdir_n or "").replace("\\", "/").rstrip("/").lower()
+            pid_low = str(eff_pid or "").strip().lower()
+            cand_keys = []
+            if pid_low and real_norm:
+                cand_keys.append(f"{pid_low}::{real_norm}")
+            if pid_low and raw_norm and raw_norm != real_norm:
+                cand_keys.append(f"{pid_low}::{raw_norm}")
+            if pid_low and folder_path:
+                fp_norm = str(_realpath_fast(folder_path)).replace("\\", "/").rstrip("/").lower()
+                if real_norm == fp_norm:
+                    cand_keys.append(f"{pid_low}::")
+                elif real_norm.startswith(fp_norm + "/"):
+                    cand_keys.append(f"{pid_low}::{real_norm[len(fp_norm) + 1:]}")
+            elif pid_low and not cdir_str:
+                cand_keys.append(f"{pid_low}::")
+            if real_norm:
+                cand_keys.append(real_norm)
+            if raw_norm and raw_norm != real_norm:
+                cand_keys.append(raw_norm)
+            for ck in cand_keys:
+                if ck in norm_floors:
+                    matched_floor = dict(norm_floors[ck])
+                    break
+            if matched_floor:
+                for fk_num, fv_num in matched_floor.items():
+                    if fk_num in numeric_fields and number(fv_num):
+                        if total[fk_num] < fv_num:
+                            total[fk_num] = fv_num
+                if total["reported_spend"] > 0:
+                    total["_cost_known"] = max(1, total["_cost_known"])
+                if total["unpriced_turns"] > 0:
+                    total["_cost_unknown"] = max(1, total["_cost_unknown"])
+                if total["tokens"] > 0:
+                    total["_tokens_known"] = max(1, total["_tokens_known"])
     private = ("_cost_known", "_cost_unknown", "_tokens_known", "_tokens_unknown",
                "_tokens_partial", "_sub_unpriced", "_other_unpriced", "_sub_clis")
     for bucket in (stew, term, jobs, children, seats, total):
         bucket["reported_spend"] = round(bucket["reported_spend"], 4)
         bucket["estimated_spend"] = round(bucket["estimated_spend"], 4)
+        bucket["combined_spend"] = round(bucket["reported_spend"] + bucket["estimated_spend"], 4)
         bucket["cumulative_estimated_spend"] = round(bucket.get("cumulative_estimated_spend", 0.0), 4)
         bucket["cost_status"] = "unavailable" if not bucket["_cost_known"] else (
             "partial" if bucket["_cost_unknown"] else "reported")
@@ -1347,10 +1973,123 @@ def _usage_rollup_fresh(cdir, estate=None):
         bucket["cost_text"] = fmt_usage_cost_text(bucket, cli=bucket.get("billing_family"))
         for field in private:
             del bucket[field]
-    return {"steward": stew, "terms": term, "jobs": jobs, "children": children, "seats": seats, "total": total}
+    twc_rep = round(sum(b["reported_spend"] for b in (total, jobs, children, seats)), 4)
+    twc_est = round(sum(b["estimated_spend"] for b in (total, jobs, children, seats)), 4)
+    total_with_children = {
+        "tokens": int(sum(b["tokens"] for b in (total, jobs, children, seats))),
+        "reported_spend": twc_rep,
+        "estimated_spend": twc_est,
+        "combined_spend": round(twc_rep + twc_est, 4),
+        "secs": round(sum(b["secs"] for b in (total, jobs, children, seats)), 4),
+        "turns": int(
+            total["turns"]
+            + max(jobs["turns"], jobs["count"])
+            + max(children["turns"], children["count"])
+            + max(seats["turns"], seats["count"])
+        ),
+        "unpriced_turns": int(sum(b["unpriced_turns"] for b in (total, jobs, children, seats))),
+        "estimated_turns": int(sum(b["estimated_turns"] for b in (total, jobs, children, seats))),
+        "unknown": int(jobs.get("unknown", 0) + children.get("unknown", 0) + seats.get("unknown", 0)),
+    }
+    roll = {
+        "steward": stew,
+        "terms": term,
+        "jobs": jobs,
+        "children": children,
+        "seats": seats,
+        "total": total,
+        "total_with_children": total_with_children,
+        "quarantined_count": quarantined_count,
+    }
+    if matched_floor is not None:
+        roll["baseline_floor"] = matched_floor
+    if lock_busy:
+        msg = "Usage index lock busy \u2014 retry"
+        roll.update({
+            "ok": False,
+            "failure_state": "dependency-slow-or-killed",
+            "spend_state": "dependency-slow-or-killed",
+            "state": "unknown",
+            "pill_label": msg,
+            "message": msg,
+        })
+        return roll
+    if backing_unreadable:
+        msg = "Spend unreadable (unknown) \u2014 inspect usage_index"
+        roll.update({
+            "ok": False,
+            "failure_state": "backing-store-unreadable",
+            "spend_state": "backing-store-unreadable",
+            "state": "unknown",
+            "pill_label": msg,
+            "message": msg,
+        })
+        return roll
+    roll["ok"] = True
+    compact_tok = _fmt_compact_tok(total_with_children["tokens"])
+    dur_part = f" \u00b7 {round(total_with_children['secs'] / 60)}m" if total_with_children["secs"] >= 60 else ""
+    if total_with_children["combined_spend"] > 0:
+        tok_part = f" \u00b7 {compact_tok} tok" if total_with_children["tokens"] > 0 else ""
+        pill_lbl = f"Total ${total_with_children['combined_spend']:,.2f}{tok_part}{dur_part} \u25be"
+    elif total_with_children["tokens"] > 0 or total_with_children["unpriced_turns"] > 0:
+        pill_lbl = f"Unpriced \u00b7 {compact_tok if total_with_children['tokens'] > 0 else '0'} tok{dur_part} \u25be"
+    else:
+        pill_lbl = "No spend recorded yet"
+    roll["pill_label"] = pill_lbl
+    if quarantined_count > 0:
+        warn_msg = f"Corrupt usage record quarantined ({quarantined_count} skipped)"
+        roll["failure_state"] = "dependency-returns-garbage"
+        roll["spend_state"] = "dependency-returns-garbage"
+        roll["warning"] = warn_msg
+        roll["message"] = warn_msg
+    elif total_with_children["tokens"] == 0 and total_with_children["combined_spend"] == 0 and total_with_children["unpriced_turns"] == 0:
+        roll["failure_state"] = "empty-but-valid"
+        roll["spend_state"] = "empty-but-valid"
+        roll["message"] = "No spend recorded yet"
+    elif total_with_children["combined_spend"] == 0 and (total_with_children["tokens"] > 0 or total_with_children["unpriced_turns"] > 0):
+        roll["failure_state"] = "dependency-missing"
+        roll["spend_state"] = "dependency-missing"
+        roll["message"] = pill_lbl
+    else:
+        roll["failure_state"] = None
+        roll["spend_state"] = "ok"
+        roll["message"] = pill_lbl
+    return roll
+
+
+def spend_http_response(cdir, estate=None, *, lock_timeout: float = 5.0, qs=None, project_id=None) -> tuple[dict, int]:
+    """Wave 5 5-state failure contract endpoint for cockpit spend."""
+    qs = qs if isinstance(qs, dict) else {}
+    eff_timeout = lock_timeout
+    if qs.get("lock_timeout") not in (None, ""):
+        try:
+            eff_timeout = max(0.01, float(qs["lock_timeout"]))
+        except (TypeError, ValueError):
+            eff_timeout = lock_timeout
+    eff_pid = project_id or qs.get("project_id") or qs.get("pid") or None
+    roll = _usage_rollup_fresh(cdir, estate=estate, lock_timeout=eff_timeout, project_id=eff_pid)
+    if roll.get("ok") is False:
+        if roll.get("failure_state") == "dependency-slow-or-killed":
+            return {
+                "ok": False,
+                "failure_state": "dependency-slow-or-killed",
+                "state": "unknown",
+                "message": "Usage index lock busy \u2014 retry",
+            }, 504
+        return {
+            "ok": False,
+            "failure_state": "backing-store-unreadable",
+            "state": "unknown",
+            "message": "Spend unreadable (unknown) \u2014 inspect usage_index",
+        }, 500
+    return roll, 200
 
 
 _GLOBAL_USAGE_CACHE = globals().get("_GLOBAL_USAGE_CACHE") if isinstance(globals().get("_GLOBAL_USAGE_CACHE"), dict) else {}; _GLOBAL_USAGE_LOCK = globals().get("_GLOBAL_USAGE_LOCK") or threading.Lock()
+_GLOBAL_USAGE_COMPUTE_LOCK = globals().get("_GLOBAL_USAGE_COMPUTE_LOCK") or threading.Lock()
+_LEDGER_DOC_CACHE = globals().get("_LEDGER_DOC_CACHE") if isinstance(globals().get("_LEDGER_DOC_CACHE"), dict) else {}
+_USAGE_INDEX_CACHE = globals().get("_USAGE_INDEX_CACHE") if isinstance(globals().get("_USAGE_INDEX_CACHE"), dict) else {}
+_CLAUDE_AGENT_USAGE_CACHE = globals().get("_CLAUDE_AGENT_USAGE_CACHE") if isinstance(globals().get("_CLAUDE_AGENT_USAGE_CACHE"), dict) else {}
 
 _FAMILY_DEFAULT_MODELS = {
     "claude": "claude-opus-5-5",
@@ -1410,7 +2149,7 @@ def _compute_global_usage_summary():
         proj_by_id[pid] = {"project_id": pid, "name": pname, "folder_path": fp}
         if fp and fp != ".":
             try:
-                norm_fp = os.path.normcase(os.path.realpath(fp))
+                norm_fp = os.path.normcase(_realpath_fast(fp))
                 if norm_fp in canon_by_folder:
                     c_pid, c_name = canon_by_folder[norm_fp]
                     pid_alias[pid] = (c_pid, c_name)
@@ -1426,11 +2165,92 @@ def _compute_global_usage_summary():
             return pid_alias[pid_val]
         return pid_val, pname_val
 
-    def match_proj(folder):
+    code_job_to_sdir = {}
+    cj_index_paths = []
+    try:
+        cj_index_paths.append(_paths.code_jobs_dir() / "jobs-index.jsonl")
+    except Exception:
+        pass
+    try:
+        leg_cj_p = _paths.legacy_code_jobs_dir() / "jobs-index.jsonl"
+        if leg_cj_p not in cj_index_paths:
+            cj_index_paths.append(leg_cj_p)
+    except Exception:
+        pass
+    for cj_idx in cj_index_paths:
+        if not cj_idx.is_file():
+            continue
+        try:
+            for raw_ln in cj_idx.read_text(encoding="utf-8").splitlines():
+                raw_ln = raw_ln.strip()
+                if not raw_ln:
+                    continue
+                try:
+                    obj = json.loads(raw_ln)
+                except ValueError:
+                    continue
+                if not isinstance(obj, dict):
+                    continue
+                sdir_val = str(obj.get("steward_dir") or "").strip()
+                if not sdir_val:
+                    continue
+                jid_val = str(obj.get("job") or obj.get("job_id") or obj.get("id") or "").strip()
+                if jid_val:
+                    code_job_to_sdir[jid_val] = sdir_val
+                wt_val = str(obj.get("worktree") or "").strip()
+                if wt_val:
+                    try:
+                        code_job_to_sdir[os.path.normcase(_realpath_fast(wt_val))] = sdir_val
+                    except Exception:
+                        pass
+                    code_job_to_sdir[wt_val.replace("\\", "/").rstrip("/").lower()] = sdir_val
+        except Exception:
+            pass
+
+    def _looks_like_path(s: str) -> bool:
+        return ("/" in s or "\\" in s or ":" in s)
+
+    def resolve_code_job_sdir(val):
+        if not val or not code_job_to_sdir:
+            return None
+        s = str(val).strip()
+        if not s:
+            return None
+        for prefix in ("job:", "foreman:", "code:"):
+            if s.startswith(prefix) and s[len(prefix):] in code_job_to_sdir:
+                return code_job_to_sdir[s[len(prefix):]]
+        if s in code_job_to_sdir:
+            return code_job_to_sdir[s]
+        if _looks_like_path(s):
+            try:
+                nr = os.path.normcase(_realpath_fast(s))
+                if nr in code_job_to_sdir:
+                    return code_job_to_sdir[nr]
+            except Exception:
+                pass
+        s_norm = s.replace("\\", "/").rstrip("/")
+        s_low = s_norm.lower()
+        if s_low in code_job_to_sdir:
+            return code_job_to_sdir[s_low]
+        marker = "anchor-code-jobs/"
+        pos = s_low.find(marker)
+        if pos >= 0:
+            tail = s_norm[pos + len(marker):]
+            seg = tail.split("/", 1)[0].strip()
+            if seg and seg in code_job_to_sdir:
+                return code_job_to_sdir[seg]
+        return None
+
+    _match_proj_memo = {}
+
+    def _match_folder_direct(folder):
         if not folder:
             return None, None
+        s = str(folder).strip()
+        if not s or not _looks_like_path(s):
+            return None, None
         try:
-            nf = os.path.normcase(os.path.realpath(str(folder)))
+            nf = os.path.normcase(_realpath_fast(s))
         except Exception:
             return None, None
         for _, norm_fp, pid, pname in folder_to_proj:
@@ -1438,9 +2258,26 @@ def _compute_global_usage_summary():
                 return pid, pname
         return None, None
 
+    def match_proj(folder):
+        if not folder:
+            return None, None
+        key_f = str(folder)
+        hit_m = _match_proj_memo.get(key_f)
+        if hit_m is not None:
+            return hit_m
+        pid_m, pname_m = _match_folder_direct(key_f)
+        if not pid_m:
+            mapped_sdir = resolve_code_job_sdir(key_f)
+            if mapped_sdir:
+                pid_m, pname_m = _match_folder_direct(mapped_sdir)
+        res_m = (pid_m, pname_m)
+        _match_proj_memo[key_f] = res_m
+        return res_m
+
     sid_map = {}
     lsu_by_sid = {}
     inflight_by_sid = {}
+    estate_cj_fallbacks = []
     from steward_cockpit import steward_engine as _se_mod
     if _se_mod.STATE_FILE == _se_mod.HERE / "proto-state.json" and "PYTEST_CURRENT_TEST" not in os.environ:
         try:
@@ -1452,9 +2289,11 @@ def _compute_global_usage_summary():
         if not isinstance(entry, dict):
             continue
         base_dir = skey.split("||")[0]
-        if "Temp" in base_dir or "scratchpad" in base_dir or "anchor-hc-" in base_dir:
+        if "anchor-hc-" in base_dir or "__healthcheck__" in base_dir:
             continue
         pid, pname = match_proj(base_dir)
+        if not pid and ("Temp" in base_dir or "scratchpad" in base_dir):
+            continue
         for ps in (entry.get("provider_sessions") or []):
             if isinstance(ps, dict) and ps.get("session_id"):
                 mp = ps.get("model_policy") if isinstance(ps.get("model_policy"), dict) else {}
@@ -1476,6 +2315,33 @@ def _compute_global_usage_summary():
                 for ck_id, ck in cks.items():
                     if isinstance(ck, dict) and not ck.get("invalid") and ck.get("finalized") is not True and isinstance(ck.get("counts"), dict):
                         inflight_by_sid.setdefault(sid_str, []).append((ck, fam, mod, pid, pname))
+        if "anchor-code-jobs" in base_dir.lower() and isinstance(entry.get("usage"), dict):
+            raw_cj_u = entry["usage"]
+            cj_tok = int(raw_cj_u.get("tokens") or 0)
+            cj_rep = float(raw_cj_u.get("reported_spend") or raw_cj_u.get("spend") or 0.0)
+            if cj_tok > 0 or cj_rep > 0:
+                mp = entry.get("model_policy") if isinstance(entry.get("model_policy"), dict) else {}
+                fam = entry.get("cli") or mp.get("family") or "claude"
+                mod = mp.get("model_served") or mp.get("model")
+                cj_name = Path(base_dir).name
+                estate_cj_fallbacks.append((
+                    str(entry.get("session_id") or ""),
+                    cj_name,
+                    str(fam).lower(),
+                    mod,
+                    pid,
+                    pname,
+                    {
+                        "key": f"estate-code-job:{cj_name}",
+                        "source": "job",
+                        "native_id": cj_name,
+                        "cli": str(fam).lower(),
+                        "model": mod,
+                        "tokens": cj_tok,
+                        "cost_usd": cj_rep if cj_rep > 0 else None,
+                        "recorded_at": str(raw_cj_u.get("usage_updated_at") or ""),
+                    },
+                ))
 
     seen_keys = set()
     records = []
@@ -1485,18 +2351,53 @@ def _compute_global_usage_summary():
         _ul = None
 
     if _ul is not None:
-        ledger_dir = _paths.data_dir() / ".anchor" / "usage_ledger"
+        ledger_dir = _ul.ledger_dir() if hasattr(_ul, "ledger_dir") else (_paths.data_dir() / ".anchor" / "usage_ledger")
         extra_sids = []
-        if ledger_dir.is_dir():
+        ledger_stat_by_stem = {}
+        ledger_dir_exists = ledger_dir.is_dir()
+        if ledger_dir_exists:
             try:
-                for p in ledger_dir.iterdir():
-                    if p.suffix.lower() == ".json" and p.stem not in sid_map:
-                        extra_sids.append(p.stem)
+                with os.scandir(ledger_dir) as it:
+                    for ent in it:
+                        if ent.name.lower().endswith(".json") and not ent.name.startswith("."):
+                            stem = ent.name[:-5]
+                            try:
+                                st = ent.stat()
+                                ledger_stat_by_stem[stem] = (st.st_mtime_ns, st.st_size, ent.path)
+                            except OSError:
+                                pass
+                            if stem not in sid_map:
+                                extra_sids.append(stem)
             except Exception:
-                pass
+                ledger_dir_exists = False
+        custom_load_ledger = getattr(_ul.load_ledger, "__module__", "") != "usage_ledger"
+        if len(_LEDGER_DOC_CACHE) > 50000:
+            _LEDGER_DOC_CACHE.clear()
         all_sid_items = list(sid_map.items()) + [(s, (None, None, None, None, None)) for s in extra_sids]
         for sid, (fam, mod, pid, pname, base_dir) in all_sid_items:
-            doc = _ul.load_ledger(sid)
+            if custom_load_ledger:
+                doc = _ul.load_ledger(sid)
+            else:
+                safe_stem = _ul._safe_uuid(sid) if hasattr(_ul, "_safe_uuid") else str(sid or "")
+                st_info = ledger_stat_by_stem.get(safe_stem)
+                if st_info is None:
+                    doc = _ul.load_ledger(sid) if not ledger_dir_exists else {"engine_session_uuid": str(sid or ""), "entries": {}}
+                else:
+                    mt_ns, fsize, fpath = st_info
+                    cached_l = _LEDGER_DOC_CACHE.get(fpath)
+                    if cached_l is not None and cached_l[0] == mt_ns and cached_l[1] == fsize:
+                        doc = cached_l[2]
+                    else:
+                        try:
+                            raw_l = json.loads(Path(fpath).read_text(encoding="utf-8"))
+                            entries_l = raw_l.get("entries") if isinstance(raw_l, dict) else None
+                            doc = {
+                                "engine_session_uuid": (raw_l.get("engine_session_uuid") if isinstance(raw_l, dict) else None) or str(sid or ""),
+                                "entries": entries_l if isinstance(entries_l, dict) else {},
+                            }
+                        except Exception:
+                            doc = {"engine_session_uuid": str(sid or ""), "entries": {}}
+                        _LEDGER_DOC_CACHE[fpath] = (mt_ns, fsize, doc)
             raw_entries = doc.get("entries") or {}
             max_line_cum_at = max(
                 (
@@ -1605,9 +2506,15 @@ def _compute_global_usage_summary():
                     elif tok > prev_tok:
                         prev_by_sess[sess_key] = (prev_u, tok)
                 epid = e.get("project_id") or pid
+                if epid == "unknown":
+                    epid = None
                 epname = (proj_by_id.get(epid) or {}).get("name") or pname
-                if not epid and (e.get("effort_dir") or e.get("folder_path")):
-                    epid, epname = match_proj(e.get("effort_dir") or e.get("folder_path"))
+                if not epid:
+                    for cand_loc in (e.get("effort_dir"), e.get("folder_path"), e.get("job_id"), e.get("native_id"), base_dir):
+                        m_pid, m_name = match_proj(cand_loc)
+                        if m_pid:
+                            epid, epname = m_pid, m_name
+                            break
                 epid, epname = canon_proj(epid, epname)
                 records.append((efam, emod, epid, epname, e_copy))
             # If last_session_usage in estate has strictly higher cumulative tokens than the last
@@ -1665,9 +2572,48 @@ def _compute_global_usage_summary():
     except Exception:
         _ui = None
 
+    seen_child_ids = set()
     if _ui is not None:
-        for pid, pinfo in proj_by_id.items():
-            for r in _ui.load_rows(pid):
+        index_pids = list(proj_by_id.keys())
+        idx_d = _ui.index_dir()
+        idx_stat_by_stem = {}
+        idx_dir_exists = idx_d.is_dir()
+        if idx_dir_exists:
+            try:
+                with os.scandir(idx_d) as it:
+                    for ent in it:
+                        if ent.name.lower().endswith(".jsonl") and not ent.name.startswith(".") and not ent.name.lower().endswith(".quarantine.jsonl"):
+                            stem = ent.name[:-6]
+                            try:
+                                st = ent.stat()
+                                idx_stat_by_stem[stem] = (st.st_mtime_ns, st.st_size, ent.path)
+                            except OSError:
+                                pass
+                            if stem not in proj_by_id and not stem.startswith("__healthcheck__"):
+                                index_pids.append(stem)
+            except Exception:
+                idx_dir_exists = False
+        custom_load_rows = getattr(_ui.load_rows, "__module__", "") != "usage_index"
+        if len(_USAGE_INDEX_CACHE) > 4096:
+            _USAGE_INDEX_CACHE.clear()
+        for pid_k in index_pids:
+            pinfo = proj_by_id.get(pid_k)
+            if custom_load_rows:
+                idx_rows = _ui.load_rows(pid_k)
+            else:
+                safe_pid = _ui._safe_id(pid_k) if hasattr(_ui, "_safe_id") else str(pid_k or "")
+                idx_st = idx_stat_by_stem.get(safe_pid)
+                if idx_st is None:
+                    idx_rows = _ui.load_rows(pid_k) if not idx_dir_exists else []
+                else:
+                    mt_ns, fsize, fpath = idx_st
+                    cached_i = _USAGE_INDEX_CACHE.get(fpath)
+                    if cached_i is not None and cached_i[0] == mt_ns and cached_i[1] == fsize:
+                        idx_rows = cached_i[2]
+                    else:
+                        idx_rows = _ui.load_rows(pid_k)
+                        _USAGE_INDEX_CACHE[fpath] = (mt_ns, fsize, idx_rows)
+            for r in idx_rows:
                 if not isinstance(r, dict):
                     continue
                 esid = r.get("engine_session_uuid")
@@ -1677,11 +2623,121 @@ def _compute_global_usage_summary():
                 if ukey in seen_keys:
                     continue
                 seen_keys.add(ukey)
-                sfam, smod, _, _, _ = sid_map.get(str(esid or ""), (None, None, None, None, None))
+                if r.get("source") == "subagent" and r.get("native_id"):
+                    seen_child_ids.add(str(r["native_id"]))
+                sfam, smod, spid, spname, sbase = sid_map.get(str(esid or ""), (None, None, None, None, None))
                 rfam = str(r.get("cli") or sfam or "claude").lower()
                 rmod = r.get("model") or smod
-                cpid, cpname = canon_proj(pid, pinfo["name"])
+                if pinfo is not None:
+                    r_pid, r_pname = pid_k, pinfo["name"]
+                else:
+                    r_pid, r_pname = spid, spname
+                    if not r_pid:
+                        for cand_loc in (r.get("effort_dir"), r.get("folder_path"), r.get("job_id"), r.get("native_id"), r.get("key"), sbase):
+                            m_pid, m_name = match_proj(cand_loc)
+                            if m_pid:
+                                r_pid, r_pname = m_pid, m_name
+                                break
+                cpid, cpname = canon_proj(r_pid, r_pname)
                 records.append((rfam, rmod, cpid, cpname, r))
+
+    if estate_cj_fallbacks:
+        recorded_sids = {str(rec[4].get("session_id") or rec[4].get("engine_session_uuid") or "") for rec in records if isinstance(rec[4], dict)}
+        recorded_jids = {str(rec[4].get("native_id") or rec[4].get("job_id") or "") for rec in records if isinstance(rec[4], dict)}
+        for cj_sid, cj_name, cj_fam, cj_mod, cj_pid, cj_pname, cj_rec in estate_cj_fallbacks:
+            if (cj_sid and cj_sid in recorded_sids) or (cj_name and cj_name in recorded_jids):
+                continue
+            cpid, cpname = canon_proj(cj_pid, cj_pname)
+            records.append((cj_fam, cj_mod, cpid, cpname, cj_rec))
+
+    if "ANCHOR_SIDECAR_DIR" in os.environ or "PYTEST_CURRENT_TEST" not in os.environ:
+        try:
+            import usage_capture as _uc_sc
+            custom_claude_children = getattr(_uc_sc.claude_children, "__module__", "") != "usage_capture"
+            sidecar_subagents_by_sid = {}
+            if not custom_claude_children:
+                sc_base = _paths.sidecar_root()
+                if sc_base.is_dir():
+                    direct_dirs = set()
+                    slug_dirs = []
+                    with os.scandir(sc_base) as it_b:
+                        for ent_b in it_b:
+                            if ent_b.is_dir():
+                                direct_dirs.add(ent_b.name)
+                                slug_dirs.append(ent_b.path)
+                            elif ent_b.name.lower().endswith(".jsonl"):
+                                sid_stem = ent_b.name[:-6]
+                                sidecar_subagents_by_sid[sid_stem] = (str(sc_base), direct_dirs)
+                    for sdir in sorted(slug_dirs):
+                        try:
+                            s_dirs = set()
+                            s_jsonls = []
+                            with os.scandir(sdir) as it_s:
+                                for ent_s in it_s:
+                                    if ent_s.is_dir():
+                                        s_dirs.add(ent_s.name)
+                                    elif ent_s.name.lower().endswith(".jsonl"):
+                                        s_jsonls.append(ent_s.name[:-6])
+                            if s_dirs and s_jsonls:
+                                for sid_stem in s_jsonls:
+                                    sidecar_subagents_by_sid.setdefault(sid_stem, (sdir, s_dirs))
+                        except OSError:
+                            continue
+            if len(_CLAUDE_AGENT_USAGE_CACHE) > 4096:
+                _CLAUDE_AGENT_USAGE_CACHE.clear()
+            for sid_k, (sfam, smod, spid, spname, _) in sid_map.items():
+                if not sid_k or str(sfam or "claude").lower() != "claude":
+                    continue
+                if custom_claude_children:
+                    ch_list = _uc_sc.claude_children(sid_k) or []
+                else:
+                    sc_hit = sidecar_subagents_by_sid.get(str(sid_k))
+                    if not sc_hit or str(sid_k) not in sc_hit[1]:
+                        continue
+                    sub_folder = Path(sc_hit[0]) / str(sid_k) / "subagents"
+                    if not sub_folder.is_dir():
+                        continue
+                    ch_list = [
+                        {"id": p.stem[len("agent-"):], "path": str(p), "parent": str(sid_k), "started": None}
+                        for p in sorted(sub_folder.glob("agent-*.jsonl"))
+                    ]
+                for ch in ch_list:
+                    if not isinstance(ch, dict):
+                        continue
+                    cid = str(ch.get("id") or ch.get("native_id") or "")
+                    if not cid or cid in seen_child_ids:
+                        continue
+                    seen_child_ids.add(cid)
+                    ch_u = ch
+                    if ch.get("tokens") is None and ch.get("path"):
+                        ch_path = str(ch["path"])
+                        try:
+                            ch_st = os.stat(ch_path)
+                            ch_cached = _CLAUDE_AGENT_USAGE_CACHE.get(ch_path)
+                            if ch_cached is not None and ch_cached[0] == ch_st.st_mtime_ns and ch_cached[1] == ch_st.st_size:
+                                ch_u = ch_cached[2]
+                            else:
+                                ch_u = _uc_sc.claude_agent_usage(ch_path) or {}
+                                _CLAUDE_AGENT_USAGE_CACHE[ch_path] = (ch_st.st_mtime_ns, ch_st.st_size, ch_u)
+                        except OSError:
+                            ch_u = _uc_sc.claude_agent_usage(ch_path) or {}
+                    ch_tok = int(ch_u.get("tokens") or 0)
+                    if ch_tok <= 0:
+                        continue
+                    ch_mod = ch_u.get("model") or ch.get("model") or smod
+                    cpid, cpname = canon_proj(spid, spname)
+                    records.append(("claude", ch_mod, cpid, cpname, {
+                        "key": f"child:{sid_k}:{cid}",
+                        "source": "subagent",
+                        "native_id": cid,
+                        "cli": "claude",
+                        "model": ch_mod,
+                        "tokens": ch_tok,
+                        "usage": ch.get("usage") if isinstance(ch.get("usage"), dict) else None,
+                        "recorded_at": str(ch.get("recorded_at") or ""),
+                    }))
+        except Exception:
+            pass
 
     def normalize_model(fam, mod):
         m = str(mod or "").strip()
@@ -1690,42 +2746,82 @@ def _compute_global_usage_summary():
         return m
 
     def extract_io(r, tok):
+        if any(r.get(k) is not None for k in ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")):
+            in_t = int(r.get("input_tokens") or 0)
+            cr_t = int(r.get("cache_read_input_tokens") or 0)
+            cc_t = int(r.get("cache_creation_input_tokens") or 0)
+            ca_sub = int(r.get("cached_input_tokens") or 0)
+            out_t = int(r.get("output_tokens") or 0)
+            if cr_t > 0 or cc_t > 0:
+                return in_t + cr_t + cc_t, cr_t, out_t
+            if in_t > 0 or out_t > 0 or ca_sub > 0:
+                return in_t, ca_sub, out_t
         u = r.get("usage")
-        if isinstance(u, dict) and ("input_tokens" in u or "output_tokens" in u):
+        if isinstance(u, dict) and any(k in u for k in ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")):
             in_t = int(u.get("input_tokens") or 0)
-            ca_t = int(u.get("cached_input_tokens") or u.get("cache_read_input_tokens") or 0)
+            cr_t = int(u.get("cache_read_input_tokens") or 0)
+            cc_t = int(u.get("cache_creation_input_tokens") or 0)
+            ca_sub = int(u.get("cached_input_tokens") or 0)
             out_t = int(u.get("output_tokens") or 0)
-            total_in = in_t + ca_t if "cache_read_input_tokens" in u and in_t < ca_t else in_t
-            return total_in, ca_t, out_t
+            if cr_t > 0 or cc_t > 0:
+                return in_t + cr_t + cc_t, cr_t, out_t
+            return in_t, ca_sub, out_t
         if tok > 0:
             return int(tok * 0.95), int(tok * 0.85), max(1, int(tok * 0.05))
         return 0, 0, 0
+
+    price_table_usd = (prices.get("usd_per_million") if isinstance(prices, dict) else None) or {}
 
     def price_record(fam, eff_mod, r):
         c = r.get("cost_usd")
         reported = float(c) if isinstance(c, (int, float)) and not isinstance(c, bool) and c > 0 else 0.0
         if reported > 0:
             return reported, 0.0, reported
-        u = r.get("usage")
+        rec_mod = normalize_model(fam, r.get("model")) if r.get("model") else eff_mod
         est = None
-        if isinstance(u, dict) and ("input_tokens" in u or "output_tokens" in u):
-            in_t = int(u.get("input_tokens") or 0)
-            ca_t = int(u.get("cached_input_tokens") or u.get("cache_read_input_tokens") or 0)
-            out_t = int(u.get("output_tokens") or 0)
-            norm_u = {
-                "input_tokens": in_t + ca_t if "cache_read_input_tokens" in u and in_t < ca_t else in_t,
-                "cached_input_tokens": ca_t,
-                "output_tokens": out_t,
+        if any(r.get(k) is not None for k in ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")):
+            top_u = {
+                "input_tokens": int(r.get("input_tokens") or 0),
+                "output_tokens": int(r.get("output_tokens") or 0),
             }
-            est = _se.estimate_list_price_usd(eff_mod, norm_u)
+            if r.get("cached_input_tokens") is not None:
+                top_u["cached_input_tokens"] = int(r.get("cached_input_tokens") or 0)
+            if r.get("cache_read_input_tokens") is not None:
+                top_u["cache_read_input_tokens"] = int(r.get("cache_read_input_tokens") or 0)
+            if r.get("cache_creation_input_tokens") is not None:
+                top_u["cache_creation_input_tokens"] = int(r.get("cache_creation_input_tokens") or 0)
+            if any(v > 0 for v in top_u.values()):
+                est = _se.estimate_list_price_usd(rec_mod, top_u, price_table=price_table_usd)
+        if est is None:
+            u = r.get("usage")
+            if isinstance(u, dict) and any(k in u for k in ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")):
+                in_t = int(u.get("input_tokens") or 0)
+                cr_t = int(u.get("cache_read_input_tokens") or 0)
+                cc_t = int(u.get("cache_creation_input_tokens") or 0)
+                ca_sub = int(u.get("cached_input_tokens") or 0)
+                out_t = int(u.get("output_tokens") or 0)
+                if cr_t > 0 or cc_t > 0:
+                    norm_u = {
+                        "input_tokens": in_t,
+                        "cache_read_input_tokens": cr_t,
+                        "cache_creation_input_tokens": cc_t,
+                        "output_tokens": out_t,
+                    }
+                else:
+                    norm_u = {
+                        "input_tokens": in_t,
+                        "cached_input_tokens": ca_sub,
+                        "output_tokens": out_t,
+                    }
+                est = _se.estimate_list_price_usd(rec_mod, norm_u, price_table=price_table_usd)
         if est is None:
             tok = int(r.get("tokens") or 0)
             if tok > 0:
-                est = _se.estimate_list_price_usd(eff_mod, {
+                est = _se.estimate_list_price_usd(rec_mod, {
                     "input_tokens": int(tok * 0.95),
                     "cached_input_tokens": int(tok * 0.85),
                     "output_tokens": max(1, int(tok * 0.05)),
-                })
+                }, price_table=price_table_usd)
         estimated = float(est) if est is not None else 0.0
         return 0.0, estimated, estimated
 
@@ -1974,11 +3070,21 @@ def global_usage_summary(qs=None):
     if not force and ttl:
         with _GLOBAL_USAGE_LOCK:
             hit = _GLOBAL_USAGE_CACHE.get(key)
-            if hit and now - hit[0] < ttl:
-                return copy.deepcopy(hit[1]), 200
-    value = _compute_global_usage_summary()
-    with _GLOBAL_USAGE_LOCK:
-        _GLOBAL_USAGE_CACHE[key] = (now, value)
+            if isinstance(hit, tuple) and len(hit) == 2:
+                if now - hit[0] < ttl:
+                    return copy.deepcopy(hit[1]), 200
+                if _GLOBAL_USAGE_COMPUTE_LOCK.locked():
+                    return copy.deepcopy(hit[1]), 200
+    with _GLOBAL_USAGE_COMPUTE_LOCK:
+        if not force and ttl:
+            now2 = time.monotonic()
+            with _GLOBAL_USAGE_LOCK:
+                hit2 = _GLOBAL_USAGE_CACHE.get(key)
+                if isinstance(hit2, tuple) and len(hit2) == 2 and now2 - hit2[0] < ttl:
+                    return copy.deepcopy(hit2[1]), 200
+        value = _compute_global_usage_summary()
+        with _GLOBAL_USAGE_LOCK:
+            _GLOBAL_USAGE_CACHE[key] = (time.monotonic(), value)
     return copy.deepcopy(value), 200
 
 
@@ -2007,6 +3113,7 @@ def _state_cached(eng, cdir):
         round(float(getattr(eng, "spend", 0.0) or 0.0), 4),
         round(float(getattr(eng, "estimated_spend", 0.0) or 0.0), 4),
         inf_est,
+        getattr(eng, "_usage_updated_at", None),
         stamp,
     )
     now = time.monotonic()
@@ -2034,6 +3141,7 @@ def _state_with_usage(eng, cdir):
         round(float(getattr(eng, "spend", 0.0) or 0.0), 4),
         round(float(getattr(eng, "estimated_spend", 0.0) or 0.0), 4),
         round(float(state.get("estimated_spend_usd") or 0.0), 4),
+        getattr(eng, "_usage_updated_at", None),
     )
     if getattr(eng, "_last_rollup_sig", None) != cur_sig:
         eng._last_rollup_sig = cur_sig
@@ -2109,7 +3217,52 @@ def note_goal_receipt(cdir, goal, text, receipt):
         return False
 
 
+def _resolve_clean_download_filename(cdir, rel, real, ext, qs):
+    """Resolve a clean, sanitized human download filename preserving extension and stripping hashes/IDs."""
+    qs = qs or {}
+    raw_fn = str(qs.get("filename") or "").strip()
+    if raw_fn:
+        return _core.sanitize_download_filename(raw_fn, fallback_ext=ext)
+    norm_rel = str(rel or "").replace("\\", "/").strip("/")
+    norm_rel_low = norm_rel.lower()
+    exp_hash = str(qs.get("hash") or "").strip().lower()
+    try:
+        deliv_data = campaign.read_deliverables(cdir) if cdir and os.path.isdir(str(cdir)) else {}
+        pool = list(deliv_data.get("items") or []) + list(deliv_data.get("approved") or [])
+        best_item = None
+        for it in pool:
+            if not isinstance(it, dict):
+                continue
+            it_open = str(it.get("open_path") or "").replace("\\", "/").strip("/").lower()
+            it_path = str(it.get("path") or "").replace("\\", "/").strip("/").lower()
+            it_read = str(it.get("readable_path") or "").replace("\\", "/").strip("/").lower()
+            it_hash = str(it.get("hash") or "").strip().lower()
+            if norm_rel_low and norm_rel_low in (it_open, it_path, it_read):
+                best_item = it
+                break
+            if exp_hash and exp_hash != "0" * 64 and it_hash == exp_hash:
+                best_item = it
+        if best_item is not None:
+            cand = str(best_item.get("suggested_filename") or best_item.get("human_title") or best_item.get("what") or "").strip()
+            if cand:
+                return _core.sanitize_download_filename(cand, fallback_ext=ext)
+    except Exception:
+        pass
+    base_candidate = os.path.basename(norm_rel) if norm_rel else os.path.basename(str(real or ""))
+    human_fn = campaign._human_filename_for_item(norm_rel or base_candidate, "", "")
+    return _core.sanitize_download_filename(human_fn or base_candidate, fallback_ext=ext)
+
+
 def handle_get(cdir, verb, qs):
+    qs = qs or {}
+    if verb == "plan":
+        if not cdir or not os.path.isdir(str(cdir)):
+            return _plan_missing_response()
+        from tools import steward_plan as _splan
+        try:
+            return _splan.read_plan_state(cdir), 200
+        except Exception as exc:
+            return _plan_http_error(exc)
     if verb == "notebook-status":
         import anchor_notebooks
         return anchor_notebooks.service_status(), 200
@@ -2140,42 +3293,79 @@ def handle_get(cdir, verb, qs):
                     _priv_homes = _ph()
                 except Exception:
                     _priv_homes = None
-                for coll in (data.get("items") or [], data.get("approved") or []):
+                def _attach_rt(obj):
+                    if not isinstance(obj, dict):
+                        return
+                    rt = _dr.reading_target(obj, pid=pid_q, effort_rel=dir_q, effort_dir=cdir, registered=reg, _root_real=_root_real, _priv_homes=_priv_homes)
+                    obj["reading"] = rt
+                    if isinstance(rt, dict) and rt.get("download"):
+                        obj["download_url"] = rt["download"]
+                    for old in obj.get("history") or []:
+                        if isinstance(old, dict):
+                            old_rt = _dr.reading_target(old, pid=pid_q, effort_rel=dir_q, effort_dir=cdir, registered=reg, _root_real=_root_real, _priv_homes=_priv_homes)
+                            old["reading"] = old_rt
+                            if isinstance(old_rt, dict) and old_rt.get("download"):
+                                old["download_url"] = old_rt["download"]
+                buckets_obj = data.get("buckets") if isinstance(data.get("buckets"), dict) else {}
+                for coll in (
+                    data.get("items") or [],
+                    data.get("approved") or [],
+                    data.get("key_deliverables") or [],
+                    buckets_obj.get("for_review") or [],
+                    buckets_obj.get("final") or [],
+                    buckets_obj.get("in_progress") or [],
+                    buckets_obj.get("archive") or [],
+                ):
                     for it in coll:
-                        if isinstance(it, dict):
-                            it["reading"] = _dr.reading_target(it, pid=pid_q, effort_rel=dir_q, effort_dir=cdir, registered=reg, _root_real=_root_real, _priv_homes=_priv_homes)
-                            for old in it.get("history") or []:          # earlier versions read the same way
-                                if isinstance(old, dict):
-                                    old["reading"] = _dr.reading_target(old, pid=pid_q, effort_rel=dir_q, effort_dir=cdir, registered=reg, _root_real=_root_real, _priv_homes=_priv_homes)
+                        _attach_rt(it)
                 for a in data.get("acts") or []:
                     if isinstance(a.get("item"), dict):
-                        a["item"]["reading"] = _dr.reading_target(a["item"], pid=pid_q, effort_rel=dir_q, effort_dir=cdir, registered=reg, _root_real=_root_real, _priv_homes=_priv_homes)
+                        _attach_rt(a["item"])
                     for c in a.get("companions") or []:
                         if isinstance(c.get("item"), dict):
-                            c["item"]["reading"] = _dr.reading_target(c["item"], pid=pid_q, effort_rel=dir_q, effort_dir=cdir, registered=reg, _root_real=_root_real, _priv_homes=_priv_homes)
+                            _attach_rt(c["item"])
             except Exception:
                 pass   # the tile still builds its own link from the path
-        return _deliverables_cached(cdir, qs, lambda: campaign.read_deliverables(cdir), _build), 200
+        res_deliv = _deliverables_cached(cdir, qs, lambda: campaign.read_deliverables(cdir), _build)
+        if isinstance(res_deliv, dict) and res_deliv.get("failure_state") == "backing-store-unreadable":
+            return res_deliv, 500
+        return res_deliv, 200
     if verb == "deliverable-file":
-        # Serve ONE deliverable's bytes, HARD-CONTAINED to the effort dir (realpath
-        # prefix check — ../ or symlink escapes 404; active content served inert).
+        # Serve ONE deliverable's bytes, HARD-CONTAINED to the effort dir via
+        # paths.resolve_contained_path (../, %2e%2e, absolute, NUL, or symlink escape -> 403).
         rel = str(qs.get("path", ""))
-        creal = os.path.realpath(str(cdir))
-        real = os.path.realpath(str(Path(cdir) / rel))
         from provider_native import private_account_path
+        try:
+            contained_target = paths.resolve_contained_path(cdir, rel, allow_missing=True)
+        except paths.UnsafePathError:
+            return {
+                "ok": False,
+                "failure_state": "dependency-returns-garbage",
+                "error": "Blocked unsafe path traversal or disallowed URL scheme",
+            }, 403
+        creal_path = Path(cdir).resolve()
+        creal = str(creal_path)
+        real = str(contained_target)
         if private_account_path(real):
-            return {"error": "private host credentials are not deliverables"}, 403
-        in_effort = (real == creal or real.startswith(creal + os.sep))
-        if in_effort and not os.path.isfile(real) and rel and not rel.startswith(("/", "\\")) and ".." not in Path(rel).parts:
+            return {
+                "ok": False,
+                "failure_state": "dependency-returns-garbage",
+                "error": "Blocked unsafe path traversal or disallowed URL scheme",
+            }, 403
+        in_effort = contained_target.is_relative_to(creal_path)
+        if in_effort and not os.path.isfile(real) and rel:
             # 0. Strip duplicate leading effort folder prefix (e.g. `Book 1/chapters/...` inside `Book 1`)
             cdir_name = Path(cdir).name
             rel_norm = rel.replace("\\", "/").lstrip("/")
             if cdir_name and rel_norm.lower().startswith(cdir_name.lower() + "/"):
                 stripped_rel = rel_norm[len(cdir_name) + 1:]
-                cand_strip = os.path.realpath(str(Path(cdir) / stripped_rel))
-                if (cand_strip == creal or cand_strip.startswith(creal + os.sep)) and os.path.isfile(cand_strip) and not private_account_path(cand_strip):
-                    real = cand_strip
-                    rel = stripped_rel
+                try:
+                    cand_strip_p = paths.resolve_contained_path(creal_path, stripped_rel, allow_missing=True)
+                    if cand_strip_p.is_file() and not private_account_path(str(cand_strip_p)):
+                        real = str(cand_strip_p)
+                        rel = stripped_rel
+                except paths.UnsafePathError:
+                    pass
             # 1. Resolve bare or relative filenames (e.g. `CHAPTER-04-05-DRAFT-v2.docx` written in backticks in Steward dialogue)
             # against DELIVERABLES.md rows or effort subdirectories before checking code-job worktrees.
             target_name = Path(rel).name.lower()
@@ -2187,25 +3377,33 @@ def handle_get(cdir, verb, qs):
                             continue
                         ip = str(it.get("open_path") or it.get("path") or "").strip()
                         if ip and Path(ip).name.lower() == target_name:
-                            cand_cdir = os.path.realpath(str(Path(cdir) / ip))
-                            if (cand_cdir == creal or cand_cdir.startswith(creal + os.sep)) and os.path.isfile(cand_cdir) and not private_account_path(cand_cdir):
-                                real = cand_cdir
-                                rel = ip
-                                break
+                            try:
+                                cand_cdir_p = paths.resolve_contained_path(creal_path, ip, allow_missing=True)
+                                if cand_cdir_p.is_file() and not private_account_path(str(cand_cdir_p)):
+                                    real = str(cand_cdir_p)
+                                    rel = ip
+                                    break
+                            except paths.UnsafePathError:
+                                continue
                 except Exception:
                     pass
             if not os.path.isfile(real) and target_name:
                 try:
-                    for sub in ("chapters", "deliverables", "story-arc", "editorial", "Finished Deliverables", ".ecgberht/journal"):
-                        sub_root = Path(cdir) / sub
+                    cdir_root_p = Path(cdir)
+                    for sub in ("chapters", "deliverables", "story-arc", "editorial", "Finished Deliverables", "Final Deliverables", ".ecgberht/journal"):
+                        sub_root = cdir_root_p / sub
                         if not sub_root.is_dir():
                             continue
                         for match_p in sub_root.rglob("*"):
                             if match_p.is_file() and match_p.name.lower() == target_name:
-                                cand_sub = os.path.realpath(str(match_p))
-                                if (cand_sub == creal or cand_sub.startswith(creal + os.sep)) and not private_account_path(cand_sub):
-                                    real = cand_sub
-                                    break
+                                try:
+                                    rel_sub = match_p.relative_to(cdir_root_p)
+                                    cand_sub_p = paths.resolve_contained_path(creal_path, str(rel_sub), allow_missing=False)
+                                    if cand_sub_p.is_file() and not private_account_path(str(cand_sub_p)):
+                                        real = str(cand_sub_p)
+                                        break
+                                except (ValueError, OSError, paths.UnsafePathError):
+                                    continue
                         if os.path.isfile(real):
                             break
                 except Exception:
@@ -2226,7 +3424,6 @@ def handle_get(cdir, verb, qs):
                             wt = (rec.get("kept_delivery") or {}).get("worktree") or rec.get("worktree")
                             if not wt:
                                 continue
-                            wreal = os.path.realpath(str(wt))
                             wdir = str(rec.get("work_dir") or "").strip().strip("/\\")
                             rel_cands = [rel]
                             if wdir:
@@ -2236,11 +3433,15 @@ def handle_get(cdir, verb, qs):
                                     rel_cands.append(out_p)
                             found_wt = False
                             for rc in rel_cands:
-                                cand = os.path.realpath(str(Path(wt) / rc))
-                                if (cand == wreal or cand.startswith(wreal + os.sep)) and os.path.isfile(cand) and not private_account_path(cand):
-                                    real = cand
-                                    found_wt = True
-                                    break
+                                try:
+                                    cand_wt_p = paths.resolve_contained_path(wt, rc, allow_missing=True)
+                                    if cand_wt_p.is_file() and not private_account_path(str(cand_wt_p)):
+                                        real = str(cand_wt_p)
+                                        in_effort = True
+                                        found_wt = True
+                                        break
+                                except paths.UnsafePathError:
+                                    continue
                             if found_wt:
                                 break
                 except Exception:
@@ -2252,28 +3453,38 @@ def handle_get(cdir, verb, qs):
                 try:
                     stem_lower = Path(rel).stem.lower()
                     md_source = None
-                    direct_md = Path(real).with_suffix(".md")
-                    if direct_md.is_file():
-                        cand_md = os.path.realpath(str(direct_md))
-                        if (cand_md == creal or cand_md.startswith(creal + os.sep)) and not private_account_path(cand_md):
-                            md_source = Path(cand_md)
+                    try:
+                        cand_md_direct = paths.resolve_contained_path(creal_path, str(Path(rel).with_suffix(".md")), allow_missing=True)
+                        if cand_md_direct.is_file() and not private_account_path(str(cand_md_direct)):
+                            md_source = cand_md_direct
+                    except paths.UnsafePathError:
+                        md_source = None
                     if md_source is None:
+                        cdir_root_p = Path(cdir)
                         for sub in ("chapters", "deliverables", "story-arc", "editorial", "Finished Deliverables", ""):
-                            sub_root = Path(cdir) / sub if sub else Path(cdir)
+                            sub_root = cdir_root_p / sub if sub else cdir_root_p
                             if not sub_root.is_dir():
                                 continue
                             it_files = sub_root.rglob("*.md") if sub else sub_root.glob("*.md")
                             for match_p in it_files:
                                 if match_p.is_file() and match_p.stem.lower() == stem_lower:
-                                    cand_md = os.path.realpath(str(match_p))
-                                    if (cand_md == creal or cand_md.startswith(creal + os.sep)) and not private_account_path(cand_md):
-                                        md_source = Path(cand_md)
-                                        break
+                                    try:
+                                        rel_md = match_p.relative_to(cdir_root_p)
+                                        cand_md_p = paths.resolve_contained_path(creal_path, str(rel_md), allow_missing=False)
+                                        if cand_md_p.is_file() and not private_account_path(str(cand_md_p)):
+                                            md_source = cand_md_p
+                                            break
+                                    except (ValueError, OSError, paths.UnsafePathError):
+                                        continue
                             if md_source is not None:
                                 break
                     if md_source is not None and md_source.is_file():
                         from tools import reading_copy as _rc
-                        target_out = md_source.with_suffix(req_ext)
+                        target_out = paths.resolve_contained_path(
+                            creal_path,
+                            str(md_source.relative_to(creal_path).with_suffix(req_ext)),
+                            allow_missing=True,
+                        )
                         if req_ext == ".docx":
                             _rc.write_docx(md_source, target_out)
                         elif req_ext == ".pdf":
@@ -2281,7 +3492,7 @@ def handle_get(cdir, verb, qs):
                         elif req_ext == ".html":
                             _rc.write_html(md_source, target_out)
                         if target_out.is_file():
-                            real = os.path.realpath(str(target_out))
+                            real = str(target_out.resolve())
                 except Exception:
                     pass
         if not in_effort or not os.path.isfile(real):
@@ -2337,6 +3548,7 @@ def handle_get(cdir, verb, qs):
             except (TypeError, ValueError):
                 want_pdf_page = None
         ctype, disposition = deliverable_content_type(ext)
+        clean_dl_filename = _resolve_clean_download_filename(cdir, rel, real, ext, qs)
         if ext == ".pdf" and not want_download:
             if want_pdf_page is not None:
                 return _serve_pdf_page_png(real, want_pdf_page)
@@ -2360,15 +3572,19 @@ def handle_get(cdir, verb, qs):
                     return _serve_pdf_page_png(str(target), want_pdf_page)
                 if want_scrollview:
                     return _serve_pdf_scrollview(str(target), qs, rel, cdir)
+                pdf_fn = _core.sanitize_download_filename(Path(clean_dl_filename).stem, fallback_ext=".pdf")
+                pdf_cd = f'inline; filename="{pdf_fn}"'
+                _ROUTE_TLS.pending_cd = pdf_cd
                 return {"__file__": str(target), "__ctype__": "application/pdf", "__disposition__": "inline",
+                        "__filename__": pdf_fn, "__content_disposition__": pdf_cd,
                         "__csp__": sandbox_csp_for("application/pdf")}, 200
             import html
-            dl = "/api/steward/deliverable-file?pid=%s&dir=%s&path=%s&hash=%s&download=1" % (
-                _q(str(qs.get("pid", ""))), _q(str(qs.get("dir", ""))), _q(rel), digest)
+            dl = "/api/steward/deliverable-file?pid=%s&dir=%s&path=%s&hash=%s&download=1&filename=%s" % (
+                _q(str(qs.get("pid", ""))), _q(str(qs.get("dir", ""))), _q(rel), digest, _q(clean_dl_filename))
             if qs.get("token"):
                 dl += "&token=" + _q(str(qs["token"]))
             import office_preview as _op_pptx
-            return {"__html__": _op_pptx.render_preview(Path(real).read_bytes(), os.path.basename(real), dl)}, 200
+            return {"__html__": _op_pptx.render_preview(Path(real).read_bytes(), clean_dl_filename, dl)}, 200
 
 
         if str(qs.get("render", "")).strip() in ("1", "true") and not want_download and (
@@ -2379,84 +3595,137 @@ def handle_get(cdir, verb, qs):
             text = Path(real).read_text(encoding="utf-8", errors="replace")
             if ext not in (".md", ".markdown"):          # plain text and program source keep their lines
                 text = "```\n" + text.replace("```", "'''") + "\n```"
-            return {"__html__": report_viewer.reader_html(text, title=os.path.basename(real))}, 200
+            return {"__html__": report_viewer.reader_html(text, title=clean_dl_filename)}, 200
         if want_view and not want_download and ext in OFFICE_PREVIEW_EXTENSIONS:
             import office_preview as _op
             with open(real, "rb") as fh:
                 data = fh.read()
-            dl = "/api/steward/deliverable-file?pid=%s&dir=%s&path=%s&download=1%s" % (
-                _q(str(qs.get("pid", ""))), _q(str(qs.get("dir", ""))), _q(rel),
+            hash_param = ("&hash=" + _q(str(expected_hash))) if expected_hash else ""
+            dl = "/api/steward/deliverable-file?pid=%s&dir=%s&path=%s%s&download=1&filename=%s%s" % (
+                _q(str(qs.get("pid", ""))), _q(str(qs.get("dir", ""))), _q(rel), hash_param, _q(clean_dl_filename),
                 ("&token=" + _q(str(qs.get("token")))) if qs.get("token") else "")
-            html_page = _op.render_preview(data, os.path.basename(real), dl)
+            html_page = _op.render_preview(data, clean_dl_filename, dl)
             return {"__html__": html_page}, 200
         if want_download:
             disposition = "attachment"
+        cd_header = f'{disposition}; filename="{clean_dl_filename}"'
+        _ROUTE_TLS.pending_cd = cd_header
         return {"__file__": real, "__ctype__": ctype, "__disposition__": disposition,
+                "__filename__": clean_dl_filename, "__content_disposition__": cd_header,
                 "__csp__": sandbox_csp_for(ctype)}, 200
     if verb == "efforts":
         return _efforts(cdir), 200
     if verb == "map":
-        if not os.environ.get("PYTEST_CURRENT_TEST"):
-            try:
-                _sync_cache = globals().setdefault("_LAST_MAP_SYNC_TS", {})
-                _norm_cdir = os.path.normcase(os.path.abspath(str(cdir)))
-                _now_mono = time.monotonic()
-                if _now_mono - _sync_cache.get(_norm_cdir, 0.0) > 30.0:
-                    _sync_cache[_norm_cdir] = _now_mono
-                    campaign.sync_steward_projections(cdir)
-            except Exception:
-                pass
-        m = dict(campaign.read_map(cdir, include_plan_history=True))
-        # W0b (High Seat, 2026-09-26): a part that points at another record is resolved at read,
-        # once per distinct target per request; a broken reference is named on the page, never blank.
-        try:
-            from steward_cockpit.campaign_parts import resolve_parts
-            m["resolved"] = resolve_parts(m.get("steps") or [], cache={}, with_lead=True)
-        except Exception:
-            m["resolved"] = {}
-        # Slim multi-megabyte refinement history blobs for HTTP wire transfer while preserving all UI fields
-        def _slim_handoff(h):
-            if not isinstance(h, dict):
-                return h
-            return {hk: h[hk] for hk in ("id", "step_id", "status", "terminal", "at", "summary", "title") if hk in h}
+        _in_pytest = bool(os.environ.get("PYTEST_CURRENT_TEST"))
+        _map_cache = globals().setdefault("_MAP_ROUTE_CACHE", {})
+        _map_lock = globals().setdefault("_MAP_ROUTE_LOCK", threading.Lock())
+        _map_key_locks = globals().setdefault("_MAP_ROUTE_KEY_LOCKS", {})
+        _norm_cdir = os.path.normcase(os.path.abspath(str(cdir)))
+        _mkey = (_norm_cdir, str(qs.get("pid", "")), str(qs.get("dir", "")))
+        if not _in_pytest:
+            _cur_stamp = campaign.map_stamp(cdir)
+            _now_mono = time.monotonic()
+            with _map_lock:
+                _mhit = _map_cache.get(_mkey)
+                if _mhit is not None and _mhit[0] == _cur_stamp and (_now_mono - _mhit[1]) < 30.0:
+                    return dict(_mhit[2]), 200
+                _klock = _map_key_locks.setdefault(_norm_cdir, threading.Lock())
+        else:
+            _klock = None
 
-        ref = m.get("refinement")
-        if isinstance(ref, dict):
-            ref_slim = {k: v for k, v in ref.items() if k != "approved_products"}
-            st_state = ref_slim.get("state")
-            if isinstance(st_state, dict):
-                handoffs = st_state.get("producer_handoffs")
-                slim_handoffs = (
-                    {k: _slim_handoff(v) for k, v in handoffs.items() if isinstance(v, dict) and v.get("status") == "pending_steward_review"}
-                    if isinstance(handoffs, dict)
-                    else {}
-                )
-                ref_slim["state"] = {
-                    k: v for k, v in st_state.items() if k not in ("slices", "producer_handoffs", "events", "history")
-                }
-                ref_slim["state"]["producer_handoffs"] = slim_handoffs
-            m["refinement"] = ref_slim
-        if isinstance(m.get("steps"), list):
-            slim_steps = []
-            for st_item in m["steps"]:
-                if isinstance(st_item, dict) and isinstance(st_item.get("refinement"), dict):
-                    st_copy = dict(st_item)
-                    r_orig = st_item["refinement"]
-                    r_slim = {
-                        k: r_orig[k]
-                        for k in ("phase", "round", "display_round", "candidate", "title", "step_id", "status")
-                        if k in r_orig
+        def _build_map_resp():
+            if not _in_pytest:
+                try:
+                    _sync_cache = globals().setdefault("_LAST_MAP_SYNC_TS", {})
+                    _now_s = time.monotonic()
+                    if _now_s - _sync_cache.get(_norm_cdir, 0.0) > 30.0:
+                        _sync_cache[_norm_cdir] = _now_s
+                        campaign.sync_steward_projections(cdir)
+                except Exception:
+                    pass
+            m = dict(campaign.read_map(cdir, include_plan_history=True))
+            # W0b (High Seat, 2026-09-26): a part that points at another record is resolved at read,
+            # once per distinct target per request; a broken reference is named on the page, never blank.
+            try:
+                from steward_cockpit.campaign_parts import resolve_parts
+                m["resolved"] = resolve_parts(m.get("steps") or [], cache={}, with_lead=True)
+            except Exception:
+                m["resolved"] = {}
+            # Slim multi-megabyte refinement history blobs for HTTP wire transfer while preserving all UI fields
+            def _slim_handoff(h):
+                if not isinstance(h, dict):
+                    return h
+                return {hk: h[hk] for hk in ("id", "step_id", "status", "terminal", "at", "summary", "title") if hk in h}
+
+            def _slim_steps_list(steps_in):
+                if not isinstance(steps_in, list):
+                    return steps_in
+                slim_out = []
+                for st_item in steps_in:
+                    if isinstance(st_item, dict) and isinstance(st_item.get("refinement"), dict):
+                        st_copy = dict(st_item)
+                        r_orig = st_item["refinement"]
+                        r_slim = {
+                            k: r_orig[k]
+                            for k in ("phase", "round", "display_round", "candidate", "title", "step_id", "status")
+                            if k in r_orig
+                        }
+                        if isinstance(r_orig.get("producer_handoffs"), list):
+                            r_slim["producer_handoffs"] = [_slim_handoff(ph) for ph in r_orig["producer_handoffs"]]
+                        st_copy["refinement"] = r_slim
+                        slim_out.append(st_copy)
+                    else:
+                        slim_out.append(st_item)
+                return slim_out
+
+            ref = m.get("refinement")
+            if isinstance(ref, dict):
+                ref_slim = {k: v for k, v in ref.items() if k != "approved_products"}
+                st_state = ref_slim.get("state")
+                if isinstance(st_state, dict):
+                    handoffs = st_state.get("producer_handoffs")
+                    slim_handoffs = (
+                        {k: _slim_handoff(v) for k, v in handoffs.items() if isinstance(v, dict) and v.get("status") == "pending_steward_review"}
+                        if isinstance(handoffs, dict)
+                        else {}
+                    )
+                    ref_slim["state"] = {
+                        k: v for k, v in st_state.items() if k not in ("slices", "producer_handoffs", "events", "history")
                     }
-                    if isinstance(r_orig.get("producer_handoffs"), list):
-                        r_slim["producer_handoffs"] = [_slim_handoff(ph) for ph in r_orig["producer_handoffs"]]
-                    st_copy["refinement"] = r_slim
-                    slim_steps.append(st_copy)
-                else:
-                    slim_steps.append(st_item)
-            m["steps"] = slim_steps
-        m["stamp"] = campaign.map_stamp(cdir)
-        m["steward"] = _persona_name()
-        return m, 200
+                    ref_slim["state"]["producer_handoffs"] = slim_handoffs
+                m["refinement"] = ref_slim
+            if isinstance(m.get("steps"), list):
+                m["steps"] = _slim_steps_list(m["steps"])
+            try:
+                from tools import steward_plan as _splan
+                p_state = _splan.read_plan_state(cdir)
+                if isinstance(p_state, dict) and isinstance(p_state.get("steps"), list):
+                    p_state = dict(p_state)
+                    p_state["steps"] = _slim_steps_list(p_state["steps"])
+                m["plan_state"] = p_state
+            except Exception as _pexc:
+                _err_body, _ = _plan_http_error(_pexc)
+                m["plan_state"] = _err_body
+            m["full_cockpit_url"] = full_cockpit_url(str(qs.get("pid", "")), str(qs.get("dir", "")))
+            m["stamp"] = campaign.map_stamp(cdir)
+            m["steward"] = _persona_name()
+            return m
+
+        if _klock is None:
+            return _build_map_resp(), 200
+        with _klock:
+            _cur_stamp2 = campaign.map_stamp(cdir)
+            _now_mono2 = time.monotonic()
+            with _map_lock:
+                _mhit2 = _map_cache.get(_mkey)
+                if _mhit2 is not None and _mhit2[0] == _cur_stamp2 and (_now_mono2 - _mhit2[1]) < 30.0:
+                    return dict(_mhit2[2]), 200
+            _built_m = _build_map_resp()
+            with _map_lock:
+                if len(_map_cache) > 256:
+                    _map_cache.clear()
+                _map_cache[_mkey] = (_built_m.get("stamp") or campaign.map_stamp(cdir), time.monotonic(), _built_m)
+            return dict(_built_m), 200
     if verb == "history":
         if qs.get("goal"):
             # W2 v2 (the active set): a goal's thread — the Campaign's one log, the turns tagged with that goal
@@ -2500,7 +3769,9 @@ def handle_get(cdir, verb, qs):
         # W3c (2026-10-01, his word on the tile's Status reading old): with no live engine the pane shows the record
         # as it is NOW with the last run's receipts and stamp carried - one rule with the High Seat's tile and the Desk
         eng = ENGINES.get(cdir)
-        return campaign.status_for_pane(cdir, eng.state() if eng else None, live=eng is not None), 200
+        return campaign.status_http_response(cdir, eng.state() if eng else None, live=eng is not None, qs=qs)
+    if verb == "spend":
+        return spend_http_response(cdir, qs=qs)
     if verb == "grass":
         return {"grass": campaign.read_grass(cdir)}, 200
     if verb == "boneyard":
@@ -2511,7 +3782,7 @@ def handle_get(cdir, verb, qs):
         return {"terms": _terms_view(cdir)}, 200
     if verb == "gandalf":
         return {"runs": _gandalf_runs(cdir)}, 200
-    if verb in ("anvil", "anvil/walkthrough"):
+    if verb in ("anvil", "anvil/walkthrough", "anvil/source", "/api/steward/anvil", "/api/steward/anvil/walkthrough", "/api/steward/anvil/source"):
         import importlib
         from steward_cockpit import anvil_session as _as
         try:
@@ -2521,20 +3792,36 @@ def handle_get(cdir, verb, qs):
                 _as._LOADED_MTIME_NS = _as_mtime
         except Exception:
             pass
-        if verb == "anvil/walkthrough" or str(qs.get("action") or "").strip().lower() == "walkthrough":
-            return _as.walkthrough_in_session(cdir, str(qs.get("block_id") or qs.get("block") or "")), 200
-        return _as.get_session_status(cdir), 200
+        norm_verb = verb[len("/api/steward/"):] if verb.startswith("/api/steward/") else verb
+        if norm_verb == "anvil/source" or str(qs.get("action") or "").strip().lower() == "source":
+            rel_file = str(qs.get("file") or qs.get("path") or "").strip()
+            try:
+                return _as.get_cockpit_file_source(cdir, rel_file), 200
+            except ValueError as exc:
+                msg = str(exc)
+                err_code = 403 if any(
+                    tok in msg.lower()
+                    for tok in ("traversal", "permitted", "outside", "restricted", "symlink", "escape")
+                ) else 400
+                return {"ok": False, "error": msg}, err_code
+        if norm_verb == "anvil/walkthrough" or str(qs.get("action") or "").strip().lower() == "walkthrough":
+            return _run_with_cockpit_usage_attribution(
+                "anvil", "walkthrough", cdir, qs,
+                lambda: _as.walkthrough_in_session(cdir, str(qs.get("block_id") or qs.get("block") or "")),
+            ), 200
+        summary_only = str(qs.get("summary") or "").strip().lower() in ("1", "true", "yes")
+        return _as.get_session_status(cdir, summary_only=summary_only), 200
     if verb == "aegis":
-        import importlib
-        from steward_cockpit import aegis_session as _aeg
-        try:
-            _aeg_mtime = Path(_aeg.__file__).stat().st_mtime_ns
-            if getattr(_aeg, "_LOADED_MTIME_NS", None) != _aeg_mtime:
-                _aeg = importlib.reload(_aeg)
-                _aeg._LOADED_MTIME_NS = _aeg_mtime
-        except Exception:
-            pass
-        return _aeg.get_cockpit_aegis_state(cdir, auto_init=True), 200
+        def _do_aegis_get(_aeg):
+            target_q = str(qs.get("target") or "").strip()
+            if target_q and target_q != ".":
+                return _aeg.run_cockpit_aegis_scan(cdir, target_spec=target_q)
+            cdir_p = Path(cdir).resolve()
+            if (cdir_p / ".aegis" / "session.json").is_file() or (cdir_p / ".anvil" / "session.json").is_file():
+                return _aeg.get_cockpit_aegis_state(cdir, auto_init=True)
+            return _aeg.run_cockpit_aegis_scan(cdir, target_spec=".")
+
+        return _run_aegis_route_contract(cdir, qs or {}, _do_aegis_get, verify_scanner_exec=True)
     if verb == "session-files":
         # legacy project-level view: files WORK SESSIONS wrote (engine state),
         # distinct from the curated effort register above
@@ -2586,6 +3873,106 @@ def handle_get(cdir, verb, qs):
             camp_dir = _DEFAULT_CAMPAIGN_DIR
         return build_fleet_brief(camp_dir), 200
     return {"error": "unknown"}, 404
+
+
+def _run_with_cockpit_usage_attribution(tool_name: str, act: str, cdir: str, body, fn):
+    """Best-effort attribute Anvil / Aegis cockpit invocations into usage_capture / usage_index."""
+    import uuid as _uuid_mod
+
+    att_env = {}
+    prev_env = {}
+    pid = None
+    folder_path = None
+    _uc = None
+    try:
+        import usage_capture as _uc
+        pid, folder_path = _uc.resolve_project(cdir)
+        if not pid and isinstance(body, dict):
+            pid = body.get("project_id") or body.get("pid") or None
+        att_env = _uc.attribution_env(
+            project_id=pid,
+            effort_dir=cdir,
+            folder_path=folder_path,
+            source=f"{tool_name}:{act}",
+        )
+        for ek, ev in att_env.items():
+            prev_env[ek] = os.environ.get(ek)
+            os.environ[ek] = str(ev)
+    except Exception:
+        _uc = None
+    t0 = time.monotonic()
+    try:
+        res = fn()
+    finally:
+        for ek, old_v in prev_env.items():
+            if old_v is None:
+                os.environ.pop(ek, None)
+            else:
+                os.environ[ek] = old_v
+    dur_ms = int(max(0.0, (time.monotonic() - t0) * 1000.0))
+    if _uc is not None:
+        try:
+            res_d = res if isinstance(res, dict) else {}
+            sess_d = res_d.get("session") if isinstance(res_d.get("session"), dict) else {}
+            seat_d = sess_d.get("model_seating") if isinstance(sess_d.get("model_seating"), dict) else {}
+            u_dict = (
+                res_d.get("usage")
+                if isinstance(res_d.get("usage"), dict)
+                else (sess_d.get("usage") if isinstance(sess_d.get("usage"), dict) else None)
+            )
+            raw_tok = res_d.get("tokens")
+            if raw_tok is None and isinstance(u_dict, dict):
+                raw_tok = u_dict.get("total_tokens")
+                if raw_tok is None:
+                    raw_tok = (
+                        int(u_dict.get("input_tokens") or 0)
+                        + int(u_dict.get("output_tokens") or 0)
+                        + int(u_dict.get("cache_read_input_tokens") or 0)
+                        + int(u_dict.get("cache_creation_input_tokens") or 0)
+                    )
+            tok = int(raw_tok or 0)
+            cost_usd = res_d.get("cost_usd")
+            mod = (
+                res_d.get("model")
+                or (u_dict.get("model") if isinstance(u_dict, dict) else None)
+                or seat_d.get("coding_model_id")
+                or seat_d.get("review_model_id")
+                or None
+            )
+            mod_low = str(mod or "").lower()
+            cli = (
+                res_d.get("cli")
+                or seat_d.get("coding_family")
+                or ("gemini" if "gemini" in mod_low else "chatgpt" if "gpt" in mod_low else "grok" if "grok" in mod_low else "claude")
+            )
+            run_uid = str(_uuid_mod.uuid4())
+            native_id = f"{tool_name}:{act}:{run_uid[:12]}"
+            idx_key = f"seat:{native_id}"
+            u_state = "unmeasured" if (tok == 0 and cost_usd is None) else None
+            _uc.ingest_usage(
+                run_uid if (tok > 0 or cost_usd is not None) else None,
+                key=idx_key,
+                index_key=idx_key,
+                source=_uc.SOURCE_SEAT,
+                native_id=native_id,
+                tokens=tok,
+                cost_usd=cost_usd,
+                project_id=pid,
+                folder_path=folder_path,
+                effort_dir=cdir,
+                cli=cli,
+                model=mod,
+                duration_ms=dur_ms,
+                usage=u_dict,
+                usage_state=u_state,
+            )
+            try:
+                _uc.ingest_receipts(parent_effort=cdir)
+            except Exception:
+                pass
+        except Exception:
+            pass
+    return res
 
 
 def events(cdir, qs):
@@ -2793,10 +4180,13 @@ def _serve_pdf_scrollview(real_path: str, qs: dict, rel: str, cdir: str):
     tok_q = ("&token=" + _q(str(qs.get("token")))) if qs.get("token") else ""
     hash_q = ("&hash=" + _q(str(qs.get("hash")))) if qs.get("hash") else ""
     view_q = ("&view=1") if str(qs.get("view", "")).strip() in ("1", "true") else ""
+    dl_ext = Path(str(rel or real_path)).suffix.lower() or ".pdf"
+    clean_scroll_fn = _resolve_clean_download_filename(cdir, rel, real_path, dl_ext, qs)
+    fn_q = "&filename=" + _q(clean_scroll_fn)
     base_url = f"/api/steward/deliverable-file?pid={pid_q}&dir={dir_q}&path={rel_q}{hash_q}{view_q}{tok_q}"
-    dl_url = f"/api/steward/deliverable-file?pid={pid_q}&dir={dir_q}&path={rel_q}{hash_q}&download=1{tok_q}"
+    dl_url = f"/api/steward/deliverable-file?pid={pid_q}&dir={dir_q}&path={rel_q}{hash_q}&download=1{fn_q}{tok_q}"
     native_url = base_url
-    fname = _html.escape(os.path.basename(real_path))
+    fname = _html.escape(clean_scroll_fn or os.path.basename(real_path))
     ext_badge = "PPTX → PDF SLIDES" if str(rel or "").lower().endswith(".pptx") else "PDF DOCUMENT"
 
     pages_html = []
@@ -3280,12 +4670,28 @@ def handle_post(cdir, verb, body):
             pass
         _DELIV_CACHE.clear()
         return {"ok": True, "cleared": cleared}, 200
-    if verb in ("dismiss-deliverable", "deliverables/dismiss"):
+    if verb == "plan":
+        if not cdir or not os.path.isdir(str(cdir)):
+            return _plan_missing_response()
+        if not isinstance(body, dict):
+            return _plan_garbage_response()
+        op = body.get("op") if body.get("op") is not None else body.get("action")
+        from tools import steward_plan as _splan
+        try:
+            res = _splan.mutate_plan_state(cdir, op, body)
+        except Exception as exc:
+            return _plan_http_error(exc)
+        _DELIV_CACHE.clear()
+        return res, 200
+    if verb in ("dismiss-deliverable", "deliverables/dismiss", "approve-deliverable", "deliverables/approve"):
+        default_disp = "approved" if verb in ("approve-deliverable", "deliverables/approve") else ""
         items = body.get("items")
         if isinstance(items, list) and items:
             last_res = {"ok": True, "dismissed_count": 0}
             for it in items:
                 if isinstance(it, dict):
+                    disp = str(it.get("disposition") or body.get("disposition") or default_disp or "")
+                    sid = str(it.get("step_id") or it.get("owner_step_id") or body.get("step_id") or "")
                     last_res = campaign.dismiss_deliverable(
                         cdir,
                         path=str(it.get("path") or ""),
@@ -3293,6 +4699,8 @@ def handle_post(cdir, verb, body):
                         what=str(it.get("what") or ""),
                         revision_id=str(it.get("revision_id") or ""),
                         hash_val=str(it.get("hash") or ""),
+                        disposition=disp,
+                        step_id=sid,
                     )
             if not os.environ.get("PYTEST_CURRENT_TEST"):
                 try:
@@ -3301,6 +4709,8 @@ def handle_post(cdir, verb, body):
                     pass
             _DELIV_CACHE.clear()
             return last_res, 200
+        disp = str(body.get("disposition") or default_disp or "")
+        sid = str(body.get("step_id") or body.get("owner_step_id") or "")
         result = campaign.dismiss_deliverable(
             cdir,
             path=str(body.get("path") or ""),
@@ -3308,6 +4718,8 @@ def handle_post(cdir, verb, body):
             what=str(body.get("what") or ""),
             revision_id=str(body.get("revision_id") or ""),
             hash_val=str(body.get("hash") or ""),
+            disposition=disp,
+            step_id=sid,
         )
         if not os.environ.get("PYTEST_CURRENT_TEST"):
             try:
@@ -3325,57 +4737,68 @@ def handle_post(cdir, verb, body):
         _DELIV_CACHE.clear()
         return res, 200 if res.get("ok") else 400
     if verb in ("step-done", "mark-step-done"):
+        import paths as _paths
         req_id = str(body.get("step_id") or body.get("step") or "").strip()
         rm_path = Path(cdir) / "roadmap.json"
         st_path = Path(cdir) / "strip.json"
+        lock_path = Path(cdir) / ".ecgberht" / "plan.lock"
         done_id, done_name, next_id, next_name = "", "", "", ""
         try:
-            st_data = json.loads(st_path.read_text(encoding="utf-8")) if st_path.is_file() else {}
-        except Exception:
-            st_data = {}
-        cur_strip_id = str((st_data.get("strip") or st_data).get("current_step_id") or "").strip()
-        if rm_path.is_file():
+            with _paths.cross_process_lock(lock_path, timeout_sec=2.0):
+                try:
+                    st_data = json.loads(st_path.read_text(encoding="utf-8")) if st_path.is_file() else {}
+                except Exception:
+                    st_data = {}
+                cur_strip_id = str((st_data.get("strip") or st_data).get("current_step_id") or "").strip()
+                if rm_path.is_file():
+                    rm = json.loads(rm_path.read_text(encoding="utf-8"))
+                    steps = rm.get("roadmap_projection") if isinstance(rm.get("roadmap_projection"), list) else (rm.get("steps") if isinstance(rm.get("steps"), list) else [])
+                    target = None
+                    if req_id:
+                        target = next((s for s in steps if isinstance(s, dict) and (str(s.get("id") or "") == req_id or str(s.get("name") or "") == req_id)), None)
+                    if target is None and cur_strip_id:
+                        target = next((s for s in steps if isinstance(s, dict) and str(s.get("id") or "") == cur_strip_id and s.get("status") != "done"), None)
+                    if target is None:
+                        target = next((s for s in steps if isinstance(s, dict) and s.get("status") in ("active", "in_progress", "waiting", "review")), None)
+                    if target is None:
+                        target = next((s for s in steps if isinstance(s, dict) and s.get("status") not in ("done", "completed", "withdrawn")), None)
+                    if target is not None:
+                        target["status"] = "done"
+                        target["done"] = True
+                        target.pop("waiting_on", None)
+                        done_id = str(target.get("id") or "")
+                        done_name = str(target.get("name") or target.get("title") or done_id)
+                        nxt = next((s for s in steps if isinstance(s, dict) and str(s.get("id") or "") != done_id and s.get("status") not in ("done", "completed", "withdrawn", "parked")), None)
+                        if nxt is not None:
+                            if not any(isinstance(s, dict) and s.get("status") == "active" for s in steps):
+                                nxt["status"] = "active"
+                            next_id = str(nxt.get("id") or "")
+                            next_name = str(nxt.get("name") or nxt.get("title") or next_id)
+                        rm["roadmap_projection"] = steps
+                        rm["steps"] = steps
+                        _paths.atomic_write_json(rm_path, rm)
+                        campaign._JSON_FILE_CACHE.clear()
+                if st_path.is_file() and isinstance(st_data, dict):
+                    inner = st_data.get("strip") if isinstance(st_data.get("strip"), dict) else st_data
+                    if next_id:
+                        inner["current_step_id"] = next_id
+                    if inner.get("waiting_on"):
+                        inner["waiting_on"] = None
+                    _paths.atomic_write_json(st_path, st_data)
+                    campaign._JSON_FILE_CACHE.clear()
+        except TimeoutError as exc:
+            return _plan_http_error(exc)
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}, 400
+        if done_id:
             try:
-                rm = json.loads(rm_path.read_text(encoding="utf-8"))
-                steps = rm.get("roadmap_projection") if isinstance(rm.get("roadmap_projection"), list) else (rm.get("steps") if isinstance(rm.get("steps"), list) else [])
-                target = None
-                if req_id:
-                    target = next((s for s in steps if isinstance(s, dict) and (str(s.get("id") or "") == req_id or str(s.get("name") or "") == req_id)), None)
-                if target is None and cur_strip_id:
-                    target = next((s for s in steps if isinstance(s, dict) and str(s.get("id") or "") == cur_strip_id and s.get("status") != "done"), None)
-                if target is None:
-                    target = next((s for s in steps if isinstance(s, dict) and s.get("status") in ("active", "in_progress", "waiting", "review")), None)
-                if target is None:
-                    target = next((s for s in steps if isinstance(s, dict) and s.get("status") not in ("done", "completed", "withdrawn")), None)
-                if target is not None:
-                    target["status"] = "done"
-                    target.pop("waiting_on", None)
-                    done_id = str(target.get("id") or "")
-                    done_name = str(target.get("name") or target.get("title") or done_id)
-                    nxt = next((s for s in steps if isinstance(s, dict) and str(s.get("id") or "") != done_id and s.get("status") not in ("done", "completed", "withdrawn")), None)
-                    if nxt is not None:
-                        if not any(isinstance(s, dict) and s.get("status") == "active" for s in steps):
-                            nxt["status"] = "active"
-                        next_id = str(nxt.get("id") or "")
-                        next_name = str(nxt.get("name") or nxt.get("title") or next_id)
-                    rm_path.write_text(json.dumps(rm, indent=2), encoding="utf-8")
-                    campaign._record_plan_history_snapshot(
-                        cdir,
-                        steps,
-                        label=f"{time.strftime('%Y-%m-%d')} · Completed '{done_name[:40]}'",
-                        summary=f"Marked step '{done_name}' done" + (f" → active '{next_name}'" if next_name else ""),
-                        trigger="step_done",
-                    )
-            except Exception as exc:
-                return {"ok": False, "error": str(exc)}, 400
-        if st_path.is_file() and isinstance(st_data, dict):
-            try:
-                inner = st_data.get("strip") if isinstance(st_data.get("strip"), dict) else st_data
-                if next_id:
-                    inner["current_step_id"] = next_id
-                if inner.get("waiting_on"):
-                    inner["waiting_on"] = None
-                st_path.write_text(json.dumps(st_data, indent=2), encoding="utf-8")
+                campaign._record_plan_history_snapshot(
+                    cdir,
+                    steps,
+                    label=f"{time.strftime('%Y-%m-%d')} · Completed '{done_name[:40]}'",
+                    summary=f"Marked step '{done_name}' done" + (f" → active '{next_name}'" if next_name else ""),
+                    trigger="step_done",
+                )
             except Exception:
                 pass
         _DELIV_CACHE.clear()
@@ -3393,18 +4816,24 @@ def handle_post(cdir, verb, body):
         act = "walkthrough" if verb == "anvil/walkthrough" else str(body.get("action") or "start_code").strip()
         try:
             if act == "walkthrough":
-                return _as.walkthrough_in_session(
-                    cdir,
-                    str(body.get("block_id") or body.get("block") or ""),
+                return _run_with_cockpit_usage_attribution(
+                    "anvil", act, cdir, body,
+                    lambda: _as.walkthrough_in_session(
+                        cdir,
+                        str(body.get("block_id") or body.get("block") or ""),
+                    ),
                 ), 200
             if act in ("start_code", "start_paper"):
-                res = _as.start_cockpit_session(
-                    cdir,
-                    mode="paper" if act == "start_paper" else str(body.get("mode") or "code"),
-                    software_spec=str(body.get("software_target") or "."),
-                    compare_spec=str(body.get("compare_target") or ""),
-                    paper_spec=str(body.get("paper_target") or ""),
-                    signed_off_drops=body.get("signed_off_drops") if isinstance(body.get("signed_off_drops"), list) else None,
+                res = _run_with_cockpit_usage_attribution(
+                    "anvil", act, cdir, body,
+                    lambda: _as.start_cockpit_session(
+                        cdir,
+                        mode="paper" if act == "start_paper" else str(body.get("mode") or "code"),
+                        software_spec=str(body.get("software_target") or "."),
+                        compare_spec=str(body.get("compare_target") or ""),
+                        paper_spec=str(body.get("paper_target") or ""),
+                        signed_off_drops=body.get("signed_off_drops") if isinstance(body.get("signed_off_drops"), list) else None,
+                    ),
                 )
                 try:
                     import deliverables_register as _dr
@@ -3417,34 +4846,55 @@ def handle_post(cdir, verb, body):
                     pass
                 return res, 200
             if act == "probe_block":
-                return _as.probe_block_in_session(
-                    cdir,
-                    str(body.get("block_id") or ""),
-                    str(body.get("lock_description") or ""),
+                return _run_with_cockpit_usage_attribution(
+                    "anvil", act, cdir, body,
+                    lambda: _as.probe_block_in_session(
+                        cdir,
+                        str(body.get("block_id") or ""),
+                        str(body.get("lock_description") or ""),
+                        str(body.get("test_cmd") or ""),
+                    ),
                 ), 200
             if act == "sign_off_drop":
-                return _as.sign_off_null_space_in_session(
-                    cdir,
-                    str(body.get("function_name") or ""),
+                return _run_with_cockpit_usage_attribution(
+                    "anvil", act, cdir, body,
+                    lambda: _as.sign_off_null_space_in_session(
+                        cdir,
+                        str(body.get("function_name") or ""),
+                    ),
                 ), 200
             if act == "attach_paper":
-                return _as.attach_paper_to_session(
-                    cdir,
-                    str(body.get("paper_target") or ""),
+                return _run_with_cockpit_usage_attribution(
+                    "anvil", act, cdir, body,
+                    lambda: _as.attach_paper_to_session(
+                        cdir,
+                        str(body.get("paper_target") or ""),
+                    ),
                 ), 200
             if act == "chat":
                 q_str = str(body.get("question") or "").strip()
-                res = _as.chat_in_session(
-                    cdir,
-                    q_str,
-                    str(body.get("mode") or "map"),
-                    str(body.get("target") or ""),
+                res = _run_with_cockpit_usage_attribution(
+                    "anvil", act, cdir, body,
+                    lambda: _as.chat_in_session(
+                        cdir,
+                        q_str,
+                        str(body.get("mode") or "map"),
+                        str(body.get("target") or ""),
+                    ),
                 )
                 try:
                     eng = get_engine(cdir, create=False)
                     if eng is not None and q_str:
-                        dlg = ((res.get("session") or {}).get("dialogue") or [])
-                        last_asst = next((m.get("text") for m in reversed(dlg) if m.get("role") == "assistant" and m.get("text")), "")
+                        sess_obj = res.get("session") or {}
+                        dlg = sess_obj.get("chat_history") or sess_obj.get("dialogue") or []
+                        last_asst = next(
+                            (
+                                m.get("text")
+                                for m in reversed(dlg)
+                                if m.get("role") in ("anvil", "assistant") and m.get("text")
+                            ),
+                            "",
+                        ) or str(res.get("reply") or "").strip()
                         eng._emit({"t": "john", "text": q_str})
                         if last_asst:
                             eng._emit({"t": "delta", "text": str(last_asst)})
@@ -3453,68 +4903,87 @@ def handle_post(cdir, verb, body):
                     pass
                 return res, 200
             if act == "reset":
-                return _as.reset_cockpit_session(cdir), 200
+                return _run_with_cockpit_usage_attribution(
+                    "anvil", act, cdir, body,
+                    lambda: _as.reset_cockpit_session(cdir),
+                ), 200
             return {"ok": False, "error": f"unknown anvil action: {act}"}, 400
         except ValueError as exc:
             return {"ok": False, "error": str(exc)}, 400
     if verb == "aegis":
-        import importlib
-        from steward_cockpit import aegis_session as _aeg
-        try:
-            _aeg_mtime = Path(_aeg.__file__).stat().st_mtime_ns
-            if getattr(_aeg, "_LOADED_MTIME_NS", None) != _aeg_mtime:
-                _aeg = importlib.reload(_aeg)
-                _aeg._LOADED_MTIME_NS = _aeg_mtime
-        except Exception:
-            pass
+        if not isinstance(body, dict):
+            return {
+                "ok": False,
+                "failure_state": "dependency-returns-garbage",
+                "error": "Blocked unsafe path traversal or disallowed URL scheme",
+                "message": "Blocked unsafe path traversal or disallowed URL scheme",
+            }, 400
         act = str(body.get("action") or "scan").strip()
-        if act in ("scan", "bind_target"):
-            res = _aeg.run_cockpit_aegis_scan(
-                cdir,
-                target_spec=str(body.get("target") or "."),
-                signed_off_ids=body.get("signed_off_ids") if isinstance(body.get("signed_off_ids"), list) else None,
-                sync_anvil=bool(body.get("sync_anvil", act == "bind_target")),
-            )
-            try:
-                import deliverables_register as _dr
-                _dr.register(cdir, f"Aegis Security Audit Report ({res.get('cockpit_name') or 'Cockpit'})", "`AEGIS-SECURITY-REPORT.md`")
-            except Exception:
-                pass
-            try:
-                eng = get_engine(cdir, create=False)
-                if eng is not None:
-                    sc = (res.get("session") or {}).get("scan") or {}
-                    seat = (res.get("session") or {}).get("model_seating") or {}
-                    msg = (
-                        f"🛡 **Aegis Security Audit (`{sc.get('verdict', 'PASS')}`):** Scanned `{sc.get('files_scanned', 0)}` Python files "
-                        f"across all 6 OWASP/CWE families (`AEG-01`–`AEG-06`) — `{sc.get('total_findings', 0)}` open finding(s) "
-                        f"(`{sc.get('auto_fixable_count', 0)}` auto-fixable). Seated on **`{seat.get('coding_model_id', 'gemini-4-argon')} · {seat.get('coding_effort', 'high')}`** "
-                        f"+ **`{seat.get('review_model_id', 'claude-fable-5-1')} · {seat.get('review_effort', 'max')}`**; report saved to `AEGIS-SECURITY-REPORT.md`."
-                    )
-                    eng._emit({"t": "delta", "text": msg})
-                    eng._emit({"t": "turn_end", "tokens": 0})
-            except Exception:
-                pass
-            return res, 200
-        if act == "remediate":
-            res = _aeg.run_cockpit_aegis_remediate(
-                cdir,
-                apply=bool(body.get("apply")),
-                rule_filter=str(body.get("rule") or ""),
-            )
-            return res, 200
-        if act == "sign_off":
-            res = _aeg.sign_off_aegis_finding(
-                cdir,
-                str(body.get("finding_id") or ""),
-            )
-            return res, 200
-        if act == "chat":
+        if act not in ("scan", "bind_target", "remediate", "sign_off", "chat"):
+            return {
+                "ok": False,
+                "failure_state": "dependency-returns-garbage",
+                "error": "Blocked unsafe path traversal or disallowed URL scheme",
+                "message": f"unknown aegis action: {act}",
+            }, 400
+
+        def _do_aegis_post(_aeg):
+            if act in ("scan", "bind_target"):
+                res = _run_with_cockpit_usage_attribution(
+                    "aegis", act, cdir, body,
+                    lambda: _aeg.run_cockpit_aegis_scan(
+                        cdir,
+                        target_spec=str(body.get("target") or "."),
+                        signed_off_ids=body.get("signed_off_ids") if isinstance(body.get("signed_off_ids"), list) else None,
+                        sync_anvil=bool(body.get("sync_anvil", act == "bind_target")),
+                    ),
+                )
+                try:
+                    import deliverables_register as _dr
+                    _dr.register(cdir, f"Aegis Security Audit Report ({res.get('cockpit_name') or 'Cockpit'})", "`AEGIS-SECURITY-REPORT.md`")
+                except Exception:
+                    pass
+                try:
+                    eng = get_engine(cdir, create=False)
+                    if eng is not None:
+                        sc = (res.get("session") or {}).get("scan") or {}
+                        seat = (res.get("session") or {}).get("model_seating") or {}
+                        msg = (
+                            f"🛡 **Aegis Security Audit (`{sc.get('verdict', 'PASS')}`):** Scanned `{sc.get('files_scanned', 0)}` Python files "
+                            f"across all 6 OWASP/CWE families (`AEG-01`–`AEG-06`) — `{sc.get('total_findings', 0)}` open finding(s) "
+                            f"(`{sc.get('auto_fixable_count', 0)}` auto-fixable). Seated on **`{seat.get('coding_model_id', 'gemini-4-argon')} · {seat.get('coding_effort', 'high')}`** "
+                            f"+ **`{seat.get('review_model_id', 'claude-fable-5-1')} · {seat.get('review_effort', 'max')}`**; report saved to `AEGIS-SECURITY-REPORT.md`."
+                        )
+                        eng._emit({"t": "delta", "text": msg})
+                        eng._emit({"t": "turn_end", "tokens": 0})
+                except Exception:
+                    pass
+                return res
+            if act == "remediate":
+                return _run_with_cockpit_usage_attribution(
+                    "aegis", act, cdir, body,
+                    lambda: _aeg.run_cockpit_aegis_remediate(
+                        cdir,
+                        apply=bool(body.get("apply")),
+                        rule_filter=str(body.get("rule") or ""),
+                    ),
+                )
+            if act == "sign_off":
+                return _run_with_cockpit_usage_attribution(
+                    "aegis", act, cdir, body,
+                    lambda: _aeg.sign_off_aegis_finding(
+                        cdir,
+                        str(body.get("finding_id") or ""),
+                    ),
+                )
             q_str = str(body.get("question") or "").strip()
-            res = _aeg.chat_in_aegis_session(
-                cdir,
-                q_str,
-                str(body.get("target") or ""),
+            res = _run_with_cockpit_usage_attribution(
+                "aegis", act, cdir, body,
+                lambda: _aeg.chat_in_aegis_session(
+                    cdir,
+                    q_str,
+                    str(body.get("target") or ""),
+                ),
             )
             try:
                 eng = get_engine(cdir, create=False)
@@ -3527,8 +4996,14 @@ def handle_post(cdir, verb, body):
                         eng._emit({"t": "turn_end", "tokens": 0})
             except Exception:
                 pass
-            return res, 200
-        return {"ok": False, "error": f"unknown aegis action: {act}"}, 400
+            return res
+
+        return _run_aegis_route_contract(
+            cdir,
+            body,
+            _do_aegis_post,
+            verify_scanner_exec=(act in ("scan", "bind_target")),
+        )
     if verb == "refinement-accept":
         from steward_cockpit.refinement_client import update
         import uuid
@@ -4411,7 +5886,7 @@ def _default_setup_chart_state() -> dict:
             {
                 "id": "pull-8901",
                 "ts": "Today 14:22",
-                "src": r"C:\Users\example\Documents\Neuro-Circuit-Notes",
+                "src": r"D:\WorkspaceArchive\Documents\Neuro-Circuit-Notes",
                 "dest": os.path.join(ws, "imported", "Neuro-Circuit-Notes"),
                 "files": 19,
                 "size": "3.1 MB",
@@ -4424,7 +5899,7 @@ def _default_setup_chart_state() -> dict:
                 {
                     "id": "sp-1",
                     "name": "Options-Flow-Scanner",
-                    "src": r"C:\Users\example\Downloads\Options-Flow-Scanner",
+                    "src": r"D:\WorkspaceArchive\Downloads\Options-Flow-Scanner",
                     "destSubpath": r"imported\Options-Flow-Scanner",
                     "files": 34,
                     "size": "4.2 MB",
@@ -4435,7 +5910,7 @@ def _default_setup_chart_state() -> dict:
                 {
                     "id": "sp-2",
                     "name": "BioCompute-SpikeSim",
-                    "src": r"C:\Users\example\Desktop\BioCompute-SpikeSim",
+                    "src": r"D:\WorkspaceArchive\Desktop\BioCompute-SpikeSim",
                     "destSubpath": r"imported\BioCompute-SpikeSim",
                     "files": 51,
                     "size": "8.7 MB",
@@ -4448,7 +5923,7 @@ def _default_setup_chart_state() -> dict:
                 {
                     "id": "sp-3",
                     "name": "mcp-bridge-prototype",
-                    "src": r"C:\Users\example\Documents\repos\mcp-bridge-prototype",
+                    "src": r"D:\WorkspaceArchive\Documents\repos\mcp-bridge-prototype",
                     "destSubpath": r"imported\mcp-bridge-prototype",
                     "files": 22,
                     "size": "1.1 MB",
@@ -4461,7 +5936,7 @@ def _default_setup_chart_state() -> dict:
                 {
                     "id": "sp-4",
                     "name": "Series-B-TermSheets-2026",
-                    "src": r"C:\Users\example\Documents\Deals\Series-B-TermSheets-2026",
+                    "src": r"D:\WorkspaceArchive\Documents\Deals\Series-B-TermSheets-2026",
                     "destSubpath": r"imported\Series-B-TermSheets-2026",
                     "files": 14,
                     "size": "6.8 MB",

@@ -733,8 +733,16 @@ def ingest_job_cost(engine_session_uuid, cost, job_id, record=None) -> int:
         provider_connection_id=(rec.get("provider_connection") or {}).get("id"),
         model=receipt.get("model_served") or receipt.get("model") or None,
         duration_ms=_int(cost.get("duration_ms")),
-        usage={"input_tokens": inp, "output_tokens": out,
-               "cached_input_tokens": _int(cost.get("cached_input_tokens"))} if cost else None,
+        usage={
+            "input_tokens": inp,
+            "output_tokens": out,
+            "cached_input_tokens": _int(cost.get("cached_input_tokens")),
+            "cache_read_input_tokens": _int(
+                cost.get("cache_read_input_tokens")
+                if cost.get("cache_read_input_tokens") is not None
+                else cost.get("cached_input_tokens")),
+            "cache_creation_input_tokens": _int(cost.get("cache_creation_input_tokens")),
+        } if cost else None,
         recorded_at=_iso(finished) if isinstance(finished, (int, float)) and not isinstance(finished, bool) else None)
 
 
@@ -746,7 +754,7 @@ def ingest_job_cost(engine_session_uuid, cost, job_id, record=None) -> int:
 USAGE_MEASURED = STATE_MEASURED   # a recorded charge
 USAGE_UNPRICED = "unpriced"       # tokens known, no per-turn price (subscription)
 USAGE_UNKNOWN = "unknown"         # a spawn is known, no usage reached us
-USAGE_STATES = (USAGE_MEASURED, USAGE_UNPRICED, USAGE_UNKNOWN)
+USAGE_STATES = (USAGE_MEASURED, USAGE_UNPRICED, USAGE_UNKNOWN, STATE_UNMEASURED)
 
 SOURCE_STEWARD_TURN = "steward-turn"
 SOURCE_TERMINAL_TURN = "terminal-turn"   # a cockpit workbench (general) turn
@@ -759,11 +767,14 @@ INDEXED_SOURCES = (SOURCE_JOB, SOURCE_SUBAGENT, SOURCE_SEAT)
 #: The index row: what the rollup reads (``scope``/``folder_scope`` are the
 #: normalized paths stamped at write time so a poll compares strings and never
 #: realpaths 8k rows — Grok R1 F5), plus the ids that lead back to the spawn and
-#: its ledger doc (a key is a hash; a row must still name its job or child, and
-#: a child its immediate parent).
-INDEX_FIELDS = ("key", "source", "native_id", "engine_session_uuid", "folder_path",
-                "effort_dir", "scope", "folder_scope", "cli", "model", "model_attested", "tokens",
-                "cost_usd", "usage_state", "duration_ms", "recorded_at", "parent_id")
+#: its ledger doc and the schema-v2 token breakdown fields.
+INDEX_FIELDS = (
+    "key", "source", "native_id", "engine_session_uuid", "folder_path",
+    "effort_dir", "scope", "folder_scope", "cli", "model", "model_attested",
+    "tokens", "input_tokens", "cache_read_input_tokens",
+    "cache_creation_input_tokens", "output_tokens",
+    "cost_usd", "usage_state", "duration_ms", "recorded_at", "parent_id",
+)
 
 
 def _iso(unix_seconds) -> str:
@@ -866,37 +877,116 @@ def turn_key(engine_session_uuid, native_id) -> str:
     return _ul.entry_key(engine_session_uuid, line="turn:%s" % (native_id,))
 
 
-def ingest_usage(engine_session_uuid, key, *, source, native_id, tokens,
-                 cost_usd=None, project_id=None, folder_path=None, effort_dir=None,
-                 cli=None, model=None, duration_ms=0, usage=None, recorded_at=None,
-                 index_key=None, parent_id=None, replace=False, attested=None,
-                 provider_connection_id=None) -> int:
+def ingest_usage(engine_session_uuid=None, key=None, *, source=SOURCE_JOB,
+                 native_id=None, tokens=None, cost_usd=None, project_id=None,
+                 folder_path=None, effort_dir=None, cli=None, model=None,
+                 duration_ms=0, usage=None, recorded_at=None, index_key=None,
+                 parent_id=None, replace=False, attested=None,
+                 provider_connection_id=None, input_tokens=None,
+                 cache_read_input_tokens=None, cache_creation_input_tokens=None,
+                 output_tokens=None, usage_state=None, job_id=None) -> int:
     """Write ONE attributed usage row: the ledger entry (write-once per key under
     the engine session's doc) and, for an indexed source with a project, the
     compact per-project index row the cockpit reads. A row with no engine
     session (a spawn that died before any result) has no ledger doc to join and
-    is written to the index only, as ``unknown``.
+    is written to the index only, as ``unknown`` (or ``unmeasured`` when
+    explicitly stamped).
 
-    ``index_key`` names the index row independently of the engine session (a
-    job is ``job:<job_id>``), so two writers for one spawn — a liveness check
-    while the reader still drains, then the finalize with the envelope — land on
-    ONE row: the index keeps the first write and upgrades an ``unknown``
-    placeholder once usage arrives (Grok R3 F11). ``cost_usd`` ``None`` stays
-    ``None`` — a subscription turn is *unpriced*, not $0. Returns the number of
-    NEW ledger entries (0 or 1). Best-effort: never raises into a turn or a job.
+    Every persisted row carries normalized top-level ``{input_tokens,
+    cache_read_input_tokens, cache_creation_input_tokens, output_tokens, model}``
+    fields extracted from explicit kwargs or ``usage`` (with
+    ``cached_input_tokens`` mapped to ``cache_read_input_tokens`` when
+    ``cache_read_input_tokens`` is absent). Missing ``project_id`` /
+    ``folder_path`` are resolved best-effort from ``effort_dir`` / ``folder_path``
+    or ``rnd_registry``. Best-effort: never raises into a turn or a job.
     """
+    if not key and index_key:
+        key = _ul.entry_key(engine_session_uuid or "", line=str(index_key))
+    if not key and job_id:
+        index_key = index_key or ("job:%s" % (job_id,))
+        key = _ul.entry_key(engine_session_uuid or "", line=str(index_key))
+    if not key and native_id:
+        key = _ul.entry_key(
+            engine_session_uuid or "",
+            line="%s:%s" % (source or SOURCE_JOB, native_id))
     if not key:
         return 0
-    tokens = _int(tokens)
+    if native_id is None:
+        native_id = str(job_id or index_key or key)
+
+    if project_id and not folder_path:
+        try:
+            import rnd_registry as _rr
+            folder_path = (_rr.get_project(project_id) or {}).get("folder_path") or None
+        except Exception:
+            folder_path = None
+        if not folder_path and effort_dir:
+            folder_path = resolve_project(effort_dir)[1]
+    elif not project_id and (effort_dir or folder_path):
+        resolved_pid, resolved_folder = resolve_project(effort_dir or folder_path)
+        if resolved_pid:
+            project_id = resolved_pid
+        if not folder_path and resolved_folder:
+            folder_path = resolved_folder
+
+    u = dict(usage) if isinstance(usage, dict) else {}
+    inp = max(0, _int(input_tokens)) if input_tokens is not None else max(
+        0, _int(u.get("input_tokens")))
+    if cache_read_input_tokens is not None:
+        cr = max(0, _int(cache_read_input_tokens))
+    elif u.get("cache_read_input_tokens") is not None:
+        cr = max(0, _int(u.get("cache_read_input_tokens")))
+    elif u.get("cached_input_tokens") is not None:
+        cr = max(0, _int(u.get("cached_input_tokens")))
+    else:
+        cr = 0
+    cc = max(0, _int(cache_creation_input_tokens)) if (
+        cache_creation_input_tokens is not None
+    ) else max(0, _int(u.get("cache_creation_input_tokens")))
+    outp = max(0, _int(output_tokens)) if output_tokens is not None else max(
+        0, _int(u.get("output_tokens")))
+
+    raw_model = model if (isinstance(model, str) and model.strip()) else u.get("model")
+    mdl = raw_model.strip() if isinstance(raw_model, str) and raw_model.strip() else None
+
+    bd_sum = inp + cr + cc + outp
+    if tokens is None:
+        tokens = _seat_tokens(u) if u else bd_sum
+    else:
+        tokens = max(0, _int(tokens))
+        if tokens == 0 and bd_sum > 0:
+            tokens = _seat_tokens(u) if u else bd_sum
+
     cost = _cost_number(cost_usd)
+    base_state = usage_state_for(tokens, cost)
+    if cost is not None and cost > 0:
+        eff_state = STATE_CAPTURE_FAILED if usage_state == STATE_CAPTURE_FAILED else USAGE_MEASURED
+    elif tokens > 0:
+        eff_state = usage_state if usage_state in (
+            USAGE_MEASURED, USAGE_UNPRICED, STATE_PARTIAL) else USAGE_UNPRICED
+    else:
+        eff_state = usage_state if usage_state in (
+            USAGE_UNKNOWN, STATE_UNMEASURED, STATE_CAPTURE_FAILED) else base_state
+
     entry = {
-        "key": key, "source": source, "native_id": native_id,
+        "key": key,
+        "source": source,
+        "native_id": native_id,
         "engine_session_uuid": str(engine_session_uuid) if engine_session_uuid else None,
-        "project_id": project_id or None, "folder_path": folder_path or None,
+        "project_id": project_id or None,
+        "folder_path": str(folder_path) if folder_path else None,
         "effort_dir": str(effort_dir) if effort_dir else None,
-        "scope": _scope(effort_dir), "folder_scope": _scope(folder_path),
-        "cli": cli or None, "model": model or None,
-        "tokens": tokens, "cost_usd": cost, "usage_state": usage_state_for(tokens, cost),
+        "scope": _scope(effort_dir),
+        "folder_scope": _scope(folder_path),
+        "cli": cli or None,
+        "model": mdl,
+        "tokens": tokens,
+        "input_tokens": inp,
+        "cache_read_input_tokens": cr,
+        "cache_creation_input_tokens": cc,
+        "output_tokens": outp,
+        "cost_usd": cost,
+        "usage_state": eff_state,
         "duration_ms": _int(duration_ms),
         "recorded_at": recorded_at if isinstance(recorded_at, str) and recorded_at
         else time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -906,7 +996,21 @@ def ingest_usage(engine_session_uuid, key, *, source, native_id, tokens,
     if provider_connection_id:
         entry["provider_connection_id"] = provider_connection_id
     if isinstance(usage, dict):
-        entry["usage"] = dict(usage)
+        u_copy = dict(usage)
+        u_copy.setdefault("input_tokens", inp)
+        u_copy.setdefault("cache_read_input_tokens", cr)
+        u_copy.setdefault("cache_creation_input_tokens", cc)
+        u_copy.setdefault("output_tokens", outp)
+        entry["usage"] = u_copy
+    elif (input_tokens is not None or cache_read_input_tokens is not None
+          or cache_creation_input_tokens is not None or output_tokens is not None
+          or bd_sum > 0):
+        entry["usage"] = {
+            "input_tokens": inp,
+            "cache_read_input_tokens": cr,
+            "cache_creation_input_tokens": cc,
+            "output_tokens": outp,
+        }
     added = 0
     if engine_session_uuid:
         try:
@@ -916,6 +1020,8 @@ def ingest_usage(engine_session_uuid, key, *, source, native_id, tokens,
     if entry["project_id"] and source in INDEXED_SOURCES:
         try:
             row = {f: entry[f] for f in INDEX_FIELDS}
+            if "usage" in entry:
+                row["usage"] = dict(entry["usage"])
             row["key"] = index_key or key
             if _ui.append_rows(entry["project_id"], [row]) > 0:
                 try:
@@ -1263,6 +1369,7 @@ ENV_EFFORT = "ANCHOR_EFFORT_DIR"
 ENV_JOB = "ANCHOR_JOB_ID"
 ENV_SESSION = "ANCHOR_SESSION_ID"
 ENV_RECEIPTS = "ANCHOR_RECEIPTS_DIR"
+ENV_SOURCE = "ANCHOR_USAGE_SOURCE"
 _UUID_RE = None
 
 
@@ -1272,7 +1379,7 @@ def receipts_dir() -> Path:
 
 
 def attribution_env(project_id=None, effort_dir=None, job_id=None, session_id=None,
-                    folder_path=None) -> dict:
+                    folder_path=None, source=None) -> dict:
     """The ids a child inherits: project, effort dir, the job or the engine
     session that spawned it, and where to drop receipts. Only known ids are
     set; a missing project is resolved from the folder at ingest, not here."""
@@ -1286,6 +1393,8 @@ def attribution_env(project_id=None, effort_dir=None, job_id=None, session_id=No
         env[ENV_JOB] = str(job_id)
     if session_id:
         env[ENV_SESSION] = str(session_id)
+    if source:
+        env[ENV_SOURCE] = str(source)
     return env
 
 
@@ -1424,3 +1533,245 @@ def ingest_receipts(receipts_root=None, parent_session=None, parent_effort=None)
         except OSError:
             pass
     return written
+
+
+_SYNTHETIC_SUBSTRINGS = ("anchor-hc-", "__healthcheck__", "fake_claude")
+
+
+def _has_synthetic_marker(obj, *, check_fake_prefix: bool = True) -> bool:
+    """Return True when ``obj`` belongs to a synthetic healthcheck / stub run."""
+    if isinstance(obj, dict):
+        esu = obj.get("engine_session_uuid")
+        if isinstance(esu, str) and (esu == "stub" or esu.startswith("fake-")):
+            return True
+        for field in ("key", "native_id", "project_id", "parent_id"):
+            val = obj.get(field)
+            if isinstance(val, str) and (val == "stub" or (
+                    check_fake_prefix and val.startswith("fake-"))):
+                return True
+        try:
+            blob = json.dumps(obj, ensure_ascii=False)
+        except Exception:
+            blob = str(obj)
+        low = blob.lower()
+        if any(tok in low for tok in _SYNTHETIC_SUBSTRINGS):
+            return True
+        if check_fake_prefix and '"fake-' in low:
+            return True
+        return False
+    if isinstance(obj, str):
+        low = obj.lower()
+        if obj == "stub" or (check_fake_prefix and obj.startswith("fake-")):
+            return True
+        return any(tok in low for tok in _SYNTHETIC_SUBSTRINGS)
+    return False
+
+
+def purge_synthetic_healthcheck_records(data_dir: Path | str | None = None) -> dict:
+    """Purge synthetic healthcheck / fake-runner usage records from ledger and index.
+
+    Scans ``<root>/.anchor/usage_ledger/*.json`` and
+    ``<root>/.anchor/usage_index/*.jsonl`` (where ``root`` defaults to
+    ``paths.data_dir()``), removing synthetic ledger files/entries and synthetic
+    usage_index files/rows atomically under lock.
+    """
+    import journal as _journal
+
+    root = Path(data_dir) if data_dir is not None else _paths.data_dir()
+    ledger_dir = root / ".anchor" / "usage_ledger"
+    idx_dir = root / ".anchor" / "usage_index"
+    removed_ledgers = 0
+    removed_ledger_entries = 0
+    removed_index_rows = 0
+
+    if ledger_dir.is_dir():
+        with _paths.WRITE_LOCK, _journal.pairing():
+            try:
+                lfiles = sorted(ledger_dir.glob("*.json"))
+            except OSError:
+                lfiles = []
+            for lpath in lfiles:
+                stem = lpath.stem
+                stem_synth = (
+                    stem.startswith("fake-")
+                    or stem == "stub"
+                    or any(tok in stem.lower() for tok in _SYNTHETIC_SUBSTRINGS)
+                )
+                doc = None
+                try:
+                    doc = json.loads(lpath.read_text(encoding="utf-8"))
+                except (OSError, ValueError, UnicodeDecodeError):
+                    doc = None
+
+                if stem_synth:
+                    n_ent = 0
+                    if isinstance(doc, dict):
+                        ents = doc.get("entries")
+                        if isinstance(ents, (dict, list)):
+                            n_ent = len(ents)
+                    try:
+                        lpath.unlink()
+                        removed_ledgers += 1
+                        removed_ledger_entries += n_ent
+                    except OSError:
+                        pass
+                    continue
+
+                if not isinstance(doc, dict):
+                    continue
+                doc_uuid = doc.get("engine_session_uuid")
+                if isinstance(doc_uuid, str) and _has_synthetic_marker(doc_uuid):
+                    ents = doc.get("entries")
+                    n_ent = len(ents) if isinstance(ents, (dict, list)) else 0
+                    try:
+                        lpath.unlink()
+                        removed_ledgers += 1
+                        removed_ledger_entries += n_ent
+                    except OSError:
+                        pass
+                    continue
+
+                entries = doc.get("entries")
+                if isinstance(entries, dict) and entries:
+                    bad_keys = [
+                        k for k, v in entries.items()
+                        if _has_synthetic_marker(k) or _has_synthetic_marker(v)
+                    ]
+                    if len(bad_keys) == len(entries):
+                        try:
+                            lpath.unlink()
+                            removed_ledgers += 1
+                            removed_ledger_entries += len(bad_keys)
+                        except OSError:
+                            pass
+                    elif bad_keys:
+                        bad_set = set(bad_keys)
+                        new_doc = dict(doc)
+                        new_doc["entries"] = {
+                            k: v for k, v in entries.items() if k not in bad_set
+                        }
+                        try:
+                            _paths.atomic_write_json(lpath, new_doc)
+                            removed_ledger_entries += len(bad_keys)
+                        except OSError:
+                            pass
+                elif isinstance(entries, list) and entries:
+                    kept = [v for v in entries if not _has_synthetic_marker(v)]
+                    n_bad = len(entries) - len(kept)
+                    if n_bad == len(entries):
+                        try:
+                            lpath.unlink()
+                            removed_ledgers += 1
+                            removed_ledger_entries += n_bad
+                        except OSError:
+                            pass
+                    elif n_bad > 0:
+                        new_doc = dict(doc)
+                        new_doc["entries"] = kept
+                        try:
+                            _paths.atomic_write_json(lpath, new_doc)
+                            removed_ledger_entries += n_bad
+                        except OSError:
+                            pass
+
+    if idx_dir.is_dir():
+        try:
+            ifiles = [
+                p for p in sorted(idx_dir.glob("*.jsonl"))
+                if not p.name.endswith(".quarantine.jsonl")
+            ]
+        except OSError:
+            ifiles = []
+        for ipath in ifiles:
+            stem = ipath.stem
+            lock_file = idx_dir / f"{stem}.lock"
+            meta_file = idx_dir / f"{stem}.meta.json"
+            quar_file = idx_dir / f"{stem}.quarantine.jsonl"
+            hc_project = stem.startswith("__healthcheck__") or "__healthcheck__" in stem.lower()
+            try:
+                with _paths.WRITE_LOCK, _paths.cross_process_lock(
+                        lock_file, timeout_sec=_ui.DEFAULT_LOCK_TIMEOUT_S), _journal.pairing():
+                    try:
+                        lines = ipath.read_text(encoding="utf-8", errors="replace").splitlines()
+                    except OSError:
+                        continue
+                    if hc_project:
+                        row_cnt = sum(1 for ln in lines if ln.strip())
+                        try:
+                            ipath.unlink()
+                            removed_index_rows += row_cnt
+                        except OSError:
+                            pass
+                        for extra in (meta_file, quar_file):
+                            try:
+                                if extra.exists():
+                                    extra.unlink()
+                            except OSError:
+                                pass
+                        continue
+
+                    kept_rows = []
+                    n_removed = 0
+                    for raw_ln in lines:
+                        ln = raw_ln.strip()
+                        if not ln:
+                            continue
+                        try:
+                            row = json.loads(ln)
+                        except ValueError:
+                            if _has_synthetic_marker(ln):
+                                n_removed += 1
+                            continue
+                        if not isinstance(row, dict) or not row.get("key"):
+                            continue
+                        if _has_synthetic_marker(row):
+                            n_removed += 1
+                        else:
+                            kept_rows.append(_ui._normalize_row(row))
+
+                    if n_removed > 0:
+                        ipath.parent.mkdir(parents=True, exist_ok=True)
+                        _paths.atomic_write_text(
+                            ipath,
+                            "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in kept_rows),
+                        )
+                        q_cnt = 0
+                        if quar_file.is_file():
+                            try:
+                                q_cnt = sum(
+                                    1 for ql in quar_file.read_text(
+                                        encoding="utf-8", errors="replace").splitlines()
+                                    if ql.strip()
+                                )
+                            except OSError:
+                                q_cnt = 0
+                        _paths.atomic_write_json(meta_file, {
+                            "schema_version": _ui.INDEX_SCHEMA_VERSION,
+                            "quarantined_count": q_cnt,
+                        })
+                        removed_index_rows += n_removed
+            except Exception:
+                continue
+            if hc_project:
+                try:
+                    if lock_file.exists():
+                        lock_file.unlink()
+                except OSError:
+                    pass
+
+    if removed_ledgers or removed_ledger_entries or removed_index_rows:
+        try:
+            from steward_cockpit import steward_routes as _sr
+            with _sr._ROLLUP_LOCK:
+                _sr._ROLLUP_CACHE.clear()
+            with _sr._STATE_LOCK:
+                _sr._STATE_CACHE.clear()
+        except Exception:
+            pass
+
+    return {
+        "ok": True,
+        "removed_ledgers": removed_ledgers,
+        "removed_ledger_entries": removed_ledger_entries,
+        "removed_index_rows": removed_index_rows,
+    }

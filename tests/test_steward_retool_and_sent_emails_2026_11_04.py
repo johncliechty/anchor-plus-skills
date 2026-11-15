@@ -233,3 +233,73 @@ def test_sent_emails_backend_and_cave_ui(monkeypatch, tmp_path: Path):
     assert 'data-cave-open-sent="1"' in html
     assert "MIT Lecture Slides Ready" in html
     assert "Re: MBA Curriculum Update" in html
+
+
+def test_status_card_legacy_source_and_stale_strip_reconciliation(tmp_path: Path):
+    """Verify that:
+    1) Legacy status_card.json files without a 'source' field (or manual tables >10m old) do NOT blank out
+       to 'Idle — waiting for your input' when their doing/status lines are non-inflight.
+    2) read_map propagates strip.json as_of and build_running_overview replaces >12h-old strip active_effort
+       with the latest finished job summary."""
+    cdir = tmp_path / "mba_cockpit"
+    cdir.mkdir(parents=True)
+    (cdir / ".ecgberht").mkdir(parents=True)
+    (cdir / "ECGBERHT.md").write_text("# MBA Teaching AI\n\n## North Star\nDeliver Lectures 1-11.\n", encoding="utf-8")
+    (cdir / "roadmap.json").write_text(
+        json.dumps(
+            {
+                "roadmap_projection": [
+                    {"id": "step-1", "name": "Step 1: Course Map", "status": "done"},
+                    {"id": "step-2", "name": "Step 2: Refine Individual Lecture Modules", "status": "active"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (cdir / "strip.json").write_text(
+        json.dumps(
+            {
+                "as_of": "2026-11-01",
+                "active_effort": "Old two-day-old active effort string from strip.json",
+                "current_step_id": "step-2",
+            }
+        ),
+        encoding="utf-8",
+    )
+    now_iso = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(time.time() - 120))
+    (cdir / ".ecgberht" / "code-jobs.json").write_text(
+        json.dumps(
+            {
+                "job-recent": {
+                    "id": "job-recent",
+                    "status": "done",
+                    "brief": "Complete Lecture 7 and Lecture 8 slide decks and R scripts",
+                    "started": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(time.time() - 600)),
+                    "finished": now_iso,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    ov = sc.build_running_overview(str(cdir))
+    assert "Old two-day-old active effort" not in ov["doing_now"]
+    assert "Complete Lecture 7 and Lecture 8" in ov["doing_now"]
+
+    # Legacy status_card.json with source=None written after job finished must be respected when idle
+    sc_path = cdir / ".ecgberht" / "status_card.json"
+    sc_path.write_text(
+        json.dumps(
+            {
+                "timestamp": "12:20",
+                "effort": "MBA Teaching AI",
+                "doing": "Completed Lecture 7 and Lecture 8 — ready for review",
+                "status": "1/2 waves · 50% done",
+                "tests": "pass ✓",
+            }
+        ),
+        encoding="utf-8",
+    )
+    st = sc.compose_status(str(cdir), engine_state={"busy": False})
+    assert st["status_card"]["doing"] == "Completed Lecture 7 and Lecture 8 — ready for review"
+    assert st["status_card"]["status"] == "1/2 waves · 50% done"
+

@@ -565,7 +565,15 @@ EFFORT_RULES = (
     "turn - step_create / step_set events plus the projection - and you say in "
     "one line what changed in the plan. A plan document alone is not the plan; "
     "the cockpit appends a PLAN DRIFT line to his turns until the roadmap has "
-    "caught up."
+    "caught up. "
+    "(17) THE PLAN ENGINE & CLI (Wave 3, tools/steward_plan.py): manage this "
+    "cockpit's structured plan atomically via `python C:/dev/Anchor/tools/steward_plan.py "
+    "<status|init|add-step|set-step|reorder|park|set-next|propose|accept-proposal|dismiss-proposal|register-deliverable>` "
+    "(hard cap 200 steps per campaign; serialized across roadmap.json, strip.json, and plan-proposal.json). "
+    "On Turn 1 of a new effort or whenever proposing structural changes to an existing plan, use `init` (when empty "
+    "and requested) or `propose --summary ... --steps-json ...` so John can accept or dismiss in #planProposalTray; "
+    "use `add-step`, `set-step`, `set-next`, `reorder`, and `park` for immediate step updates, and `register-deliverable` "
+    "with clean human titles (never hashes or internal IDs)."
 )
 
 STAND_UP_NEW = (
@@ -643,26 +651,70 @@ def infer_subscription_cli(cli=None, usage_source=None):
 
 
 _LIST_PRICES = None
+_LIST_PRICES_MTIME_NS = None
+
+_BEST_FAMILY_DEFAULTS = {
+    "claude": "claude-fable-5-1",
+    "chatgpt": "gpt-6-astra",
+    "gemini": "gemini-4-argon-high",
+    "grok": "grok-4.20",
+}
 
 
 def api_list_prices():
     """The one dated, sourced price table (John, 2026-09-25: a subscription turn that
     reports tokens but no price carries an estimate at the provider's published API
     list price, always labeled estimated). A missing or unreadable file is {}."""
-    global _LIST_PRICES
-    if _LIST_PRICES is None:
+    global _LIST_PRICES, _LIST_PRICES_MTIME_NS
+    price_path = os.path.join(os.path.dirname(__file__), "api_list_prices.json")
+    try:
+        mtime_ns = os.stat(price_path).st_mtime_ns
+    except OSError:
+        mtime_ns = None
+    if _LIST_PRICES is None or mtime_ns != _LIST_PRICES_MTIME_NS:
         try:
-            with open(os.path.join(os.path.dirname(__file__), "api_list_prices.json"), encoding="utf-8") as fh:
+            with open(price_path, encoding="utf-8") as fh:
                 _LIST_PRICES = json.load(fh)
+            _LIST_PRICES_MTIME_NS = mtime_ns
         except Exception:
             _LIST_PRICES = {}
+            _LIST_PRICES_MTIME_NS = mtime_ns
     return _LIST_PRICES if isinstance(_LIST_PRICES, dict) else {}
 
 
-def estimate_list_price_usd(model, usage):
+def load_usage_baseline(data_dir=None, *, strict: bool = False) -> dict:
+    """Load optional historical usage baseline floors from ``<data_dir>/.anchor/usage_baseline.json``
+    (falling back to ``<data_dir>/usage_baseline.json``). Returns ``{}`` when absent.
+    When ``strict=True``, raises ``OSError`` / ``ValueError`` if a present file is unreadable or corrupt."""
+    base = Path(data_dir) if data_dir is not None else _paths.data_dir()
+    candidates = (base / ".anchor" / "usage_baseline.json", base / "usage_baseline.json")
+    target = None
+    for cand in candidates:
+        if cand.exists():
+            target = cand
+            break
+    if target is None:
+        return {}
+    try:
+        if target.is_dir():
+            raise OSError(f"usage_baseline.json is a directory: {target}")
+        raw_text = target.read_text(encoding="utf-8")
+        if "\x00" in raw_text:
+            raise ValueError("Null-byte corruption in usage_baseline.json")
+        parsed = json.loads(raw_text)
+        if not isinstance(parsed, dict):
+            raise ValueError("usage_baseline.json root must be a JSON object")
+        return parsed
+    except (OSError, ValueError, TypeError):
+        if strict:
+            raise
+        return {}
+
+
+def estimate_list_price_usd(model, usage, *, price_table=None):
     """USD for one turn at the table's list price; None when the model is not in the
     table or the turn carries no token counts. Cached input is a subset of input."""
-    table = api_list_prices().get("usd_per_million")
+    table = price_table if price_table is not None else api_list_prices().get("usd_per_million")
     key = str(model or "").strip().lower()
     row = None
     if isinstance(table, dict) and key:
@@ -671,6 +723,26 @@ def estimate_list_price_usd(model, usage):
             stripped = re.sub(r"-(minimal|low|medium|high|xhigh|max)$", "", key)
             stripped = re.sub(r"-\d{8}$", "", stripped)
             row = table.get(stripped)
+        if row is None and key != "best":
+            for prefix, fallback_key in (
+                ("gemini-4", "gemini-4-argon"),
+                ("gemini-3.8", "gemini-3.8-flash"),
+                ("gemini-3.1", "gemini-3.1-pro"),
+                ("gemini-3", "gemini-3-flash"),
+                ("claude-fable", "claude-fable-5-1"),
+                ("claude-opus-5", "claude-opus-5-5"),
+                ("claude-sonnet-5", "claude-sonnet-5-5"),
+                ("claude-opus-4", "claude-opus-4-7"),
+                ("claude-sonnet-4", "claude-sonnet-4-6"),
+                ("claude-haiku", "claude-haiku-4-5"),
+                ("gpt-6", "gpt-6-astra"),
+                ("gpt-5", "gpt-5.6-sol"),
+                ("grok-4", "grok-4.7"),
+            ):
+                if key.startswith(prefix):
+                    row = table.get(fallback_key)
+                    if row is not None:
+                        break
     usage = usage if isinstance(usage, dict) else {}
     def count(k):
         value = usage.get(k)
@@ -825,14 +897,17 @@ def _backfill_usage_estimate(u, raw, model_policy=None, *, include_inflight=True
     checkpoints when exact checkpoint counts or a priced model_policy exist on the record."""
     if not isinstance(u, dict) or (int(u.get("unpriced_turns") or 0) <= 0 and int(u.get("unpriced_inflight") or 0) <= 0):
         return u
+    raw_d = raw if isinstance(raw, dict) else {}
     mp = model_policy if isinstance(model_policy, dict) else {}
-    m_served = mp.get("model_served")
-    m_req = mp.get("model")
-    if not m_served and m_req == "best" and mp.get("family") == "claude":
-        m_served = "claude-fable-5-1"
+    m_served = mp.get("model_served") or raw_d.get("model_served")
+    m_req = mp.get("model") or raw_d.get("model") or u.get("model")
+    fam = str(mp.get("family") or raw_d.get("cli") or u.get("cli") or "").strip().lower()
+    if (not m_served or str(m_served).strip().lower() == "best") and (
+        str(m_served or "").strip().lower() == "best" or str(m_req or "").strip().lower() == "best"
+    ):
+        m_served = _BEST_FAMILY_DEFAULTS.get(fam, "best")
     if not m_served and not m_req:
         return u
-    raw_d = raw if isinstance(raw, dict) else {}
     checkpoints = raw_d.get("usage_checkpoints")
     ck_spend = 0.0
     ck_turns = 0
@@ -880,6 +955,7 @@ def _backfill_usage_estimate(u, raw, model_policy=None, *, include_inflight=True
                     )
                 continue
             by_sess.setdefault(sid, []).append(ck)
+        ck_est_list = []
         for sid, ck_list in by_sess.items():
             ck_list.sort(key=lambda c: (str(c.get("updated_at") or ""), int((c.get("counts") or {}).get("input_tokens") or 0)))
             prev_c = None
@@ -915,9 +991,20 @@ def _backfill_usage_estimate(u, raw, model_policy=None, *, include_inflight=True
                         + int(eff_counts.get("cache_read_input_tokens") or 0)
                         + int(eff_counts.get("cache_creation_input_tokens") or 0)
                     )
+                    ck_est_list.append((str(ck.get("updated_at") or ""), est))
     if ck_turns > 0:
-        u["estimated_turns"] = min(u["unpriced_turns"], max(int(u.get("estimated_turns") or 0), ck_turns))
-        u["estimated_spend"] = round(max(float(u.get("estimated_spend") or 0.0), ck_spend), 4)
+        prev_est_turns = int(u.get("estimated_turns") or 0)
+        prev_est_spend = float(u.get("estimated_spend") or 0.0)
+        unp_turns_now = int(u.get("unpriced_turns") or 0)
+        if prev_est_turns > 0 and unp_turns_now > prev_est_turns and prev_est_spend > ck_spend and ck_est_list:
+            ck_est_list.sort(key=lambda item: item[0])
+            missing_turns = min(len(ck_est_list), unp_turns_now - prev_est_turns)
+            tail_spend = sum(est for _, est in ck_est_list[-missing_turns:])
+            u["estimated_turns"] = prev_est_turns + missing_turns
+            u["estimated_spend"] = round(prev_est_spend + tail_spend, 4)
+        else:
+            u["estimated_turns"] = min(unp_turns_now, max(prev_est_turns, ck_turns))
+            u["estimated_spend"] = round(max(prev_est_spend, ck_spend), 4)
     lsu = raw_d.get("last_session_usage")
     if isinstance(lsu, dict):
         # When last_session_usage is present, it holds the true cumulative session
@@ -936,23 +1023,27 @@ def _backfill_usage_estimate(u, raw, model_policy=None, *, include_inflight=True
         return u
     est_turns = int(u.get("estimated_turns") or 0)
     unp_turns = int(u.get("unpriced_turns") or 0)
-    if unp_turns > est_turns and u.get("tokens", 0) > (ck_tokens + inflight_tokens) and u.get("reported_spend", 0.0) <= 0.0:
-        rem_tokens = max(0, int(u["tokens"]) - ck_tokens - inflight_tokens)
-        if est_turns > ck_turns and unp_turns > 0:
+    total_tok = int(u.get("tokens") or 0)
+    if unp_turns > est_turns and total_tok > (ck_tokens + inflight_tokens):
+        rem_tok = max(0, total_tok - ck_tokens - inflight_tokens)
+        total_turns = int(u.get("turns") or 0)
+        if float(u.get("reported_spend") or 0.0) > 0.0 and total_turns > unp_turns > 0:
+            rem_tok = int(rem_tok * ((unp_turns - est_turns) / float(total_turns)))
+        elif est_turns > ck_turns and unp_turns > 0:
             # Only estimate the unpriced turn slice not already covered by estimated_spend
-            rem_tokens = int(rem_tokens * ((unp_turns - est_turns) / float(unp_turns)))
-        in_tok = int(rem_tokens * 0.90)
-        synth_counts = {
-            "input_tokens": in_tok,
-            "cached_input_tokens": int(rem_tokens * 0.50),
-            "output_tokens": max(0, rem_tokens - in_tok),
-        }
-        rem_est = estimate_list_price_usd(m_served, synth_counts) if m_served else None
-        if rem_est is None and m_req:
-            rem_est = estimate_list_price_usd(m_req, synth_counts)
-        if rem_est is not None:
-            u["estimated_spend"] = round(float(u.get("estimated_spend") or 0.0) + rem_est, 4)
-            u["estimated_turns"] = unp_turns
+            rem_tok = int(rem_tok * ((unp_turns - est_turns) / float(unp_turns)))
+        if rem_tok > 0:
+            synth_counts = {
+                "input_tokens": int(rem_tok * 0.95),
+                "cached_input_tokens": int(rem_tok * 0.85),
+                "output_tokens": max(1, int(rem_tok * 0.05)),
+            }
+            rem_est = estimate_list_price_usd(m_served, synth_counts) if m_served else None
+            if rem_est is None and m_req:
+                rem_est = estimate_list_price_usd(m_req, synth_counts)
+            if rem_est is not None:
+                u["estimated_spend"] = round(float(u.get("estimated_spend") or 0.0) + rem_est, 4)
+                u["estimated_turns"] = unp_turns
     if inflight_turns > 0:
         u["estimated_spend"] = round(float(u.get("estimated_spend") or 0.0) + inflight_spend, 4)
         u["estimated_turns"] = int(u.get("estimated_turns") or 0) + inflight_turns
@@ -1162,12 +1253,15 @@ FENCE_ALLOWED_TOOLS = (
     "Bash(python C:/dev/Anchor/tools/steward_skill.py *)",
     "Bash(python C:/dev/Anchor/tools/steward_settings.py *)",
     "Bash(python C:/dev/Anchor/tools/steward_comms.py *)",
+    "Bash(python C:/dev/Anchor/tools/steward_plan.py *)",
+    "Bash(node *ecgberht.mjs *)",
     "Bash(python C:/dev/foundry-tools/ft.py *)",
     "Bash(git status*)", "Bash(git log*)", "Bash(git diff*)", "Bash(git show*)",
 )
 FENCE_NOTE = (
-    " YOUR FENCE: you read anywhere, but you write only inside this effort folder, and your shell runs only the two "
-    "hand-off tools and read-only git. Any change outside this folder is a code job (the tool above). A Foundry skill "
+    " YOUR FENCE: you read anywhere, but you write only inside this effort folder, and your shell runs only the "
+    "approved steward tools (steward_code_job.py, steward_skill.py, steward_plan.py, steward_comms.py, steward_settings.py, ecgberht.mjs) "
+    "and read-only git. Any change outside this folder is a code job (the tool above). A Foundry skill "
     "(Gandalf, researchPrime, ...; Foreman is always a code job) runs as a SKILL JOB the server starts outside your fence: "
     "`python C:/dev/Anchor/tools/steward_skill.py start --label \"<what it is for>\" -- node <the skill's run script> "
     "[args]` - it wakes you with the result and its log. Put a long brief, or one with quotes, $ or backslashes, in a "
@@ -1340,31 +1434,178 @@ def campaign_mode_remit(steward):
     ) % (name.upper() if name != "Campaign" else "CAMPAIGN", steward)
 
 
+def _list_state_capsule() -> str:
+    """Compact live capsule of *The List* (`.anchor/working-list-spine.json`), `#wlProposalTray` pending
+    proposals, recent auto-checked items, and `steward-watchlist.json` deadlines for Cave Steward turns.
+
+    Enforces `unknown != empty`: a corrupt or locked backing store is reported explicitly as `unknown` / `lock_busy`,
+    never masked as `0 active items`."""
+    try:
+        import comms_connector as _cc
+    except Exception:
+        return "[CAVE LIVING LIST & WATCHLIST CAPSULE]\n- Status: comms_connector unavailable (unknown)"
+
+    lines = ["[CAVE LIVING LIST & WATCHLIST CAPSULE]"]
+    try:
+        wl_res, wl_code = _cc.handle_working_list_request(method="GET")
+    except Exception as exc:
+        wl_res = {"ok": False, "status_code": 500, "message": f"The List / Watchlist unreadable (unknown) — inspect Doctor ({exc})"}
+        wl_code = 500
+
+    if not wl_res.get("ok") or wl_code >= 500:
+        lines.append(f"- The List Status: UNKNOWN ({wl_res.get('message') or 'The List / Watchlist unreadable (unknown) — inspect Doctor'})")
+    else:
+        wl = wl_res.get("working_list") if isinstance(wl_res.get("working_list"), dict) else {}
+        tiles = [t for t in (wl.get("tiles") or []) if isinstance(t, dict) and not t.get("archived") and not t.get("done")]
+        hz = wl.get("horizon_counts") if isinstance(wl.get("horizon_counts"), dict) else {}
+        proposals = [p for p in (wl.get("proposals") or []) if isinstance(p, dict)]
+        auto_ck = [a for a in (wl.get("auto_checked") or wl.get("auto_checked_log") or []) if isinstance(a, dict)]
+        if not tiles:
+            lines.append("- The List: The List is clear (0 active items)")
+        else:
+            top_summaries = []
+            for t in sorted(tiles, key=lambda x: int(x.get("priority") or 99))[:3]:
+                steps = [s for s in (t.get("steps") or []) if isinstance(s, dict)]
+                nxt_step = next((str(s.get("text") or "")[:60] for s in steps if not s.get("done")), "all steps complete")
+                top_summaries.append(f"#{int(t.get('priority') or 1)} {t.get('title')} ({t.get('category') or 'General'} -> {nxt_step})")
+            lines.append(
+                f"- The List ({len(tiles)} active · Horizons: Today={int(hz.get('today') or 0)}, "
+                f"This Week={int(hz.get('this_week') or 0)}, This Month={int(hz.get('this_month') or 0)}, "
+                f"Star Chart Goals={int(hz.get('star_chart_goals') or 0)}): " + " | ".join(top_summaries)
+            )
+        if proposals:
+            p_bits = [f"{p.get('proposal_op')}:{str(p.get('title') or '')[:44]}" for p in proposals[:3]]
+            lines.append(f"- Pending Proposals in #wlProposalTray ({len(proposals)} awaiting approval): " + "; ".join(p_bits))
+        else:
+            lines.append("- Pending Proposals in #wlProposalTray: 0 pending")
+        if auto_ck:
+            lines.append(f"- Recently Auto-Checked ({len(auto_ck)} reversible in #wlAutoCheckedStrip): {str(auto_ck[-1].get('step_text') or '')[:64]}")
+
+    try:
+        w_res, w_code = _cc.get_watchlist_response(include_done=False)
+    except Exception as exc:
+        w_res = {"ok": False, "status_code": 500, "message": f"The List / Watchlist unreadable (unknown) — inspect Doctor ({exc})"}
+        w_code = 500
+
+    if not w_res.get("ok") or w_code >= 500:
+        lines.append(f"- Watchlist Status: UNKNOWN ({w_res.get('message') or 'The List / Watchlist unreadable (unknown) — inspect Doctor'})")
+    else:
+        w_items = [w for w in (w_res.get("items") or []) if isinstance(w, dict)]
+        if not w_items:
+            lines.append("- Steward Watchlist: No Watchlist deadlines due")
+        else:
+            w_bits = [f"{w.get('due') or 'undated'} {str(w.get('title') or '')[:44]}" for w in w_items[:3]]
+            lines.append(f"- Steward Watchlist ({len(w_items)} open deadline/follow-up item(s)): " + "; ".join(w_bits))
+    return "\n".join(lines)
+
+
+def _plan_state_capsule(cdir) -> str:
+    """Compact live capsule of *The Plan* (`roadmap.json` / `strip.json`), pending `plan-proposal.json`,
+    and unaccepted `for_review` deliverables for dedicated project cockpit Steward turns.
+
+    Enforces `unknown != empty`: corrupt/unreadable backing files are reported explicitly as `UNKNOWN`,
+    never masked as `0/0 steps`."""
+    lines = ["[PROJECT PLAN & DELIVERABLES CAPSULE]"]
+    if not cdir or not os.path.isdir(str(cdir)):
+        lines.append("- Plan Status: UNKNOWN (Campaign directory not found)")
+        return "\n".join(lines)
+
+    try:
+        from tools import steward_plan as _splan
+        pstate = _splan.read_plan_state(cdir)
+    except Exception as exc:
+        msg = getattr(exc, "message", None) or f"Plan/Deliverables unreadable (unknown) — inspect roadmap.json ({exc})"
+        pstate = {"ok": False, "failure_state": getattr(exc, "failure_state", "backing-store-unreadable"), "message": str(msg)}
+
+    if not pstate.get("ok"):
+        lines.append(
+            f"- Plan Status: UNKNOWN ({pstate.get('message') or 'Plan/Deliverables unreadable (unknown) — inspect roadmap.json'})"
+        )
+    else:
+        counts = pstate.get("counts") if isinstance(pstate.get("counts"), dict) else {}
+        done = int(counts.get("done") or 0)
+        total = int(counts.get("total") or 0)
+        parked = int(counts.get("parked") or 0)
+        focus = pstate.get("focus") if isinstance(pstate.get("focus"), dict) else None
+        if total == 0:
+            lines.append("- Plan Steps (0/0 done): No plan steps yet — draft or propose The Plan via tools/steward_plan.py")
+        else:
+            if focus and (focus.get("title") or focus.get("name")):
+                ftitle = str(focus.get("title") or focus.get("name")).strip()
+                fid = str(focus.get("id") or "").strip()
+                fdw = str(focus.get("done_when") or "").strip()
+                focus_desc = f"{fid}: {ftitle}" if fid else ftitle
+                if fdw:
+                    focus_desc += f" (done_when: {fdw[:80]})"
+            elif done >= max(0, total - parked):
+                focus_desc = "all unparked steps complete"
+            else:
+                focus_desc = "none"
+            active_total = max(0, total - parked)
+            denom = active_total if parked > 0 else total
+            parked_note = f", {parked} parked" if parked else ""
+            lines.append(f"- Plan Steps ({done}/{denom} done{parked_note}) · Current Focus: {focus_desc}")
+
+        proposal = pstate.get("proposal") if isinstance(pstate.get("proposal"), dict) else None
+        if proposal and proposal.get("pending"):
+            p_sum = str(proposal.get("summary") or proposal.get("reason") or proposal.get("id") or "pending plan update")[:90]
+            p_count = len(proposal.get("proposed_steps") or proposal.get("ops") or [])
+            lines.append(f"- Pending Plan Proposal (plan-proposal.json): awaiting approval ({p_count} item(s)) — {p_sum}")
+        else:
+            lines.append("- Pending Plan Proposal: none")
+
+    try:
+        from steward_cockpit import steward_campaign as _sc
+        deliv = _sc.read_deliverables(cdir)
+    except Exception as exc:
+        deliv = {"failure_state": "backing-store-unreadable", "message": f"Plan/Deliverables unreadable (unknown) — inspect roadmap.json ({exc})"}
+
+    if isinstance(deliv, dict) and deliv.get("failure_state") == "backing-store-unreadable":
+        lines.append(
+            f"- Deliverables Status: UNKNOWN ({deliv.get('message') or 'Plan/Deliverables unreadable (unknown) — inspect roadmap.json'})"
+        )
+    else:
+        buckets = (deliv.get("buckets") if isinstance(deliv, dict) and isinstance(deliv.get("buckets"), dict) else {})
+        for_review = [it for it in (buckets.get("for_review") or []) if isinstance(it, dict)]
+        final_items = [it for it in (buckets.get("final") or []) if isinstance(it, dict)]
+        if for_review:
+            rv_bits = [str(it.get("human_title") or it.get("what") or it.get("path") or "")[:52] for it in for_review[:3]]
+            lines.append(
+                f"- Unaccepted For-Review Deliverables ({len(for_review)} awaiting review, {len(final_items)} final): "
+                + "; ".join(rv_bits)
+            )
+        else:
+            lines.append(f"- Unaccepted For-Review Deliverables: 0 awaiting review ({len(final_items)} final)")
+    return "\n".join(lines)
+
+
 def cave_mode_remit(steward):
-    """The Cave of Wonders conversation's remit (Wave 22 Anvil + Gandalf + Cross-Family Retool, 2026-11-06):
-    appended to the system prompt for the Cave of Wonders Steward (`_is_cave_dir(self.dir)`). Gives the Cave
-    Steward a cohesive 5-Domain Chief-of-Staff architecture instead of falling back to a leaf project prompt."""
+    """The Cave of Wonders conversation's remit (Wave 2 Living *The List* + Watchlist + Pure Calendar, 2026-11-13):
+    appended to the system prompt for the Cave of Wonders Steward (`_is_cave_dir(self.dir)`)."""
+    capsule = _list_state_capsule()
     return (
         "\nTHIS CONVERSATION IS THE CAVE OF WONDERS — JOHN'S EXECUTIVE CHIEF-OF-STAFF & DAILY COMMAND DECK. "
-        "You keep your own name, %s, in what you say. The four bottom quick-action buttons were removed from this "
-        "dialogue so John speaks directly to you for all Cave actions. Your remit spans 5 cleanly separated domains: "
+        "You keep your own name, %s, in what you say. John speaks directly to you for all Cave actions. "
+        "Your remit spans 5 cleanly separated domains: "
         "(1) PROACTIVE CHIEF-OF-STAFF HORIZON BAR (#shTriage): recommend next efforts across Urgent (Q1), Soon-Urgent & "
         "Family lead-times, and Quadrant II Deep Work (Star Chart goals), pre-staging Foundry skills (researchPrime, "
-        "Superjump, Gandalf, Einstein, Chekhov, Legal-Beagle, Financial-Analyst) per the Parable of the Oranges; "
-        "(2) PERSISTENT WORKING LIST SPINE (#caveWorkingListSpine / .anchor/working-list-spine.json): John works off a "
-        "continuous Covey A1/A2/B1/C1 spine of expandable multi-step effort tiles (Business, Teaching, Research, Personal) "
-        "where each step can connect to an AI Cockpit item (Wave/Deliverable) and/or a Cave/Star Chart Initiative; use "
-        "`python C:/dev/Anchor/tools/steward_comms.py working-list --op list|add_tile|add_step|move_tile|archive_tile` "
-        "when inspecting or updating his Working List from tool calls; "
-        "(3) ACTIVE & ON-DECK COCKPIT SHELVES + FLEET COORDINATION: seat, elevate, demote, or archive AI Cockpit tiles "
-        "and relay feedback or open deliverables across seated cockpits; "
-        "(4) SPEED RACER EMAIL & CALENDAR HUB (#cal / #caveSpeedRacerTile): NEVER send an email without John's explicit "
-        "approval in the Speed Racer tile, and NEVER dump full email bodies into this dialogue. Whenever John asks you to "
-        "draft an email or deal with an email, queue it into Speed Racer via `python C:/dev/Anchor/tools/steward_comms.py "
-        "speed-racer --to ... --subject ... --body ...` and include `[SPEED_RACER_OPEN]` in a 1-sentence confirmation so "
-        "the Cave of Wonders opens the Speed Racer tile directly for him; "
-        "(5) CONVERSATION & BRAINSTORMING DISCIPLINE: when John brainstorms or discusses strategy, answer directly as his "
-        "Chief of Staff in concise prose without hijacking his turn into unrelated strip.json efforts.\n"
+        "Superjump, Gandalf, Einstein, Chekhov, Legal-Beagle, Financial-Analyst, Scribe) per the Parable of the Oranges; "
+        "(2) OPEN-BY-DEFAULT LIVING *THE LIST* (#caveWorkingListSpine / .anchor/working-list-spine.json) & PROPOSAL TRAY (#wlProposalTray): "
+        "John works off his numbered priority spine (Business, Teaching, Research, Personal). Use "
+        "`python C:/dev/Anchor/tools/steward_comms.py list-propose --op add_tile|add_step|reprioritize|archive_tile --title ... --priority ... --reason ...` "
+        "(plus `list-proposals`, `list-accept --id ...`, `list-dismiss --id ...`, or direct `working-list --op ...` when John explicitly commands an immediate edit) "
+        "so suggested additions/reprioritizations land cleanly in `#wlProposalTray` for his 1-click approval; "
+        "(3) PURE CALENDAR & STEWARD WATCHLIST (`steward-watchlist.json`): Calendar holds ONLY genuine scheduled appointments/meetings — "
+        "NEVER inject reminders, tasks, or synthetic milestone blocks onto Calendar. Track deadlines and follow-ups via "
+        "`python C:/dev/Anchor/tools/steward_comms.py watchlist-add --title ... --due YYYY-MM-DD`, `watchlist-list`, and `watchlist-done --id ...`; "
+        "(4) SPEED RACER EMAIL GATE (#cal / #caveSpeedRacerTile): NEVER send an email without John's explicit approval in Speed Racer, "
+        "and NEVER dump full email bodies into this dialogue. Queue drafts (supporting multi-recipient `--to`, `--cc`, `--bcc`) via "
+        "`python C:/dev/Anchor/tools/steward_comms.py speed-racer --to ... [--cc ...] [--bcc ...] --subject ... --body ...` "
+        "and include `[SPEED_RACER_OPEN]` in a 1-sentence confirmation; "
+        "(5) PROACTIVE 2–3 LINE CAVE CHECK-INS: when greeting John, answering a status/triage check-in, or handling a `Send to Steward` "
+        "email dispatch, give a crisp 2–3 line check-in referencing his top active item on *The List*, any pending proposals in `#wlProposalTray`, "
+        "and any due Watchlist deadlines (reporting `unknown — inspect Doctor` honestly if any store is unreadable).\n"
+        + capsule + "\n"
     ) % steward
 
 
@@ -1511,6 +1752,12 @@ class Engine:
         self._lock = threading.Lock()
         self._status_lock = threading.Lock()
         self._prune_stale_job_queue_locked()
+        if not self.general:
+            try:
+                from steward_cockpit import steward_campaign as _sc_reg
+                _sc_reg.register_active_effort(self.dir)
+            except Exception:
+                pass
 
     # ---------- the delivery receipt (execution minimum item 2, 2026-10-07) ----------
     # The work is module-level (publish_delivery_receipts) so a writer can announce a product with no engine loaded;
@@ -3495,6 +3742,12 @@ class Engine:
             is_control = text in (TICK, REASSERT) or text.startswith("(")
         else:
             is_control = origin != "human"
+        is_bridge = self.cli in ("chatgpt", "grok", "gemini")
+        if not is_bridge and not self.busy and not is_control and not self.general and _is_cave_dir(self.dir):
+            msg["message"]["content"][0]["text"] += "\n\n" + _list_state_capsule()
+        elif (not is_bridge and not self.busy and not is_control and not self.general and not self.one_conversation
+                and not self.code_job and not _is_campaign_dir(self.dir) and self.dir):
+            msg["message"]["content"][0]["text"] += "\n\n" + _plan_state_capsule(self.dir)
         if not self.busy and not is_control and (Path(self.dir) / "roadmap.json").is_file():
             from steward_cockpit.producer_handoff import _handoff_id
             refinement_producer_id = uuid.uuid4().hex
@@ -3767,10 +4020,22 @@ class Engine:
         from steward_cockpit import foundry_tools
         if self.code_job:
             raw = CODER_CONTRACT + foundry_tools.block(steward=False)
-        elif self.effort_on():
-            raw = EFFORT_DUTY + CONTRACT + EFFORT_RULES + foundry_tools.block()
         else:
-            raw = SMALL_DUTY + CONTRACT + foundry_tools.block()
+            entry = _read_state_entry(self.skey())
+            explicit_small = (entry.get("effort_mode") is False)
+            dedicated_cockpit = bool(
+                not self.general
+                and not self.one_conversation
+                and not self.code_job
+                and not _is_cave_dir(self.dir)
+                and not _is_campaign_dir(self.dir)
+            )
+            if self.effort_on() or (dedicated_cockpit and not explicit_small):
+                raw = EFFORT_DUTY + CONTRACT + EFFORT_RULES + foundry_tools.block()
+            else:
+                raw = SMALL_DUTY + CONTRACT + foundry_tools.block()
+            if dedicated_cockpit and self.dir:
+                raw += "\n" + _plan_state_capsule(self.dir) + "\n"
         return _personalize_prompt_for_user(raw)
 
     def _fire_turn_done(self, result):
@@ -4266,7 +4531,7 @@ class Engine:
                     self._last_session_usage = {
                         "session_id": self.session_id,
                         "input_tokens": int(self._last_session_usage.get("input_tokens") or 0) + in_add,
-                        "cache_read_input_tokens": int(self._last_session_usage.get("cache_read_input_tokens") or self._last_session_usage.get("cached_input_tokens") or 0) + ca_add,
+                        "cache_read_input_tokens": int(self._last_session_usage.get("cache_read_input_tokens") or self._last_session_usage.get("cached_input_tokens") or 0) + ca_t,
                         "output_tokens": int(self._last_session_usage.get("output_tokens") or 0) + out_t,
                     }
             else:
@@ -4689,7 +4954,7 @@ class Engine:
                         # Wave 6a: if the steward updated roadmap.json, strip.json, or DELIVERABLES.md mid-turn,
                         # refresh the cockpit status bar immediately (debounced to 2s)
                         if not self.general and any(
-                            os.path.basename(str(p)).lower() in ("roadmap.json", "strip.json", "deliverables.md", "plan.md")
+                            os.path.basename(str(p)).lower() in ("roadmap.json", "strip.json", "deliverables.md", "plan.md", "plan-proposal.json")
                             for p in touched
                         ):
                             now_ts = time.time()
@@ -4698,7 +4963,7 @@ class Engine:
                                 threading.Thread(target=self._status_update, kwargs={"emit": True}, daemon=True).start()
                     elif bname in ("Bash", "run_command") and not self.general:
                         cmd_str = str(inp.get("command") or inp.get("CommandLine") or "").lower()
-                        if "ecgberht" in cmd_str and any(k in cmd_str for k in ("roadmap-", "update", "deliverable")):
+                        if "steward_plan.py" in cmd_str or ("ecgberht" in cmd_str and any(k in cmd_str for k in ("roadmap-", "update", "deliverable"))):
                             now_ts = time.time()
                             if now_ts - getattr(self, "_last_midturn_status_ts", 0.0) >= 2.0:
                                 self._last_midturn_status_ts = now_ts
@@ -5121,6 +5386,8 @@ class Engine:
             return {}
         try:
             from steward_cockpit import steward_campaign as campaign
+            if hasattr(campaign, "read_attention"):
+                return campaign.read_attention(self.dir)
             return campaign.read_map(self.dir).get("attention", {})
         except Exception:
             return {"state": "unknown", "reason": "Work status unavailable"}
@@ -5135,6 +5402,7 @@ class Engine:
                 return
             self._emit({"t": "sys", "text": "%s is on it \u2014 %s (%d s so far)" % (
                 self.steward or "The steward", self._turn_activity(), int(time.time() - started)), "receipt": True})
+            self._status_update(emit=True)
         except Exception:
             pass
 
@@ -5163,14 +5431,19 @@ class Engine:
     def _working_bg(self):
         """True when the campaign flag says commissioned/background work is
         in flight — disk truth, zero-model. The steward's own turn may be
-        idle while a commissioned run (Gandalf, Foreman) works; the old
-        busy-only cadence showed NOTHING for exactly the long work John
-        wants to watch (handoff 2026-08-25 #2a)."""
+        idle while a commissioned run (Gandalf, Foreman, Einstein, researchPrime)
+        works; the old busy-only cadence showed NOTHING for exactly the long work
+        John wants to watch (handoff 2026-08-25 #2a)."""
         if self._attention().get("state") == "working":
             return True
-        try:   # 2026-10-05: a running code job is background work the cadence must narrate
-            from steward_cockpit.steward_campaign import running_code_jobs
-            return bool(running_code_jobs(self.dir))
+        try:   # 2026-10-05 + 2026-11-10: running code jobs AND running skill jobs are background work the cadence must narrate
+            from steward_cockpit.steward_campaign import running_code_jobs, running_skill_jobs, status_lookthrough
+            if running_code_jobs(self.dir) or running_skill_jobs(self.dir):
+                return True
+            look = status_lookthrough(self.dir)
+            if look and not look.get("final") and int(look.get("age_s") or 9999) < 1200:
+                return True
+            return False
         except Exception:
             return False
 
@@ -5194,7 +5467,7 @@ class Engine:
                     campaign.reconcile_cockpit_turn_state(
                         self.dir,
                         engine_state=self.state(),
-                        emit_status=False,
+                        emit_status=True,
                     )
                 except Exception:
                     try:
@@ -5384,11 +5657,12 @@ class Engine:
                         self._maybe_drive_locked()
             if self._idle_tick(now):
                 return
-            # THE DETERMINISTIC STATUS CADENCE (handoff 2026-08-25 #2): fires
-            # during the steward's OWN busy turn AND during commissioned/
-            # background work — the case the old busy-only trigger missed.
-            # Zero-model; pane + universal file, never the conversation.
-            if (not self.general and now - self.last_status > TICK_SECONDS
+            # THE DETERMINISTIC STATUS CADENCE (handoff 2026-08-25 #2 + 2026-11-10):
+            # fires every 60 s during the steward's OWN busy turn AND during
+            # commissioned/background work so the [HH:MM] status card, elapsed time,
+            # and ETA countdown never freeze at the start of a run.
+            status_cadence_s = 60 if (self.busy or self.queue or self._working_bg()) else TICK_SECONDS
+            if (not self.general and now - self.last_status > status_cadence_s
                     and (self.busy or self.queue or self._working_bg())):
                 self.last_status = now
                 self._status_update()
@@ -5454,15 +5728,15 @@ class Engine:
                                      capture_output=True, text=True, timeout=30, creationflags=_nw)
                       if add.returncode == 0 else add)
             if commit.returncode == 0:
-                # cadence housekeeping → the status pane, not the conversation
-                self._emit({"t": "sys", "tick": True,
-                            "text": "committed work-in-progress (cadence)"})
+                self._journal_receipt("cadence_commit", "committed work-in-progress")
             else:
                 tail = (commit.stderr or commit.stdout or "").strip().splitlines()
-                self._emit({"t": "sys", "tick": True,
-                            "text": "commit failed: " + (tail[-1] if tail else f"git exit {commit.returncode}")})
+                self._journal_receipt(
+                    "cadence_commit_error",
+                    "commit failed: " + (tail[-1] if tail else f"git exit {commit.returncode}"),
+                )
         except Exception as exc:
-            self._emit({"t": "sys", "tick": True, "text": "commit failed: " + str(exc)})
+            self._journal_receipt("cadence_commit_error", "commit failed: " + str(exc))
 
     # ---------- journal receipts ----------
     def _journal_receipt(self, kind, detail):

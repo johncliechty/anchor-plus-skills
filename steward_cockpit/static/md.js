@@ -3,6 +3,10 @@
    Covers: #-#### headings, hr, > quotes, -/* lists, 1. lists, ``` fences,
    | tables, paragraphs; inline **bold**, `code`, [text](links - spaces and ( ) survive). */
 "use strict";
+const LINKABLE = /^(?:https?:\/\/|file:\/\/\/|\/artifact\/|\/steward\/report(?:\/|\?|$)|\/report(?:\/|\?|$)|\/foundry\?|\/api\/steward\/deliverable-file\?|\/steward\/v1\?|\/project\/|\/high-seat|\/desk|\/doctor)/i;
+if (typeof globalThis !== "undefined") {
+  globalThis.LINKABLE = LINKABLE;
+}
 // Report links belong to the Anchor origin the reader is using. Historical
 // steward replies hard-coded the author's loopback host, which is another
 // machine when opened remotely. Keep external paper URLs untouched.
@@ -17,7 +21,7 @@ function mdFileHref(rawPath) {
   const dirRel = String(window.STEWARD_DIR || "");
   if (/^[A-Za-z]:\//.test(p)) {
     // Extract relative path inside the project/effort if possible
-    const marker = p.match(/(?:\/|^)((?:BA 815|\.ecgberht|deliverables|planning|lectures|homework|quiz|syllabus|ta-feedback|code-job-outputs|chapters|story-arc|editorial|Finished Deliverables|skills|foundry-tools|steward_cockpit|tools|docs|tests)\/.+)$/i);
+    const marker = p.match(/(?:\/|^)((?:\.ecgberht|deliverables|planning|lectures|homework|quiz|syllabus|ta-feedback|code-job-outputs|chapters|story-arc|editorial|Finished Deliverables|skills|foundry-tools|steward_cockpit|tools|docs|tests)\/.+)$/i);
     if (marker) p = marker[1];
     else {
       const devMatch = p.match(/^[A-Za-z]:\/dev\/[^/]+\/(.+)$/i);
@@ -61,7 +65,10 @@ function mdReportHref(raw, label) {
   // W3 (2026-10-10): both /artifact forms (?path= and /artifact/<pid>/<rel>) and /report are Anchor's own, and an
   // ABSOLUTE Anchor URL - loopback, this page's own host on another port or scheme, or the tailnet name - is opened
   // on the origin the reader is using (a reply written at the desk opens on the iPad)
-  const internal = /^\/artifact\/[^/]+(\/.+)?$/.test(dest.pathname) || /^\/report\//.test(dest.pathname) ||
+  const internal = /^\/artifact\/[^/]+(\/.+)?$/.test(dest.pathname) ||
+    dest.pathname === "/steward/report" || dest.pathname.startsWith("/steward/report/") ||
+    /^\/(?:steward\/)?report(?:\/|$)/.test(dest.pathname) ||
+    dest.pathname === "/foundry" ||
     dest.pathname === "/api/steward/deliverable-file" || dest.pathname === "/steward/v1" ||
     /^\/project\/[^/]+/.test(dest.pathname) || dest.pathname === "/high-seat" || dest.pathname === "/desk" || dest.pathname === "/doctor";
   const loop = /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(dest.hostname) && (dest.port === "8777" || dest.port === "");
@@ -86,7 +93,6 @@ function mdRender(container, text) {
   // [label](target): the target may hold spaces, balanced ( ) or the <...> form (2026-10-07: "Calendar
   // (accepted).ics" or "MBA Teaching AI/..." broke the link at the first space or ")"). Only report links, file:///
   // links and http(s) become links; anything else stays text. Bare paths are never auto-linked.
-  const LINKABLE = /^(?:https?:\/\/|file:\/\/\/|\/artifact\/|\/report\/|\/foundry\?|\/api\/steward\/deliverable-file\?|\/steward\/v1\?|\/project\/|\/high-seat|\/desk|\/doctor)/i;
   function splitLinks(s) {
     const out = []; let i = 0;
     while (i < s.length) {
@@ -258,4 +264,8 @@ function wireMdSplitLink(a, label, href) {
     flush();
     const p = el("p"); inline(p, ln); container.appendChild(p); i++;
   }
+}
+if (typeof globalThis !== "undefined") {
+  globalThis.mdReportHref = mdReportHref;
+  globalThis.mdRender = mdRender;
 }

@@ -751,6 +751,21 @@
 
   window.ANCHOR_APP = api;
 
+  var verPill = document.getElementById("bar-version-pill");
+  if (verPill) {
+    verPill.addEventListener("click", function () { api.open("/setup", "", window); });
+    fetch("/api/system/version", { credentials: "same-origin" }).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+      if (d && d.display_version) verPill.textContent = d.display_version;
+    }).catch(function () {});
+    fetch("/api/system/check_update", { credentials: "same-origin" }).then(function (r) { return r.ok ? r.json() : null; }).then(function (u) {
+      if (u && u.update_available) {
+        verPill.classList.add("update-ready");
+        verPill.textContent = (u.display_version || "v1.5.2") + " \u2b06 Update";
+        verPill.title = "Update available (" + (u.remote_version || u.remote_head || "latest") + ") \u00b7 Click to open Setup & Update";
+      }
+    }).catch(function () {});
+  }
+
   // A cockpit's work continues after its pane/frame is left. Poll only its scoped read-only
   // state and existing review records; neither opening a tile nor selecting it is acceptance.
   function cockpitTarget(t) {

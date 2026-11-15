@@ -220,6 +220,27 @@ def evaluate_turn_close(utterance, result, ratification=None,
             "unanswered": [], "answered": refs}
 
 
+def _collaborator_display_name(default: str = "John") -> str:
+    """Read the configured collaborator's display name from .anchor/user_profile.json (stdlib only)."""
+    try:
+        import paths as _paths
+        return _paths.read_collaborator_display_name(default=default)
+    except Exception:
+        pass
+    import json as _json
+    for cand in (ANCHOR_ROOT / ".anchor" / "user_profile.json",):
+        try:
+            if cand.is_file():
+                doc = _json.loads(cand.read_text(encoding="utf-8"))
+                if isinstance(doc, dict):
+                    dn = str(doc.get("display_name") or doc.get("pseudonym") or "").strip()
+                    if dn:
+                        return dn
+        except Exception:
+            continue
+    return default
+
+
 def enforce_bridge_result(utterance, out, artifact_path=None) -> dict:
     """The BRIDGE-BOUNDARY leg of the seam: re-evaluate the bridge's
     converse result and structurally block the close when the engine leg
@@ -240,14 +261,15 @@ def enforce_bridge_result(utterance, out, artifact_path=None) -> dict:
         # An unenforceable bound rides the result BY NAME — the state is
         # loud, the turn proceeds (never blocked against an unsigned bound).
         return out
+    who_name = _collaborator_display_name("John")
     blocked = out.get("blocked") if isinstance(out.get("blocked"), dict) \
         else {}
     blocked.setdefault("finding", verdict["finding"])
     blocked["unanswered"] = verdict["unanswered"]
     blocked.setdefault("message",
-                       "The engine refused to close this turn: a direct "
-                       "question from John still lacks a typed "
-                       "answer-reference.")
+                       f"The engine refused to close this turn: a direct "
+                       f"question from {who_name} still lacks a typed "
+                       f"answer-reference.")
     if not out.get("turn_blocked") and isinstance(out.get("say"), str):
         # The engine leg let this close through (an older bridge, or a
         # boundary caller that skipped it) — hold the reply here instead.
@@ -257,7 +279,8 @@ def enforce_bridge_result(utterance, out, artifact_path=None) -> dict:
     blocked["html"] = render_blocked_turn(blocked)
     out["turn_blocked"] = True
     out["blocked"] = blocked
-    out["say"] = blocked["message"]
+    held_say = str(blocked.get("held_say") or "").strip()
+    out["say"] = f"{held_say}\n\n({blocked['message']})" if held_say else blocked["message"]
     return out
 
 

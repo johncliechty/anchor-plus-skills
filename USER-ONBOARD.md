@@ -1,4 +1,74 @@
-# Install guide — Anchor + skills (v1.3.2, Package A / B)
+# Install guide — Anchor + skills (v1.5.2, Windows, Apple Mac / MacBook Air, & Linux)
+
+## Quick Platform Compatibility FAQ (Windows vs. Apple Mac / Linux)
+
+- **Does `Anchor.exe` run on an Apple Mac / MacBook Air or Linux?**
+  **No.** `Anchor.exe` is a Windows-only binary (`PE32+ x86-64` built with PyInstaller + Microsoft Edge WebView2). It will **not** run directly on macOS or Linux.
+- **Is there a standalone native GUI app for Apple Mac (MacBook Air / Pro) and Linux (not running in a browser)?**
+  **Yes — 100% standalone native GUI window on all three operating systems (never in a web browser)!**
+  - **Windows:** `Anchor.exe` (frameless native desktop window powered by `shell/anchor_shell.py` + WebView2).
+  - **macOS (MacBook Air M1/M2/M3/M4 or Intel):** `Anchor.app` (frameless native macOS Cocoa/WebKit desktop app built by `shell/build_unix.sh` and launched via `shell/anchor_shell.py` — own Dock icon, custom title bar, single-instance lock, **no browser**).
+  - **Linux:** Standalone `Anchor` desktop application (`anchor.desktop` + `shell/anchor_shell.py` powered by native WebKitGTK — own window and taskbar icon, **no browser**).
+- **Two ways to use the standalone Anchor GUI on a MacBook Air or Linux machine:**
+  1. **Mode A — Standalone Native GUI Connected to an Existing Mother Ship:** Run `./install-mac-linux.sh` (or `Anchor.app`), and on the first screen click **"Connect to my existing mother ship"** and enter your Mother Ship's Tailscale HTTPS address.
+  2. **Mode B — Full Standalone Mother Ship + Native GUI on macOS or Linux:** Run `./install-mac-linux.sh` once. It installs the background service (`--no-browser`), builds the native **`Anchor.app`** (macOS) or **`Anchor`** desktop app (Linux), and opens the standalone Anchor GUI window directly.
+
+---
+
+## Option 1: Windows 10/11 Install (`Anchor.exe` or `onboard.cmd`)
+
+1. **Extract `Anchor.zip`** into `C:\dev\Anchor` (or any clean folder) and double-click **`Anchor.exe`**.
+2. In the **Anchor Setup** screen (`v1.5.2` shown in the top bar):
+   - Choose your **Install Mode**:
+     - **Upgrade In-Place (Recommended):** Updates Anchor and overwrites all 20 bundled Foundry skills while keeping your existing projects and settings.
+     - **Clean Fresh Install:** Archives any previous `.ecgberht` state so you start completely fresh with the Onboarding Wizard.
+     - **Migrate State:** Copies your settings and projects from an earlier installation into the new folder.
+   - Note: Anchor automatically ignores backup folders (`Anchor-1.4.6-backup`, `Anchor 2`, `Anchor 3`) and never imports its own skill folders (`SKILL.md` / Foundry skills) as R&D projects.
+3. Once installed, Anchor automatically routes new setups to the **Onboarding & Setup Wizard (`/onboard-wizard`)** so you can set your display name, connect AI providers (Claude Code, Gemini CLI, ChatGPT Codex, Grok), and pick your real project folders.
+
+---
+
+## Option 2: Apple Mac / MacBook Air (macOS) & Linux Install
+
+### Prerequisites on macOS (MacBook Air / Pro)
+Open **Terminal.app** (`Cmd + Space`, type `Terminal`) and ensure Command Line Tools, Python 3, and Node.js 18+ are installed:
+```bash
+xcode-select --install 2>/dev/null || true
+# If using Homebrew (https://brew.sh):
+brew install git python node
+```
+
+### Prerequisites on Linux (Ubuntu / Debian / Fedora)
+```bash
+sudo apt update && sudo apt install -y git python3 python3-venv python3-pip python3-gi gir1.2-webkit2-4.1 nodejs npm
+```
+
+### 1-Command Turnkey Install (macOS & Linux — Standalone Native GUI, Never a Browser)
+If you received `Anchor.zip`, unzip it into `~/dev/Anchor` (or clone the repository) and run:
+```bash
+cd ~/dev/Anchor
+bash ./install-mac-linux.sh
+```
+**What `install-mac-linux.sh` does automatically:**
+- Verifies `git`, `python3`, and `node`.
+- Installs and updates all **20 bundled Foundry skills** into `~/.claude/skills` and `~/.agents/skills`.
+- Scaffolds your Anchor workspace and local security token (`~/.anchor/.anchor/onboard-token`).
+- Sets up the isolated native GUI shell environment (`~/Library/Application Support/anchor-shell/.venv` on macOS, `~/.local/share/anchor-shell/.venv` on Linux) with `pywebview` and builds the standalone native desktop application (**`Anchor.app`** in `/Applications/Anchor.app` on macOS, or the standalone **`Anchor`** desktop application + `anchor.desktop` entry on Linux), plus places a double-clickable **`Anchor.command`** launcher on your Desktop.
+- Starts the Anchor Mother Ship background service (`--no-browser`) and opens the **standalone native Anchor GUI window** directly (never in a browser).
+
+---
+
+## Mother Ship Registration & Push / Pull Updates (`v1.5.2+`)
+
+- **Where to see your version:** Look at the `v1.5.2` badge in the **very top title bar** of Anchor (`#bar-version-pill` / masthead) or open **⚙ Host & Provider Setup (`/setup`)**.
+- **How a collaborator pulls the latest update:**
+  Click the `v1.5.2` version pill in the top bar (or open **⚙ Setup -> Section 1: Mother Ship**), click **🔍 Check for Updates**, and click **⬆ Pull & Update to Latest Version**. This pulls the latest Anchor code and refreshes all 20 bundled Foundry skills without touching your projects.
+- **How to register a collaborator's Mother Ship in the Anchor repo (`mothership_registry.json`):**
+  In **⚙ Setup -> Section 1: Mother Ship -> Register Mother Ship in Anchor Repository**, enter the collaborator's name, Steward pseudonym, Tailscale/Mother Ship URL, and platform (`windows`, `macos-arm64`, `macos-x64`, `linux`), and click **📌 Register Mother Ship in Repo**.
+- **How to push the latest Anchor release to registered Mother Ships:**
+  In **⚙ Setup -> Section 1: Mother Ship**, click **🚀 Push Latest Anchor to Registered Mother Ships** (or POST to `/api/mothership/push_update`).
+
+---
 
 **All rights reserved.** Not open source. Use by author permission only.
 

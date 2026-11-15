@@ -21,10 +21,20 @@ It also exposes a single process-wide :data:`WRITE_LOCK` so concurrent
 mutating requests (under ``ThreadingHTTPServer``) cannot lose an update.
 """
 
+import contextlib
+import json
+import math
 import os
 import time
 import threading
-from pathlib import Path
+import urllib.parse
+import urllib.request
+from pathlib import Path, PurePosixPath, PureWindowsPath
+
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
 
 # Where the Anchor *code* lives. This never depends on the env var.
 CODE_DIR = Path(__file__).resolve().parent
@@ -32,7 +42,7 @@ CODE_DIR = Path(__file__).resolve().parent
 # Process-wide write lock. A single global lock is the simplest serialization
 # that guarantees no lost update across concurrent markdown/JSON mutations.
 # Acquire it around EVERY file mutation (markdown and JSON).
-WRITE_LOCK = threading.RLock()
+WRITE_LOCK = globals().get("WRITE_LOCK") or threading.RLock()
 
 # Env var that decouples data location from code location.
 DATA_DIR_ENV = "ANCHOR_DATA_DIR"
@@ -119,15 +129,66 @@ def _discover_skills_root_dirs(anchor_root: Path, anchor_parent: Path) -> list[P
     return out
 
 
+def read_version(anchor_root=None) -> str:
+    """Return the canonical Anchor version string from ``VERSION`` (fallback ``1.5.2``)."""
+    base = Path(anchor_root).expanduser().resolve() if anchor_root is not None else CODE_DIR
+    for cand in (base / "VERSION", CODE_DIR / "VERSION"):
+        try:
+            if cand.is_file():
+                v = cand.read_text(encoding="utf-8", errors="ignore").strip().splitlines()
+                if v and v[0].strip():
+                    return v[0].strip()
+        except Exception:
+            continue
+    return "1.5.2"
+
+
+def read_collaborator_display_name(base_dir=None, default: str = "John") -> str:
+    """Return the active collaborator's display name from ``.anchor/user_profile.json`` (or ``default``)."""
+    import json as _json
+    root = Path(base_dir).expanduser().resolve() if base_dir is not None else data_dir()
+    for cand in (
+        root / ".anchor" / "user_profile.json",
+        root / "user_profile.json",
+        CODE_DIR / ".anchor" / "user_profile.json",
+    ):
+        try:
+            if cand.is_file():
+                doc = _json.loads(cand.read_text(encoding="utf-8"))
+                if isinstance(doc, dict):
+                    dn = str(doc.get("display_name") or doc.get("pseudonym") or "").strip()
+                    if dn:
+                        return dn
+        except Exception:
+            continue
+    return default
+
+
+def _parse_ver_tuple(ver_str: str) -> tuple[int, ...]:
+    import re as _re
+    parts = [int(x) for x in _re.findall(r"\d+", str(ver_str or ""))]
+    return tuple(parts) if parts else (0, 0, 0)
+
+
+def _read_skill_version(skill_dir: Path) -> tuple[int, ...]:
+    vf = skill_dir / "VERSION"
+    if vf.is_file():
+        try:
+            return _parse_ver_tuple(vf.read_text(encoding="utf-8", errors="ignore").strip())
+        except Exception:
+            pass
+    return (0, 0, 0)
+
+
 def resolve_ecgberht_root(anchor_root=None) -> tuple[Path, list[str]]:
     """Resolve the Ecgberht engine root directory and return ``(path, checked_paths)``.
 
     Checks in order:
       1. ``ECGBERHT_ROOT`` and ``ECGBERHT_DIR`` environment variables,
-      2. ``<anchor_parent>/Ecgberht`` (e.g. ``C:\\dev\\Ecgberht``),
+      2. ``<SKILLS_ROOT>/ecgberht`` (from ``SKILLS_ROOT`` env or ``skills_root.json``),
       3. ``<anchor_parent>/skills/ecgberht`` (e.g. ``C:\\dev\\skills\\ecgberht`` — share/onboard layout),
-      4. ``<SKILLS_ROOT>/ecgberht`` (from ``SKILLS_ROOT`` env or ``skills_root.json``),
-      5. ``<anchor_root>/skills/ecgberht`` and ``<anchor_root>/vendor/bundled-skills/ecgberht``.
+      4. ``<anchor_root>/skills/ecgberht`` and ``<anchor_root>/vendor/bundled-skills/ecgberht``,
+      5. ``<anchor_parent>/Ecgberht`` (legacy sibling checkout — skipped if older than bundled Ecgberht).
 
     When resolved via a fallback candidate (such as ``<anchor_parent>/skills/ecgberht``),
     automatically sets ``ECGBERHT_ROOT`` in ``os.environ`` via ``setdefault`` so child
@@ -136,6 +197,8 @@ def resolve_ecgberht_root(anchor_root=None) -> tuple[Path, list[str]]:
     global _AUTO_ECGBERHT_ROOT
     base = Path(anchor_root).expanduser().resolve() if anchor_root is not None else CODE_DIR
     parent = base.parent
+    bundled_dir = base / "vendor" / "bundled-skills" / "ecgberht"
+    bundled_ver = _read_skill_version(bundled_dir)
 
     candidates: list[Path] = []
     explicit_env_candidates: list[Path] = []
@@ -149,13 +212,13 @@ def resolve_ecgberht_root(anchor_root=None) -> tuple[Path, list[str]]:
         explicit_env_candidates.append(cp)
         candidates.append(cp)
 
-    candidates.append(parent / "Ecgberht")
-    candidates.append(parent / "skills" / "ecgberht")
     for sr in _discover_skills_root_dirs(base, parent):
         candidates.append(sr / "ecgberht")
         candidates.append(sr / "Ecgberht")
+    candidates.append(parent / "skills" / "ecgberht")
     candidates.append(base / "skills" / "ecgberht")
-    candidates.append(base / "vendor" / "bundled-skills" / "ecgberht")
+    candidates.append(bundled_dir)
+    candidates.append(parent / "Ecgberht")
 
     seen: set[str] = set()
     checked_paths: list[str] = []
@@ -179,6 +242,19 @@ def resolve_ecgberht_root(anchor_root=None) -> tuple[Path, list[str]]:
                 or (c / "bin" / "ecgberht.mjs").is_file()
                 or (c / "scripts" / "commission-run-bridge.mjs").is_file()
             ):
+                # Never allow a stale external Ecgberht folder with an older VERSION
+                # to shadow a newer bundled Ecgberht engine in vendor/bundled-skills/ecgberht.
+                if (
+                    c != bundled_dir
+                    and bundled_ver > (0, 0, 0)
+                    and (c / "VERSION").is_file()
+                    and _read_skill_version(c) < bundled_ver
+                    and (
+                        (bundled_dir / "scripts" / "seal-chamber-bridge.mjs").is_file()
+                        or (bundled_dir / "bin" / "ecgberht.mjs").is_file()
+                    )
+                ):
+                    continue
                 if not explicit_env_candidates:
                     if "ECGBERHT_ROOT" not in os.environ or os.environ.get("ECGBERHT_ROOT") == _AUTO_ECGBERHT_ROOT:
                         _AUTO_ECGBERHT_ROOT = str(c)
@@ -491,7 +567,7 @@ def _replace_with_retry(tmp, target) -> None:
             _time.sleep(_ATOMIC_REPLACE_BACKOFF_S)
 
 
-_BACKUP_LAST = {}
+_BACKUP_LAST = globals().get("_BACKUP_LAST") if isinstance(globals().get("_BACKUP_LAST"), dict) else {}
 
 
 def backup_rotate(path, keep=5, min_interval_s=0):
@@ -528,12 +604,133 @@ def atomic_write_text(path, text, encoding="utf-8"):
     retry rather than surfacing a spurious ``PermissionError``.
     """
     path = Path(path)
-    tmp = path.with_name(path.name + ".tmp")
-    with open(tmp, "w", encoding=encoding, newline="") as f:
-        f.write(text)
-        f.flush()
-        os.fsync(f.fileno())
-    _replace_with_retry(str(tmp), str(path))
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    try:
+        with open(tmp, "w", encoding=encoding, newline="") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        _replace_with_retry(str(tmp), str(path))
+    finally:
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+
+
+_LOCK_META_MUTEX = globals().get("_LOCK_META_MUTEX") or threading.Lock()
+_INPROC_FILE_LOCKS: dict[str, threading.RLock] = globals().get("_INPROC_FILE_LOCKS") if isinstance(globals().get("_INPROC_FILE_LOCKS"), dict) else {}
+_HELD_PROCESS_LOCKS: set[tuple[int, int, str]] = globals().get("_HELD_PROCESS_LOCKS") if isinstance(globals().get("_HELD_PROCESS_LOCKS"), set) else set()
+
+
+@contextlib.contextmanager
+def cross_process_lock(lock_path: Path | str, timeout_sec: float = 2.0):
+    """Acquire an OS-level cross-process file lock (`msvcrt.locking` on Windows,
+    `fcntl.flock` on POSIX) bounded by `timeout_sec` (default 2.0s).
+
+    Raises an explicit `TimeoutError` (which is also an `OSError`/`IOError`)
+    when the lock cannot be acquired within `timeout_sec`. Re-entrant within
+    the same `(pid, thread_id, lock_path)`.
+    """
+    lp = Path(lock_path)
+    lp.parent.mkdir(parents=True, exist_ok=True)
+    norm_key = os.path.normcase(os.path.abspath(os.fspath(lp)))
+    t_key = (os.getpid(), threading.get_ident(), norm_key)
+
+    with _LOCK_META_MUTEX:
+        if t_key in _HELD_PROCESS_LOCKS:
+            already_held = True
+            inproc_lock = None
+        else:
+            already_held = False
+            inproc_lock = _INPROC_FILE_LOCKS.get(norm_key)
+            if inproc_lock is None:
+                inproc_lock = threading.RLock()
+                _INPROC_FILE_LOCKS[norm_key] = inproc_lock
+
+    if already_held:
+        yield lp
+        return
+
+    timeout_val = max(0.0, float(timeout_sec))
+    deadline = time.monotonic() + timeout_val
+
+    assert inproc_lock is not None
+    if not inproc_lock.acquire(timeout=timeout_val if timeout_val > 0 else 0.001):
+        raise TimeoutError(
+            f"Timed out after {timeout_val:.2f}s waiting for in-process lock on {lp}"
+        )
+
+    fd: int | None = None
+    os_locked = False
+    try:
+        fd = os.open(os.fspath(lp), os.O_CREAT | os.O_RDWR, 0o666)
+        try:
+            if os.fstat(fd).st_size == 0:
+                os.write(fd, b"0")
+        except OSError:
+            pass
+        while True:
+            try:
+                os.lseek(fd, 0, os.SEEK_SET)
+                if os.name == "nt":
+                    msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                else:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                os_locked = True
+                break
+            except (OSError, IOError) as exc:
+                now = time.monotonic()
+                if now >= deadline:
+                    raise TimeoutError(
+                        f"Timed out after {timeout_val:.2f}s waiting for cross_process_lock on {lp}"
+                    ) from exc
+                time.sleep(min(0.01, max(0.001, deadline - now)))
+
+        with _LOCK_META_MUTEX:
+            _HELD_PROCESS_LOCKS.add(t_key)
+        yield lp
+    finally:
+        with _LOCK_META_MUTEX:
+            _HELD_PROCESS_LOCKS.discard(t_key)
+        if fd is not None:
+            if os_locked:
+                try:
+                    os.lseek(fd, 0, os.SEEK_SET)
+                    if os.name == "nt":
+                        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+                    else:
+                        fcntl.flock(fd, fcntl.LOCK_UN)
+                except OSError:
+                    pass
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        inproc_lock.release()
+
+
+def atomic_write_json(
+    path: Path | str,
+    data: object,
+    lock_path: Path | str | None = None,
+    *,
+    timeout_sec: float = 2.0,
+    indent: int = 2,
+    ensure_ascii: bool = False,
+) -> Path:
+    """Atomically write `data` as JSON to `path` (`temp + os.fsync + os.replace`)
+    under `cross_process_lock`, delegating the crash-safe file replacement to
+    :func:`atomic_write_text`.
+    """
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    eff_lock = Path(lock_path) if lock_path is not None else target.with_name(f"{target.name}.lock")
+    payload = json.dumps(data, indent=indent, ensure_ascii=ensure_ascii)
+    with cross_process_lock(eff_lock, timeout_sec=timeout_sec):
+        atomic_write_text(target, payload)
+    return target
 
 
 # ── Fail-closed engine-sidecar root resolver (Honest Telemetry, W2) ─────────
@@ -1066,5 +1263,92 @@ def ensure_hidden_subprocesses() -> None:
             super().__init__(*args, **kwargs)
 
     _subprocess.Popen = _HiddenPopen
+
+
+# ── Wave 6 Security Primitives (CWE-22 containment + CWE-918 HTTP/HTTPS allowlist) ──
+
+
+class UnsafePathError(ValueError):
+    """Raised on path traversal, absolute/UNC/drive escape, NUL byte, empty candidate, or symlink escape."""
+
+
+class DisallowedUrlSchemeError(ValueError):
+    """Raised on non-http/https URL scheme, missing netloc, or control chars in URL."""
+
+
+def resolve_contained_path(root, candidate, *, allow_missing: bool = True) -> Path:
+    """Resolve ``candidate`` strictly inside ``root`` and reject traversal, drive/UNC, NUL, or symlink escapes."""
+    if root is None:
+        raise UnsafePathError("Blocked unsafe path traversal or disallowed URL scheme")
+    root_real = Path(root).resolve()
+
+    if candidate is None or not isinstance(candidate, (str, os.PathLike)):
+        raise UnsafePathError("Blocked unsafe path traversal or disallowed URL scheme")
+    raw_fspath = os.fspath(candidate)
+    if not isinstance(raw_fspath, str):
+        raise UnsafePathError("Blocked unsafe path traversal or disallowed URL scheme")
+
+    cand_str = str(candidate)
+    if not cand_str.strip() or "\x00" in cand_str:
+        raise UnsafePathError("Blocked unsafe path traversal or disallowed URL scheme")
+
+    forms = [cand_str]
+    cur = cand_str
+    for _ in range(2):
+        cur = urllib.parse.unquote(cur)
+        forms.append(cur)
+
+    for s in forms:
+        for check_s in (s, s.strip()):
+            if (
+                "\x00" in check_s
+                or check_s.startswith(("/", "\\"))
+                or os.path.isabs(check_s)
+                or bool(PureWindowsPath(check_s).drive)
+                or bool(PureWindowsPath(check_s).root)
+                or ".." in PurePosixPath(check_s.replace("\\", "/")).parts
+            ):
+                raise UnsafePathError("Blocked unsafe path traversal or disallowed URL scheme")
+
+    norm_rel = urllib.parse.unquote(cand_str).replace("\\", "/").strip("/")
+    if not norm_rel and cand_str.strip() not in (".",):
+        raise UnsafePathError("Blocked unsafe path traversal or disallowed URL scheme")
+    if norm_rel == "." or (not norm_rel and cand_str.strip() == "."):
+        target = root_real
+    else:
+        target = (root_real / norm_rel).resolve()
+
+    if not target.is_relative_to(root_real):
+        raise UnsafePathError("Blocked unsafe path traversal or disallowed URL scheme")
+    if not allow_missing and not target.exists():
+        raise FileNotFoundError(str(target))
+    return target
+
+
+def safe_urlopen(url_or_req, timeout: float = 15.0, *args, **kwargs):
+    """Open an outbound HTTP(S) URL with strict scheme/netloc validation and <=15s timeout bound."""
+    if url_or_req is None or (not isinstance(url_or_req, str) and not hasattr(url_or_req, "full_url")):
+        raise DisallowedUrlSchemeError("Blocked unsafe path traversal or disallowed URL scheme")
+    raw_url = url_or_req.full_url if hasattr(url_or_req, "full_url") else str(url_or_req or "")
+    if any(ch in raw_url for ch in ("\x00", "\r", "\n")):
+        raise DisallowedUrlSchemeError("Blocked unsafe path traversal or disallowed URL scheme")
+
+    parsed = urllib.parse.urlparse(raw_url.strip())
+    if parsed.scheme.lower() not in ("http", "https") or not parsed.netloc:
+        raise DisallowedUrlSchemeError("Blocked unsafe path traversal or disallowed URL scheme")
+
+    if isinstance(timeout, bool) or timeout is None:
+        raise ValueError("Upstream URL fetch exceeded 15s timeout")
+    try:
+        t = float(timeout)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Upstream URL fetch exceeded 15s timeout") from exc
+    if not math.isfinite(t) or t <= 0.0:
+        raise ValueError("timeout must be > 0")
+    if t > 15.0:
+        raise ValueError("Upstream URL fetch exceeded 15s timeout")
+
+    return urllib.request.urlopen(url_or_req, *args, timeout=t, **kwargs)
+
 
 

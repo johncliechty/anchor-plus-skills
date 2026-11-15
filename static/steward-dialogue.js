@@ -369,11 +369,19 @@
           ul.innerHTML = '';
           if (!items.length) { var e = document.createElement('li'); e.textContent = 'Nothing made in this conversation yet.'; ul.appendChild(e); return; }
           items.forEach(function (it) {
-            var li = document.createElement('li'), a = document.createElement('a'), m = document.createElement('span');
+            var li = document.createElement('li'), a = document.createElement('a'), m = document.createElement('span'), dl = document.createElement('a');
             a.href = href(it); a.target = '_blank'; a.rel = 'noopener'; a.textContent = it.what || it.path;
             if (it.is_current) a.className = 'db-cur';
             m.className = 'db-m'; m.textContent = (it.date || '') + ' · ' + it.path + (it.step ? ' · ' + it.step : '');
-            li.appendChild(a); li.appendChild(m); ul.appendChild(li);
+            var t = barToken(), tq = t ? '&token=' + encodeURIComponent(t) : '';
+            var dir = encodeURIComponent(it.dir || bar.getAttribute('data-dir') || ''), path = encodeURIComponent(it.path || '');
+            dl.href = '/api/steward/deliverable-file?pid=' + encodeURIComponent(pid) + '&dir=' + dir + '&path=' + path + (it.hash ? '&hash=' + encodeURIComponent(it.hash) : '') + '&download=1' + tq;
+            dl.target = '_blank'; dl.rel = 'noopener';
+            dl.title = 'Download'; dl.setAttribute('aria-label', 'Download');
+            dl.setAttribute('download', String(it.path || '').split('/').pop() || '');
+            dl.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;width:20px;height:18px;margin-left:6px;border-radius:4px;color:#38bdf8;background:rgba(56,189,248,0.14);border:1px solid rgba(56,189,248,0.42);vertical-align:middle;text-decoration:none;';
+            dl.innerHTML = '<svg viewBox="0 0 16 16" width="11" height="11" fill="currentColor" aria-hidden="true"><path d="M6 1.5h4v6h3.25L8 13.25 2.75 7.5H6V1.5zM2.5 14h11v1.5h-11V14z"/></svg>';
+            li.appendChild(a); li.appendChild(m); li.appendChild(dl); ul.appendChild(li);
           });
         })
         .catch(function () { if (cnt) cnt.textContent = 'could not be read'; });

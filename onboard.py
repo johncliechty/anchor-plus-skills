@@ -157,7 +157,7 @@ def _is_our_copy(target: Path) -> bool:
 
 
 def install_skills(skills_src=None, skills_home=None, symlink: bool = False,
-                   _fail_on=None) -> dict:
+                   _fail_on=None, overwrite: bool = False) -> dict:
     """Install each bundled skill into SKILLS_ROOT (product tree). COPY default.
 
     Args:
@@ -214,10 +214,12 @@ def install_skills(skills_src=None, skills_home=None, symlink: bool = False,
             })
             continue
 
-        # Idempotent: our copy already there -> skip (no re-copy).
+        # Idempotent: our copy already there -> skip unless overwrite=True.
         if _is_our_copy(target):
-            report["skipped"].append({"name": name, "reason": "already installed"})
-            continue
+            if not overwrite:
+                report["skipped"].append({"name": name, "reason": "already installed"})
+                continue
+            _safe_rmtree(target)
 
         try:
             _install_one(source_skill, target, symlink=symlink,

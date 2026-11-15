@@ -430,3 +430,65 @@ def test_subscription_turn_end_emits_estimated_cost_and_no_inflight_compounding(
     assert turn_ends[0]["estimated_cost_usd"] > 0.30
     assert round(cockpit.estimated_spend, 4) == turn_ends[0]["estimated_cost_usd"]
 
+
+def test_gemini_4_carbon_pricing_and_checkpoint_tail_backfill(cockpit):
+    cockpit.cli = "gemini"
+    cockpit.session_id = "8f9d7898-c49c-4cbd-b7a0-a511bb3d2294"
+    cockpit.model_selection = {"family": "gemini", "model": "gemini-4-carbon", "effort": "high"}
+    cockpit._last_session_usage = {
+        "session_id": cockpit.session_id,
+        "input_tokens": 1_000_000,
+        "cache_read_input_tokens": 2_000_000,
+        "output_tokens": 50_000,
+    }
+    inv_id = "02123ec1-7d4e-4263-a304-87fefed780ab"
+    cockpit._record_usage_checkpoint({
+        "type": "usage_checkpoint",
+        "invocation_id": inv_id,
+        "session_id": cockpit.session_id,
+        "cli": "gemini",
+        "model": "gemini-4-carbon-high",
+        "usage_source": "gemini-transcript",
+        "usage": {"input_tokens": 1_000_000, "cached_input_tokens": 800_000, "output_tokens": 100_000},
+    })
+    assert cockpit.state()["estimated_spend_usd"] == 2.2
+    assert cockpit._record_usage_result({
+        "type": "result",
+        "session_id": cockpit.session_id,
+        "usage_invocation_id": inv_id,
+        "usage_source": "gemini-transcript",
+        "token_status": "reported",
+        "total_cost_usd": None,
+        "duration_ms": 1000,
+    })["estimated_cost"] == 2.2
+    assert cockpit._last_session_usage["cache_read_input_tokens"] == 2_800_000
+
+    # Tail backfill when historical estimated_spend > ck_spend and unpriced_turns > estimated_turns
+    raw_u = {
+        "turns": 10,
+        "unpriced_turns": 10,
+        "estimated_turns": 9,
+        "estimated_spend": 50.0,
+        "tokens": 5_000_000,
+        "last_session_usage": cockpit._last_session_usage,
+        "usage_checkpoints": {
+            inv_id: {
+                "session_id": cockpit.session_id,
+                "credited_tokens": 1_100_000,
+                "counts": {"input_tokens": 1_000_000, "cached_input_tokens": 800_000, "output_tokens": 100_000},
+                "token_status": "reported",
+                "finalized": True,
+                "source": "gemini-transcript",
+                "updated_at": "2026-11-15T14:10:59Z",
+            }
+        },
+    }
+    backfilled = engine_mod._backfill_usage_estimate(
+        engine_mod._usage_snapshot(raw_u),
+        raw_u,
+        {"family": "gemini", "model": "gemini-4-carbon"},
+    )
+    assert backfilled["estimated_turns"] == 10
+    assert backfilled["estimated_spend"] == 52.2
+
+

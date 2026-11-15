@@ -34,6 +34,7 @@ hold, and the review gate.
 from __future__ import annotations
 
 import json
+import posixpath
 import shlex
 import hashlib
 import logging
@@ -533,12 +534,35 @@ def scope_error(job, tree, paths):
         return "path outside the job's work directory or unsafe path (%s): %s" % (name, exc)
 
 
-def phase(job, value, **fields):
+def phase(job, value, cdir=None, **fields):
     """Controller observation, written at the actual transition, not a guessed heartbeat."""
     stamp = time.time()
-    out = _transition(job["steward_dir"], job["id"], LIVE, expect_attempt=job.get("attempt", 1), phase=value, phase_at=stamp, **fields)
+    target_cdir = cdir or job.get("steward_dir") or job.get("campaign_dir") or job.get("cdir")
+    if target_cdir is not None:
+        job.setdefault("steward_dir", str(target_cdir))
+    out = None
+    if target_cdir and job.get("id"):
+        out = _transition(
+            str(target_cdir),
+            job["id"],
+            LIVE,
+            expect_attempt=job.get("attempt", 1),
+            phase=value,
+            phase_at=stamp,
+            **fields,
+        )
     if out:
         job.update(phase=value, phase_at=stamp, **fields)
+    elif not target_cdir or not _path(target_cdir).exists():
+        job.update(phase=value, phase_at=stamp, **fields)
+    eff_cdir = target_cdir or job.get("steward_dir") or job.get("campaign_dir") or job.get("cdir")
+    if eff_cdir:
+        try:
+            if Path(str(eff_cdir)).is_dir():
+                from steward_cockpit import steward_campaign
+                steward_campaign.push_effort_status(str(eff_cdir), reason=f"code_job_phase:{value}")
+        except Exception:
+            pass
     return out
 
 
@@ -638,7 +662,7 @@ def foreman_docs(job, plan_text=""):
 
 def foreman_plan_ok(plan_text):
     """'' when a plan has the wave structure Foreman needs, else why not."""
-    if plan_text and not re.search(r"(?m)^##\s+Wave\s+\d+", plan_text):
+    if plan_text and not re.search(r"(?m)^#{2,3}\s+Wave\s+\d+(?:\.\d+)?\b", plan_text):
         return "the plan has no '## Wave N' sections, so Foreman cannot build it"
     return ""
 
@@ -648,10 +672,10 @@ FOREMAN_WRITER = "claude"
 
 def foreman_settings(job):
     """(settings dir, None) or (None, why). fcj review r2: Foreman's writing seats are pinned to Claude for the whole
-    run - it reads a PRIVATE copy of the dashboard settings (ANCHOR_DATA_DIR) whose Coder seat and terminal are Claude,
-    so its execute and fix seats take the Claude transport (no failover, no per-call reload) and a change on the
-    dashboard mid-run cannot move them. The author is therefore Claude by construction; the landing reviewer is the
-    dashboard's Reviewer seat, which must be another family. The dashboard's own settings are only read."""
+    run - it reads a PRIVATE copy of the dashboard settings (ANCHOR_SETTINGS_DIR) whose Coder seat and terminal are Claude,
+    while ANCHOR_DATA_DIR stays pointed at the real Anchor data dir so usage ledger/receipts persist in the live store.
+    The author is therefore Claude by construction; the landing reviewer is the dashboard's Reviewer seat, which must be
+    another family. The dashboard's own settings are only read."""
     try:
         import anchor_settings
         s = dict(anchor_settings.get_launch_settings())
@@ -858,6 +882,32 @@ def _remove_foreman_config(wt):
         pass
 
 
+def _job_attribution_env(cdir, job_id, repo=None, *, source="code-job") -> dict:
+    """Build child attribution + real ANCHOR_DATA_DIR env for code-job workers and reviewers."""
+    out_env = {}
+    try:
+        import paths as _paths
+        out_env["ANCHOR_DATA_DIR"] = str(_paths.data_dir())
+    except Exception:
+        pass
+    try:
+        import usage_capture as _uc
+        eff = str(cdir) if cdir else None
+        pid, fpath = _uc.resolve_project(eff) if eff else (None, None)
+        if not pid and repo:
+            pid, fpath = _uc.resolve_project(str(repo))
+        out_env.update(_uc.attribution_env(
+            project_id=pid,
+            effort_dir=eff,
+            folder_path=fpath,
+            job_id=str(job_id) if job_id else None,
+            source=source,
+        ))
+    except Exception:
+        pass
+    return out_env
+
+
 def _start_foreman(cdir, job, wt, plan_text, profile, settings_dir):
     """Write Foreman's documents (never landed), launch Foreman contained in the worktree (unless Stop came first),
     and finish the job when it ends. Raises when it cannot launch (start() records that)."""
@@ -869,12 +919,25 @@ def _start_foreman(cdir, job, wt, plan_text, profile, settings_dir):
     (d / "DESCRIPTION.md").write_text(desc, encoding="utf-8")
     (d / "IMPLEMENTATION-PLAN.md").write_text(plan, encoding="utf-8")
     (d / "EXECUTION-LOG.md").write_text(log, encoding="utf-8")
-    (Path(wt) / "foreman.config.json").write_text(json.dumps({"docs": {
-        "description": FOREMAN_DIR + "/DESCRIPTION.md", "plan": FOREMAN_DIR + "/IMPLEMENTATION-PLAN.md",
-        "execution_log": FOREMAN_DIR + "/EXECUTION-LOG.md"}}), encoding="utf-8")
+    (Path(wt) / "foreman.config.json").write_text(json.dumps({
+        "docs": {
+            "description": FOREMAN_DIR + "/DESCRIPTION.md",
+            "plan": FOREMAN_DIR + "/IMPLEMENTATION-PLAN.md",
+            "execution_log": FOREMAN_DIR + "/EXECUTION-LOG.md",
+        },
+        "gitDiff": True,
+        "gitCommit": False,
+    }), encoding="utf-8")
     env = {k: v for k, v in os.environ.items() if not k.startswith(("TRIO_DRIVER_", "TRIO_MODEL_", "CLAUDE_MODEL_"))}
     env.pop("ANTHROPIC_API_KEY", None)          # subscription billing, as every skill launcher does
-    env.update(CRUCIBLE_AGENT_LIVE="1", FOREMAN_PROFILE=profile, ANCHOR_DATA_DIR=str(settings_dir))
+    env.update(_job_attribution_env(cdir, jid, job.get("repo"), source="code-job"))
+    import paths as _paths
+    env.update(
+        CRUCIBLE_AGENT_LIVE="1",
+        FOREMAN_PROFILE=profile,
+        ANCHOR_DATA_DIR=str(_paths.data_dir()),
+        ANCHOR_SETTINGS_DIR=str(settings_dir),
+    )
     out = open(d / "foreman-run.log", "w", encoding="utf-8")
     try:
         with _LOCK:                                 # Stop and the launch never cross: one sees the other
@@ -916,13 +979,84 @@ def _start_foreman(cdir, job, wt, plan_text, profile, settings_dir):
         raise _ForemanStuck("Foreman's start failed after launch (%s) and it could not be seen to end" % e)
 
 
+_GREEN_WAVE_STATUSES = {"GO", "GREEN", "DONE", "PASS", "PASSED", "COMPLETE", "COMPLETED"}
+
+
+def reconcile_wave_completion(cdir, job=None, *, wave_n=None, step_id=None,
+                              deliverable_path=None, deliverable_title=None, notify_cave=True):
+    """Auto-check the linked roadmap.json wave/step, advance strip.json focus, and notify Cave's The List."""
+    if not cdir or not os.path.isdir(str(cdir)):
+        return {"ok": False, "completed_step_id": None}
+    auto_res = {"ok": False, "completed_step_id": None}
+    try:
+        from tools import steward_plan as _splan
+        auto_res = _splan.auto_complete_linked_step(
+            cdir,
+            step_id=step_id,
+            deliverable_path=deliverable_path,
+            deliverable_title=deliverable_title,
+            wave_n=wave_n,
+            notify_cave=notify_cave,
+        )
+    except Exception:
+        auto_res = {"ok": False, "completed_step_id": None}
+    if notify_cave and not auto_res.get("completed_step_id"):
+        try:
+            import comms_connector as _cc
+            title_txt = str(
+                deliverable_title
+                or (f"Wave {wave_n}" if wave_n is not None else "")
+                or str((job or {}).get("summary") or "")[:80]
+                or "Code job completed"
+            ).strip()
+            _cc.reconcile_working_list_activity(
+                cockpit_events=[{
+                    "kind": "wave_completed" if wave_n is not None else "code_job_completed",
+                    "cockpit_name": Path(str(cdir)).name,
+                    "step_id": str(step_id or ""),
+                    "wave": wave_n,
+                    "title": title_txt,
+                }]
+            )
+        except Exception:
+            pass
+    return auto_res
+
+
+def _reconcile_foreman_waves(cdir, job, wt, seen_waves):
+    """Inspect .foreman/run-record.json and auto-complete any newly GO/GREEN wave steps."""
+    try:
+        rec_path = Path(wt) / ".foreman" / "run-record.json"
+        if not rec_path.is_file():
+            return
+        rec = json.loads(rec_path.read_text(encoding="utf-8"))
+    except Exception:
+        return
+    for w in (rec.get("waves") or []):
+        if not isinstance(w, dict):
+            continue
+        st = str(w.get("status") or w.get("verdict") or "").strip().upper()
+        if st not in _GREEN_WAVE_STATUSES:
+            continue
+        raw_wn = w.get("wave") if w.get("wave") is not None else w.get("number")
+        try:
+            wn_int = int(raw_wn)
+        except (TypeError, ValueError):
+            continue
+        if wn_int in seen_waves:
+            continue
+        seen_waves.add(wn_int)
+        w_title = str(w.get("name") or w.get("title") or f"Wave {wn_int}").strip()
+        reconcile_wave_completion(cdir, job, wave_n=wn_int, deliverable_title=w_title)
+
+
 def _wait_foreman(cdir, job, wt, run, out):
     """Foreman ended: end what it left running and SEE it gone, then - unless Stop ended it -
     hand its whole change to the code job's finish. A tree that cannot be seen gone keeps the job running and
     registered, whoever asked (fcj review r3: never released on a failed end)."""
     jid = job["id"]
     try:
-        run.proc.wait()  # duration is not evidence of a hang; the existing ticker observes progress
+        run.proc.wait()
         ended = run.end(60)
     finally:
         out.close()
@@ -953,9 +1087,47 @@ def foreman_result(job):
     except Exception:
         rec = {}
     status = str(rec.get("status") or "")
-    waves = "; ".join("wave %s %s" % (w.get("wave"), w.get("status")) for w in (rec.get("waves") or []) if isinstance(w, dict))
+    waves_list = [w for w in (rec.get("waves") or []) if isinstance(w, dict)]
+    waves = "; ".join("wave %s %s" % (w.get("wave"), w.get("status")) for w in waves_list)
+    completed_waves = []
+    for w in waves_list:
+        st = str(w.get("status") or w.get("verdict") or "").strip().upper()
+        if st in _GREEN_WAVE_STATUSES:
+            try:
+                completed_waves.append(int(w.get("wave") if w.get("wave") is not None else w.get("number")))
+            except (TypeError, ValueError):
+                pass
     text = "Foreman %s%s" % (status or "ended without a run record", (": " + waves) if waves else "")
-    out = {"text": text[:1500], "authors": [FOREMAN_WRITER], "foreman_status": status}
+    out = {
+        "text": text[:1500],
+        "authors": [FOREMAN_WRITER],
+        "foreman_status": status,
+        "completed_waves": completed_waves,
+    }
+    totals = rec.get("totals") if isinstance(rec.get("totals"), dict) else {}
+    if isinstance(rec.get("usage"), dict):
+        out["usage"] = dict(rec["usage"])
+    elif totals.get("in") is not None or totals.get("out") is not None:
+        out["usage"] = {
+            "input_tokens": int(totals.get("in") or 0),
+            "output_tokens": int(totals.get("out") or 0),
+        }
+    if rec.get("tokens") is not None or rec.get("total_tokens") is not None:
+        out["tokens"] = rec.get("tokens") if rec.get("tokens") is not None else rec.get("total_tokens")
+    elif totals.get("in") is not None or totals.get("out") is not None:
+        out["tokens"] = int(totals.get("in") or 0) + int(totals.get("out") or 0)
+    if rec.get("cost_usd") is not None or rec.get("total_cost_usd") is not None:
+        out["cost_usd"] = rec.get("cost_usd") if rec.get("cost_usd") is not None else rec.get("total_cost_usd")
+    elif totals.get("cost") is not None:
+        out["cost_usd"] = totals.get("cost")
+    if totals.get("ms") is not None and rec.get("duration_ms") is None:
+        out["duration_ms"] = totals.get("ms")
+    if rec.get("model_served") or rec.get("model"):
+        out["model_served"] = rec.get("model_served") or rec.get("model")
+    if isinstance(rec.get("attested_review"), dict):
+        out["attested_review"] = dict(rec["attested_review"])
+    if isinstance(rec.get("changed_files"), dict):
+        out["changed_files"] = dict(rec["changed_files"])
     if status != "DONE":
         why = str(rec.get("halt_reason") or rec.get("taxonomy") or "no run record")
         out["error"] = "Foreman %s: %s" % (status or "did not finish", why[:400])
@@ -1147,8 +1319,10 @@ def run_command(job, tree, argv, *, output_limit=128 * 1024):
         return subprocess.CompletedProcess(argv, 130, "", "stopped before command launch")
     with log.open("wb") as output:
         fatal_launch = None
+        cmd_env = dict(os.environ)
+        cmd_env.update(_job_attribution_env(cdir, job.get("id"), job.get("repo"), source="code-job"))
         try:
-            run = _popen_contained(argv, str(tree), dict(os.environ), output)
+            run = _popen_contained(argv, str(tree), cmd_env, output)
         except _Uncontained as exc:
             run = exc.run
             fatal_launch = command["error"] = str(exc)
@@ -1517,6 +1691,144 @@ def is_document(path):
 REVIEW_TOOL = Path(__file__).resolve().parents[1] / "tools" / "steward_review.mjs"
 
 
+def _ingest_review_usage(job, rec, *, delta_from="", raw_stdout="") -> None:
+    """Best-effort record steward_review.mjs seat usage against the owning effort."""
+    try:
+        import usage_capture as _uc
+        import usage_index as _ui
+        cdir = job.get("steward_dir") or ""
+        jid = str(job.get("id") or "")
+        if not jid:
+            return
+        eff_str = str(cdir) if cdir else None
+        if eff_str:
+            try:
+                _uc.ingest_receipts(parent_effort=eff_str)
+            except Exception:
+                pass
+        pid, fpath = _uc.resolve_project(eff_str) if eff_str else (None, None)
+        if not pid and job.get("repo"):
+            pid, fpath = _uc.resolve_project(str(job.get("repo")))
+        src = dict(rec) if isinstance(rec, dict) else {}
+        if not isinstance(src.get("usage"), dict) and raw_stdout:
+            for ln in reversed(str(raw_stdout).splitlines()):
+                s = ln.strip()
+                if not s.startswith("{"):
+                    continue
+                try:
+                    cand = json.loads(s)
+                except ValueError:
+                    continue
+                if isinstance(cand, dict) and (isinstance(cand.get("usage"), dict)
+                                               or cand.get("tokens") is not None
+                                               or cand.get("total_tokens") is not None):
+                    for k in ("usage", "tokens", "total_tokens", "cost_usd",
+                              "total_cost_usd", "model_served", "model",
+                              "duration_ms", "native_id", "session_id"):
+                        if src.get(k) is None and cand.get(k) is not None:
+                            src[k] = cand.get(k)
+                    break
+        usage_d = src.get("usage") if isinstance(src.get("usage"), dict) else (
+            src.get("token_totals") if isinstance(src.get("token_totals"), dict) else None
+        )
+        native_id = src.get("native_id") or src.get("session_id") or src.get("engine_session_uuid")
+        if native_id and pid:
+            seat_key = "seat:%s" % (native_id,)
+            if any(r.get("key") == seat_key for r in _ui.load_rows(pid)):
+                return
+        tokens_val = src.get("tokens") if src.get("tokens") is not None else src.get("total_tokens")
+        cost_val = src.get("cost_usd") if src.get("cost_usd") is not None else src.get("total_cost_usd")
+        model_val = src.get("model_served") or src.get("model") or (usage_d or {}).get("model")
+        cli_val = src.get("family") or src.get("cli") or job.get("reviewer_family")
+        dur_ms = src.get("duration_ms") or 0
+        leg = "delta" if delta_from else "main"
+        idx_key = "review:%s:%s:%s" % (jid, leg, job.get("attempt", 1))
+        doc_uuid = str(native_id) if native_id else ("review-%s-%s-%s" % (jid, leg, job.get("attempt", 1)))
+        has_telemetry = bool(usage_d or tokens_val or cost_val is not None)
+        _uc.ingest_usage(
+            doc_uuid,
+            idx_key,
+            index_key=idx_key,
+            source=_uc.SOURCE_SEAT,
+            native_id=str(native_id or idx_key),
+            tokens=tokens_val if has_telemetry else 0,
+            cost_usd=cost_val,
+            project_id=pid,
+            folder_path=fpath,
+            effort_dir=eff_str,
+            cli=str(cli_val) if cli_val else None,
+            model=str(model_val) if model_val else None,
+            duration_ms=dur_ms,
+            usage=usage_d,
+            parent_id=jid,
+            usage_state=None if has_telemetry else "unmeasured",
+        )
+    except Exception:
+        pass
+
+
+def _ingest_code_job_usage(cdir, job, result=None) -> None:
+    """Best-effort record attributed code-job usage stamped with effort_dir."""
+    try:
+        import usage_capture as _uc
+        import usage_index as _ui
+        j = job if isinstance(job, dict) else {}
+        res = result if isinstance(result, dict) else {}
+        jid = str(j.get("id") or "")
+        if not jid:
+            return
+        eff_str = str(cdir or j.get("steward_dir") or "") or None
+        if eff_str:
+            try:
+                _uc.ingest_receipts(parent_effort=eff_str)
+            except Exception:
+                pass
+        pid, fpath = _uc.resolve_project(eff_str) if eff_str else (None, None)
+        if not pid and j.get("repo"):
+            pid, fpath = _uc.resolve_project(str(j.get("repo")))
+        if pid and j.get("worker") == "foreman":
+            if any(r.get("source") == _uc.SOURCE_SEAT and str(r.get("parent_id") or "") == jid
+                   for r in _ui.load_rows(pid)):
+                return
+        usage_d = res.get("usage") if isinstance(res.get("usage"), dict) else (
+            j.get("usage") if isinstance(j.get("usage"), dict) else None
+        )
+        tokens_val = res.get("tokens") if res.get("tokens") is not None else res.get("total_tokens")
+        cost_val = res.get("cost_usd") if res.get("cost_usd") is not None else res.get("total_cost_usd")
+        model_val = (res.get("model_served") or res.get("model")
+                     or j.get("model_served") or j.get("coder_model") or None)
+        authors = j.get("authors") or res.get("authors") or []
+        cli_val = (authors[0] if authors else None) or j.get("coder_family") or None
+        native_uuid = res.get("engine_session_uuid") or res.get("session_id") or None
+        if native_uuid and pid:
+            if any(r.get("engine_session_uuid") == str(native_uuid) and r.get("source") == _uc.SOURCE_JOB
+                   for r in _ui.load_rows(pid)):
+                return
+        dur_ms = res.get("duration_ms") or 0
+        idx_key = "code-job:%s" % (jid,)
+        doc_uuid = str(native_uuid) if native_uuid else ("code-job-%s" % (jid,))
+        has_telemetry = bool(usage_d or tokens_val or cost_val is not None)
+        _uc.ingest_usage(
+            doc_uuid,
+            idx_key,
+            index_key=idx_key,
+            source=_uc.SOURCE_JOB,
+            native_id=jid,
+            tokens=tokens_val if has_telemetry else 0,
+            cost_usd=cost_val,
+            project_id=pid,
+            folder_path=fpath,
+            effort_dir=eff_str,
+            cli=str(cli_val) if cli_val else None,
+            model=str(model_val) if model_val else None,
+            duration_ms=dur_ms,
+            usage=usage_d,
+            usage_state=None if has_telemetry else "unmeasured",
+        )
+    except Exception:
+        pass
+
+
 def run_review(job, tree, head, delta_from=""):
     """One review of the candidate ``head`` in ``tree`` by a family other than the author's. Returns the review
     record; ``record["ok"]`` is False on ANY failure. ANCHOR_REVIEW_CMD (a JSON argv) is the test seam."""
@@ -1565,9 +1877,130 @@ def run_review(job, tree, head, delta_from=""):
                    "the review process did not complete successfully (exit %s)" % r.returncode)
     rec["at"] = time.strftime("%Y-%m-%d %H:%M:%S")
     rec["delta_from"] = delta_from or None
+    _ingest_review_usage(job, rec, delta_from=delta_from, raw_stdout=r.stdout or "")
     if not rec.get("ok") and rec.get("family") and _LIMIT_WORDS.search(str(rec.get("error") or "")):
         mark_exhausted(str(rec["family"]).lower())        # the reviewer's family is not asked again for a while
     return rec
+
+
+def _norm_attested_rel(p):
+    s = posixpath.normpath(str(p or "").replace("\\", "/")).lstrip("/")
+    if not s or s in (".", "..") or s.startswith("../"):
+        return ""
+    return s
+
+
+def _head_blob_bytes(tree, head, rel):
+    try:
+        r = subprocess.run(["git", "-C", str(tree), "cat-file", "blob", "%s:%s" % (head, rel)],
+                           capture_output=True, timeout=60)
+    except Exception:
+        return None
+    return r.stdout if r.returncode == 0 else None
+
+
+def attested_foreman_review_record(job, tree, head, files):
+    """When Foreman already completed a genuine cross-family review (`go: True`, `cross_model: True`) inside its own
+    run and every landing file's committed candidate bytes match `.foreman/run-record.json` `changed_files` SHA-256
+    hashes, synthesize the verified review receipt directly instead of spawning a redundant cold-repo `steward_review`.
+    Returns None on ANY doubt (same-family, unattested, post-review edit, extra file), falling back to `run_review`."""
+    if not isinstance(job, dict) or job.get("worker") != "foreman":
+        return None
+    attested = job.get("attested_review")
+    changed_map = job.get("changed_files")
+    if not isinstance(attested, dict) or not isinstance(changed_map, dict):
+        try:
+            raw_rec = json.loads((Path(tree) / ".foreman" / "run-record.json").read_text(encoding="utf-8"))
+        except Exception:
+            return None
+        if not isinstance(raw_rec, dict) or str(raw_rec.get("status") or "") != "DONE":
+            return None
+        attested = raw_rec.get("attested_review")
+        changed_map = raw_rec.get("changed_files")
+    if not isinstance(attested, dict) or not isinstance(changed_map, dict) or not changed_map:
+        return None
+    if attested.get("go") is not True or attested.get("cross_model") is not True or attested.get("family_attested") is not True:
+        return None
+    try:
+        if int(attested.get("blocking_findings") or 0) != 0:
+            return None
+    except (TypeError, ValueError):
+        return None
+    fam = str(attested.get("family") or "").strip().lower()
+    if fam not in FAMILIES:
+        return None
+    author_set = {str(a).strip().lower() for a in (job.get("authors") or []) if a}
+    if job.get("coder_family"):
+        author_set.add(str(job["coder_family"]).strip().lower())
+    for cf in (attested.get("coding_families") or []):
+        if cf:
+            author_set.add(str(cf).strip().lower())
+    if not author_set or fam in author_set:
+        return None
+    rev_fams = [str(rf).strip().lower() for rf in (attested.get("families") or []) if rf]
+    if rev_fams and any((rf not in FAMILIES or rf in author_set) for rf in rev_fams):
+        return None
+    pinned_rev = str(job.get("reviewer_family") or "").strip().lower()
+    if pinned_rev and fam != pinned_rev:
+        return None
+    cand_files = sorted({
+        r for f in (files or [])
+        if (r := _norm_attested_rel(f)) and not never_lands(r) and not _runtime(r)
+    })
+    if not cand_files:
+        return None
+    norm_changed = {}
+    for k, v in changed_map.items():
+        rel = _norm_attested_rel(k)
+        if not rel or never_lands(rel) or _runtime(rel):
+            continue
+        norm_changed[rel] = str(v or "").strip()
+    if set(cand_files) != set(norm_changed.keys()):
+        return None
+    tree_root = Path(tree)
+    for rel in cand_files:
+        expected = norm_changed[rel]
+        blob = _head_blob_bytes(tree, head, rel)
+        disk_path = tree_root / rel
+        if expected.upper() == "DELETED":
+            if blob is not None or disk_path.exists():
+                return None
+            continue
+        exp_hex = expected.lower()
+        if not re.fullmatch(r"[0-9a-f]{64}", exp_hex) or blob is None:
+            return None
+        blob_hex = hashlib.sha256(blob).hexdigest().lower()
+        if not disk_path.is_file() or disk_path.is_symlink():
+            return None
+        try:
+            disk_bytes = disk_path.read_bytes()
+        except OSError:
+            return None
+        disk_hex = hashlib.sha256(disk_bytes).hexdigest().lower()
+        if blob_hex == exp_hex:
+            if disk_bytes != blob and disk_bytes.replace(b"\r\n", b"\n") != blob:
+                return None
+        elif disk_hex == exp_hex and disk_bytes.replace(b"\r\n", b"\n") == blob:
+            pass
+        else:
+            return None
+    code, tree_hash, _ = _git(tree, "rev-parse", head + "^{tree}")
+    if code != 0 or not tree_hash:
+        return None
+    return {
+        "ok": True,
+        "verdict": "PASS",
+        "family": fam,
+        "families": rev_fams or [fam],
+        "model_served": attested.get("model_served"),
+        "cross_model": True,
+        "findings": [],
+        "tree_hash": tree_hash,
+        "source": "foreman_attested_review",
+        "review_calls": int(attested.get("review_calls") or 1),
+        "at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "delta_from": None,
+    }
 
 
 def review_blocks(job, rec, tree, head):
@@ -1812,6 +2245,7 @@ def start(cdir, repo, brief, check="", engine_factory=None, steward="", coder=""
                    "check": check, "status": "running", "started": time.strftime("%Y-%m-%d %H:%M:%S"), "land_to": land_to, "outputs": outputs,
                    "steward_dir": str(cdir), "steward": steward, "worker": worker, "coder_family": family,
                    "started_by": str(actor or "the steward"), "size": size, "tier": tier_note}
+            job.setdefault("steward_dir", str(cdir))
             if reviewer:
                 job["reviewer_family"] = reviewer
             if escalates:
@@ -1832,7 +2266,7 @@ def start(cdir, repo, brief, check="", engine_factory=None, steward="", coder=""
                 _FOREMAN_PROCS[job_id] = _Starting()     # registered with the record: never taken for a lost Foreman
             try:
                 _write_job(cdir, job)
-                _index_job(job)
+                _index_job(job, cdir=cdir)
                 b = _busy_read()
                 b[job_id] = {"job": job_id, "cdir": str(cdir), "repo": _norm(root)}
                 _busy_write(b)
@@ -1891,6 +2325,12 @@ def start(cdir, repo, brief, check="", engine_factory=None, steward="", coder=""
                     "job": job_id}
         except Exception as e:
             return abandon("Foreman could not start: %s" % e)
+        try:
+            from steward_cockpit import steward_campaign
+            steward_campaign.register_active_effort(str(cdir))
+            steward_campaign.push_effort_status(cdir, reason="code_job_start")
+        except Exception:
+            pass
         return {"ok": True, "job": job_id, "branch": branch, "worktree": str(wt), "worker": "foreman",
                 "coder": "Foreman (%s)" % profile, "repo": str(root), "work_dir": work_dir, "outputs": outputs}
     try:
@@ -1899,6 +2339,10 @@ def start(cdir, repo, brief, check="", engine_factory=None, steward="", coder=""
             raise RuntimeError("no engine slot for the coder")
         eng.code_job = {"cdir": str(cdir), "id": job_id, "repo": str(root),
                         "worktree": str(wt), "work_dir": work_dir, "outputs": outputs}
+        try:
+            eng.attribution_env = _job_attribution_env(cdir, job_id, root, source="code-job")
+        except Exception:
+            pass
         eng.job_observation = {}
         eng.tier_override = tier                      # round 5: this job's engine only; the dashboard is never written
         try:   # this job's family, for this engine only (the dashboard's preferences are never written)
@@ -1928,6 +2372,12 @@ def start(cdir, repo, brief, check="", engine_factory=None, steward="", coder=""
         j = _transition(cdir, job_id, LIVE, status="failed", finished=time.strftime("%Y-%m-%d %H:%M:%S"), error="the coder could not start: %s" % e)
         _cleanup(j or job, keep_branch=False)
         return {"ok": False, "error": "the coder could not start: %s" % e, "job": job_id}
+    try:
+        from steward_cockpit import steward_campaign
+        steward_campaign.register_active_effort(str(cdir))
+        steward_campaign.push_effort_status(cdir, reason="code_job_start")
+    except Exception:
+        pass
     return {"ok": True, "job": job_id, "branch": branch, "worktree": str(wt), "worker": "coder", "coder": family,
             "repo": str(root), "work_dir": work_dir, "outputs": outputs}
 
@@ -2161,6 +2611,12 @@ def finish(cdir, job_id, result):
                         phase="outcome", phase_at=time.time(), kept_worktree=job["worktree"],
                         error="the job's finish failed: %s" % e, land_note="not landed; the work waits on branch %s" % job["branch"])
         if j:
+            _ingest_code_job_usage(cdir, j, result)
+            try:
+                from steward_cockpit import steward_campaign
+                steward_campaign.push_effort_status(str(cdir), reason="code_job_finish")
+            except Exception:
+                pass
             _report(cdir, j)
     finally:
         _transition(cdir, job_id, ("finishing", "done", "failed", "stopped"),
@@ -2189,12 +2645,21 @@ def _finish(cdir, job_id, job, result):
     for fam in (result or {}).get("failed_over") or []:  # a family the engine failed over from mid-job
         mark_exhausted(CLI_FAMILY.get(str(fam).lower(), str(fam).lower()))
     job["authors"] = [a for a in ((result or {}).get("authors") or []) if a in FAMILIES]
+    if isinstance((result or {}).get("attested_review"), dict):
+        job["attested_review"] = dict(result["attested_review"])
+    if isinstance((result or {}).get("changed_files"), dict):
+        job["changed_files"] = dict(result["changed_files"])
     manifest = [p for p in ((result or {}).get("manifest") or []) if isinstance(p, str)]
     _hold_cockpit_records(wt, job, manifest)
     job["manifest"] = manifest
     saved = handoff.snapshot(job)
     if not _transition(cdir, job_id, ("finishing",), expect_attempt=job.get("attempt", 1),
                        authors=job["authors"], manifest=manifest, recovery_snapshot=saved):
+        try:
+            from steward_cockpit import steward_campaign
+            steward_campaign.push_effort_status(str(cdir), reason="code_job_finish")
+        except Exception:
+            pass
         return
     made_copies = list(job.get("anchor_copies") or [])                # five r5 #1: copies an earlier attempt made stay ours
     _make_reading_copies(job, wt, made_copies)                        # a declared PDF/HTML/DOCX left to package is made, not missed
@@ -2368,9 +2833,60 @@ def _finish(cdir, job_id, job, result):
                        error=error, land_note=note, kept_worktree=(wt if keep else ""), phase="outcome", phase_at=time.time(),
                        speed=speed, **fields)
     if done is None:
+        try:
+            from steward_cockpit import steward_campaign
+            steward_campaign.push_effort_status(str(cdir), reason="code_job_finish")
+        except Exception:
+            pass
         return
+    _ingest_code_job_usage(cdir, done, result)
+    try:
+        from steward_cockpit import steward_campaign
+        steward_campaign.push_effort_status(str(cdir), reason="code_job_finish")
+    except Exception:
+        pass
     if not keep and done["status"] != "stopped":
         _cleanup(done, keep_branch=False)
+    try:
+        has_files = bool(done.get("files"))
+        not_rejected = not str(done.get("land_note") or "").startswith("not landed:")
+        job_go = (
+            done.get("status") == "done"
+            and not done.get("error")
+            and not_rejected
+            and (bool(done.get("landed")) if has_files else (done.get("check_ok") is not False and not done.get("unexpected")))
+        )
+        if job_go:
+            reconciled_set = set((result or {}).get("_reconciled_waves") or [])
+            for wn in ((result or {}).get("completed_waves") or []):
+                if wn not in reconciled_set:
+                    reconciled_set.add(wn)
+                    reconcile_wave_completion(cdir, done, wave_n=int(wn))
+            exp_step = str(done.get("step_id") or (result or {}).get("step_id") or "").strip() or None
+            exp_wave = done.get("wave") if done.get("wave") is not None else (result or {}).get("wave")
+            if exp_wave is None and not reconciled_set:
+                w_hits = sorted({int(m) for m in re.findall(r"\bWave\s+(\d{1,3})\b", str(done.get("brief") or ""), re.I)})
+                if len(w_hits) == 1:
+                    exp_wave = w_hits[0]
+            if exp_step is not None or (exp_wave is not None and int(exp_wave) not in reconciled_set):
+                reconcile_wave_completion(
+                    cdir,
+                    done,
+                    wave_n=(int(exp_wave) if exp_wave is not None else None),
+                    step_id=exp_step,
+                    deliverable_title=str(done.get("summary") or "")[:80] or None,
+                )
+            elif not reconciled_set:
+                import comms_connector as _cc
+                _cc.reconcile_working_list_activity(
+                    cockpit_events=[{
+                        "kind": "code_job_completed",
+                        "cockpit_name": Path(str(cdir)).name,
+                        "title": str(done.get("summary") or "Code job completed")[:80],
+                    }]
+                )
+    except Exception:
+        pass
     _report(cdir, done)
     try:
         from steward_cockpit import job_ledger
@@ -2639,7 +3155,7 @@ def land(job, files):
     if _stop_asked(job):
         return False, "not landed: John asked to stop it; the work is kept at %s" % wt, fields
     phase(job, "reviewing")
-    rec = run_review(job, wt, cand)           # W2 (2026-10-08): every job is reviewed by another family, documents too
+    rec = attested_foreman_review_record(job, wt, cand, files) or run_review(job, wt, cand)
     fields["review"] = rec
     why = review_blocks(job, rec, wt, cand)
     if why:
@@ -2979,7 +3495,9 @@ def _materialize_report(cdir, job):
                 abs_p = (repo_p / rel_p).resolve()
                 if abs_p.is_file() and (abs_p == cdir_p or abs_p.is_relative_to(cdir_p)):
                     effort_rel = str(abs_p.relative_to(cdir_p)).replace(chr(92), "/")
-                    _dr.register(cdir_p, "START HERE \u2014 " + abs_p.name + " (code job " + str(job.get("id") or "") + ")", effort_rel)
+                    from steward_cockpit import steward_core as _score
+                    clean_doc_title = _score.clean_human_deliverable_title("", path=effort_rel, fallback=abs_p.stem)
+                    _dr.register(cdir_p, "START HERE \u2014 " + clean_doc_title, effort_rel)
             from steward_cockpit import steward_campaign as _sc
             _sc.sync_steward_projections(cdir_p)
         except Exception:
@@ -3212,12 +3730,13 @@ def _newest_input(source, target, tree=None):
     return newest
 
 
-def _index_job(job):
+def _index_job(job, cdir=None):
     """Round 5 (plan r2 #5): one pointer line per started job, so the ledger finds every job's own record - a job that
     failed before its timing line included. Never raises."""
     try:
+        sdir = str(cdir) if cdir else str(job.get("steward_dir") or "")
         with open(jobs_base() / "jobs-index.jsonl", "a", encoding="utf-8") as f:
-            f.write(json.dumps({"job": job["id"], "steward_dir": job.get("steward_dir") or "", "at": time.time()}) + "\n")
+            f.write(json.dumps({"job": job["id"], "steward_dir": sdir, "at": time.time()}) + "\n")
     except Exception:
         pass
 
@@ -3397,10 +3916,12 @@ def announce_kept(cdir, job):
                 old = next((i for i in previous.get("items", []) if i.get("where") == where
                             and i.get("sha256") == digest and i.get("registered")), None)
                 from steward_cockpit.steward_campaign import job_noun as _job_noun
+                from steward_cockpit import steward_core as _score
                 j_noun = _job_noun(job)
+                clean_kept_name = _score.clean_human_deliverable_title("", path=name, fallback=Path(name).stem)
                 try:
                     registration = {"written": True} if old else _dr.register(
-                        cdir, "Supporting - %s %s kept (not landed): %s" % (j_noun[:1].upper() + j_noun[1:], job["id"], Path(name).name), "`%s`" % where, notify=False)
+                        cdir, "Supporting - %s kept (not landed): %s" % (j_noun[:1].upper() + j_noun[1:], clean_kept_name), "`%s`" % where, notify=False)
                 except Exception as exc:
                     registration = {"reason": str(exc)[:200]}
                 item["registered"] = bool(registration.get("written") or registration.get("reason") == "dup")

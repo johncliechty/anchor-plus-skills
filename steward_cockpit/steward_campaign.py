@@ -26,6 +26,62 @@ from steward_cockpit import steward_core as _core
 TAIL_TURNS = 40
 SWARM_HEARTBEAT_LEASE_SECONDS = 90
 ATTENTION_WORKING_GRACE_SECONDS = 120
+MAX_STATUS_LOG_TAIL_BYTES = 65536
+LOG_TAIL_TRUNCATED_NOTE = "log tail truncated (>64KB) — showing latest window"
+STATUS_DAEMON_INTERVAL_S = 60.0
+
+WAVE4_STATUS_FAILURE_CONTRACT = {
+    "backing-store-unreadable": {
+        "ok": False,
+        "http_status": 500,
+        "failure_state": "backing-store-unreadable",
+        "message": "Status ledger unreadable (unknown)",
+    },
+    "dependency-missing": {
+        "ok": False,
+        "http_status": 503,
+        "failure_state": "dependency-missing",
+        "message": "Worker log missing — status unknown",
+    },
+    "dependency-slow-or-killed": {
+        "ok": False,
+        "http_status": 200,
+        "timeout_http_status": 504,
+        "failure_state": "dependency-slow-or-killed",
+        "message": "Worker process exited/stalled — inspect job record",
+    },
+    "dependency-returns-garbage": {
+        "ok": True,
+        "http_status": 200,
+        "failure_state": "dependency-returns-garbage",
+        "message": "Malformed worker status block — raw tail preserved",
+    },
+    "empty-but-valid": {
+        "ok": True,
+        "http_status": 200,
+        "failure_state": "empty-but-valid",
+        "message": "Quiet — no active run",
+    },
+}
+
+_STATUS_SEQ_LOCK = globals().get("_STATUS_SEQ_LOCK") or threading.Lock()
+_STATUS_SEQ_BY_DIR: dict[str, int] = (
+    globals().get("_STATUS_SEQ_BY_DIR")
+    if isinstance(globals().get("_STATUS_SEQ_BY_DIR"), dict)
+    else {}
+)
+_ACTIVE_EFFORTS: set[str] = (
+    globals().get("_ACTIVE_EFFORTS")
+    if isinstance(globals().get("_ACTIVE_EFFORTS"), set)
+    else set()
+)
+_LAST_DAEMON_PUSH: dict[str, float] = (
+    globals().get("_LAST_DAEMON_PUSH")
+    if isinstance(globals().get("_LAST_DAEMON_PUSH"), dict)
+    else {}
+)
+_DAEMON_LOCK = globals().get("_DAEMON_LOCK") or threading.Lock()
+_DAEMON_THREAD: threading.Thread | None = globals().get("_DAEMON_THREAD")
 _SWARM_HEARTBEAT_NAME = re.compile(
     r"^heartbeat-r\d+-[A-Za-z0-9][A-Za-z0-9_-]*\.json$", re.I)
 # The flag John actually sees. Missing/garbage files are quiet, never "unknown"
@@ -279,7 +335,100 @@ def _closed_today(roadmap, step_id):
         return False
 
 
-def read_map(campaign_dir: str, include_plan_history: bool | None = None):
+def _done_step_ids_from_roadmap(roadmap) -> set[str]:
+    done_ids: set[str] = set()
+    if not isinstance(roadmap, dict) or not roadmap:
+        return done_ids
+    raw_steps_field = roadmap.get("steps")
+    raw_proj_field = roadmap.get("roadmap_projection")
+    if (raw_steps_field is not None and not isinstance(raw_steps_field, list)) or (
+        raw_proj_field is not None and not isinstance(raw_proj_field, list)
+    ):
+        return done_ids
+    proj = raw_proj_field or raw_steps_field or roadmap.get("roadmap") or []
+    if not proj:
+        for ev in reversed(roadmap.get("roadmap_events") or []):
+            if isinstance(ev, dict) and ev.get("kind") == "scaffold_proposal" and ev.get("steps"):
+                proj = ev["steps"]
+                break
+    for s in proj:
+        if not isinstance(s, dict):
+            continue
+        s_status = s.get("status") or ("done" if s.get("done") else ("parked" if s.get("parked") else "proposed"))
+        if s_status == "done":
+            done_ids.add(str(s.get("id") or s.get("step_id") or ""))
+    return done_ids
+
+
+def _read_attention_fast(campaign_dir: str) -> dict:
+    """Fast attention-only projection identical to ``read_map(campaign_dir)['attention']``
+    without walking deliverables, plan drift, or running overview."""
+    root = Path(campaign_dir)
+    attention_path = root / ".ecgberht" / "attention.json"
+    att, err = _read_json(attention_path)
+    attention = _normalize_attention(att, err)
+    attention_age = _age(attention_path)
+    attention["age_seconds"] = attention_age
+    if attention["state"] == "working":
+        failure_code = str(attention.get("failure_code") or "")
+        has_fresh_owner = any(
+            seat.get("state") == "fresh"
+            for seat in read_swarm_trails(str(root))
+        )
+        expired = (attention_age is None
+                   or attention_age >= ATTENTION_WORKING_GRACE_SECONDS)
+        if failure_code == "ATTENTION_STALE" or (expired and not has_fresh_owner):
+            attention["state"] = "stale"
+            attention["reason"] = (
+                "attention working edge has no fresh owner heartbeat")
+            attention["lease_seconds"] = ATTENTION_WORKING_GRACE_SECONDS
+        attention["fresh_owner"] = has_fresh_owner
+
+    refinement = read_refinement(campaign_dir, stale_ok=True)
+    if refinement is not None:
+        attention["managed_refinement"] = True
+        attention["pending_request"] = None
+        if not refinement.get("ok"):
+            attention.update(state="unknown", reason="Refinement state unavailable")
+        else:
+            state = refinement["state"]
+            roadmap, rm_err = _read_json(root / "roadmap.json")
+            done_step_ids = _done_step_ids_from_roadmap(roadmap) if not rm_err else set()
+            attention["producer_recovery_required"] = any(
+                item.get("status") == "pending_steward_review" and
+                item.get("terminal") in ("failed", "orphaned", "reaped", "cancelled", "interrupted")
+                for item in state.get("producer_handoffs", {}).values())
+            pending = state.get("pending_request")
+            attention["pending_requests"] = [
+                dict(r, step_id=r.get("step_id") or sid, asked_at=p.get("at"))
+                for sid, sl in state["slices"].items() if sid not in done_step_ids
+                for r in sl.get("review_requests", [])
+                if r.get("status") == "pending"
+                for p in sl.get("presentations", []) if p["id"] == r["presentation_id"]
+            ]
+            if isinstance(pending, dict) and pending.get("step_id") in done_step_ids:
+                pending = attention["pending_requests"][0] if attention["pending_requests"] else None
+            attention["work_digest"] = hashlib.sha256(json.dumps({sid: {
+                "candidate": sl.get("candidate"), "requirements": sl.get("requirements"),
+                "depends_on": sl.get("depends_on")}
+                for sid, sl in state["slices"].items()}, sort_keys=True).encode()).hexdigest()
+            attention["pending_request"] = pending
+            human_wait_face = pending.get("purpose", "") if pending else ""
+            if pending and attention.get("state") != "working":
+                attention.update(state="needs_you", reason=human_wait_face)
+            elif attention.get("state") in ("needs_you", "blocked"):
+                attention.update(state="quiet", reason="No pending refinement request")
+    return attention
+
+
+def read_attention(campaign_dir: str) -> dict:
+    """Return the campaign attention projection; honors tests that monkeypatch ``read_map``."""
+    if read_map is not _DEFAULT_READ_MAP:
+        return (read_map(campaign_dir) or {}).get("attention", {})
+    return _read_attention_fast(campaign_dir)
+
+
+def read_map(campaign_dir: str, include_plan_history: bool | None = None, *, include_overview: bool = True):
     if include_plan_history is None:
         include_plan_history = bool(os.environ.get("PYTEST_CURRENT_TEST"))
     root = Path(campaign_dir)
@@ -302,12 +451,26 @@ def read_map(campaign_dir: str, include_plan_history: bool | None = None):
     # --- Roadmap: the steps ---
     steps = []
     goal_flips = []
-    roadmap, err = _read_json(root / "roadmap.json")
-    if err:
-        gaps.append(f"roadmap.json {err}")
+    rm_path = root / "roadmap.json"
+    roadmap, rm_err = _read_json(rm_path)
+    if rm_err:
+        gaps.append(f"roadmap.json {rm_err}")
+    elif roadmap is not None and not isinstance(roadmap, dict):
+        rm_err = "not a JSON object"
+        gaps.append(f"roadmap.json {rm_err}")
+        roadmap = None
     elif roadmap:
-        proj = roadmap.get("roadmap_projection") or roadmap.get("steps") or roadmap.get("roadmap") or []
-        if not proj:
+        raw_steps_field = roadmap.get("steps")
+        raw_proj_field = roadmap.get("roadmap_projection")
+        if (raw_steps_field is not None and not isinstance(raw_steps_field, list)) or (
+            raw_proj_field is not None and not isinstance(raw_proj_field, list)
+        ):
+            rm_err = "steps projection is not a list"
+            gaps.append(f"roadmap.json {rm_err}")
+            proj = []
+        else:
+            proj = raw_proj_field or raw_steps_field or roadmap.get("roadmap") or []
+        if not proj and not rm_err:
             # honest fold-lite: newest scaffold_proposal's steps (all drafts)
             for ev in reversed(roadmap.get("roadmap_events") or []):
                 if ev.get("kind") == "scaffold_proposal" and ev.get("steps"):
@@ -315,15 +478,25 @@ def read_map(campaign_dir: str, include_plan_history: bool | None = None):
                     gaps.append("no projection - showing newest proposal (drafts)")
                     break
         for s in proj:
+            if not isinstance(s, dict):
+                continue
             part = str(s.get("part") or "").strip().lower()
             if part not in _PART_TAGS:
                 part = ""
             gate = str(s.get("gate") or "").strip()
+            s_title = s.get("name") or s.get("title") or "(unnamed)"
+            s_status = s.get("status") or ("done" if s.get("done") else ("parked" if s.get("parked") else "proposed"))
             step = {
                 "id": s.get("id") or s.get("step_id") or "",
-                "name": s.get("name") or "(unnamed)",
-                "status": s.get("status") or "proposed",
+                "name": s_title,
+                "title": s.get("title") or s_title,
+                "status": s_status,
+                "done": bool(s.get("done") if s.get("done") is not None else (s_status == "done")),
+                "parked": bool(s.get("parked") if s.get("parked") is not None else (s_status == "parked")),
                 "done_when": s.get("done_when") or "",
+                "goal": s.get("goal") or "",
+                "deliverables": deepcopy(s.get("deliverables") or []),
+                "wave": s.get("wave"),
                 "if_then": s.get("if_then") or "",
                 "pace": s.get("pace") or "",
                 "waiting_on": s.get("waiting_on"),
@@ -342,12 +515,12 @@ def read_map(campaign_dir: str, include_plan_history: bool | None = None):
                 step["navigation"] = s["navigation"]
             steps.append(step)
         goal_flips = [ev for ev in (roadmap.get("roadmap_events") or [])
-                      if ev.get("kind") == "goal_flip"]
+                      if isinstance(ev, dict) and ev.get("kind") == "goal_flip"]
 
     # (2026-09-05, John: "the plan does not get updated") a plan DOCUMENT with no
     # roadmap behind it is not an empty plan: derive proposed steps from its
     # headings so the outline is never blank, and say where they came from.
-    if not steps:
+    if not steps and not rm_err:
         derived, src = _steps_from_plan_doc(root)
         if derived:
             steps = derived
@@ -355,9 +528,11 @@ def read_map(campaign_dir: str, include_plan_history: bool | None = None):
     done = sum(1 for s in steps if s["status"] == "done")
 
     # --- Strip: heartbeat ---
-    strip, err = _read_json(root / "strip.json")
-    if err:
-        gaps.append(f"strip.json {err}")
+    strip, strip_err = _read_json(root / "strip.json")
+    if strip_err or (strip is not None and not isinstance(strip, dict)):
+        gaps.append(f"strip.json {strip_err or 'not a JSON object'}")
+        strip = {}
+    elif strip is None:
         strip = {}
     heartbeat = {
         "phase": strip.get("phase", ""),
@@ -371,6 +546,9 @@ def read_map(campaign_dir: str, include_plan_history: bool | None = None):
         "current_run_id": strip.get("current_run_id"),
         "current_skill_status_source": strip.get("current_skill_status_source"),
         "receipts": strip.get("receipts") if isinstance(strip.get("receipts"), list) else [],
+        "as_of": strip.get("as_of") or strip.get("updated_at") or "",
+        "active_effort_as_of": strip.get("active_effort_as_of") or strip.get("as_of") or strip.get("updated_at") or "",
+        "updated_at": strip.get("updated_at") or "",
     }
     if "pending_request" in strip:
         heartbeat["pending_request"] = strip["pending_request"]
@@ -538,8 +716,6 @@ def read_map(campaign_dir: str, include_plan_history: bool | None = None):
     from .navigation_compat import with_compat_navigation
     organized = with_compat_navigation({"name": root.name, "steps": steps}, roadmap)
     steps = organized["steps"]
-    if _has_top_final_overrides(str(root)):
-        done = _reconcile_top_final_overrides_on_map(root, steps, strip, attention, heartbeat)
     m = {
         "navigation_mode": organized["navigation_mode"],
         "navigation_fallback": organized.get("navigation_fallback"),
@@ -553,6 +729,8 @@ def read_map(campaign_dir: str, include_plan_history: bool | None = None):
         "steps": steps,
         "steps_done": done,
         "steps_total": len(steps),
+        "roadmap_error": rm_err,
+        "failure_state": "backing-store-unreadable" if rm_err else ("empty-but-valid" if not steps else "ok"),
         "map": derive_product_map(steps),
         "work_map": work_product_map(steps),
         "plate": read_plate(str(root)),
@@ -582,27 +760,36 @@ def read_map(campaign_dir: str, include_plan_history: bool | None = None):
                                  for e in _open_proposals((roadmap or {}).get("roadmap_events"))]
     except Exception:
         m["repair_proposals"] = []
-    m["plan_drift"] = plan_drift(campaign_dir)
+    if include_overview:
+        m["plan_drift"] = plan_drift(campaign_dir)
+    else:
+        m["plan_drift"] = {"drift": False, "reason": "", "docs": []}
     if include_plan_history:
         m["plan_proposal"] = read_plan_proposal(campaign_dir, m, roadmap)
         m["plan_history"] = read_plan_history(campaign_dir, m, roadmap)
     else:
         m["plan_proposal"] = None
         m["plan_history"] = []
-    try:
-        m["running_overview"] = build_running_overview(campaign_dir, m)
-    except Exception:
-        m["running_overview"] = {
-            "goal": goal or root.name,
-            "doing_now": heartbeat.get("active_effort") or "",
-            "done_summary": f"{done} of {len(steps)} steps completed",
-            "todo_summary": heartbeat.get("next_recommended") or "",
-            "done_steps": [],
-            "active_steps": [],
-            "upcoming_steps": [],
-            "key_deliverables": [],
-        }
+    if include_overview:
+        try:
+            m["running_overview"] = build_running_overview(campaign_dir, m)
+        except Exception:
+            m["running_overview"] = {
+                "goal": goal or root.name,
+                "doing_now": heartbeat.get("active_effort") or "",
+                "done_summary": f"{done} of {len(steps)} steps completed",
+                "todo_summary": heartbeat.get("next_recommended") or "",
+                "done_steps": [],
+                "active_steps": [],
+                "upcoming_steps": [],
+                "key_deliverables": [],
+            }
+    else:
+        m["running_overview"] = None
     return m
+
+
+_DEFAULT_READ_MAP = read_map
 
 
 #: Words that carry no identity in an effort name (articles, glue, modals).
@@ -1101,6 +1288,8 @@ def persist_status_table_from_text(campaign_dir: str, text: str) -> bool:
             except Exception:
                 existing = {}
         card = dict(existing)
+        card["source"] = "steward_table"
+        card["source_epoch"] = time.time()
         card["timestamp"] = hhmm
         if run_type:
             card["run_type"] = run_type
@@ -1177,6 +1366,79 @@ def _newest_status_log(campaign_dir, depth=3):
     return best
 
 
+def read_log_tail_bounded(path: str | Path, max_bytes: int = MAX_STATUS_LOG_TAIL_BYTES) -> tuple[str, bool]:
+    """Read at most the trailing ``max_bytes`` of ``path`` in binary mode.
+
+    Returns ``(decoded_text, truncated)`` without ever reading an unbounded worker/status log.
+    """
+    p = Path(path)
+    limit = max(1, int(max_bytes))
+    with p.open("rb") as f:
+        f.seek(0, os.SEEK_END)
+        size = f.tell()
+        if size > limit:
+            f.seek(-limit, os.SEEK_END)
+            raw = f.read(limit)
+            text = raw.decode("utf-8", errors="replace")
+            nl = text.find("\n")
+            if 0 <= nl < len(text) - 1:
+                text = text[nl + 1:]
+            return text, True
+        f.seek(0)
+        raw = f.read()
+        return raw.decode("utf-8", errors="replace"), False
+
+
+def status_lookthrough_file(log_file: Path, rel_source: str, now=None, *, skill_hint: str = ""):
+    """Parse a structured status lookthrough dict from ``log_file`` using a 64KB-bounded tail read."""
+    p = Path(log_file)
+    try:
+        mt = p.stat().st_mtime
+        text, truncated = read_log_tail_bounded(p, MAX_STATUS_LOG_TAIL_BYTES)
+    except OSError:
+        return None
+    age = max(0.0, (now if now is not None else time.time()) - mt)
+    parsed = parse_status_table(text)
+    if not parsed:
+        return None
+    rows, head = parsed["rows"], parsed["head"] or {}
+    m_log = _STATUS_LOG_NAME.match(p.name)
+    raw_skill = m_log.group(1).lower() if m_log else str(skill_hint or "").strip().lower()
+    if not raw_skill and head.get("title"):
+        raw_skill = str(head["title"]).split()[0].strip().lower()
+    label = _SKILL_LABELS.get(raw_skill, str(skill_hint).strip() or (raw_skill.capitalize() if raw_skill else "Skill"))
+    title = head.get("title") or label
+    doing = rows.get("doing", "")
+    halt_reason = _halt_reason(text)
+    blocker = rows.get("blocker", "")
+    limit = classify_model_limit(halt_reason) or classify_model_limit(blocker)
+    source = str(rel_source or p.name).replace(os.sep, "/")
+    look = {
+        "skill": label,
+        "title": title,
+        "doing": doing,
+        "label": title + (" \u00b7 " + doing if doing else ""),
+        "effort": rows.get("effort", ""),
+        "status": rows.get("status", ""),
+        "tests": rows.get("tests", ""),
+        "blocker": rows.get("blocker", ""),
+        "procs": rows.get("procs", ""),
+        "eta": rows.get("eta", ""),
+        "todo": rows.get("to_do", ""),
+        "final": head.get("tick") == "final",
+        "halt_reason": halt_reason,
+        "limit": limit,
+        "age": _humanize(age),
+        "age_seconds": age,
+        "source": source,
+        "table_at": head.get("at") or _last_table_time(text),
+    }
+    if truncated:
+        look["truncated"] = True
+        look["truncation_note"] = LOG_TAIL_TRUNCATED_NOTE
+    return look
+
+
 def status_lookthrough(campaign_dir, now=None):
     """The commissioned run of record when one is FRESH — parsed from the
     skill's OWN status log. None when nothing fresh (then the steward's own
@@ -1185,41 +1447,20 @@ def status_lookthrough(campaign_dir, now=None):
     if not found:
         return None
     p, mt, skill = found
-    age = (now or time.time()) - mt
+    now_ts = now if now is not None else time.time()
+    age = now_ts - mt
     if age > STATUS_LOOKTHROUGH_FRESH_SECONDS:
         return None
-    try:
-        text = p.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return None
-    parsed = parse_status_table(text[-20000:])
-    if not parsed:
-        return None
-    rows, head = parsed["rows"], parsed["head"] or {}
-    label = _SKILL_LABELS.get(skill, skill.capitalize())
-    title = head.get("title") or label
-    doing = rows.get("doing", "")
-    halt_reason = _halt_reason(text[-20000:])
-    blocker = rows.get("blocker", "")
-    limit = classify_model_limit(halt_reason) or classify_model_limit(blocker)
     try:
         source = os.path.relpath(str(p), str(campaign_dir)).replace(os.sep, "/")
     except ValueError:
         source = str(p)
-    return {"skill": label, "title": title, "doing": doing,
-            "label": title + (" \u00b7 " + doing if doing else ""),
-            "effort": rows.get("effort", ""), "status": rows.get("status", ""),
-            "tests": rows.get("tests", ""), "blocker": rows.get("blocker", ""),
-            "procs": rows.get("procs", ""), "eta": rows.get("eta", ""),
-            "todo": rows.get("to_do", ""), "final": head.get("tick") == "final",
-            "halt_reason": halt_reason, "limit": limit,
-            "age": _humanize(age), "age_seconds": age, "source": source,
-            "table_at": head.get("at") or _last_table_time(text)}
+    return status_lookthrough_file(p, source, now=now_ts, skill_hint=skill)
 
 
 def _last_table_time(text):
     """The [HH:MM] of the last status table in a log, whatever follows it."""
-    found = re.findall(r"^\s*(?:\[\d{1,2}:\d{2}:\d{2}\]\s*)?\[(\d{1,2}:\d{2})\]", str(text or "")[-20000:], re.M)
+    found = re.findall(r"^\s*(?:\[\d{1,2}:\d{2}:\d{2}\]\s*)?\[(\d{1,2}:\d{2})\]", str(text or "")[-MAX_STATUS_LOG_TAIL_BYTES:], re.M)
     return found[-1] if found else ""
 
 
@@ -1553,9 +1794,13 @@ def _job_epoch(value):
 
 def _code_job_native(record, now):
     """Bounded reads of this job's existing Foreman files, without waking work."""
-    phase = record.get("phase") or ("build" if record["status"] == "running" else record["status"])
+    raw_native = record.get("native") if isinstance(record.get("native"), dict) else {}
+    raw_stopped = bool(raw_native.get("stopped") is True)
+    phase = record.get("phase") or ("stopped" if raw_stopped else ("build" if record["status"] == "running" else record["status"]))
     out = {"phase": phase, "phase_at": record.get("phase_at") or record.get("started_epoch"), "observed_at": None,
-           "estimates": [record.get("eta")], "stopped": False}
+           "estimates": [record.get("eta")], "stopped": raw_stopped}
+    if raw_stopped:
+        return out
     if record.get("phase") and record["phase"] != "producing":
         return out  # controller check/review/landing takes precedence over the completed worker's logs
     if record.get("worker", "coder") != "foreman" and record.get("phase"):
@@ -1575,7 +1820,7 @@ def _code_job_native(record, now):
 
     oversized = set()
 
-    def read(name, mode="tail", limit=20000):
+    def read(name, mode="tail", limit=MAX_STATUS_LOG_TAIL_BYTES):
         try:
             path = (root / name).resolve()
             path.relative_to(root)
@@ -2091,7 +2336,11 @@ def look_started(campaign_dir, look):
         f = Path(campaign_dir) / src
         if not f.is_file():
             return None
-        text = f.read_text(encoding="utf-8", errors="replace")
+        with f.open("rb") as fh:
+            head_text = fh.read(MAX_STATUS_LOG_TAIL_BYTES).decode("utf-8", errors="replace")
+        text = head_text
+        if not re.search(_TABLE_HEAD, text, re.M):
+            text, _ = read_log_tail_bounded(f, MAX_STATUS_LOG_TAIL_BYTES)
         mtime = f.stat().st_mtime
     except (OSError, ValueError):
         return None
@@ -2121,7 +2370,54 @@ def running_skill_jobs(campaign_dir):
     if err or raw is None:
         return []
     rows = raw.values() if isinstance(raw, dict) else (raw or [])
-    return [r for r in rows if isinstance(r, dict) and r.get("status") == "running"]
+    return [r for r in rows if isinstance(r, dict) and r.get("status") == "running" and not r.get("finished")]
+
+
+def read_attention(campaign_dir: str) -> dict:
+    """Read and normalize ``<cdir>/.ecgberht/attention.json`` with stale-working lease discipline."""
+    attention_path = Path(campaign_dir) / ".ecgberht" / "attention.json"
+    att, err = _read_json(attention_path)
+    attention = _normalize_attention(att, err)
+    attention_age = _age(attention_path)
+    attention["age_seconds"] = attention_age
+    if attention["state"] == "working":
+        failure_code = str(attention.get("failure_code") or "")
+        has_fresh_owner = any(
+            seat.get("state") == "fresh"
+            for seat in read_swarm_trails(str(campaign_dir))
+        )
+        expired = (
+            attention_age is None
+            or attention_age >= ATTENTION_WORKING_GRACE_SECONDS
+        )
+        if failure_code == "ATTENTION_STALE" or (expired and not has_fresh_owner):
+            if not running_code_jobs(campaign_dir) and not running_skill_jobs(campaign_dir):
+                attention["state"] = "stale"
+                attention["reason"] = "attention working edge has no fresh owner heartbeat"
+                attention["lease_seconds"] = ATTENTION_WORKING_GRACE_SECONDS
+        attention["fresh_owner"] = has_fresh_owner
+    return attention
+
+
+def _resolve_job_log_file(campaign_dir: str, job: dict) -> tuple[str, Path | None]:
+    """Return ``(declared_log_rel, resolved_path)`` for a job's explicit ``log_path`` or ``log``."""
+    if not isinstance(job, dict):
+        return "", None
+    raw_lp = str(job.get("log_path") or job.get("log") or "").strip()
+    if not raw_lp:
+        return "", None
+    p = Path(raw_lp)
+    if p.is_absolute():
+        return raw_lp, p
+    cand = Path(campaign_dir) / p
+    if cand.is_file():
+        return raw_lp, cand
+    wt = str(job.get("worktree") or "").strip()
+    if wt:
+        wt_cand = Path(wt) / p
+        if wt_cand.is_file():
+            return raw_lp, wt_cand
+    return raw_lp, cand
 
 
 def who_is_working(campaign_dir, engine_state, jobs, look, now=None, evidence_tests="", slice_started=None, skills=None):
@@ -2188,20 +2484,28 @@ def who_is_working(campaign_dir, engine_state, jobs, look, now=None, evidence_te
         started = _job_epoch(k.get("started"))
         label = str(k.get("label") or "a skill")
         ident = skill_identity(k)
-        try:
-            log_mtime = (Path(campaign_dir) / str((look or {}).get("source") or "")).stat().st_mtime if look else 0
-        except (OSError, ValueError):
-            log_mtime = 0
-        same = [r for r in skills if skill_identity(r) == ident]
-        # (final review) nothing records which status log belongs to which skill run, and names, start times and
-        # mtimes cannot prove it - so a registered skill job never adopts a log: its phase, tests and finish stay
-        # provisional and honest rather than borrowed from another run
+        skill_log_rel = str(k.get("log_path") or k.get("log") or "").strip()
         own_log = False
-        if not own_log:
-            look_tests = ""                              # another skill's log never speaks for this job
-        phase = str(look.get("status") or look.get("doing") or "running")[:80] if own_log else "running"
+        if skill_log_rel:
+            cand_log = Path(skill_log_rel) if Path(skill_log_rel).is_absolute() else (Path(campaign_dir) / skill_log_rel)
+            if cand_log.is_file():
+                own_log = True
+                bound_look = status_lookthrough_file(cand_log, skill_log_rel, now=now, skill_hint=ident or label)
+                if bound_look is not None:
+                    look = bound_look
+                    look_tests = (look or {}).get("tests") if (look or {}).get("tests") not in (None, "", "-", "\u2014") else ""
+                else:
+                    look = None
+                    look_tests = ""
+            else:
+                look = None
+                look_tests = ""
+        else:
+            look = None
+            look_tests = ""
+        phase = str((look or {}).get("status") or (look or {}).get("doing") or "running")[:80] if (own_log and look) else "running"
         real_tests = ""                                  # no check receipt names this run: its tests stay "not run yet"
-        if own_log and real_forecast(look.get("eta")):
+        if own_log and look and real_forecast(look.get("eta")):
             own_finish = str(look["eta"]) + (" (its own estimate, given %s)" % look["table_at"] if look.get("table_at") else " (its own estimate)")
             return ("The steward is running %s (%s) and is in charge of it" % (ident or "a skill", label), phase, started,
                     look_tests or real_tests or "tests not run yet", own_finish)
@@ -2250,25 +2554,73 @@ def compose_status(campaign_dir: str, engine_state=None):
     m = read_map(campaign_dir, include_plan_history=False)
     st = engine_state or {}
     active, focus_warning = _focused_step(m)
-    look = status_lookthrough(campaign_dir)
-    if m["heartbeat"].get("current_step_id"):
-        expected_source = m["heartbeat"].get("current_skill_status_source")
-        actual_source = look.get("source") if look else None
-        source_matches = (isinstance(expected_source, str) and expected_source.strip()
-                          and isinstance(actual_source, str)
-                          and expected_source.strip().replace("\\", "/") == actual_source.strip().replace("\\", "/"))
-        if not active or not source_matches:
-            look = None
-    if look is not None and running_skill_jobs(campaign_dir):
-        # (final review) no run-to-log binding exists for a registered skill job: a status log may be another run's
-        # (a finished Gandalf's HALT while Gandalf B runs) - none of it feeds running, halt, blocker or attention
-        look = None
+    skills_now = running_skill_jobs(campaign_dir)
+    skill_own_log = False
+    skill_log_rel = ""
+    log_truncated = False
+    look = None
+    if skills_now:
+        k_cur = skills_now[-1]
+        skill_log_rel = str(k_cur.get("log_path") or k_cur.get("log") or "").strip()
+        if skill_log_rel:
+            cand_skill_log = (
+                Path(skill_log_rel)
+                if Path(skill_log_rel).is_absolute()
+                else (Path(campaign_dir) / skill_log_rel)
+            )
+            if cand_skill_log.is_file():
+                skill_own_log = True
+                try:
+                    if cand_skill_log.stat().st_size > MAX_STATUS_LOG_TAIL_BYTES:
+                        log_truncated = True
+                except OSError:
+                    pass
+                look = status_lookthrough_file(
+                    cand_skill_log,
+                    skill_log_rel,
+                    skill_hint=skill_identity(k_cur) or str(k_cur.get("label") or ""),
+                )
+    else:
+        look = status_lookthrough(campaign_dir)
+        if m["heartbeat"].get("current_step_id"):
+            expected_source = m["heartbeat"].get("current_skill_status_source")
+            actual_source = look.get("source") if look else None
+            source_matches = (isinstance(expected_source, str) and expected_source.strip()
+                              and isinstance(actual_source, str)
+                              and expected_source.strip().replace("\\", "/") == actual_source.strip().replace("\\", "/"))
+            if not active or not source_matches:
+                look = None
+    if (look or {}).get("truncated"):
+        log_truncated = True
+    if not log_truncated and not skills_now:
+        found_log = _newest_status_log(campaign_dir)
+        if found_log:
+            p_log, mt_log, _ = found_log
+            if (time.time() - mt_log) <= STATUS_LOOKTHROUGH_FRESH_SECONDS:
+                try:
+                    if p_log.stat().st_size > MAX_STATUS_LOG_TAIL_BYTES:
+                        log_truncated = True
+                except OSError:
+                    pass
     local_evidence = _local_status_evidence(campaign_dir, m, st, active)
     if restart_attention_is_stale(campaign_dir, m["attention"], st):
         m["attention"] = dict(m["attention"], state="quiet", reason="")
     now_lines = []
     running = None
     jobs = running_code_jobs(campaign_dir)
+    if jobs and not log_truncated:
+        for j_chk in jobs:
+            _, j_lp = _resolve_job_log_file(campaign_dir, j_chk)
+            cand_logs = [j_lp] if j_lp is not None else []
+            if j_chk.get("worktree"):
+                cand_logs.append(Path(str(j_chk["worktree"])) / "_foreman-status.log")
+            for cl in cand_logs:
+                try:
+                    if cl is not None and cl.is_file() and cl.stat().st_size > MAX_STATUS_LOG_TAIL_BYTES:
+                        log_truncated = True
+                        break
+                except OSError:
+                    pass
     waiting_restart = landed_not_live(campaign_dir)
     # 2026-10-05: a running code job is OBSERVED work - it leads, ahead of the steward's own note
     for j in jobs[:2]:
@@ -2291,7 +2643,20 @@ def compose_status(campaign_dir: str, engine_state=None):
     if look and not look["final"] and not jobs:
         running = {"kind": "skill", "label": look["label"], "skill": look["skill"],
                    "source": look["source"], "age": look["age"]}
+        if skill_own_log:
+            running["own_log"] = True
+            running["log_path"] = skill_log_rel
         now_lines.append(look["label"])
+    elif skills_now and not jobs:
+        k0 = skills_now[-1]
+        sk_ident = skill_identity(k0) or str(k0.get("label") or "skill")
+        sk_started = _job_epoch(k0.get("started"))
+        sk_age = _humanize(max(0.0, time.time() - sk_started)) if sk_started else ""
+        sk_lbl = "%s running \u2014 %s" % (sk_ident, str(k0.get("label") or sk_ident))
+        running = {"kind": "skill", "label": sk_lbl, "skill": sk_ident,
+                   "source": skill_log_rel or ".ecgberht/skill-jobs.json", "age": sk_age,
+                   "own_log": bool(skill_own_log), "log_path": skill_log_rel}
+        now_lines.append(sk_lbl)
     elif m["attention"]["state"] == "working" and not jobs:
         run = (m["attention"]["reason"] or "").strip() \
             or "commissioned work in flight"
@@ -2473,9 +2838,8 @@ def compose_status(campaign_dir: str, engine_state=None):
             if feedback.get("at"):
                 events.append({"at":feedback["at"], "summary":"Feedback received for " + sl["title"]})
     latest_event = max(events, key=lambda event:event["at"]) if events else None
-    skills_now = running_skill_jobs(campaign_dir)      # ONE snapshot: the forecast and its subject come from it
     who, phase, work_started, tests_line, finish = who_is_working(
-        campaign_dir, st, jobs, look if live_skill else None, evidence_tests=local_evidence["tests"], slice_started=started,
+        campaign_dir, st, jobs, look if (live_skill or skill_own_log) else None, evidence_tests=local_evidence["tests"], slice_started=started,
         skills=skills_now)
     elapsed_line = ""
     if work_started:
@@ -2570,19 +2934,23 @@ def compose_status(campaign_dir: str, engine_state=None):
     except Exception:
         pass
     is_idle_now = not jobs and not skills_now and not st.get("busy") and not live_skill
+    sc_source = str((status_card or {}).get("source") or "")
+    sc_is_manual_table = (sc_source == "steward_table")
+    sc_is_reconciled = (sc_source in ("engine_reconcile", ""))
     sc_fresh_for_run = bool(
-        status_card
+        sc_is_manual_table
         and not is_idle_now
         and (
-            (sc_mtime >= work_started - 300)
+            (sc_mtime >= work_started - 60)
             if work_started
-            else (sc_mtime >= last_finished_epoch if last_finished_epoch > 0 else sc_mtime >= time.time() - 900)
+            else (sc_mtime >= last_finished_epoch if last_finished_epoch > 0 else sc_mtime >= time.time() - 600)
         )
     )
     sc_fresh_when_idle = bool(
         status_card
         and is_idle_now
-        and sc_mtime >= last_finished_epoch - 5
+        and (sc_is_reconciled or sc_is_manual_table)
+        and (not last_finished_epoch or sc_mtime >= last_finished_epoch - 5)
     )
     sc_effort = str((status_card or {}).get("effort") or "").strip()
     sc_doing = str((status_card or {}).get("doing") or "").strip()
@@ -2663,15 +3031,24 @@ def compose_status(campaign_dir: str, engine_state=None):
                "latest_event": latest_event, "next": next3[:1],
                "question": (engine_state or {}).get("open_question") or plan.get("waiting_on_you") or "",
                "facts": facts}
+    if log_truncated and LOG_TAIL_TRUNCATED_NOTE not in now_lines:
+        now_lines.append(LOG_TAIL_TRUNCATED_NOTE)
+    seq = _next_status_seq(campaign_dir)
+    lookthrough_meta = None
+    if look:
+        lookthrough_meta = {"source": look["source"], "age": look["age"], "final": look["final"]}
+        if look.get("truncated"):
+            lookthrough_meta["truncated"] = True
+            lookthrough_meta["truncation_note"] = LOG_TAIL_TRUNCATED_NOTE
     out = {"at": time.strftime("%Y-%m-%d %H:%M"),
-           "status_id": f"{time.time_ns():020d}",
+           "status_id": f"{time.time_ns():020d}#{seq}",
            "effort": m["name"], "latest_event":latest_event, "compact":compact,
            "lead_line": lead,
            "now": now_lines,
            "running": running,
            "slice": slice_,
            "eta": eta,
-           "tests": (look.get("tests") or local_evidence["tests"]) if live_skill else local_evidence["tests"],
+           "tests": (look.get("tests") or local_evidence["tests"]) if (live_skill or (skill_own_log and look)) else local_evidence["tests"],
            "journal": local_evidence["journal"],
            "evidence": {"source": local_evidence["source"], "checks": local_evidence["checks"],
                         "journal": local_evidence["journal_source"],
@@ -2680,14 +3057,19 @@ def compose_status(campaign_dir: str, engine_state=None):
            "who": who, "phase": phase, "finish": finish, "next3": next3, "restart_pause_stale": pause_stale,
            "next_bullets": next3,
            "project": project_line(m),
-           "lookthrough": ({"source": look["source"], "age": look["age"],
-                            "final": look["final"]} if look else None),
+           "lookthrough": lookthrough_meta,
            "halt": halt,
            "effort_line": effort_line,
            "plan": plan,
            "map": m.get("map") or [],
            "work_map": m.get("work_map") or [],
            "swarm": swarm}
+    if skill_own_log:
+        out["own_log"] = True
+        out["log_path"] = skill_log_rel
+    if log_truncated:
+        out["truncated"] = True
+        out["truncation_note"] = LOG_TAIL_TRUNCATED_NOTE
     # Deliverables count rides the universal status shape (2026-08-25, John's ask —
     # journal 0010: "where is the thing I paid for?"). Count only; the list itself
     # is the deliverables verb / tile.
@@ -2741,10 +3123,52 @@ def compose_status(campaign_dir: str, engine_state=None):
                     "status": "%s %s · %s" % (job_noun(r).capitalize(), r.get("id", ""), st_word),
                     "tests": "check passed ✓" if r.get("check_ok") is True else ("check failed ✗" if r.get("check_ok") is False else "recorded"),
                 })
+        sj_file = Path(campaign_dir) / ".ecgberht" / "skill-jobs.json"
+        if sj_file.is_file():
+            sj_raw, _sj_err = _read_json(sj_file)
+            sj_rows = list(sj_raw.values()) if isinstance(sj_raw, dict) else (sj_raw if isinstance(sj_raw, list) else [])
+            for r in reversed(sj_rows[-6:]):
+                if not isinstance(r, dict):
+                    continue
+                at_s = str(r.get("finished") or r.get("started") or "")
+                hhmm_s = at_s[11:16] if len(at_s) >= 16 else at_s[-5:]
+                sk_name = str(r.get("skill") or "skill")
+                brief_line = _brief_title(r.get("brief"), default=sk_name)
+                st_word = str(r.get("status") or ("running" if not r.get("finished") else "done"))
+                hist_updates.append({
+                    "at": hhmm_s or "recent",
+                    "summary": "%s (%s) · %s" % (sk_name, brief_line[:52], st_word),
+                    "doing": brief_line[:110],
+                    "status": "Skill %s · %s" % (r.get("id", ""), st_word),
+                    "tests": "pass ✓" if r.get("exit_code") == 0 else ("running" if not r.get("finished") else "recorded"),
+                })
+        tt_file = Path(campaign_dir) / ".ecgberht" / "turn-timing.jsonl"
+        if tt_file.is_file() and len(hist_updates) < 10:
+            tt_tail, _ = read_log_tail_bounded(tt_file, MAX_STATUS_LOG_TAIL_BYTES)
+            tt_lines = [ln.strip() for ln in tt_tail.splitlines() if ln.strip()]
+            for ln in reversed(tt_lines[-6:]):
+                try:
+                    t_row = json.loads(ln)
+                    if not isinstance(t_row, dict):
+                        continue
+                    ended_iso = str(t_row.get("ended_at") or t_row.get("started_at") or "")
+                    hhmm_t = ended_iso[11:16] if len(ended_iso) >= 16 else "recent"
+                    dur_s = int(round(float(t_row.get("duration_s") or 0)))
+                    tools_n = int(t_row.get("tool_calls") or 0)
+                    u_prev = str(t_row.get("user_preview") or "Steward turn").strip()
+                    hist_updates.append({
+                        "at": hhmm_t,
+                        "summary": "%s (%ds · %d tools)" % (u_prev[:64], dur_s, tools_n),
+                        "doing": u_prev[:110],
+                        "status": "%d/%d steps · turn completed in %ds" % (m.get("steps_done", 0), m.get("steps_total", 0), dur_s),
+                        "tests": "pass ✓",
+                    })
+                except Exception:
+                    pass
     except Exception:
         pass
     out["history_updates"] = hist_updates[:10]
-    hhmm_now = str(out["at"][-5:] if (is_idle_now or not sc_fresh_for_run) else ((status_card or {}).get("timestamp") or out["at"][-5:]))
+    hhmm_now = str(out["at"][-5:])
     run_type_hdr = str(
         ((status_card or {}).get("run_type") if (sc_fresh_for_run or sc_fresh_when_idle) else "")
         or ((running or {}).get("skill") + " run" if (running or {}).get("skill") else "Steward status")
@@ -2779,6 +3203,8 @@ def compose_status(campaign_dir: str, engine_state=None):
         "milestone_etas": raw_milestone_etas,
         "from_status_card_file": bool(status_card),
     }
+    if log_truncated:
+        out["status_card"]["truncation_note"] = LOG_TAIL_TRUNCATED_NOTE
     sep_line = "\u2500" * 33
     out["clean_status_table"] = "\n".join([
         f"[{hhmm_now}] {run_type_hdr} \u00b7 {proj_hdr}",
@@ -2868,7 +3294,226 @@ def read_last_status(campaign_dir: str):
         return None
 
 
-def status_for_pane(campaign_dir: str, engine_state=None, live: bool = False):
+def _extract_status_seq(status_id: object) -> int:
+    s = str(status_id or "").strip()
+    if "#" not in s:
+        return 0
+    tail = s.rsplit("#", 1)[-1].strip()
+    return int(tail) if tail.isdigit() else 0
+
+
+def _next_status_seq(campaign_dir: str) -> int:
+    """Return a strictly increasing integer sequence for ``status_id#<seq>`` per effort."""
+    key = os.path.normcase(os.path.abspath(str(campaign_dir or ".")))
+    with _STATUS_SEQ_LOCK:
+        cur = int(_STATUS_SEQ_BY_DIR.get(key, 0) or 0)
+        try:
+            summary_path = Path(campaign_dir) / ".ecgberht" / "status-summary.json"
+            if summary_path.is_file():
+                raw_s, s_err = _read_json(summary_path)
+                if not s_err and isinstance(raw_s, dict):
+                    disk_seq = _extract_status_seq(raw_s.get("status_id"))
+                    if disk_seq > cur:
+                        cur = disk_seq
+        except Exception:
+            pass
+        nxt = cur + 1
+        _STATUS_SEQ_BY_DIR[key] = nxt
+        return nxt
+
+
+def _inspect_status_backing_stores(campaign_dir: str) -> str | None:
+    """Return an error reason if any existing status backing-store JSON file is corrupt/unreadable."""
+    if not campaign_dir:
+        return None
+    root = Path(campaign_dir)
+    store_specs = (
+        (".ecgberht/status-summary.json", (dict,)),
+        (".ecgberht/code-jobs.json", (dict, list)),
+        (".ecgberht/skill-jobs.json", (dict, list)),
+        ("strip.json", (dict,)),
+        ("roadmap.json", (dict,)),
+    )
+    for rel, allowed_types in store_specs:
+        p = root / rel
+        if not p.exists():
+            continue
+        if not p.is_file():
+            return f"{rel}: not a regular file"
+        data, err = _read_json(p)
+        if err is not None:
+            return f"{rel}: {err}"
+        if not isinstance(data, allowed_types):
+            return f"{rel}: unexpected JSON root {type(data).__name__}"
+    return None
+
+
+def _active_raw_jobs(campaign_dir: str, rel_path: str, live_statuses: tuple[str, ...]) -> list[dict]:
+    p = Path(campaign_dir) / rel_path
+    if not p.is_file():
+        return []
+    raw, err = _read_json(p)
+    if err or raw is None:
+        return []
+    if isinstance(raw, list):
+        rows = raw
+    elif isinstance(raw, dict):
+        maybe_jobs = raw.get("jobs")
+        if isinstance(maybe_jobs, list):
+            rows = maybe_jobs
+        elif isinstance(maybe_jobs, dict):
+            rows = list(maybe_jobs.values())
+        else:
+            rows = list(raw.values())
+    else:
+        return []
+    out = []
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        if str(r.get("status") or "") not in live_statuses:
+            continue
+        if r.get("finished"):
+            continue
+        out.append(r)
+    return out
+
+
+def _job_is_slow_or_killed(job: dict) -> tuple[bool, bool]:
+    native = job.get("native") if isinstance(job.get("native"), dict) else {}
+    proc = job.get("process") if isinstance(job.get("process"), dict) else {}
+    proc_state = str(proc.get("state") or "").strip().lower()
+    timed_out = bool(job.get("timed_out") is True)
+    slow_or_killed = bool(
+        native.get("stopped") is True
+        or proc_state in ("exited", "dead", "stalled", "killed")
+        or job.get("stalled") is True
+        or timed_out
+    )
+    return slow_or_killed, timed_out
+
+
+def _apply_wave4_failure_contract(
+    campaign_dir: str,
+    out: dict,
+    engine_state=None,
+    *,
+    strict_timeout: bool = False,
+) -> dict:
+    """Enforce ``WAVE4_STATUS_FAILURE_CONTRACT`` (5 states, ``unknown != empty``) on ``out``."""
+    st = engine_state or {}
+    raw_code = _active_raw_jobs(campaign_dir, ".ecgberht/code-jobs.json", ("running", "finishing", "landing", "queued"))
+    computed_code = running_code_jobs(campaign_dir)
+    computed_by_id = {str(j.get("id")): j for j in computed_code if isinstance(j, dict) and j.get("id")}
+    merged_code: list[dict] = []
+    seen_code_ids: set[str] = set()
+    for r in raw_code:
+        jid = str(r.get("id") or "")
+        if jid and jid in computed_by_id:
+            cj = dict(computed_by_id[jid])
+            raw_nat = r.get("native") if isinstance(r.get("native"), dict) else {}
+            if raw_nat.get("stopped") is True:
+                cj["native"] = dict(cj.get("native") or {}, stopped=True)
+            merged_code.append(cj)
+            seen_code_ids.add(jid)
+        else:
+            merged_code.append(r)
+    for cj in computed_code:
+        jid = str(cj.get("id") or "")
+        if jid and jid not in seen_code_ids:
+            merged_code.append(cj)
+    raw_skills = _active_raw_jobs(campaign_dir, ".ecgberht/skill-jobs.json", ("running",))
+    all_active_jobs = merged_code + raw_skills
+
+    # 3 vs 2: Check explicit dead/stalled/timed_out/stopped process markers first so a stalled/killed job
+    # is reported accurately even when a synthetic test omitted creating its log file; otherwise missing log -> 503.
+    any_slow_or_killed = False
+    any_timed_out = False
+    for jb in all_active_jobs:
+        sk, to = _job_is_slow_or_killed(jb)
+        if sk:
+            any_slow_or_killed = True
+        if to:
+            any_timed_out = True
+    if any_slow_or_killed:
+        spec = WAVE4_STATUS_FAILURE_CONTRACT["dependency-slow-or-killed"]
+        is_to = bool(any_timed_out or strict_timeout)
+        out["ok"] = False
+        out["http_status"] = 504 if is_to else 200
+        out["failure_state"] = spec["failure_state"]
+        out["message"] = spec["message"]
+        return out
+
+    for jb in all_active_jobs:
+        raw_lp, resolved_lp = _resolve_job_log_file(campaign_dir, jb)
+        if raw_lp and (resolved_lp is None or not resolved_lp.is_file()):
+            spec = WAVE4_STATUS_FAILURE_CONTRACT["dependency-missing"]
+            out["ok"] = False
+            out["http_status"] = spec["http_status"]
+            out["failure_state"] = spec["failure_state"]
+            out["message"] = spec["message"]
+            out["missing_log_path"] = raw_lp
+            return out
+
+    # 4. dependency-returns-garbage: running worker/skill log exists & non-empty, structured status table is None
+    log_candidates: list[Path] = []
+    for jb in all_active_jobs:
+        raw_lp, resolved_lp = _resolve_job_log_file(campaign_dir, jb)
+        if raw_lp and resolved_lp is not None and resolved_lp.is_file():
+            log_candidates.append(resolved_lp)
+        elif jb.get("worktree"):
+            f_log = Path(str(jb["worktree"])) / "_foreman-status.log"
+            if f_log.is_file():
+                log_candidates.append(f_log)
+    if not all_active_jobs:
+        newest = _newest_status_log(campaign_dir)
+        if newest:
+            p_new, mt_new, _ = newest
+            if (time.time() - mt_new) <= STATUS_LOOKTHROUGH_FRESH_SECONDS and p_new.is_file():
+                log_candidates.append(p_new)
+
+    for lf in log_candidates:
+        try:
+            tail_text, tail_trunc = read_log_tail_bounded(lf, MAX_STATUS_LOG_TAIL_BYTES)
+        except OSError:
+            continue
+        if tail_trunc:
+            out["truncated"] = True
+            out["truncation_note"] = LOG_TAIL_TRUNCATED_NOTE
+            if isinstance(out.get("now"), list) and LOG_TAIL_TRUNCATED_NOTE not in out["now"]:
+                out["now"].append(LOG_TAIL_TRUNCATED_NOTE)
+            if isinstance(out.get("status_card"), dict):
+                out["status_card"]["truncation_note"] = LOG_TAIL_TRUNCATED_NOTE
+        if tail_text.strip() and parse_status_table(tail_text) is None:
+            spec = WAVE4_STATUS_FAILURE_CONTRACT["dependency-returns-garbage"]
+            out["ok"] = True
+            out["http_status"] = spec["http_status"]
+            out["failure_state"] = spec["failure_state"]
+            out["message"] = spec["message"]
+            out["raw_tail"] = tail_text
+            return out
+
+    # 5. empty-but-valid vs active healthy run
+    is_idle = (
+        not all_active_jobs
+        and not bool(st.get("busy"))
+        and out.get("phase") == "idle"
+    )
+    if is_idle:
+        spec = WAVE4_STATUS_FAILURE_CONTRACT["empty-but-valid"]
+        out["ok"] = True
+        out["http_status"] = spec["http_status"]
+        out["failure_state"] = spec["failure_state"]
+        out["message"] = spec["message"]
+    else:
+        out["ok"] = True
+        out["http_status"] = 200
+        out["failure_state"] = None
+        out["message"] = str(out.get("lead_line") or "")
+    return out
+
+
+def status_for_pane(campaign_dir: str, engine_state=None, live: bool = False, *, strict_timeout: bool = False):
     """What a status pane shows - the cockpit's pane, the High Seat's tile, the Desk: ONE rule (2026-10-01, his word:
     the Status in an expanded tile "looks dated/old"). A LIVE engine: composed fresh from the map and its state. No
     live engine: composed fresh from the RECORD as it is now (the summary, the status, the next bullets, the lead) -
@@ -2877,19 +3522,244 @@ def status_for_pane(campaign_dir: str, engine_state=None, live: bool = False):
     the "Doing" line and as ``last_run_at`` for the pane's header; ``from_record`` says the pane is the record now.
     Nothing is grafted from the old summary into the fresh table (Grok's read: that was a second status in one pane)
     and nothing is marked stale."""
+    store_err = _inspect_status_backing_stores(campaign_dir)
+    if store_err is not None:
+        spec = WAVE4_STATUS_FAILURE_CONTRACT["backing-store-unreadable"]
+        msg = spec["message"]
+        seq = _next_status_seq(campaign_dir)
+        return {
+            "ok": False,
+            "http_status": spec["http_status"],
+            "failure_state": spec["failure_state"],
+            "message": msg,
+            "error": msg,
+            "store_error": store_err,
+            "at": time.strftime("%Y-%m-%d %H:%M"),
+            "status_id": f"{time.time_ns():020d}#{seq}",
+            "effort": Path(str(campaign_dir)).name if campaign_dir else "",
+            "lead_line": msg,
+            "now": [msg],
+            "running": None,
+            "phase": "unknown",
+            "who": msg,
+            "eta": "unknown",
+            "finish": "unknown",
+            "tests": "",
+            "journal": "",
+            "next3": [],
+            "next_bullets": [],
+            "compact": {"activity": msg, "latest_event": None, "next": [], "question": "", "facts": []},
+            "plan": {
+                "step": "(unknown)",
+                "steps_done": 0,
+                "steps_total": 0,
+                "waiting_on_you": "",
+                "waiting_since": None,
+                "next": "",
+                "why": "",
+                "attention": "unknown",
+                "goal_reread": False,
+            },
+            "map": [],
+            "work_map": [],
+            "swarm": [],
+            "deliverables_count": 0,
+            "review_deliverables_count": 0,
+            "history_updates": [],
+        }
     if live:
-        return compose_status(campaign_dir, engine_state)
+        fresh = compose_status(campaign_dir, engine_state)
+        return _apply_wave4_failure_contract(campaign_dir, fresh, engine_state, strict_timeout=strict_timeout)
     fresh = compose_status(campaign_dir, None)
     fresh["from_record"] = True
     last = read_last_status(campaign_dir)
-    if not isinstance(last, dict) or not last.get("at"):
-        return fresh
-    stamp = str(last["at"])[-16:]
-    fresh["last_run_at"] = str(last["at"])
-    for f in ((fresh.get("compact") or {}).get("facts") or []):
-        if isinstance(f, dict) and f.get("label") == "Doing":
-            f["value"] = "%s \u00b7 the last run %s" % (f.get("value") or "nothing running", stamp)
-    return fresh
+    if isinstance(last, dict) and last.get("at"):
+        stamp = str(last["at"])[-16:]
+        fresh["last_run_at"] = str(last["at"])
+        for f in ((fresh.get("compact") or {}).get("facts") or []):
+            if isinstance(f, dict) and f.get("label") == "Doing":
+                f["value"] = "%s \u00b7 the last run %s" % (f.get("value") or "nothing running", stamp)
+    return _apply_wave4_failure_contract(campaign_dir, fresh, None, strict_timeout=strict_timeout)
+
+
+def status_http_response(
+    campaign_dir: str,
+    engine_state=None,
+    live: bool = False,
+    qs: dict | None = None,
+) -> tuple[dict, int]:
+    """Compose pane status and return ``(body, http_status)`` per ``WAVE4_STATUS_FAILURE_CONTRACT``."""
+    strict_timeout = bool(isinstance(qs, dict) and str(qs.get("strict_timeout") or "") == "1")
+    body = status_for_pane(
+        campaign_dir,
+        engine_state=engine_state,
+        live=live,
+        strict_timeout=strict_timeout,
+    )
+    return body, int(body.get("http_status") or 200)
+
+
+def _find_engine_for_effort(campaign_dir: str):
+    try:
+        from steward_cockpit import steward_routes as _sr
+        engines = getattr(_sr, "ENGINES", None) or {}
+    except Exception:
+        return None
+    direct = engines.get(campaign_dir) or engines.get(str(campaign_dir))
+    if direct is not None and not getattr(direct, "general", False):
+        return direct
+    target_norm = os.path.normcase(os.path.abspath(str(campaign_dir)))
+    for k, eng in list(engines.items()):
+        if getattr(eng, "general", False):
+            continue
+        edir = getattr(eng, "dir", None) or (k if isinstance(k, str) else "")
+        if edir and os.path.normcase(os.path.abspath(str(edir))) == target_norm:
+            return eng
+    return None
+
+
+def register_active_effort(campaign_dir: str) -> None:
+    """Register ``campaign_dir`` with the engine-independent 60s status daemon and ensure the daemon is running."""
+    if not campaign_dir:
+        return
+    try:
+        resolved = Path(campaign_dir).resolve()
+    except Exception:
+        return
+    if not resolved.is_dir():
+        return
+    with _DAEMON_LOCK:
+        _ACTIVE_EFFORTS.add(str(resolved))
+    ensure_status_daemon_started()
+
+
+def push_effort_status(campaign_dir: str, engine_state=None, *, reason: str = "push") -> dict:
+    """Compose fresh status for ``campaign_dir``, persist ``status-summary.json``, and emit onto any open Engine ring."""
+    if campaign_dir:
+        try:
+            resolved = Path(campaign_dir).resolve()
+            if resolved.is_dir():
+                with _DAEMON_LOCK:
+                    _ACTIVE_EFFORTS.add(str(resolved))
+        except Exception:
+            pass
+    eng = _find_engine_for_effort(campaign_dir)
+    eff_state = engine_state
+    if eff_state is None and eng is not None:
+        try:
+            eff_state = eng.state()
+        except Exception:
+            eff_state = None
+    summary = status_for_pane(
+        str(campaign_dir),
+        eff_state,
+        live=bool(engine_state is not None or eng is not None),
+    )
+    summary["push_reason"] = str(reason or "push")
+    if summary.get("failure_state") != "backing-store-unreadable" and Path(campaign_dir).is_dir():
+        try:
+            import paths as _paths
+            summary_file = Path(campaign_dir) / ".ecgberht" / "status-summary.json"
+            summary_file.parent.mkdir(parents=True, exist_ok=True)
+            _paths.atomic_write_json(summary_file, summary)
+            with _JSON_FILE_CACHE_LOCK:
+                _JSON_FILE_CACHE.pop(os.path.normcase(str(summary_file)), None)
+        except Exception:
+            pass
+    if eng is not None:
+        try:
+            emit_fn = getattr(eng, "_emit", None)
+            if callable(emit_fn):
+                emit_fn({"t": "status", "status": summary})
+        except Exception:
+            pass
+    return summary
+
+
+def status_daemon_tick(now: float | None = None, *, force: bool = False) -> list[str]:
+    """Tick registered & open efforts completely independent of ``Engine.proc``."""
+    now_ts = time.time() if now is None else float(now)
+    candidates: list[str] = []
+    seen_norm: set[str] = set()
+    with _DAEMON_LOCK:
+        reg_list = list(_ACTIVE_EFFORTS)
+    for cdir in reg_list:
+        if not cdir:
+            continue
+        nk = os.path.normcase(os.path.abspath(str(cdir)))
+        if nk not in seen_norm:
+            seen_norm.add(nk)
+            candidates.append(str(cdir))
+    try:
+        from steward_cockpit import steward_routes as _sr
+        for k, eng in list((getattr(_sr, "ENGINES", None) or {}).items()):
+            if getattr(eng, "general", False):
+                continue
+            edir = getattr(eng, "dir", None) or (k if isinstance(k, str) else "")
+            if not edir:
+                continue
+            nk = os.path.normcase(os.path.abspath(str(edir)))
+            if nk not in seen_norm:
+                seen_norm.add(nk)
+                candidates.append(str(edir))
+    except Exception:
+        pass
+
+    updated: list[str] = []
+    for cdir in candidates:
+        if not Path(cdir).is_dir():
+            continue
+        eng = _find_engine_for_effort(cdir)
+        eng_busy = bool(eng is not None and getattr(eng, "busy", False))
+        has_active = bool(
+            running_code_jobs(cdir)
+            or running_skill_jobs(cdir)
+            or (read_attention(cdir).get("state") == "working")
+            or eng_busy
+        )
+        if not has_active:
+            continue
+        nk = os.path.normcase(os.path.abspath(str(cdir)))
+        with _DAEMON_LOCK:
+            last_pushed = _LAST_DAEMON_PUSH.get(nk)
+            if last_pushed is not None and now_ts < last_pushed - 3600:
+                last_pushed = None
+            due = bool(
+                force
+                or last_pushed is None
+                or (now_ts - last_pushed >= float(STATUS_DAEMON_INTERVAL_S))
+            )
+            if due:
+                _LAST_DAEMON_PUSH[nk] = now_ts
+        if due:
+            push_effort_status(cdir, reason="daemon_60s")
+            updated.append(cdir)
+    return updated
+
+
+def _status_daemon_loop() -> None:
+    while True:
+        sleep_s = max(0.5, min(5.0, float(STATUS_DAEMON_INTERVAL_S)))
+        time.sleep(sleep_s)
+        try:
+            status_daemon_tick()
+        except Exception:
+            pass
+
+
+def ensure_status_daemon_started() -> threading.Thread:
+    """Idempotently spawn and return the ``anchor-status-daemon`` background thread."""
+    global _DAEMON_THREAD
+    with _DAEMON_LOCK:
+        if _DAEMON_THREAD is None or not _DAEMON_THREAD.is_alive():
+            t = threading.Thread(
+                target=_status_daemon_loop,
+                name="anchor-status-daemon",
+                daemon=True,
+            )
+            t.start()
+            _DAEMON_THREAD = t
+        return _DAEMON_THREAD
 
 
 def _safe_route_seg(seg: str) -> bool:
@@ -2954,28 +3824,9 @@ def classify_route(token: str):
     return None
 
 
-def _has_top_final_overrides(campaign_dir: str) -> bool:
-    """Return True when DELIVERABLES.md contains both an ECGBERHT-MANAGED-DELIVERABLES block and
-    explicit `| FINAL:` table rows in the top human-maintained section above it."""
-    f = Path(campaign_dir) / "DELIVERABLES.md"
-    if not f.is_file():
-        return False
-    try:
-        raw = f.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return False
-    marker = "<!-- ECGBERHT-MANAGED-DELIVERABLES"
-    idx = raw.find(marker)
-    if idx <= 0:
-        return False
-    head = raw[:idx]
-    final_count = sum(1 for ln in head.splitlines() if re.match(r"^\|\s*FINAL\s*:", ln.strip(), re.I))
-    return final_count >= 3
-
-
 def _resolve_fuzzy_final_path(campaign_dir: str, cdir_real: str, cand: str) -> tuple[str, bool]:
     """Resolve a candidate relative path inside campaign_dir, handling `- PowerPoint.pptx` vs `.pptx`
-    and short unit folder names under `Final Deliverables/` (e.g. `Lecture 4` -> `Lecture 4 - Hypothesis Testing - October 19 2026`)."""
+    and short unit folder names under `Final Deliverables/`."""
     cand_norm = cand.replace("\\", "/").strip()
     cands_to_try = [cand_norm]
     if re.search(r"\s*-\s*PowerPoint\.pptx$", cand_norm, re.I):
@@ -3002,7 +3853,7 @@ def _resolve_fuzzy_final_path(campaign_dir: str, cdir_real: str, cand: str) -> t
                     if not sub_d.is_dir():
                         continue
                     sd_low = sub_d.name.lower()
-                    if sd_low == u_low or sd_low.startswith(u_low + " ") or sd_low.startswith(u_low + "-") or (u_low == "syllabus" and "syllabus" in sd_low):
+                    if sd_low == u_low or sd_low.startswith(u_low + " ") or sd_low.startswith(u_low + "-"):
                         for fn in fname_alts:
                             cand_file = sub_d / fn
                             if cand_file.is_file():
@@ -3012,104 +3863,6 @@ def _resolve_fuzzy_final_path(campaign_dir: str, cdir_real: str, cand: str) -> t
             except OSError:
                 pass
     return cand, False
-
-
-def _reconcile_top_final_overrides_on_map(root: Path, steps: list, strip: dict, attention: dict, heartbeat: dict) -> int:
-    """When top-of-DELIVERABLES.md carries explicit FINAL: rows superseding an older frozen managed refinement fold,
-    reconcile in-memory step statuses, labels, and focus without mutating roadmap.json on disk."""
-    upcoming_ids = {
-        "lecture-11", "lecture-11-ai-supplement", "lecture-12", "lecture-12-ai-supplement",
-        "homework-4", "homework-5", "quiz-2", "quiz-3", "block-2-quiz-2", "block-3-quiz-3-close-out",
-    }
-    active_review_ids = {"lecture-10"}
-    title_overrides = {
-        "lecture-1": "Lecture 1 — Introduction to Statistics & Descriptive Analytics (Final)",
-        "lecture-2": "Lecture 2 — Describing Data, Outliers, Normal Curve & Process Control (67 Slides — Final)",
-        "lecture3-machine-revision": "Lecture 3 — Sampling Distributions & Confidence Intervals (50 Slides — Final)",
-        "lecture4-machine-revision": "Lecture 4 — Hypothesis Testing for a Population Mean (57 Slides — Final)",
-        "lecture-5": "Lecture 5 — Two-Sample Hypothesis Testing & Experimental Design (39 Slides — Final)",
-        "lecture-6": "Lecture 6 — Correlation, Simple Linear Regression & CAPM (48 Slides — Final)",
-        "lecture-7": "Lecture 7 — Multiple Regression, Adjusted R² & Multicollinearity (33 Slides — Final)",
-        "lecture-8": "Lecture 8 — Dummy Variables, Parallel Lines & Interactions (37 Slides — Final)",
-        "lecture-9": "Lecture 9 — One-Way Analysis of Variance (ANOVA) (48 Slides + R & 4 CSVs — Final)",
-        "homework-1": "Homework 1 — Descriptive Analytics & Sampling Packet (Final)",
-        "homework-2": "Homework 2 — Confidence Intervals & Hypothesis Testing Packet (Final)",
-        "homework-3": "Homework 3 — Two-Sample Tests & Regression Modeling Packet (Final)",
-        "homework-quiz-1": "Quiz 1 — Smeal LEM Lab Sign-Up, 96-Student Roster & R Package Verification (Final / Ready)",
-        "syllabus-2026": "Course Syllabus & Schedule (Fall 2026 — Final)",
-        "intro-lecture-schedule-2026": "Residential MBA Intro Lecture (Fall 2026 — Final)",
-    }
-    for s in steps:
-        if not isinstance(s, dict):
-            continue
-        sid = str(s.get("id") or "").strip()
-        nav = dict(s["navigation"]) if isinstance(s.get("navigation"), dict) else {}
-        if sid in active_review_ids:
-            s["status"] = "active"
-            s["name"] = "Lecture 10 — Experiments, Two-Way ANOVA & Causality (Refinement 3, 47 Slides — For Review)"
-            s["done_when"] = "John reviews Lecture 10 Refinement 3 (47-slide PDF/PPTX, Lecture 10.R & Dear Kitten A/B Testing report) and locks Final Deliverables."
-            s["waiting_on"] = "Review Lecture 10 Refinement 3 (47-slide deck + Lecture 10.R) & Quiz 1 LEM Lab Roster"
-            nav["label"] = s["name"]
-            nav["current"] = True
-            nav["pin"] = True
-            nav["featured_paths"] = [
-                "BA 815/Fall 2026/Lecture 10 - Refinement 3.pdf",
-                "BA 815/Fall 2026/Lecture 10 - Refinement 3.pptx",
-                "BA 815/Fall 2026/Final Deliverables/Lecture 10/Lecture 10.R",
-                "BA 815/Fall 2026/planning/DEAR-KITTEN-AB-TESTING-RESEARCH.pdf",
-            ]
-            if isinstance(s.get("refinement"), dict):
-                ref_c = dict(s["refinement"])
-                ref_c["phase"] = "awaiting_review"
-                ref_c["round"] = 3
-                ref_c["display_round"] = 3
-                s["refinement"] = ref_c
-            s["navigation"] = nav
-        elif sid in upcoming_ids:
-            if s.get("status") == "done":
-                pass
-            else:
-                s["status"] = "proposed"
-                s["waiting_on"] = None
-                nav["current"] = False
-                nav["pin"] = False
-                s["navigation"] = nav
-        else:
-            s["status"] = "done"
-            s["waiting_on"] = None
-            if sid in title_overrides:
-                s["name"] = title_overrides[sid]
-                nav["label"] = title_overrides[sid]
-            else:
-                for key_f in ("name",):
-                    if isinstance(s.get(key_f), str):
-                        s[key_f] = re.sub(r"\s*\((?:for review|awaiting review)\)\s*$", " (Final)", s[key_f], flags=re.I)
-                if isinstance(nav.get("label"), str):
-                    nav["label"] = re.sub(r"\s*\((?:for review|awaiting review)\)\s*$", " (Final)", nav["label"], flags=re.I)
-            nav["current"] = False
-            nav["pin"] = False
-            s["navigation"] = nav
-            if isinstance(s.get("refinement"), dict):
-                ref_c = dict(s["refinement"])
-                ref_c["phase"] = "done"
-                ref_c["work_phase"] = "done"
-                s["refinement"] = ref_c
-    if isinstance(strip, dict):
-        if strip.get("active_effort"):
-            heartbeat["active_effort"] = strip["active_effort"]
-        if strip.get("next_recommended"):
-            heartbeat["next_recommended"] = strip["next_recommended"]
-        if strip.get("why_next"):
-            heartbeat["why_next"] = strip["why_next"]
-        if strip.get("human_wait"):
-            heartbeat["human_wait"] = strip["human_wait"]
-    if isinstance(attention, dict):
-        attention["pending_requests"] = []
-        attention["pending_request"] = None
-        if attention.get("state") != "working":
-            attention["state"] = "needs_you"
-            attention["reason"] = heartbeat.get("human_wait") or "Review Lecture 10 Refinement 3 & Quiz 1 LEM Lab Roster"
-    return sum(1 for s in steps if s.get("status") == "done")
 
 
 def _read_deliverables(campaign_dir: str):
@@ -3228,17 +3981,10 @@ def _read_deliverables(campaign_dir: str):
                           "step": cells[3].strip() if len(cells) > 3 else "",
                           "openable": openable})
         refinement = read_refinement(campaign_dir, stale_ok=True)
-        has_top_finals = _has_top_final_overrides(campaign_dir)
         if refinement is not None:
             if not refinement.get("ok"):
                 return {"exists": True, "items": items, "error": refinement.get("error")}
             managed = refinement_items(campaign_dir, refinement["state"])
-            if has_top_finals:
-                for m_it in managed:
-                    if str(m_it.get("step") or "") not in ("lecture-10", "quiz-1-prep"):
-                        m_it["phase"] = "done"
-                        m_it["accepted"] = True
-                        m_it["accepted_current"] = True
             paths = {item["path"] for item in managed}
             items = managed + [item for item in items if item.get("path") not in paths]
         approved = [{**item, "what": item["product_id"], "step": item["step_id"],
@@ -3294,28 +4040,29 @@ def _plan_doc_rows(campaign_dir, listed, depth=2):
 
     def walk(d, level):
         try:
-            entries = sorted(d.iterdir(), key=lambda p: p.name.lower())
+            with os.scandir(d) as it:
+                entries = sorted(list(it), key=lambda e: e.name.lower())
         except OSError:
             return
-        for p in entries:
-            name = p.name
+        for ent in entries:
+            name = ent.name
             try:
-                is_dir = p.is_dir()
+                is_dir = ent.is_dir()
             except OSError:
                 continue
             if is_dir:
                 if level < depth and name not in _LOOK_SKIP_DIRS \
                         and not name.startswith((".", "_")):
-                    walk(p, level + 1)
+                    walk(ent.path, level + 1)
                 continue
             if not _PLAN_DOC_NAME.match(name):
                 continue
             try:
-                real = os.path.realpath(str(p))
+                real = os.path.realpath(ent.path)
                 if os.path.normcase(real) in have:
                     continue
                 relp = os.path.relpath(real, cdir_real).replace(os.sep, "/")
-                date = time.strftime("%Y-%m-%d", time.localtime(p.stat().st_mtime))
+                date = time.strftime("%Y-%m-%d", time.localtime(ent.stat().st_mtime))
             except OSError:
                 continue
             have.add(os.path.normcase(real))
@@ -3686,11 +4433,6 @@ def current_review_items(map_, items):
             designation = re.match(r"^(?:START\s+HERE|CURRENT|FOR\s+REVIEW)\s*(?:[:—–-]|$)", str(it.get("what") or ""), re.I)
             historical = _HISTORICAL_LABEL.match(str(it.get("what") or ""))
             if not historical and (normalize(it.get("path")) in featured or designation):
-                sid = str(owner.get("id") or "")
-                max_d = step_max_desig_date.get(sid, "")
-                it_d = str(it.get("date") or "").strip()[:10]
-                if max_d and re.match(r"^\d{4}-\d{2}-\d{2}$", it_d) and it_d < max_d and _iso_days_between(max_d, it_d) > 7:
-                    continue
                 current.append(it)
     # 2026-10-07 (John: Next steps showed "a fraction"): the newest batch published on the focused step is current
     # even when the steward did not label it START HERE / FOR REVIEW — e.g. the MBA Version 3 documents.
@@ -3886,7 +4628,8 @@ def read_dismissed_deliverables(campaign_dir: str) -> dict:
 
 def dismiss_deliverable(campaign_dir: str, path: str = "", product_id: str = "",
                         what: str = "", revision_id: str = "", hash_val: str = "",
-                        disposition: str = "approved") -> dict:
+                        disposition: str = "approved", step_id: str = "",
+                        auto_complete: bool = True, notify_cave: bool = True) -> dict:
     if not campaign_dir:
         return {"ok": False, "error": "missing campaign_dir"}
     norm_path = str(path or "").replace("\\", "/").strip().lstrip("/")
@@ -3895,7 +4638,7 @@ def dismiss_deliverable(campaign_dir: str, path: str = "", product_id: str = "",
     key = norm_path or (f"product:{norm_prod}" if norm_prod else (f"what:{norm_what}" if norm_what else ""))
     if not key:
         return {"ok": False, "error": "missing deliverable identifier"}
-    entries = dict(read_dismissed_deliverables(campaign_dir))
+    disp_norm = str(disposition or "approved").strip().lower() or "approved"
     sig = _deliverable_disk_sig(campaign_dir, norm_path) if norm_path else {}
     entry = {
         "key": key,
@@ -3905,20 +4648,92 @@ def dismiss_deliverable(campaign_dir: str, path: str = "", product_id: str = "",
         "revision_id": str(revision_id or ""),
         "hash": str(hash_val or "") or sig.get("sha256", ""),
         "mtime_ns": sig.get("mtime_ns"),
-        "disposition": str(disposition or "approved").strip().lower(),
+        "disposition": disp_norm,
         "dismissed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
-    entries[key] = entry
-    if norm_prod and key != f"product:{norm_prod}":
-        entries[f"product:{norm_prod}"] = entry
     out_file = _dismissed_deliverables_file(campaign_dir)
+    lock_path = Path(campaign_dir) / ".ecgberht" / "plan.lock"
     try:
-        out_file.parent.mkdir(parents=True, exist_ok=True)
-        out_file.write_text(json.dumps({"schema": "anchor-dismissed-deliverables-v1", "entries": entries}, indent=2),
-                            encoding="utf-8")
+        import paths as _paths
+        with _paths.cross_process_lock(lock_path, timeout_sec=2.0):
+            entries = dict(read_dismissed_deliverables(campaign_dir))
+            entries[key] = entry
+            if norm_prod and key != f"product:{norm_prod}":
+                entries[f"product:{norm_prod}"] = entry
+            _paths.atomic_write_json(out_file, {"schema": "anchor-dismissed-deliverables-v1", "entries": entries})
+            with _JSON_FILE_CACHE_LOCK:
+                _JSON_FILE_CACHE.clear()
+            try:
+                _PLAN_PROPOSAL_CACHE.clear()
+            except Exception:
+                pass
     except OSError as exc:
         return {"ok": False, "error": str(exc)}
-    return {"ok": True, "dismissed": entry}
+
+    step_auto_res = None
+    if disp_norm == "approved":
+        clean_t = _core.clean_human_deliverable_title(norm_what or norm_prod, norm_path)
+        resolved_sid = str(step_id or "").strip()
+        if not resolved_sid and norm_path:
+            try:
+                raw_d = _read_deliverables(campaign_dir)
+                for row in (raw_d.get("items") or []):
+                    rp = str(row.get("open_path") or row.get("path") or "").replace("\\", "/").strip().lstrip("/")
+                    if rp and rp.lower() == norm_path.lower():
+                        resolved_sid = str(row.get("step") or "").strip()
+                        break
+            except Exception:
+                pass
+        if auto_complete:
+            try:
+                from tools import steward_plan as _sp
+                step_auto_res = _sp.auto_complete_linked_step(
+                    campaign_dir,
+                    step_id=resolved_sid or None,
+                    deliverable_id=norm_prod or norm_path or key,
+                    deliverable_path=norm_path or None,
+                    deliverable_title=clean_t,
+                    notify_cave=notify_cave,
+                )
+            except Exception:
+                step_auto_res = None
+        if notify_cave:
+            try:
+                import comms_connector as _cc
+                import deliverables_register as _dr
+                pid_c, _ = _dr.project_and_rel(campaign_dir)
+                _cc.reconcile_working_list_activity(cockpit_events=[{
+                    "kind": "deliverable_final",
+                    "pid": pid_c or "",
+                    "cockpit_name": Path(campaign_dir).name,
+                    "deliverable_id": norm_prod or norm_path or key,
+                    "title": clean_t,
+                    "step_id": (step_auto_res or {}).get("step_id") or resolved_sid,
+                }])
+            except Exception:
+                pass
+    out_resp = {"ok": True, "dismissed": entry, "disposition": disp_norm}
+    if step_auto_res is not None:
+        out_resp["auto_completed_step"] = step_auto_res
+    return out_resp
+
+
+def approve_deliverable(campaign_dir: str, path: str = "", product_id: str = "",
+                        what: str = "", revision_id: str = "", hash_val: str = "",
+                        step_id: str = "", notify_cave: bool = True) -> dict:
+    """Explicit helper accepting a Key Deliverable (`For Review -> Final`) and advancing the linked step."""
+    return dismiss_deliverable(
+        campaign_dir,
+        path=path,
+        product_id=product_id,
+        what=what,
+        revision_id=revision_id,
+        hash_val=hash_val,
+        disposition="approved",
+        step_id=step_id,
+        auto_complete=True,
+        notify_cave=notify_cave,
+    )
 
 
 def _dismissed_entry_for_item(campaign_dir: str, it: dict, dismissed: dict) -> dict | None:
@@ -4130,12 +4945,13 @@ def sync_steward_projections(campaign_dir: str) -> dict:
 
     if changed:
         try:
-            tmp = rm_path.with_name(rm_path.name + ".%s.tmp" % os.getpid())
-            tmp.write_text(json.dumps(roadmap, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-            os.replace(tmp, rm_path)
-            with _JSON_FILE_CACHE_LOCK:
-                _JSON_FILE_CACHE.clear()
-        except OSError:
+            import paths as _paths
+            with _paths.cross_process_lock(root / ".ecgberht" / "plan.lock", timeout_sec=2.0):
+                roadmap["steps"] = [deepcopy(s) for s in proj]
+                _paths.atomic_write_json(rm_path, roadmap)
+                with _JSON_FILE_CACHE_LOCK:
+                    _JSON_FILE_CACHE.clear()
+        except (OSError, TimeoutError):
             return {"ok": False, "changed": False}
     if not os.environ.get("PYTEST_CURRENT_TEST"):
         try:
@@ -4199,6 +5015,39 @@ def _is_intermediate_deliverable(it: dict) -> bool:
     return False
 
 
+_KEEP_TRAILING_PAREN_RE = re.compile(
+    r"^(?:ANOVA|CAPM|CLT|OLS|MLE|PCA|SVD|LLM|LLMs|AI|R\u00b2|I{1,3}|IV|V|"
+    r"\u2b07|"
+    r"(?:Draft|Refinement|Revision|Round|Version|Rev|Option|Part|Block|Section|Week)\s+\d+(?:\.\d+)*)$",
+    re.I,
+)
+
+
+def _strip_trailing_file_explanation_parens(s: str) -> str:
+    """Strip trailing parenthetical file-type, filename, slide-count, or narrative explanations (including nested parens)."""
+    s = str(s or "").strip()
+    while s.endswith(")"):
+        depth = 0
+        start_idx = -1
+        for idx in range(len(s) - 1, -1, -1):
+            ch = s[idx]
+            if ch == ")":
+                depth += 1
+            elif ch == "(":
+                depth -= 1
+                if depth == 0:
+                    start_idx = idx
+                    break
+        if start_idx <= 0:
+            break
+        inner = s[start_idx + 1 : -1].strip()
+        if _KEEP_TRAILING_PAREN_RE.match(inner):
+            break
+        s = s[:start_idx].rstrip()
+    s = re.sub(r"(?:,|\s+[\u2014\u2013-])\s*Final\s+Edition\s*$", "", s, flags=re.I).strip()
+    return s
+
+
 def humanize_deliverable_title(it: dict) -> str:
     """Produce a clean, human-readable title for a deliverable without internal slugs, prefix noise, or format tags."""
     if not isinstance(it, dict):
@@ -4219,8 +5068,7 @@ def humanize_deliverable_title(it: dict) -> str:
         if nxt == s:
             break
         s = nxt
-    # Strip trailing long parenthetical format/detail descriptions (e.g., "(PDF — 6-Act narrative arc...)")
-    s = re.sub(r"\s*\([^)]{32,}\)\s*$", "", s).strip()
+    s = _strip_trailing_file_explanation_parens(s)
     # Strip trailing format suffixes such as -DOCX, -PDF, -PowerPoint, (PDF Reading Copy), etc.
     s = re.sub(
         r"[\s_-]*(?:\((?:pdf|docx|pptx|powerpoint|word|html|md|markdown|xlsx|excel|r|csv|zip)(?:\s+[^)]{0,35})?\)"
@@ -4230,6 +5078,7 @@ def humanize_deliverable_title(it: dict) -> str:
         flags=re.I,
     ).strip()
     s = _strip_format_tag(s, keep_note=True)
+    s = _strip_trailing_file_explanation_parens(s)
     # If the string is a hyphenated slug (e.g. HW1-Final-Homework-1-Instructor-Answer-Key-Draft-4 or Lecture-3)
     if s and " " not in s and "-" in s:
         s = s.replace("-", " ")
@@ -4246,21 +5095,22 @@ def humanize_deliverable_title(it: dict) -> str:
             if len(head.strip()) >= 12 and len(tail.strip()) > 45:
                 s = head.strip()
                 break
-    return s.strip() or Path(str(it.get("open_path") or it.get("path") or "Deliverable")).stem.replace("-", " ").replace("_", " ")
+    fallback_p = str(it.get("readable_path") or it.get("open_path") or it.get("path") or "")
+    cleaned = _core.clean_human_deliverable_title(s, fallback_path=fallback_p)
+    return cleaned or Path(fallback_p or "Deliverable").stem.replace("-", " ").replace("_", " ")
 
 
 _HEX_HASH_FILENAME_RE = re.compile(r"^[0-9a-f]{40,64}(\.[a-z0-9]{1,8})$", re.I)
 
 
 def _human_filename_for_item(rel_path: str, what: str, title_hint: str = "") -> str:
-    """Return a clean human-readable filename, never a 64-char SHA-256 revision hash."""
+    """Return a clean human-readable filename, never a SHA-256 revision hash or internal ID."""
     p_norm = rel_path.replace("\\", "/").strip()
     fname = p_norm.rsplit("/", 1)[-1] if "/" in p_norm else p_norm
     m_hash = _HEX_HASH_FILENAME_RE.match(fname)
-    if not m_hash:
-        return fname
-    ext = m_hash.group(1).lower()
-    # Derive human stem from parent folder slug or title_hint / what
+    if not m_hash and not _core._INTERNAL_ID_TOKEN_RE.search(fname):
+        return _core.sanitize_download_filename(fname, fallback_ext=os.path.splitext(fname)[1])
+    ext = m_hash.group(1).lower() if m_hash else os.path.splitext(fname)[1].lower()
     parts = [seg for seg in p_norm.split("/") if seg]
     parent_slug = parts[-2] if len(parts) >= 2 and parts[-2].lower() not in ("deliverables", "revisions", ".ecgberht") else ""
     cand = (title_hint or "").strip()
@@ -4274,165 +5124,26 @@ def _human_filename_for_item(rel_path: str, what: str, title_hint: str = "") -> 
             ).replace("-", " ").replace("_", " ").strip()
         else:
             cand = humanize_deliverable_title({"what": what, "path": rel_path})
-    cand = re.sub(r'[<>:"/\\|?*]+', "", cand).strip()
-    if not cand:
-        cand = "Deliverable"
-    if not cand.lower().endswith(ext):
-        cand = f"{cand}{ext}"
-    return cand
+    return _core.suggested_deliverable_filename(cand or "Deliverable", ext)
+
+
+def _slug(s: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", str(s or "").lower()).strip("-")
 
 
 def _classify_hierarchy_unit(what: str, step: str, path: str, steps: list) -> dict | None:
-    """Classify a deliverable into a structured Category -> Unit folder hierarchy."""
-    p_norm = path.replace("\\", "/")
-    fname = p_norm.rsplit("/", 1)[-1] if "/" in p_norm else p_norm
-    combined = f"{what} | {step} | {p_norm}"
-    what_and_file = f"{what} | {fname}"
-
-    # 0. Intro Lecture check before Quiz so 'Intro Lecture' never gets pulled into Quiz 1 via step text
-    if re.search(r"\b(?:intro\s+lecture|residential[-_\s]+mba[-_\s]+intro|residential[-_\s]+intro)\b", what_and_file, re.I):
-        return {
-            "is_course": True,
-            "category_id": "foundations",
-            "category_title": "🧭 Course Syllabus & Foundations",
-            "category_order": 4,
-            "unit_key": "foundation-02-intro",
-            "unit_order": 2,
-            "unit_label": "Intro Lecture",
-            "unit_topic": "Residential MBA Course Overview",
-            "unit_title": "Intro Lecture — Residential MBA Course Overview",
-            "solid_badge": "",
-        }
-
-    # 1. Course Quiz / Exam — check filename/what first so Quiz files in shared/Syllabus folders route to Quiz
-    m_qz = re.search(r"\b(quiz|exam|midterm)[-_\s]*(1|2|i{1,2})?\b", what_and_file, re.I)
-    if not m_qz and ("/quiz/" in ("/" + p_norm.lower()) or "/quizzes/" in ("/" + p_norm.lower()) or "students data.csv" in fname.lower()):
-        m_qz = re.search(r"\b(quiz|exam|midterm)[-_\s]*(1|2|i{1,2})?\b", combined, re.I) or re.search(r"(quiz)", "quiz", re.I)
-    if m_qz and (
-        "/quiz/" in ("/" + p_norm.lower())
-        or "/quizzes/" in ("/" + p_norm.lower())
-        or "quiz" in what_and_file.lower()
-        or "exam" in what.lower()
-        or "lem lab" in what_and_file.lower()
-    ):
-        kind = m_qz.group(1).capitalize()
-        raw_n = (m_qz.group(2) or "1").lower()
-        num = 2 if raw_n in ("2", "ii") else 1
-        qz_topics = {
-            1: "Foundations through Simple Linear Regression",
-            2: "Multiple Regression & Model Building",
-        }
-        topic = qz_topics.get(num, "")
-        return {
-            "is_course": True,
-            "category_id": "assessments",
-            "category_title": "🧪 Quizzes & Exams",
-            "category_order": 3,
-            "unit_key": f"{kind.lower()}-{num:02d}",
-            "unit_order": num,
-            "unit_label": f"{kind} {num}",
-            "unit_topic": topic,
-            "unit_title": f"{kind} {num}" + (f" — {topic}" if topic else ""),
-            "solid_badge": "",
-        }
-
-    # 2. Course Lecture (Lecture 1 .. Lecture 10+ or AI Supplement N)
-    m_lec = re.search(r"\blecture[-_\s]*(\d{1,2})\b", combined, re.I)
-    if not m_lec:
-        m_lec = re.search(r"\bai\s+supplement[-_\s]*(\d{1,2})\b", what_and_file, re.I)
-    if m_lec:
-        num = int(m_lec.group(1))
-        lec_topics = {
-            1: "Introduction to Statistics & Descriptive Analytics",
-            2: "Describing Data, Outliers, the Normal Curve & Process Control",
-            3: "Sampling Distributions & Confidence Intervals",
-            4: "Hypothesis Testing for a Population Mean",
-            5: "Two-Sample Hypothesis Testing & Experimental Design",
-            6: "Simple Linear Regression, R² & CAPM",
-            7: "Multiple Regression, Adjusted R² & Multicollinearity",
-            8: "Dummy Variables, Parallel Lines & Interactions",
-            9: "Analysis of Variance (ANOVA) & Multiple Regression II",
-            10: "Experiments, Two-Way ANOVA, Causality & Model Building",
-        }
-        topic = lec_topics.get(num, "")
-        return {
-            "is_course": True,
-            "category_id": "lectures",
-            "category_title": "📚 Lectures",
-            "category_order": 1,
-            "unit_key": f"lecture-{num:02d}",
-            "unit_order": num,
-            "unit_label": f"Lecture {num}",
-            "unit_topic": topic,
-            "unit_title": f"Lecture {num}" + (f" — {topic}" if topic else ""),
-            "solid_badge": "★ Solid · Ready to Use" if num == 9 else "",
-        }
-
-    # 3. Course Homework (Homework 1 .. Homework N, including Roman I, II, III)
-    m_hw = re.search(r"\b(?:homework|hw)[-_\s]*(\d{1,2}|iii|ii|i)\b", combined, re.I)
-    if m_hw:
-        raw_hw = m_hw.group(1).lower()
-        roman_map = {"i": 1, "ii": 2, "iii": 3, "iv": 4}
-        num = roman_map.get(raw_hw) or int(raw_hw)
-        hw_topics = {
-            1: "Descriptive Statistics, Process Control & Confidence Intervals",
-            2: "Hypothesis Testing & Two-Group Comparisons",
-            3: "Difference in Means & Simple/Multiple Linear Regression",
-            4: "Dummy Variables, Interactions, ANOVA & Model Selection",
-        }
-        topic = hw_topics.get(num, "")
-        return {
-            "is_course": True,
-            "category_id": "homeworks",
-            "category_title": "📝 Homeworks",
-            "category_order": 2,
-            "unit_key": f"homework-{num:02d}",
-            "unit_order": num,
-            "unit_label": f"Homework {num}",
-            "unit_topic": topic,
-            "unit_title": f"Homework {num}" + (f" — {topic}" if topic else ""),
-            "solid_badge": "",
-        }
-
-    # 4. Course Syllabus, Intro Lecture & Interactive Student Teaching Aids
-    if re.search(
-        r"\b(?:syllabus|intro\s+lecture|residential[-_\s]+mba[-_\s]+intro|residential[-_\s]+intro|introductions?\s+and\s+overview|course\s+overview|student[-_\s]+teaching[-_\s]+aids|teaching[-_\s]+aids)\b",
-        combined,
-        re.I,
-    ):
-        low_c = combined.lower()
-        if "teaching" in low_c and "aids" in low_c:
-            return {
-                "is_course": True,
-                "category_id": "foundations",
-                "category_title": "🧭 Course Syllabus & Foundations",
-                "category_order": 4,
-                "unit_key": "foundation-03-aids",
-                "unit_order": 3,
-                "unit_label": "Interactive Teaching Aids",
-                "unit_topic": "Sampling Distribution, Two-Sample & Wiggling Car Simulators",
-                "unit_title": "Interactive Teaching Aids — Sampling & Process Control Widgets",
-                "solid_badge": "",
-            }
-        is_syl = "syllabus" in low_c and "intro lecture" not in what_and_file.lower() and "residential" not in what_and_file.lower()
-        return {
-            "is_course": True,
-            "category_id": "foundations",
-            "category_title": "🧭 Course Syllabus & Foundations",
-            "category_order": 4,
-            "unit_key": "foundation-01-syllabus" if is_syl else "foundation-02-intro",
-            "unit_order": 1 if is_syl else 2,
-            "unit_label": "Course Syllabus" if is_syl else "Intro Lecture",
-            "unit_topic": "BA 815 Fall 2026 Schedule & Policies" if is_syl else "Residential MBA Course Overview",
-            "unit_title": "Course Syllabus — BA 815 Schedule & Policies" if is_syl else "Intro Lecture — Residential MBA Course Overview",
-            "solid_badge": "",
-        }
-
-    # 5. General Campaign Workstream / Step grouping
+    """Classify a deliverable into a clean, effort-agnostic Category -> Workstream/Unit hierarchy."""
     from .navigation_compat import resolve_step
+    p_norm = str(path or "").replace("\\", "/").strip("/")
     owner = resolve_step(steps, step) if steps else None
     if owner:
-        raw_lbl = str(((owner.get("navigation") or {}).get("label") if isinstance(owner.get("navigation"), dict) else "") or owner.get("name") or owner.get("id") or "").strip()
+        raw_lbl = str(
+            ((owner.get("navigation") or {}).get("label") if isinstance(owner.get("navigation"), dict) else "")
+            or owner.get("title")
+            or owner.get("name")
+            or owner.get("id")
+            or ""
+        ).strip()
         raw_dw = _first_sentence(str(owner.get("done_when") or "")).strip()
         u_lbl, u_sub = clean_plan_step_title(raw_lbl, raw_dw)
         u_key = str(owner.get("id") or _slug(u_lbl) or "workstream")
@@ -4441,20 +5152,31 @@ def _classify_hierarchy_unit(what: str, step: str, path: str, steps: list) -> di
         except Exception:
             u_ord = 50
     else:
-        u_lbl = humanize_deliverable_title({"what": what, "path": path})
+        segs = [seg for seg in p_norm.split("/") if seg]
+        folder_unit = ""
+        if len(segs) >= 2:
+            if segs[0].lower() in ("final deliverables", "finished deliverables", "deliverables") and len(segs) >= 3:
+                folder_unit = segs[1]
+            elif not segs[0].startswith(".") and segs[0].lower() not in ("deliverables", "revisions"):
+                folder_unit = segs[0]
+        u_lbl = (
+            _core.clean_human_deliverable_title(folder_unit)
+            if folder_unit
+            else humanize_deliverable_title({"what": what, "path": path})
+        )
         u_sub = ""
         u_key = _slug(u_lbl)[:36] or "workstream"
         u_ord = 90
     return {
         "is_course": False,
         "category_id": "workstreams",
-        "category_title": "🏛 Deliverable Workstreams",
+        "category_title": "Deliverable Workstreams",
         "category_order": 10,
         "unit_key": f"ws-{u_key}",
         "unit_order": u_ord,
         "unit_label": u_lbl,
         "unit_topic": u_sub,
-        "unit_title": u_lbl + (f" — {u_sub}" if u_sub and u_sub not in u_lbl else ""),
+        "unit_title": u_lbl + (f" \u2014 {u_sub}" if u_sub and u_sub not in u_lbl else ""),
         "solid_badge": "",
     }
 
@@ -4499,7 +5221,7 @@ def _file_role_and_sort_key(rel_path: str, what: str, title_hint: str = "") -> t
         if "study guide" in combined_norm or "student guide" in combined_norm:
             return ("study-guide", "Study Guide")
         if "sign-up" in combined or "signup" in combined_norm or "sign up" in combined_norm:
-            if "admin" in combined_norm or "proctor" in combined_norm or "lem-lab" in low_f or "lem lab" in combined_norm:
+            if "admin" in combined_norm or "proctor" in combined_norm:
                 return ("proctor-signup", "Proctor Sign-Up")
             return ("student-signup", "Student Sign-Up")
         if "assignment" in combined_norm:
@@ -4513,7 +5235,7 @@ def _file_role_and_sort_key(rel_path: str, what: str, title_hint: str = "") -> t
     if ext == ".pdf":
         sub_key, sub_lbl = _doc_subrole()
         if sub_key == "primary":
-            return ("pdf-primary", 2, "PDF Reading Copy", fname)
+            return (f"pdf-primary-{stem_norm}", 2, "PDF Reading Copy", fname)
         if sub_key == "ai-supplement":
             return ("pdf-ai-supplement", 3, "PDF (AI Supplement)", fname)
         order = 3 if sub_key in ("instructions", "quiz-packet", "question-bank") else 4
@@ -4538,7 +5260,7 @@ def _file_role_and_sort_key(rel_path: str, what: str, title_hint: str = "") -> t
 
 def _is_unit_specific_dir(d_path: Path, root: Path) -> bool:
     """Return True only when d_path is a dedicated unit folder (never the campaign root,
-    shared semester root, or hash-revision store)."""
+    shared container root, or hash-revision store)."""
     try:
         rel = d_path.resolve().relative_to(root.resolve()).as_posix().strip("/")
     except Exception:
@@ -4548,26 +5270,20 @@ def _is_unit_specific_dir(d_path: Path, root: Path) -> bool:
     low = rel.lower()
     if low.startswith(".ecgberht") or low.startswith("deliverables/"):
         return False
-    # Never treat shared top-level containers as a single unit's folder
     if low in (
-        "ba 815",
-        "ba 815/fall 2026",
-        "ba 815/fall 2026/final deliverables",
+        "deliverables",
         "final deliverables",
-        "ba 815/fall 2026/homework",
-        "ba 815/fall 2026/lectures",
-        "ba 815/fall 2026/planning",
-        "ba 815/fall 2026/build",
-        "ba 815/fall 2026/data",
+        "finished deliverables",
+        "planning",
+        "build",
+        "data",
     ):
         return False
     return True
 
 
 def build_deliverable_hierarchy(campaign_dir: str, decorated_items: list, approved_items: list | None = None, steps: list | None = None) -> dict:
-    """Build a thoughtful, collapsible Category -> Unit Folder -> Indented Connected Files hierarchy
-    plus an executive Steward summary so John never has to wade through flat unorganized tables."""
-    from urllib.parse import quote
+    """Build a collapsible Category -> Workstream Folder -> Connected Files hierarchy."""
     root = Path(campaign_dir)
     steps = steps or []
     approved_items = approved_items or []
@@ -4592,11 +5308,8 @@ def build_deliverable_hierarchy(campaign_dir: str, decorated_items: list, approv
                 units[ukey]["latest_date"] = date_hint[:10]
         return units[ukey]
 
-    # Step 0: Discover dedicated unit folders under Final Deliverables (and companion unit folders on disk)
-    final_roots = [
-        root / "Final Deliverables",
-        root / "BA 815" / "Fall 2026" / "Final Deliverables",
-    ]
+    # Step 0: Discover dedicated unit folders under Final Deliverables (generic, effort-agnostic)
+    final_roots = [root / "Final Deliverables"]
     for f_root in final_roots:
         try:
             if not f_root.is_dir():
@@ -4613,31 +5326,9 @@ def build_deliverable_hierarchy(campaign_dir: str, decorated_items: list, approv
                     continue
                 u = _ensure_unit(info, status_hint="Final")
                 u["dirs_on_disk"].add(Path(sub.path))
-                # Also include immediate sub-directories inside the unit's Final Deliverables folder (e.g. Lecture 4/R Example)
                 for child in os.scandir(sub.path):
                     if child.is_dir() and not child.name.startswith("."):
                         u["dirs_on_disk"].add(Path(child.path))
-        except Exception:
-            continue
-
-    # Also attach known companion directories for Lecture 3 R/CSV, Homework student packages, and Quiz 1 materials if present on disk
-    extra_unit_dirs = [
-        ("lecture-03", "Lecture 3", root / "BA 815" / "Fall 2026" / "lectures" / "Lecture 3 - R Example Student Files v2"),
-        ("lecture-03", "Lecture 3", root / "BA 815" / "Fall 2026" / "lectures" / "Lecture 3 - R Example Student Files v1"),
-        ("homework-02", "Homework 2", root / "Finished Deliverables" / "Block 1" / "Homework 2"),
-        ("homework-03", "Homework 3", root / "BA 815" / "Fall 2026" / "homework" / "Homework 3 - Draft 2"),
-        ("quiz-01", "Quiz 1", root / "BA 815" / "Fall 2026" / "quiz"),
-        ("quiz-01", "Quiz 1", root / "BA 815" / "Fall 2026" / "quiz" / "Quiz 1 - Draft 4"),
-        ("quiz-01", "Quiz 1", root / "BA 815" / "Fall 2026" / "quiz" / "Quiz 1 - Draft 3"),
-    ]
-    for _uk, _lbl, _dpath in extra_unit_dirs:
-        try:
-            if _dpath.is_dir():
-                rel_d = _dpath.resolve().relative_to(root.resolve()).as_posix()
-                info = _classify_hierarchy_unit(_lbl, "", rel_d, steps)
-                if info:
-                    u = _ensure_unit(info, status_hint="Final")
-                    u["dirs_on_disk"].add(_dpath)
         except Exception:
             continue
 
@@ -4647,6 +5338,15 @@ def build_deliverable_hierarchy(campaign_dir: str, decorated_items: list, approv
             if not isinstance(it, dict):
                 continue
             p = str(it.get("open_path") or it.get("path") or "").replace("\\", "/").strip()
+            if not p:
+                raw_rt = str(it.get("route") or "")
+                if "/artifact/" in raw_rt and "path=" in raw_rt:
+                    try:
+                        import urllib.parse as _up
+                        qs = _up.parse_qs(_up.urlsplit(raw_rt).query)
+                        p = str((qs.get("path") or [""])[0]).replace("\\", "/").strip()
+                    except Exception:
+                        p = ""
             what = str(it.get("what") or "").strip()
             step = str(it.get("step") or "").strip()
             if not p or _INTERMEDIATE_PATH_RE.search(p):
@@ -4725,7 +5425,8 @@ def build_deliverable_hierarchy(campaign_dir: str, decorated_items: list, approv
             )
             existing = u["files_by_slot"].get(slot_key)
             if existing is None or rank_tuple > existing["_rank"]:
-                route = it.get("route") or f"/steward/v1/open?path={quote(p)}"
+                raw_route = str(it.get("route") or "").strip()
+                route = raw_route if (raw_route and not raw_route.startswith("/steward/v1/open")) else ""
                 u["files_by_slot"][slot_key] = {
                     "filename": clean_fname,
                     "title": h_title,
@@ -4802,7 +5503,7 @@ def build_deliverable_hierarchy(campaign_dir: str, decorated_items: list, approv
                             "role": role_badge,
                             "ext": ext.lstrip(".").upper(),
                             "path": rel_p,
-                            "route": f"/steward/v1/open?path={quote(rel_p)}",
+                            "route": "",
                             "openable": True,
                             "date": target_u.get("latest_date") or "",
                             "sort_order": sort_ord,
@@ -4866,7 +5567,7 @@ def build_deliverable_hierarchy(campaign_dir: str, decorated_items: list, approv
             "file_count": len(files_list),
             "ext_summary": ext_summary,
             "files": files_list,
-            "default_expanded": bool(u["status"] == "For Review" or u.get("solid_badge") or ukey in ("lecture-01", "lecture-04", "lecture-10", "homework-01")),
+            "default_expanded": bool(u["status"] == "For Review" or u.get("solid_badge")),
         })
 
     categories = sorted(categories_map.values(), key=lambda c: c["order"])
@@ -4876,37 +5577,14 @@ def build_deliverable_hierarchy(campaign_dir: str, decorated_items: list, approv
         c["final_count"] = sum(1 for u in c["units"] if u["status"] == "Final")
         c["review_count"] = sum(1 for u in c["units"] if u["status"] != "Final")
 
-    is_course_campaign = any(c["id"] in ("lectures", "homeworks", "assessments", "foundations") for c in categories)
-    if is_course_campaign:
-        lec_cat = next((c for c in categories if c["id"] == "lectures"), None)
-        hw_cat = next((c for c in categories if c["id"] == "homeworks"), None)
-        qz_cat = next((c for c in categories if c["id"] == "assessments"), None)
-        parts = []
-        if lec_cat:
-            fin_lecs = [u["label"].replace("Lecture ", "") for u in lec_cat["units"] if u["status"] == "Final"]
-            rev_lecs = [u["label"] for u in lec_cat["units"] if u["status"] != "Final"]
-            if fin_lecs:
-                parts.append(f"Lectures 1–{fin_lecs[-1]} Finalized (Lecture 9 Solid)")
-            if rev_lecs:
-                parts.append(f"{', '.join(rev_lecs)} Ready for Review")
-        if hw_cat:
-            parts.append(f"Homeworks 1–{len(hw_cat['units'])} Complete")
-        if qz_cat:
-            parts.append("Quiz 1 Complete")
-        headline = " · ".join(parts) if parts else f"{final_units} Finalized Units · {review_units} In Review"
-        narrative = (
-            "Course deliverables are organized hierarchically by category (Lectures 1–10, Homeworks 1–3, Quiz 1, and Syllabus & Teaching Aids). "
-            "Click any unit folder below to expand its indented connected files (.pptx, .pdf, .R, .csv, .docx, .zip)."
-        )
-    else:
-        headline = f"{final_units} Finalized Deliverable Units · {review_units} Ready for Review ({total_files} connected files)"
-        narrative = (
-            "Deliverables are grouped by workstream folder so primary documents, reading copies, code scripts, and data files stay connected without clutter. "
-            "Click any folder to inspect its indented files."
-        )
+    headline = f"{final_units} Finalized Deliverable Units \u00b7 {review_units} Ready for Review ({total_files} connected files)"
+    narrative = (
+        "Deliverables are grouped by workstream folder so primary documents, reading copies, code scripts, and data files stay connected without clutter. "
+        "Click any folder to inspect its indented files."
+    )
 
     return {
-        "is_course": is_course_campaign,
+        "is_course": False,
         "executive_summary": {
             "headline": headline,
             "narrative": narrative,
@@ -4928,70 +5606,41 @@ def build_oranges_forecast(
     hierarchy: dict | None = None,
 ) -> dict:
     """Proactive 'Parable of the Oranges' predictor for the Steward Living Plan:
-    combines major-effort sync + nightly review to anticipate the full chain of what needs to be done next,
-    while explicitly staying flexible for unexpected pivots."""
+    anticipates the next chain of work from live plan state while staying flexible for pivots."""
     hb = (m or {}).get("heartbeat") or {}
-    is_course = bool((hierarchy or {}).get("is_course"))
     predictions = []
-
-    if is_course:
-        predictions = [
-            {
-                "horizon": "1 · Immediate Close-Loop (Ready Now)",
-                "title": "Finalize Lecture 10 (Model Building, Diagnostics & Regularization)",
-                "detail": "Slide deck (.pptx), PDF reading copy (.pdf), Lecture 10.R, and Hitters.csv are pre-staged in Review. Once approved, Steward will auto-bundle Lecture 10 into Final Deliverables alongside Solid Lecture 9.",
-                "badge": "Pre-Staged",
-            },
-            {
-                "horizon": "2 · Next Anticipated Effort (Parable of the Oranges)",
-                "title": "Homework 4 Package (Lectures 8–10: Dummy Variables, Interactions & Model Selection)",
-                "detail": "Proactively preparing the student assignment (.docx/.pdf), instructor answer key, grading rubric, and R solution script so students can practice Multiple Regression II & Model Selection immediately after Lecture 10.",
-                "badge": "Anticipated Next",
-            },
-            {
-                "horizon": "3 · Upcoming Horizon & Flexible Pivot Buffer",
-                "title": "Quiz 2 & Exam Review Synthesis + Ad-Hoc Class Examples",
-                "detail": "Aligned with the Nov 11–12, Dec 2–3, and Dec 15–16 exam windows (with all 6 R packages verified with Chris Stewart). Plan stays flexible if you want to insert a new case study or pivot Lecture 10 examples first.",
-                "badge": "Horizon · Flexible",
-            },
-        ]
-        summary_line = (
-            "Updated on Major Efforts (Lectures 1–9 + HW 1–3 + Quiz 1 finalized; Lecture 9 locked as Solid) "
-            "+ Nightly Steward Review. Using the Parable of the Oranges to anticipate connected deliverables before you ask."
-        )
-    else:
-        if active_steps:
-            a0 = active_steps[0]
-            predictions.append({
-                "horizon": "1 · Immediate Close-Loop",
-                "title": a0.get("name") or "Complete Active Effort",
-                "detail": a0.get("done_when") or a0.get("subtitle") or "Review and lock the current active deliverable set.",
-                "badge": "Active Now",
-            })
-        for idx, u in enumerate(upcoming_steps[:2]):
-            predictions.append({
-                "horizon": f"{len(predictions) + 1} · Anticipated Next Effort",
-                "title": u.get("name") or f"Upcoming Wave {idx + 1}",
-                "detail": u.get("done_when") or u.get("subtitle") or "Pre-stage supporting research, scripts, and verification checks.",
-                "badge": "Anticipated",
-            })
-        if not predictions:
-            predictions.append({
-                "horizon": "1 · Ready for Next Objective",
-                "title": str(hb.get("next_recommended") or "Proactive Deliverable & Verification Sweep"),
-                "detail": str(hb.get("why_next") or "All current steps are complete; Steward is ready to pivot to your next priority."),
-                "badge": "Ready",
-            })
-        summary_line = (
-            "Living Plan auto-reconciles on every major effort completion and nightly review sweep, "
-            "anticipating the next chain of work while adapting immediately when new priorities arise."
-        )
+    if active_steps:
+        a0 = active_steps[0]
+        predictions.append({
+            "horizon": "1 \u00b7 Immediate Close-Loop",
+            "title": a0.get("name") or "Complete Active Effort",
+            "detail": a0.get("done_when") or a0.get("subtitle") or "Review and lock the current active deliverable set.",
+            "badge": "Active Now",
+        })
+    for idx, u in enumerate(upcoming_steps[:2]):
+        predictions.append({
+            "horizon": f"{len(predictions) + 1} \u00b7 Anticipated Next Effort",
+            "title": u.get("name") or f"Upcoming Wave {idx + 1}",
+            "detail": u.get("done_when") or u.get("subtitle") or "Pre-stage supporting research, scripts, and verification checks.",
+            "badge": "Anticipated",
+        })
+    if not predictions:
+        predictions.append({
+            "horizon": "1 \u00b7 Ready for Next Objective",
+            "title": str(hb.get("next_recommended") or "Proactive Deliverable & Verification Sweep"),
+            "detail": str(hb.get("why_next") or "All current steps are complete; Steward is ready to pivot to your next priority."),
+            "badge": "Ready",
+        })
+    summary_line = (
+        "Living Plan auto-reconciles on every major effort completion and review sweep, "
+        "anticipating the next chain of work while adapting immediately when new priorities arise."
+    )
 
     return {
-        "cadence_label": "Auto-Synced on Major Effort + Nightly Steward Review",
+        "cadence_label": "Auto-Synced on Major Effort + Steward Review",
         "last_reconciled": time.strftime("%Y-%m-%d %H:%M"),
         "summary": summary_line,
-        "flexibility_note": "Flexible by design — tell the Steward in chat anytime a new priority or surprise comes up and the Living Plan adapts immediately.",
+        "flexibility_note": "Flexible by design \u2014 tell the Steward in chat anytime a new priority or surprise comes up and The Plan adapts immediately.",
         "predictions": predictions,
     }
 
@@ -5086,6 +5735,37 @@ def build_running_overview(campaign_dir: str, m: dict | None = None) -> dict:
     act_eff = str(hb.get("active_effort") or "").strip()
     if act_eff and " " not in act_eff and "-" in act_eff:
         act_eff = ""
+    # Guard against stale strip.json active_effort (>12h old or older than overview.json whats_changed / DELIVERABLES.md / recent jobs)
+    hb_as_of = _job_epoch(hb.get("active_effort_as_of") or hb.get("as_of") or "")
+    ov_updated_ep = _job_epoch(ov_disk.get("updated_at") or "")
+    latest_work_ep = 0.0
+    latest_work_summary = ""
+    try:
+        for jf_name in ("code-jobs.json", "skill-jobs.json"):
+            jf_p = root / ".ecgberht" / jf_name
+            if jf_p.is_file():
+                raw_j, _ = _read_json(jf_p)
+                rows_j = list(raw_j.values()) if isinstance(raw_j, dict) else (raw_j if isinstance(raw_j, list) else [])
+                for rj in rows_j:
+                    if isinstance(rj, dict) and rj.get("finished"):
+                        fe = _job_epoch(rj.get("finished"))
+                        if fe and fe > latest_work_ep:
+                            latest_work_ep = fe
+                            b_title = _brief_title(rj.get("brief"), default="")
+                            if b_title:
+                                latest_work_summary = f"Completed: {b_title} \u2014 ready for review"
+    except Exception:
+        pass
+    whats_changed_list = [str(x).strip() for x in (ov_disk.get("whats_changed") or []) if str(x).strip()] if isinstance(ov_disk.get("whats_changed"), list) else []
+    if act_eff and hb_as_of and (
+        (time.time() - hb_as_of > 43200)
+        or (ov_updated_ep and ov_updated_ep > hb_as_of + 60)
+        or (latest_work_ep and latest_work_ep > hb_as_of + 60)
+    ):
+        act_eff = whats_changed_list[0] if whats_changed_list else latest_work_summary
+    elif not act_eff and (whats_changed_list or latest_work_summary):
+        act_eff = whats_changed_list[0] if whats_changed_list else latest_work_summary
+
     if active_steps:
         a0 = active_steps[0]
         if act_eff and not re.match(r"^(?:none|idle|quiet)$", act_eff, re.I) and len(act_eff) > 12:
@@ -5108,6 +5788,8 @@ def build_running_overview(campaign_dir: str, m: dict | None = None) -> dict:
         done_summary = f"0 of {total_active_plan} steps marked done yet."
 
     nxt = str(hb.get("next_recommended") or "").strip()
+    if nxt and hb_as_of and (time.time() - hb_as_of > 43200):
+        nxt = ""
     if upcoming_steps:
         up_names = [u["name"] for u in upcoming_steps[:3]]
         todo_summary = f"{len(upcoming_steps)} upcoming: " + " \u2192 ".join(up_names)
@@ -5215,12 +5897,61 @@ def build_running_overview(campaign_dir: str, m: dict | None = None) -> dict:
     }
 
 
+def _deliverables_backing_store_error(campaign_dir: str, raw_deliv_res: dict | None = None) -> str:
+    """Return a non-empty error reason if `roadmap.json`, `plan-proposal.json`, or `dismissed-deliverables.json`
+    exists on disk with corrupt/unreadable JSON (`unknown != empty`)."""
+    if isinstance(raw_deliv_res, dict) and raw_deliv_res.get("error"):
+        return str(raw_deliv_res.get("error"))
+    root = Path(campaign_dir)
+    for rel in ("roadmap.json", "plan-proposal.json", ".ecgberht/dismissed-deliverables.json"):
+        p = root / rel
+        if not p.exists():
+            continue
+        if not p.is_file():
+            return f"{rel} is not a file"
+        data, err = _read_json(p)
+        if err or not isinstance(data, dict):
+            return f"{rel} {err or 'not a JSON object'}"
+        if rel == "roadmap.json":
+            for k in ("steps", "roadmap_projection"):
+                if k in data and data[k] is not None and not isinstance(data[k], list):
+                    return f"roadmap.json '{k}' is not a list"
+    return ""
+
+
 def read_deliverables(campaign_dir: str):
-    """Expose authoritative ownership/current flags to every cockpit client."""
+    """Expose authoritative ownership/current flags and server-computed buckets to every cockpit client."""
     from .navigation_compat import resolve_step
     result = _read_deliverables(campaign_dir)
+    store_err = _deliverables_backing_store_error(campaign_dir, result)
+    if store_err:
+        msg = "Plan/Deliverables unreadable (unknown) \u2014 inspect roadmap.json"
+        return {
+            "ok": False,
+            "exists": bool((result or {}).get("exists")),
+            "failure_state": "backing-store-unreadable",
+            "error": msg,
+            "message": msg,
+            "detail": store_err,
+            "items": [],
+            "approved": [],
+            "acts": [],
+            "key_deliverables": [],
+            "buckets": {"for_review": [], "final": [], "in_progress": [], "archive": []},
+            "current_warning": msg,
+            "current_summary": {
+                "active_effort": "",
+                "step_id": "",
+                "step_name": "",
+                "human_wait": "",
+                "next_recommended": "",
+                "why_next": "",
+                "review_count": 0,
+            },
+            "deliverable_hierarchy": {"is_course": False, "executive_summary": {}, "categories": []},
+        }
     try:
-        map_ = read_map(campaign_dir, include_plan_history=False)
+        map_ = read_map(campaign_dir, include_plan_history=False, include_overview=False)
     except TypeError:
         map_ = read_map(campaign_dir)
     dismissed = read_dismissed_deliverables(campaign_dir)
@@ -5234,14 +5965,17 @@ def read_deliverables(campaign_dir: str):
     current_items = [it for it in raw_current_items if not _is_deliverable_dismissed(campaign_dir, it, dismissed)] if dismissed else raw_current_items
     current = {id(it) for it in current_items}
     approved_raw = result.get("approved") or []
-    approved = [
-        {
+    approved = []
+    for ap in approved_raw:
+        ap_ht = humanize_deliverable_title(ap)
+        ap_pref = ap.get("readable_path") or ap.get("open_path") or ap.get("path") or ""
+        approved.append({
             **ap,
-            "human_title": humanize_deliverable_title(ap),
+            "owner_step_id": ap.get("owner_step_id") or (resolve_step(steps, ap.get("step")) or {}).get("id"),
+            "human_title": ap_ht,
+            "suggested_filename": _core.suggested_deliverable_filename(ap_ht, ap_pref),
             "is_intermediate": _is_intermediate_deliverable(ap),
-        }
-        for ap in approved_raw
-    ]
+        })
     # Track highest version rank per product family across all items so Final Deliverables
     # only promotes the latest version of a flagship product (never superseded v1..v9 drafts).
     fam_max_ver = {}
@@ -5259,7 +5993,8 @@ def read_deliverables(campaign_dir: str):
     for it in raw_items:
         owner = resolve_step(steps, it.get("step"))
         is_dis = bool(dismissed and _is_deliverable_dismissed(campaign_dir, it, dismissed))
-        is_dis_approved = bool(is_dis and _dismissed_disposition(campaign_dir, it, dismissed) != "revision_requested")
+        dis_disp = _dismissed_disposition(campaign_dir, it, dismissed) if is_dis else ""
+        is_dis_approved = bool(is_dis and dis_disp != "revision_requested")
         is_cur = (not is_dis) and (id(it) in current)
         is_inter = _is_intermediate_deliverable(it)
         what_str = str(it.get("what") or "").strip()
@@ -5270,11 +6005,6 @@ def read_deliverables(campaign_dir: str):
         fk = _family_key(it, steps)
         vr = _version_rank(it)
         is_latest_ver = (not vr[1]) or (vr >= fam_max_ver.get(fk, vr))
-        # Promote to Final Deliverables when:
-        # 1) Explicitly labeled FINAL / APPROVED / ACCEPTED, OR
-        # 2) Marked Done / approved by John (is_dis_approved) and not an intermediate/supporting item, OR
-        # 3) Belongs to a completed step (owner_done) and was a primary/designated deliverable of that step,
-        # provided it is the latest version of its product family and not currently superseded in For Review.
         cand_final = bool(
             not is_cur
             and not is_inter
@@ -5305,19 +6035,51 @@ def read_deliverables(campaign_dir: str):
                 promoted_fam_stems[fk] = p_stem
                 final_promoted = True
             elif p_stem and promoted_fam_stems[fk] == p_stem:
-                # Same stem companion format (e.g. .docx + .pdf)
                 final_promoted = True
-        tier = "final" if final_promoted else ("for_review" if (is_cur and not is_inter) else "supporting")
+        in_prog = bool(
+            not final_promoted
+            and not is_cur
+            and not is_dis
+            and not is_inter
+            and (
+                it.get("provisional") is True
+                or str(it.get("phase") or "").lower() in ("working", "drafting", "in_progress", "running", "pending")
+                or re.match(r"^(?:IN[\s_-]+PROGRESS|DRAFTING|WORKING|PENDING|BUILDING)\b", what_str, re.I)
+            )
+        )
+        unmapped_review = bool(
+            owner is None
+            and not is_dis
+            and not is_inter
+            and is_latest_ver
+            and not (it.get("accepted") or it.get("accepted_current"))
+            and _ACTIVE_REVIEW_DELIV_RE.match(what_str)
+        )
+        tier = (
+            "final"
+            if final_promoted
+            else (
+                "for_review"
+                if ((is_cur or unmapped_review) and not is_inter)
+                else ("in_progress" if in_prog else "supporting")
+            )
+        )
+        ht = humanize_deliverable_title(it)
+        pref_path = it.get("readable_path") or it.get("open_path") or it.get("path") or ""
+        sf = _core.suggested_deliverable_filename(ht, pref_path)
         decorated.append({
             **it,
             "owner_step_id": owner.get("id") if owner else None,
             "is_current": is_cur,
             "reviewed_done": is_dis,
+            "disposition": dis_disp or it.get("disposition") or "",
             "is_intermediate": is_inter,
             "final_promoted": final_promoted,
             "tier": tier,
-            "human_title": humanize_deliverable_title(it),
+            "human_title": ht,
+            "suggested_filename": sf,
         })
+    bucket_res = _core.classify_deliverable_buckets(decorated, approved)
     acts = review_acts(map_, current_items, campaign_dir)
     focused, focus_warn = _focused_step(map_)
     hb = (map_ or {}).get("heartbeat") or {}
@@ -5334,9 +6096,18 @@ def read_deliverables(campaign_dir: str):
         deliv_hierarchy = build_deliverable_hierarchy(campaign_dir, decorated, approved, steps)
     except Exception:
         deliv_hierarchy = {"is_course": False, "executive_summary": {}, "categories": []}
-    out = {**result, "items": decorated, "acts": acts,
-           "current_warning": focus_warn, "current_summary": current_summary,
-           "deliverable_hierarchy": deliv_hierarchy}
+    out = {
+        **result,
+        "ok": True,
+        "failure_state": "ok" if (decorated or approved) else "empty-but-valid",
+        "items": decorated,
+        "buckets": bucket_res["buckets"],
+        "key_deliverables": bucket_res["key_deliverables"],
+        "acts": acts,
+        "current_warning": focus_warn,
+        "current_summary": current_summary,
+        "deliverable_hierarchy": deliv_hierarchy,
+    }
     if "approved" in result:
         out["approved"] = approved
     return out
@@ -5496,7 +6267,7 @@ def map_stamp(campaign_dir: str):
     """Cheap change detector: mtimes of the files the map and status are painted from."""
     root = Path(campaign_dir)
     stamp = []
-    for rel in ("ECGBERHT.md", "roadmap.json", "strip.json", "DELIVERABLES.md",
+    for rel in ("ECGBERHT.md", "roadmap.json", "strip.json", "DELIVERABLES.md", "plan-proposal.json",
                 ".ecgberht/attention.json", ".ecgberht/dismissed-deliverables.json",
                 ".ecgberht/plan-proposal.json", ".ecgberht/plan-history.json",
                 ".ecgberht/code-jobs.json", ".ecgberht/skill-jobs.json"):
@@ -6430,6 +7201,7 @@ def read_plan_proposal(campaign_dir: str, m: dict | None = None, roadmap: dict |
     """Return a plan refresh proposal when major deliverables or plan documents update the campaign plan,
     or when a previous plan backup exists so John can Accept New Plan or Revert to Old Plan."""
     root = Path(campaign_dir)
+    root_prop_file = root / "plan-proposal.json"
     prop_file = root / ".ecgberht" / "plan-proposal.json"
     backup_file = root / ".ecgberht" / "roadmap-backup.json"
     rm_file = root / "roadmap.json"
@@ -6440,6 +7212,7 @@ def read_plan_proposal(campaign_dir: str, m: dict | None = None, roadmap: dict |
         prop_sig = (
             rm_file.stat().st_mtime_ns if rm_file.is_file() else 0,
             deliv_file.stat().st_mtime_ns if deliv_file.is_file() else 0,
+            root_prop_file.stat().st_mtime_ns if root_prop_file.is_file() else 0,
             prop_file.stat().st_mtime_ns if prop_file.is_file() else 0,
             backup_file.stat().st_mtime_ns if backup_file.is_file() else 0,
             dis_file.stat().st_mtime_ns if dis_file.is_file() else 0,
@@ -6464,15 +7237,25 @@ def read_plan_proposal(campaign_dir: str, m: dict | None = None, roadmap: dict |
 
 def _read_plan_proposal_uncached(campaign_dir: str, m: dict | None = None, roadmap: dict | None = None) -> dict | None:
     root = Path(campaign_dir)
+    root_prop_file = root / "plan-proposal.json"
     prop_file = root / ".ecgberht" / "plan-proposal.json"
     backup_file = root / ".ecgberht" / "roadmap-backup.json"
     has_backup = backup_file.is_file()
     prop_disk = {}
-    if prop_file.is_file():
+    cand_prop = root_prop_file if root_prop_file.is_file() else prop_file
+    if cand_prop.is_file():
         try:
-            prop_disk = json.loads(prop_file.read_text(encoding="utf-8")) or {}
+            prop_disk = json.loads(cand_prop.read_text(encoding="utf-8")) or {}
         except Exception:
             prop_disk = {}
+
+    # 0. Explicit pending proposal written by steward_plan.py (`pending: True`)
+    if isinstance(prop_disk, dict) and prop_disk.get("pending") is True and str(prop_disk.get("status") or "pending").lower() not in ("accepted", "dismissed"):
+        out_prop = dict(prop_disk)
+        out_prop["status"] = "pending"
+        out_prop.setdefault("title", str(prop_disk.get("summary") or "Proposed Plan Update"))
+        out_prop["can_revert"] = True
+        return out_prop
 
     # 1. Check deliverable-driven plan updates
     try:
@@ -6767,7 +7550,9 @@ def resolve_plan_proposal(campaign_dir: str, action: str = "accept", proposal_id
             new_steps = doc_steps
     if new_steps:
         rm_data["roadmap_projection"] = new_steps
-    final_proj = list(rm_data.get("roadmap_projection") or [])
+        rm_data["steps"] = deepcopy(new_steps)
+    final_proj = list(rm_data.get("roadmap_projection") or rm_data.get("steps") or [])
+    rm_data["steps"] = deepcopy(final_proj)
     evs = list(rm_data.get("roadmap_events") or [])
     evs.append({
         "kind": "plan_accept",
@@ -6777,9 +7562,11 @@ def resolve_plan_proposal(campaign_dir: str, action: str = "accept", proposal_id
         "steps": [_compact_history_step(s) for s in final_proj if isinstance(s, dict)],
     })
     rm_data["roadmap_events"] = evs
-    rm_path.write_text(json.dumps(rm_data, indent=2, ensure_ascii=False), encoding="utf-8")
-    with _JSON_FILE_CACHE_LOCK:
-        _JSON_FILE_CACHE.clear()
+    import paths as _paths
+    with _paths.cross_process_lock(root / ".ecgberht" / "plan.lock", timeout_sec=2.0):
+        _paths.atomic_write_json(rm_path, rm_data)
+        with _JSON_FILE_CACHE_LOCK:
+            _JSON_FILE_CACHE.clear()
     if conv_file.is_file():
         try:
             conv_file.unlink()
@@ -6831,7 +7618,7 @@ _SPECIFIC_REVIEW_TARGET_RE = re.compile(
     r"chapters?\s*\d+(?:\s*(?:to|through|[-\u2013\u2014])\s*\d+)?|"
     r"ch\.?\s*\d+(?:\s*(?:to|through|[-\u2013\u2014])\s*\d+)?|"
     r"homeworks?\s*\d+|hw\s*\d+|quiz(?:zes)?\s*\d+|waves?\s*\d+|steps?\s*\d+|"
-    r"blocks?\s*\d+|rounds?\s*\d+|papers?\s*\d+|books?\s*\d+|v\d+(?:\.\d+)?|syllabus|intro\s+lecture|lem\s+lab)\b",
+    r"blocks?\s*\d+|rounds?\s*\d+|papers?\s*\d+|books?\s*\d+|v\d+(?:\.\d+)?|syllabus|intro\s+lecture)\b",
     re.I,
 )
 
@@ -6962,7 +7749,7 @@ def reconcile_review_on_feedback(campaign_dir: str, text: str) -> dict:
     msg = str(text or "").strip()
     if not msg or len(msg) < 2:
         return {"ok": False, "reason": "empty"}
-    if re.search(r"\b(?:keep\s+(?:it\s+)?in\s+review|not\s+final|do\s+not\s+(?:mark|approve|dismiss)|stay\s+in\s+review)\b", msg, re.I):
+    if re.search(r"\b(?:keep\s+(?:it\s+)?in\s+review|not\s+final|do\s+not\s+(?:mark|approve|dismiss)|stay\s+in\s+review|(?:i\s+will|i'll|going\s+to)\s+(?:review|read|look\s+over))\b", msg, re.I):
         return {"ok": True, "reconciled": 0, "kind": "keep_in_review"}
     is_approve = bool(_APPROVE_FEEDBACK_RE.search(msg))
     is_revision = bool(_REVISION_FEEDBACK_RE.search(msg))
@@ -7030,35 +7817,53 @@ def reconcile_review_on_feedback(campaign_dir: str, text: str) -> dict:
                 revision_id=str(it.get("revision_id") or ""),
                 hash_val=str(it.get("hash") or ""),
                 disposition=disposition,
+                step_id=step_key,
             )
             reconciled += 1
 
         if reconciled > 0 or not waiting:
-            for st_path in (Path(campaign_dir) / "strip.json", Path(campaign_dir) / ".ecgberht" / "strip.json"):
-                st_data, st_err = _read_json(st_path)
-                if not st_err and isinstance(st_data, dict):
-                    hw = str(st_data.get("human_wait") or "")
-                    if hw and hw.lower() != "none":
-                        st_data["human_wait"] = "none"
-                        st_data["last_feedback_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-                        st_data["last_feedback_kind"] = disposition
-                        st_path.write_text(json.dumps(st_data, indent=2, ensure_ascii=False), encoding="utf-8")
-                        with _JSON_FILE_CACHE_LOCK:
-                            _JSON_FILE_CACHE.clear()
-            for rm_path in (Path(campaign_dir) / "roadmap.json", Path(campaign_dir) / ".ecgberht" / "roadmap.json"):
-                rm_data, rm_err = _read_json(rm_path)
-                if not rm_err and isinstance(rm_data, dict):
-                    changed_rm = False
-                    for s in (rm_data.get("roadmap_projection") or rm_data.get("steps") or []):
-                        if isinstance(s, dict) and s.get("waiting_on") and re.search(r"\b(?:john|review|feedback|approval)\b", str(s.get("waiting_on") or ""), re.I):
-                            s.pop("waiting_on", None)
-                            if s.get("status") in ("waiting", "blocked"):
-                                s["status"] = "active"
-                            changed_rm = True
-                    if changed_rm:
-                        rm_path.write_text(json.dumps(rm_data, indent=2, ensure_ascii=False), encoding="utf-8")
-                        with _JSON_FILE_CACHE_LOCK:
-                            _JSON_FILE_CACHE.clear()
+            import paths as _paths
+            root_c = Path(campaign_dir)
+            with _paths.cross_process_lock(root_c / ".ecgberht" / "plan.lock", timeout_sec=2.0):
+                for st_path in (root_c / "strip.json", root_c / ".ecgberht" / "strip.json"):
+                    if not st_path.is_file():
+                        continue
+                    st_data, st_err = _read_json(st_path)
+                    if not st_err and isinstance(st_data, dict):
+                        hw = str(st_data.get("human_wait") or "")
+                        if hw and hw.lower() != "none":
+                            st_data = dict(st_data)
+                            st_data["human_wait"] = "none"
+                            st_data["last_feedback_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                            st_data["last_feedback_kind"] = disposition
+                            _paths.atomic_write_json(st_path, st_data)
+                            with _JSON_FILE_CACHE_LOCK:
+                                _JSON_FILE_CACHE.clear()
+                for rm_path in (root_c / "roadmap.json", root_c / ".ecgberht" / "roadmap.json"):
+                    if not rm_path.is_file():
+                        continue
+                    rm_data, rm_err = _read_json(rm_path)
+                    if not rm_err and isinstance(rm_data, dict):
+                        rm_data = deepcopy(rm_data)
+                        changed_rm = False
+                        for list_key in ("roadmap_projection", "steps"):
+                            arr = rm_data.get(list_key)
+                            if not isinstance(arr, list):
+                                continue
+                            for s in arr:
+                                if isinstance(s, dict) and s.get("waiting_on") and re.search(r"\b(?:john|review|feedback|approval)\b", str(s.get("waiting_on") or ""), re.I):
+                                    s.pop("waiting_on", None)
+                                    if s.get("status") in ("waiting", "blocked"):
+                                        s["status"] = "active"
+                                    changed_rm = True
+                        if changed_rm:
+                            if isinstance(rm_data.get("roadmap_projection"), list) and "steps" not in rm_data:
+                                rm_data["steps"] = deepcopy(rm_data["roadmap_projection"])
+                            elif isinstance(rm_data.get("steps"), list) and "roadmap_projection" not in rm_data:
+                                rm_data["roadmap_projection"] = deepcopy(rm_data["steps"])
+                            _paths.atomic_write_json(rm_path, rm_data)
+                            with _JSON_FILE_CACHE_LOCK:
+                                _JSON_FILE_CACHE.clear()
     except Exception:
         pass
     return {"ok": True, "reconciled": reconciled, "kind": disposition}
@@ -7154,29 +7959,74 @@ def reconcile_cockpit_turn_state(
     except Exception:
         pass
 
-    # Backfill .ecgberht/status_card.json only when missing or older than the current turn (never clobbering a card just written)
+    # Backfill .ecgberht/status_card.json only on actual turn/file transitions or when missing (never on passive status reads)
     try:
         sc_path = root / ".ecgberht" / "status_card.json"
         existing_sc, _ = _read_json(sc_path)
         existing_sc = dict(existing_sc) if isinstance(existing_sc, dict) else {}
         sc_mtime = sc_path.stat().st_mtime if sc_path.is_file() else 0.0
-        just_written = (time.time() - sc_mtime) < 3.0 and bool(existing_sc.get("doing"))
-        if not just_written and overview:
-            steps_status = f"{overview.get('steps_done', 0)}/{overview.get('steps_total', 0)} waves · {overview.get('pct_done', 0)}% done"
+        is_manual_just_written = (
+            existing_sc.get("source") in ("steward_table", None, "")
+            and (time.time() - sc_mtime) < 30.0
+            and bool(existing_sc.get("doing"))
+        )
+        should_write_sc = bool(turn_text or wrote_files or emit_status or not sc_path.is_file())
+        if should_write_sc and not is_manual_just_written and overview:
+            steps_status = f"{overview.get('steps_done', 0)}/{overview.get('steps_total', 0)} waves \u00b7 {overview.get('pct_done', 0)}% done"
+            latest_journal_rel = ""
+            try:
+                j_dir = root / "journal"
+                if j_dir.is_dir():
+                    j_files = sorted(j_dir.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
+                    if j_files:
+                        latest_journal_rel = f"journal/{j_files[0].name}"
+            except Exception:
+                latest_journal_rel = ""
+            jobs_now = running_code_jobs(campaign_dir)
+            skills_now = running_skill_jobs(campaign_dir)
+            is_busy_eng = bool((engine_state or {}).get("busy") or (engine_state or {}).get("working_bg") or jobs_now or skills_now)
+            live_sc = {}
+            if is_busy_eng:
+                try:
+                    live_sc = (compose_status(campaign_dir, engine_state) or {}).get("status_card") or {}
+                except Exception:
+                    live_sc = {}
+            keep_manual_run = bool(
+                is_busy_eng
+                and existing_sc.get("source") == "steward_table"
+                and (time.time() - sc_mtime) < 7200.0
+                and bool(existing_sc.get("doing"))
+            )
             new_sc = {
                 **existing_sc,
+                "source": "steward_table" if keep_manual_run else "engine_reconcile",
                 "timestamp": time.strftime("%H:%M"),
+                "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 "project": root.name,
-                "effort": existing_sc.get("effort") or overview.get("goal") or root.name,
-                "doing": overview.get("doing_now") or existing_sc.get("doing") or "Idle — waiting for instructions",
-                "status": steps_status,
-                "tests": existing_sc.get("tests") or "pass ✓",
-                "blocker": overview.get("human_wait") or existing_sc.get("blocker") or "none",
-                "procs": existing_sc.get("procs") or "idle",
-                "journal": existing_sc.get("journal") or "none",
-                "eta": existing_sc.get("eta") or "nothing running",
-                "todo": overview.get("todo_summary") or existing_sc.get("todo") or "Await next instructions",
+                "effort": (existing_sc.get("effort") if keep_manual_run and existing_sc.get("effort") else (overview.get("goal") or root.name)),
+                "doing": (
+                    existing_sc.get("doing")
+                    if keep_manual_run
+                    else (live_sc.get("doing") if is_busy_eng and live_sc.get("doing") else (overview.get("doing_now") or "Idle \u2014 waiting for instructions"))
+                ),
+                "status": (
+                    live_sc.get("status")
+                    if is_busy_eng and live_sc.get("status")
+                    else steps_status
+                ),
+                "tests": existing_sc.get("tests") or live_sc.get("tests") or "pass \u2713",
+                "blocker": overview.get("human_wait") or live_sc.get("blocker") or "none",
+                "procs": (live_sc.get("procs") if is_busy_eng and live_sc.get("procs") else ("working" if is_busy_eng else "idle")),
+                "journal": latest_journal_rel or existing_sc.get("journal") or "none",
+                "eta": (
+                    existing_sc.get("eta")
+                    if keep_manual_run and existing_sc.get("eta")
+                    else (live_sc.get("eta") if is_busy_eng and live_sc.get("eta") else "Idle (ready for next wave)")
+                ),
+                "todo": overview.get("todo_summary") or "Await next instructions",
             }
+            if not is_busy_eng:
+                new_sc.pop("milestone_etas", None)
             sc_path.parent.mkdir(parents=True, exist_ok=True)
             tmp_sc = sc_path.with_name(f"{sc_path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
             tmp_sc.write_text(json.dumps(new_sc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")

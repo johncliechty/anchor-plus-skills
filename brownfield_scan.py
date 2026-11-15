@@ -51,7 +51,34 @@ MAX_BINARY_BYTES = 64 * 1024 * 1024
 #: Directory names never descended into.
 SKIP_DIRS = frozenset({".git", "node_modules", "_archive", ".anchor",
                        "__pycache__", ".venv", "venv", ".mypy_cache",
-                       ".pytest_cache"})
+                       ".pytest_cache", "skills", "bundled-skills",
+                       "bundle_staging", "dist", "build", ".claude",
+                       ".agents", ".gemini"})
+
+
+def is_skill_or_anchor_dir(folder_path) -> bool:
+    """Return True if ``folder_path`` is a Foundry skill directory or an Anchor core/backup folder."""
+    if not folder_path:
+        return False
+    try:
+        p = Path(folder_path)
+    except (TypeError, ValueError):
+        return False
+    name_low = p.name.strip().lower()
+    if name_low in {
+        "anchor", "anchor2", "anchor 2", "anchor3", "anchor 3",
+        "anchorhome", "anchor-plus-skills", "anchor-merrill-share",
+        "skills", "skill foundry", "skill-foundry", "trio", "ecgberht",
+    } or name_low.startswith(("anchor ", "anchor-", "anchor_")):
+        return True
+    try:
+        if (p / "SKILL.md").is_file():
+            return True
+        if (p / "anchor_gui.py").is_file() and (p / "onboard_wizard.py").is_file():
+            return True
+    except OSError:
+        pass
+    return False
 
 # Lane keys used in ``by_lane``.
 LANE_BUILD = "build"

@@ -1,45 +1,44 @@
 # Anvil
 
-**One sentence:** Programmatic codebase comprehension, **Parable-of-the-Oranges** proactive one-trip complete staff work (understanding the real goal, thinking 2–3 steps ahead, negotiating trade-offs, and returning with the entire problem solved), Essential Core vs. Scaffolding decomposition, single-block empirical claim testing, lossless `LibCST`/`parso` best-in-class code remapping (with an explicit `∅ Null Space`, Get-Data / Do-Analysis / Create-Output validation, and `Hypothesis` differential equivalence), and paper-to-code verification with a persistent Anvil Agent dialogue across every page.
+**One sentence:** Honest polyglot codebase comprehension, **Parable-of-the-Oranges** proactive one-trip complete staff work, 3-Level Progressive Abstraction Map, isolated subprocess runtime walkthroughs, 5-Seat Software Beta-Reader + Aegis CWE security panel, scope-safe `LibCST` remapping with an explicit `∅ Null Space`, and rich **Paper Sections, Step-by-Step Algorithms & Native MathML Equations ⇄ Companion Software** verification.
 
 ## Use this when
-- You want a **programmatic orchestrator** (not a loose LLM checklist) to govern code comprehension and refactoring through 5 deterministic machine-gated stages (`RUN-STATE.json`)
-- You want an orchestrator and agent governed by the **Parable of the Oranges** (from the classic LDS General Conference talk where an employee sent to buy oranges for the boss's wife's party doesn't come back empty-handed saying *"the market is out of oranges,"* but proactively finds out *why* they are needed, locates quality oranges, negotiates price and delivery, and solves the entire problem in one trip)
-- You want to click into a single block of code, see its inner process map and plain-English intent, and **run the code empirically** to verify whether what the summary says it does matches what it actually does
-- You are refactoring or replacing legacy code with best-in-class code using lossless Concrete Syntax Trees (`LibCST` / `parso`), an explicit **`∅ Null Space`** audit of omitted legacy functionality, and `Hypothesis` property-based differential equivalence tests
-- You have a research paper and a repository claiming to implement it, and you want to verify equation-by-equation (in native typeset MathML) and empirically whether the code actually matches the paper
+- You want a **programmatic polyglot engine** (`Python`, `JS/TS/MJS`, `R`, `C/C++`) that clusters a codebase into 4–9 coherent Deep Modules using its real package and import graph rather than keyword buckets
+- You want an orchestrator and agent governed by the **Parable of the Oranges**—separating Essential Domain Logic (`Juice`), Surface I/O Contracts (`Peel`), and truly unreferenced helpers (`∅ Null Space`, indexed across both production ASTs and `tests/`)
+- You want to drill into any module or file (`Level 1 Role` → `Level 2 Contracts & Sub-Flow` → `Level 3 Full Numbered Source`) and run isolated child-subprocess checks (`EXECUTED_PASS` | `STATIC_ONLY` | `DIVERGENCE`) without in-process code execution or shell injection
+- You are refactoring code with scope-safe Concrete Syntax Trees (`LibCST` + `ScopeProvider`) and isolated differential equivalence probes
+- You have a scientific paper (`.tex` manuscript tree, arXiv ID / `/e-print/` bundle, `.md`, or `.pdf`) and companion software, and want to see every **Paper Section**, **Step-by-Step Algorithm**, and **Native MathML Equation** mapped directly to exact code files, functions, line spans, and variables
 
 ## Do not use this when
-- You only want a high-level strategic opinion on a prose document without code execution or structural mapping (use Gandalf)
-- You are doing open-ended literature discovery across dozens of papers (use literature-review or researchPrime)
-- You are running a multi-wave autonomous build from an already-frozen implementation plan (use Foreman)
+- You only want a strategic prose review of a memo or policy document with no software or formal algorithm (use Gandalf)
+- You are running broad multi-paper literature discovery across dozens of external citations (use literature-review or researchPrime)
+- You are executing an already-planned multi-wave build (use Foreman — which calls `anvil_engine.py slice` and `verify-diff` automatically as helper gates)
 
 ## What you get
-- **Programmatic Orchestrator (`anvil orchestrate`):** 5-stage state machine (`STAGE_0_ORANGE_SPLIT` -> `STAGE_1_CONCEPTUAL_MAP` -> `STAGE_2_EMPIRICAL_BLOCK_PROBES` -> `STAGE_3_CST_REMAP_AND_NULL_SPACE` -> `STAGE_4_DIFFERENTIAL_EQUIVALENCE_GATE`) writing `.anvil/RUN-STATE.json`
-- **Parable of the Oranges & Essential Core Decomposition (`anvil orange-split`):** Proactively identifies the real downstream goal, anticipates obstacles 2–3 steps ahead, separates Essential Domain Logic (`Do-Analysis`), Surface I/O Contracts (`Get-Data` / `Create-Output`), and Legacy Scaffolding (`Null Space` candidates), and prepares a complete one-trip recommendation
-- **Mode 1 (`anvil map`):** Synchronized **Conceptual Groupings** (with function-level summaries) + **Block-to-Block Process Map** with explicit **AI Agent Interaction Badges** (prompt assembly, CLI/API dispatch, schema/verdict gate)
-- **Mode 2 (`anvil inspect`):** Single-block isolation with its **Inner Process Map**, plain-English intent, **live empirical claim runner** (`PASS ✓` / `MISMATCH ✗`), and a lockable **`✓ Validated` description** that rolls up into `ANVIL-REPORT.md`
-- **Mode 3 (`anvil remap` / `cst-rewrite` / `verify-equivalence`):** Lossless `LibCST`/`parso` structural codemods + `ruff` hygiene check, **Old-to-New Mapping Matrix**, explicit **`∅ Null Space`** panel for unmapped legacy code, **3-Stage Pipeline Validation (`INGEST` -> `COMPUTE` -> `EMIT`)**, and `Hypothesis` differential equivalence verification
-- **Mode 4 (`anvil paper-map`):** Paper-to-code mapping with **native typeset MathML equations** (never raw LaTeX strings), empirical + adversarial verification of paper claims, and a 1-click bridge to remap research prototype code into production best-in-class code
-- **Persistent Anvil Agent Dialogue:** Available on all 4 pages so you can ask questions, refine block descriptions, challenge mappings, and lock validated comprehension at any point
+- **Fast Agent & Trio Primitives (`facts`, `slice`, `verify-diff`):** `<50 KB` repo facts in `<2s`, `<15 KB` file AST slices in `<1s`, and post-edit AST syntax + duplicate-definition + dead-helper + Aegis security verification in `<2s`
+- **Mode 1 (`map`):** Import-graph-clustered Deep Modules + 3-Level Progressive Abstraction + AI Agent Seam badges
+- **Mode 2 (`inspect` / `walkthrough`):** Isolated child-subprocess claim verification (`shell=False`) stamping `EXECUTED_PASS` only when tests/probes exit `0`, and `STATIC_ONLY` when unexecuted
+- **Mode 3 (`orange-split` / `remap` / `cst-rewrite` / `verify-equivalence`):** Full-AST + `tests/` reference indexing (`referenced_by_prod`, `referenced_by_tests_only`, `truly_unreferenced`), scope-safe `LibCST` codemods, 3-stage pipeline check (`INGEST` → `COMPUTE` → `EMIT`), and child-subprocess differential equivalence
+- **Mode 4 (`paper-map`):** Recursive `.tex` (`\input`/`\include`) & arXiv `/e-print/` parser extracting `sections[]`, `algorithms[]` (with step-by-step code ties), `equations[]` (native `<math>` MathML, zero raw `$...$` LaTeX), and `code_only_modules[]`
+- **5-Seat Beta-Reader Panel (`beta-readers`):** Grounded in Cal Newport, John Ousterhout, Gary Bernhardt, reference hygiene, and **Aegis (`AEG-01..AEG-06`)** security scanning
 
 ## What it is not
-- Not a passive employee that stops at the first missing dependency and says "there are no oranges in the market"
-- Not a prose checklist handed to an agent without programmatic state or machine gates
-- Not a raw Doxygen/Sphinx AST dump or a regex search-and-replace script that strips comments and docstrings
+- Not a regex text-replacer that corrupts comments, string literals, object attributes, or keyword arguments
+- Not an optimistic dashboard that stamps unexecuted code `Validated` or fabricates test counts
+- Not limited to Python—scans Python, JavaScript/TypeScript (`.js`/`.mjs`/`.cjs`/`.ts`/`.tsx`), R, and C/C++
 
 ## How to start (human)
-1. Launch Anvil from your AI Cockpit header (`Anvil` button with the official Blueprint-Crystal-Sword icon) or run `python scripts/anvil_engine.py orchestrate --old-repo <dir>`.
-2. Review the **Parable of the Oranges** proactive brief and Essential Core decomposition, and browse the **Conceptual Groupings** and **Process Map** (Page 1).
-3. Click any block to open **Single-Block Drill-Down** (Page 2), run the empirical claim check, and lock (`✓ Validated`) the block's description.
-4. Use **Page 3 (Best-in-Class Remapping & Null Space)** when modernizing code with `LibCST` + `Hypothesis`, or **Page 4 (Paper-to-Code Mapping)** when auditing a research implementation.
+1. Launch **Anvil** from your Anchor AI Cockpit header or run `python scripts/anvil_engine.py map --repo <dir>` from the `anvil` skill directory.
+2. Explore the **3-Level Progressive Process Map** (`Level 1 Role` → `Level 2 Contracts & Sub-Flow` → `Level 3 Full Per-File Source`) and **5-Seat Beta-Reader + Aegis Panel**.
+3. Attach a companion `.tex` path, PDF, or arXiv ID (e.g. `arXiv:2401.12345`) to inspect **Paper Sections, Algorithms & Native MathML Equations ⇄ Software**.
+4. Use **Single-Block Drill-Down** or **Old-to-New Remapping & Null Space** to verify runtime behavior and safely refactor legacy helpers.
 
 ## How it works
-Anvil is driven by a deterministic Python orchestrator (`scripts/anvil_engine.py`) and backed by the `cst-rewrite` Foundry Tool (`python <path> cst-rewrite`). Stage 0 runs the Parable of the Oranges proactive assessment and AST/CST decomposition. Stage 1 partitions the codebase into human-sized conceptual buckets and traces inter-block control flow plus AI agent seams (`anvil-map.json`). Stage 2 traces intra-block call chains and executes empirical harnesses (`anvil-inspect.json`). Stage 3 applies lossless `LibCST`/`parso` transformations, enforces the `∅ Null Space` gate, and checks the 3-stage pipeline (`1. Get Data`, `2. Do Analysis`, `3. Create Output`). Stage 4 runs `Hypothesis` property-based differential equivalence tests to prove old and new implementations agree within tolerance (`rtol=1e-7`).
+Anvil runs deterministically through `scripts/anvil_engine.py` (stdlib polyglot AST + import-graph clustering, isolated `shell=False` child-subprocess execution, sibling `../aegis/scripts/aegis_engine.py` CWE taint/sink scanning, recursive-descent LaTeX-to-MathML compilation, and `libcst` scope-aware rewriting). Inside Anchor's AI Cockpit (`steward_cockpit/anvil_session.py`), Anvil caches `.anvil/session.json`, serves fast `<15 KB` summary polls (`?summary=1`), streams full untruncated per-file Level 3 source on demand (`/api/steward/anvil/source`), and safely extracts arXiv `/e-print/` `.tex` bundles with strict path-containment guards.
 
 ## Limits (honest)
-- Empirical claim testing and differential equivalence execute code in a contained subprocess; blocks requiring external hardware or live production credentials need fixtures or mocks
-- Cross-family adversarial review requires an active secondary model family in Anchor's seating preferences; when unavailable, stamps honestly record `cross_model: false`
+- Runtime walkthroughs and differential equivalence execute in isolated child subprocesses; modules requiring external GPUs, databases, or credentials remain honestly stamped `STATIC_ONLY` until a test command or fixture is supplied
+- Scope-safe Python AST/CST rewriting requires `libcst` installed in the Python environment; when `libcst` is absent, `cst-rewrite` refuses cleanly rather than falling back to unsafe regex edits
 
 ## For agents / engines
-Full protocol, schemas, and CLI commands live in `SKILL.md`, `references/RESEARCHPRIME-CODE-REWRITING-TOOLS.md`, and `scripts/anvil_engine.py` next to this file. Load `SKILL.md` when running the skill — this card is for people.
+Full protocol, CLI subcommands, and schemas live in `SKILL.md`, `NORTH-STAR.md`, `references/RESEARCHPRIME-CODE-REWRITING-TOOLS.md`, and `scripts/anvil_engine.py` next to this file.

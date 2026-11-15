@@ -18,8 +18,10 @@ import html
 import re
 import zipfile
 import xml.etree.ElementTree as ET
-from pathlib import Path
-from urllib.parse import urlsplit
+from pathlib import Path, PurePosixPath
+from urllib.parse import unquote, urlsplit
+
+import paths
 
 OFFICE_EXTENSIONS = {".docx": "Word", ".pptx": "PowerPoint", ".xlsx": "Excel"}
 LEGACY_OFFICE = {".doc": "Word", ".ppt": "PowerPoint", ".xls": "Excel"}
@@ -296,8 +298,46 @@ def _table_html(rows, header_first=False) -> str:
     return "".join(out)
 
 
-def render_preview(data: bytes, filename: str, download_href: str = "") -> str:
+def resolve_preview_path(root, candidate, *, allow_missing: bool = False) -> Path:
+    """Resolve ``candidate`` strictly inside ``root`` for Office preview rendering."""
+    root_real = Path(root).resolve()
+    resolved = paths.resolve_contained_path(root_real, candidate, allow_missing=allow_missing)
+    if not resolved.resolve().is_relative_to(root_real):
+        raise paths.UnsafePathError("Blocked unsafe path traversal or disallowed URL scheme")
+    if not allow_missing and not resolved.is_file():
+        raise OSError("Target file unreadable (unknown)")
+    return resolved
+
+
+def _validate_download_href(download_href: str) -> str:
+    """Reject traversal segments, backslashes, NULs, or non-HTTP(S) schemes in ``download_href``."""
+    if not download_href:
+        return ""
+    raw = str(download_href)
+    if "\x00" in raw or "\r" in raw or "\n" in raw or "\\" in raw:
+        raise paths.UnsafePathError("Blocked unsafe path traversal or disallowed URL scheme")
+    low = raw.lower()
+    if "%2e%2e" in low or "%5c" in low or raw.strip().startswith("//"):
+        raise paths.UnsafePathError("Blocked unsafe path traversal or disallowed URL scheme")
+    uri = urlsplit(raw.strip())
+    scheme = uri.scheme.lower()
+    if scheme not in ("", "http", "https"):
+        raise paths.UnsafePathError("Blocked unsafe path traversal or disallowed URL scheme")
+    if scheme in ("http", "https") and not uri.netloc:
+        raise paths.UnsafePathError("Blocked unsafe path traversal or disallowed URL scheme")
+    if scheme == "" and uri.netloc:
+        raise paths.UnsafePathError("Blocked unsafe path traversal or disallowed URL scheme")
+    for check_path in (uri.path, unquote(uri.path), unquote(unquote(uri.path))):
+        if "\\" in check_path or "\x00" in check_path:
+            raise paths.UnsafePathError("Blocked unsafe path traversal or disallowed URL scheme")
+        if ".." in PurePosixPath(check_path).parts:
+            raise paths.UnsafePathError("Blocked unsafe path traversal or disallowed URL scheme")
+    return raw
+
+
+def render_preview(data: bytes, filename: str, download_href: str = "", *, title: str = "") -> str:
     """The preview page for one Office file. Total: a broken/unknown file yields an honest page."""
+    download_href = _validate_download_href(download_href)
     ext = Path(filename).suffix.lower()
     kind = OFFICE_EXTENSIONS.get(ext, "Office")
     body, problem = "", ""
@@ -352,14 +392,30 @@ def render_preview(data: bytes, filename: str, download_href: str = "") -> str:
     if problem:
         body = "<p class='dim'>%s Use Download to open it in %s.</p>" % (_esc(problem), _esc(kind))
     dl = ('<a href="%s">Download · open in %s</a>' % (_esc(download_href), _esc(kind))) if download_href else ""
+    heading = str(title).strip() or Path(filename).name
     return (
         "<!DOCTYPE html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'>"
         "<title>%s</title><style>%s</style></head><body>"
         "<div class='bar'><b>%s</b><span class='kind'>%s · text preview</span>%s"
         "<span class='note'>Text, tables and slide notes only — no images, charts or formatting.</span></div>"
         "<main>%s</main></body></html>"
-        % (_esc(Path(filename).name), _CSS, _esc(Path(filename).name), _esc(kind), dl, body)
+        % (_esc(heading), _CSS, _esc(heading), _esc(kind), dl, body)
     )
+
+
+def render_preview_html(path, *, title: str = "", download_href: str = "") -> str:
+    """Validate ``path`` and ``download_href``, read ``path``, and render its Office HTML preview."""
+    safe_dl = _validate_download_href(download_href)
+    if path is None or "\x00" in str(path):
+        raise paths.UnsafePathError("Blocked unsafe path traversal or disallowed URL scheme")
+    resolved = Path(path).resolve()
+    if not resolved.is_file():
+        raise OSError("Target file unreadable (unknown)")
+    try:
+        data = resolved.read_bytes()
+    except OSError as exc:
+        raise OSError("Target file unreadable (unknown)") from exc
+    return render_preview(data, resolved.name, download_href=safe_dl, title=title)
 
 
 def _bytes_io(data: bytes):

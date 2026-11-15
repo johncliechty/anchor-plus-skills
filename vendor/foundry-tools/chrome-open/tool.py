@@ -107,41 +107,107 @@ def list_default_desktop_chrome_windows() -> list[str]:
     return [t for _, t in list_default_desktop_chrome_hwnds_and_titles()]
 
 
-def bring_chrome_window_to_front_on_default_desktop(target_hwnds: list[int]) -> list[str]:
-    """Switch thread desktop to WinSta0\\Default and raise the target Chrome window(s) to the top of Z-order."""
+def _top_desktop_title(u32, h_def) -> str:
+    fg = u32.GetForegroundWindow()
+    if fg:
+        length = u32.GetWindowTextLengthW(fg)
+        if length > 0:
+            buf = ctypes.create_unicode_buffer(length + 1)
+            u32.GetWindowTextW(fg, buf, length + 1)
+            if buf.value:
+                return buf.value
+    top: list[str] = []
+    WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+    def _cb(hwnd, _lp):
+        if u32.IsWindowVisible(hwnd):
+            n = u32.GetWindowTextLengthW(hwnd)
+            if n > 0:
+                b = ctypes.create_unicode_buffer(n + 1)
+                u32.GetWindowTextW(hwnd, b, n + 1)
+                if b.value and b.value not in ("Program Manager", "Windows Input Experience"):
+                    top.append(b.value)
+                    return False
+        return True
+
+    u32.EnumDesktopWindows(h_def, WNDENUMPROC(_cb), 0)
+    return top[0] if top else ""
+
+
+def bring_chrome_window_to_front_on_default_desktop(target_hwnds: list[int]) -> tuple[list[str], str]:
+    """Switch thread desktop to WinSta0\\Default and raise the target Chrome window(s) to foreground (#1 Z-order)."""
     if os.name != "nt" or not target_hwnds:
-        return list_default_desktop_chrome_windows()
+        return list_default_desktop_chrome_windows(), ""
     u32 = ctypes.windll.user32
     k32 = ctypes.windll.kernel32
-    h_orig = u32.GetThreadDesktop(k32.GetCurrentThreadId())
+    cur_tid = k32.GetCurrentThreadId()
+    h_orig = u32.GetThreadDesktop(cur_tid)
     h_def = u32.OpenDesktopW("Default", 0, False, 0x01FF)
+    fg_title = ""
     if h_def:
         try:
             u32.SetThreadDesktop(h_def)
-            for hwnd in reversed(target_hwnds):
-                if u32.IsIconic(hwnd):
-                    u32.ShowWindow(hwnd, 9)  # SW_RESTORE
-                else:
-                    u32.ShowWindow(hwnd, 5)  # SW_SHOW
-                u32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040)  # HWND_TOPMOST
-                u32.SwitchToThisWindow(hwnd, True)
-                u32.SetForegroundWindow(hwnd)
-                u32.BringWindowToTop(hwnd)
-                time.sleep(0.08)
-                u32.SetWindowPos(hwnd, -2, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040)  # HWND_NOTOPMOST
+            # Raise target_hwnds in order so target_hwnds[-1] ends up at the very top (#1 foreground)
+            for hwnd in target_hwnds:
+                fg_hwnd = u32.GetForegroundWindow()
+                fg_tid = u32.GetWindowThreadProcessId(fg_hwnd, None) if fg_hwnd else 0
+                attached = False
+                if fg_tid and fg_tid != cur_tid:
+                    attached = bool(u32.AttachThreadInput(cur_tid, fg_tid, True))
+                try:
+                    if u32.IsIconic(hwnd):
+                        u32.ShowWindow(hwnd, 9)  # SW_RESTORE
+                    else:
+                        u32.ShowWindow(hwnd, 5)  # SW_SHOW
+                    # Satisfy Windows ForegroundLockTimeout for background callers without pressing a visible key
+                    u32.keybd_event(0x12, 0, 0x0002, 0)  # VK_MENU keyup
+                    u32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040)  # HWND_TOPMOST
+                    u32.BringWindowToTop(hwnd)
+                    u32.SetForegroundWindow(hwnd)
+                    u32.SwitchToThisWindow(hwnd, True)
+                    time.sleep(0.08)
+                    u32.SetWindowPos(hwnd, -2, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040)  # HWND_NOTOPMOST
+                    u32.SetForegroundWindow(hwnd)
+                finally:
+                    if attached:
+                        u32.AttachThreadInput(cur_tid, fg_tid, False)
+            fg_title = _top_desktop_title(u32, h_def)
         finally:
             if h_orig:
                 u32.SetThreadDesktop(h_orig)
             u32.CloseDesktop(h_def)
-    return list_default_desktop_chrome_windows()
+    return list_default_desktop_chrome_windows(), fg_title
 
 
-def launch_on_default_desktop(urls: list[str], new_window: bool = False) -> dict:
+def _extract_expected_titles(raw_targets: list[str]) -> list[str]:
+    import re
+    titles: list[str] = []
+    for raw in raw_targets:
+        try:
+            if raw.startswith("file://"):
+                from urllib.parse import unquote, urlparse
+                p = Path(unquote(urlparse(raw).path.lstrip("/")))
+            else:
+                p = Path(raw)
+            if p.is_file() and p.suffix.lower() in (".html", ".htm"):
+                head = p.read_text(encoding="utf-8", errors="ignore")[:8192]
+                m = re.search(r"<title[^>]*>(.*?)</title>", head, re.I | re.S)
+                if m:
+                    t = re.sub(r"\s+", " ", m.group(1)).strip()
+                    if t:
+                        titles.append(t)
+        except Exception:
+            pass
+    return titles
+
+
+def launch_on_default_desktop(urls: list[str], new_window: bool = False, raw_targets: list[str] | None = None) -> dict:
     chrome = find_chrome()
     caller_desktop = current_desktop_name()
     before_pairs = list_default_desktop_chrome_hwnds_and_titles()
     before_hwnds = {h for h, _ in before_pairs}
     before_titles = [t for _, t in before_pairs]
+    expected_titles = _extract_expected_titles(raw_targets or urls)
 
     args = [chrome]
     if new_window:
@@ -181,17 +247,39 @@ def launch_on_default_desktop(urls: list[str], new_window: bool = False) -> dict
     if launched_pid is None:
         raise RuntimeError(f"CreateProcessW failed with WinError {k32.GetLastError()}")
 
-    time.sleep(1.3)
-    mid_pairs = list_default_desktop_chrome_hwnds_and_titles()
-    new_hwnds = [h for h, _ in mid_pairs if h not in before_hwnds]
-    if not new_hwnds and mid_pairs:
+    # Poll until the newly spawned non-"What's New" Chrome window appears and finishes setting its title
+    mid_pairs: list[tuple[int, str]] = []
+    new_non_promo: list[tuple[int, str]] = []
+    deadline = time.time() + 3.0
+    while time.time() < deadline:
+        time.sleep(0.15)
+        mid_pairs = list_default_desktop_chrome_hwnds_and_titles()
+        fresh = [(h, t) for h, t in mid_pairs if h not in before_hwnds]
+        new_non_promo = [(h, t) for h, t in fresh if not t.startswith("What's New")]
+        if new_non_promo and all("Untitled" not in t for _, t in new_non_promo):
+            break
+
+    # Order hwnds so the actual target window is LAST (= raised on top of everything, never under "What's New")
+    raise_order: list[int] = []
+    if new_non_promo:
+        # Put matching expected_titles at the very end so they become #1 foreground
+        non_matching = [h for h, t in new_non_promo if not any(et in t for et in expected_titles)]
+        matching = [h for h, t in new_non_promo if any(et in t for et in expected_titles)]
+        raise_order = non_matching + matching
+    elif mid_pairs:
         for h, t in mid_pairs:
-            if any(k in t for k in ("Persistent Working List", "Speed Racer", "Mockup")):
-                new_hwnds.append(h)
+            if expected_titles and any(et in t for et in expected_titles):
+                raise_order.append(h)
                 break
-        if not new_hwnds:
-            new_hwnds = [mid_pairs[0][0]]
-    after_titles = bring_chrome_window_to_front_on_default_desktop(new_hwnds)
+        if not raise_order:
+            for h, t in mid_pairs:
+                if not t.startswith("What's New"):
+                    raise_order.append(h)
+                    break
+        if not raise_order:
+            raise_order = [mid_pairs[0][0]]
+
+    after_titles, fg_after = bring_chrome_window_to_front_on_default_desktop(raise_order)
     return {
         "ok": True,
         "chrome": chrome,
@@ -199,7 +287,8 @@ def launch_on_default_desktop(urls: list[str], new_window: bool = False) -> dict
         "target_desktop": "WinSta0\\Default",
         "launched_pid": launched_pid,
         "urls": urls,
-        "raised_hwnds": new_hwnds,
+        "raised_hwnds": raise_order,
+        "foreground_window_after": fg_after,
         "visible_chrome_windows_before": before_titles,
         "visible_chrome_windows_after": after_titles,
     }
@@ -239,7 +328,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("Provide at least one URL/file or --selftest.")
 
     normalized = [_normalize_target(a) for a in ns.urls]
-    res = launch_on_default_desktop(normalized, new_window=ns.new_window)
+    res = launch_on_default_desktop(normalized, new_window=ns.new_window, raw_targets=ns.urls)
     print(json.dumps(res, indent=2))
     return 0
 

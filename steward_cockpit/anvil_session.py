@@ -10,41 +10,58 @@ showing a clean launch screen until either John or the Cockpit's Steward launche
 from __future__ import annotations
 
 import ast
+import gzip
 import hashlib
 import html
+import importlib
+import io
 import ipaddress
 import json
 import os
 import re
+import shlex
 import shutil
 import socket
 import subprocess
 import sys
+import tarfile
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-import importlib
-
 _ANCHOR_ROOT = Path(__file__).resolve().parent.parent
-_FOUNDRY_CANDIDATES = (
+_FOUNDRY_CANDIDATES: Tuple[Path, ...] = (
     _ANCHOR_ROOT.parent / "Skill Foundry" / "skills" / "anvil" / "scripts",
+    _ANCHOR_ROOT / "vendor" / "bundled-skills" / "anvil" / "scripts",
 )
-for _cand in _FOUNDRY_CANDIDATES:
-    if _cand.is_dir() and str(_cand) not in sys.path:
-        sys.path.append(str(_cand))
 
-try:
-    if "anvil_engine" in sys.modules:
-        anvil_engine = importlib.reload(sys.modules["anvil_engine"])  # type: ignore
-    else:
-        anvil_engine = importlib.import_module("anvil_engine")  # type: ignore
-except Exception:
-    anvil_engine = None  # type: ignore
+
+def _load_anvil_engine(candidates: Optional[Tuple[Path, ...]] = None) -> Any:
+    """Load `anvil_engine` from Skill Foundry or bundled Anchor vendor fallback without writing `.pyc` files."""
+    search = tuple(candidates) if candidates is not None else _FOUNDRY_CANDIDATES
+    for cand in search:
+        cand_file = cand / "anvil_engine.py"
+        if cand.is_dir() and cand_file.is_file():
+            cand_str = str(cand.resolve())
+            sys.path[:] = [cand_str] + [p for p in sys.path if p != cand_str]
+            prev_bc = sys.dont_write_bytecode
+            sys.dont_write_bytecode = True
+            try:
+                sys.modules.pop("anvil_engine", None)
+                return importlib.import_module("anvil_engine")
+            except Exception:
+                continue
+            finally:
+                sys.dont_write_bytecode = prev_bc
+    return None
+
+
+anvil_engine = _load_anvil_engine()
 
 ALLOWED_LOCAL_ROOTS = (
     _ANCHOR_ROOT.parent.resolve(),
@@ -226,7 +243,7 @@ def discover_cockpit_candidates(cdir: Path) -> Dict[str, List[Dict[str, str]]]:
         if _ANCHOR_ROOT.is_dir():
             software.insert(0, {
                 "path": str(_ANCHOR_ROOT.resolve()),
-                "label": f"Anchor Root ({_ANCHOR_ROOT.resolve()}) · Agreed-Upon Anchor Architecture",
+                "label": f"Anchor Root ({_ANCHOR_ROOT.resolve()}) · Repository Root",
                 "kind": "dir",
             })
         if sc_dir.is_dir():
@@ -448,11 +465,179 @@ def _safe_urlopen(url: str, max_bytes: int = 2_000_000, timeout: float = 12.0) -
     return b"".join(chunks), content_type
 
 
+def _extract_latex_title(tex_text: str) -> str:
+    """Extract a clean human title from LaTeX `\\title{...}` if present."""
+    no_comments = re.sub(r"(?<!\\)%[^\n]*", "", tex_text or "")
+    m = re.search(r"\\title(?:\[[^\]]*\])?\s*\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}", no_comments, flags=re.S)
+    if not m:
+        return ""
+    raw = m.group(1)
+    raw = re.sub(r"\\[A-Za-z]+\s*", " ", raw)
+    raw = re.sub(r"[{}]", " ", raw)
+    return " ".join(raw.split()).strip()[:140]
+
+
+def _pick_primary_tex_in_dir(bundle_dir: Path, candidates: Optional[List[Path]] = None) -> Optional[Path]:
+    """Choose the root `.tex` file inside an extracted bundle or local paper directory."""
+    tex_files = (
+        [p for p in candidates if p.suffix.lower() == ".tex" and p.is_file()]
+        if candidates is not None
+        else [
+            p
+            for p in sorted(bundle_dir.rglob("*.tex"))
+            if p.is_file() and not p.is_symlink()
+        ]
+    )
+    if not tex_files:
+        return None
+    best_path = tex_files[0]
+    best_score = -1
+    for p in tex_files:
+        try:
+            txt = p.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            txt = ""
+        no_c = re.sub(r"(?<!\\)%[^\n]*", "", txt)
+        score = 0
+        if "\\documentclass" in no_c:
+            score += 100
+        if "\\begin{document}" in no_c:
+            score += 50
+        if p.stem.lower() in ("main", "paper", "ms", "article", "manuscript"):
+            score += 25
+        score += min(20, len(no_c) // 2000)
+        if score > best_score:
+            best_score = score
+            best_path = p
+    return best_path
+
+
+def _safe_extract_arxiv_bundle(
+    raw_bytes: bytes,
+    dest_dir: Path,
+    max_files: int = 120,
+    max_total_bytes: int = 12_000_000,
+) -> Optional[Path]:
+    """Safely extract an arXiv `/e-print/<id>` tar/tar.gz or single-file .gz bundle into `dest_dir`.
+
+    Enforces strict path-containment, blocks `..`, absolute/UNC/drive paths, symlinks, hardlinks,
+    devices/FIFOs, secret/dot paths, and bounds file count and uncompressed bytes.
+    """
+    if not raw_bytes:
+        return None
+    if raw_bytes[:4] == b"%PDF":
+        return None
+
+    if dest_dir.is_symlink():
+        raise ValueError("Extraction destination cannot be a symbolic link.")
+    dest_resolved = dest_dir.resolve()
+    if dest_resolved.exists():
+        if dest_resolved.is_symlink():
+            raise ValueError("Extraction destination cannot be a symbolic link.")
+        shutil.rmtree(dest_resolved, ignore_errors=True)
+    dest_resolved.mkdir(parents=True, exist_ok=True)
+
+    extracted_files: List[Path] = []
+    total_written = 0
+
+    tf_obj: Optional[tarfile.TarFile] = None
+    try:
+        tf_obj = tarfile.open(fileobj=io.BytesIO(raw_bytes), mode="r:*")
+    except tarfile.TarError:
+        tf_obj = None
+
+    if tf_obj is not None:
+        with tf_obj:
+            member_count = 0
+            while True:
+                m = tf_obj.next()
+                if m is None:
+                    break
+                member_count += 1
+                if member_count > max_files:
+                    raise ValueError(f"Archive exceeds maximum allowed file count ({max_files}).")
+                raw_name = (m.name or "").strip()
+                if m.issym() or m.islnk() or m.isdev() or m.isfifo():
+                    raise ValueError(
+                        f"Unsafe archive entry '{raw_name}': symbolic links, hard links, and special files are not permitted."
+                    )
+                if not raw_name:
+                    continue
+                if raw_name.startswith(("/", "\\")) or re.match(r"^[A-Za-z]:", raw_name):
+                    raise ValueError(f"Unsafe absolute or drive path in archive entry '{raw_name}'.")
+                parts = [p for p in re.split(r"[\\/]+", raw_name) if p]
+                clean_parts: List[str] = []
+                for part in parts:
+                    if part == ".":
+                        continue
+                    if part == "..":
+                        raise ValueError(f"Parent directory traversal ('..') in archive entry '{raw_name}' is not permitted.")
+                    low = part.lower()
+                    if low in FORBIDDEN_DOT_PARTS or low in FORBIDDEN_SECRET_NAMES or part.startswith("."):
+                        raise ValueError(f"Restricted path component '{part}' in archive entry '{raw_name}' is not permitted.")
+                    clean_parts.append(part)
+                if not clean_parts:
+                    continue
+                target_path = (dest_resolved / Path(*clean_parts)).resolve()
+                if target_path != dest_resolved and dest_resolved not in target_path.parents:
+                    raise ValueError(f"Archive entry '{raw_name}' escapes extraction root.")
+                if m.isdir():
+                    target_path.mkdir(parents=True, exist_ok=True)
+                    continue
+                if not m.isfile():
+                    raise ValueError(f"Unsupported archive entry type for '{raw_name}'.")
+                if m.size < 0 or (total_written + m.size) > max_total_bytes:
+                    raise ValueError("Archive exceeds maximum uncompressed byte limit.")
+                fobj = tf_obj.extractfile(m)
+                if fobj is None:
+                    continue
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                chunks: List[bytes] = []
+                with fobj:
+                    while True:
+                        chunk = fobj.read(65536)
+                        if not chunk:
+                            break
+                        total_written += len(chunk)
+                        if total_written > max_total_bytes:
+                            raise ValueError("Archive exceeds maximum uncompressed byte limit.")
+                        chunks.append(chunk)
+                target_path.write_bytes(b"".join(chunks))
+                extracted_files.append(target_path)
+    elif raw_bytes[:2] == b"\x1f\x8b":
+        chunks = []
+        with gzip.GzipFile(fileobj=io.BytesIO(raw_bytes), mode="rb") as gz:
+            while True:
+                chunk = gz.read(65536)
+                if not chunk:
+                    break
+                total_written += len(chunk)
+                if total_written > max_total_bytes:
+                    raise ValueError("Compressed e-print exceeds maximum uncompressed byte limit.")
+                chunks.append(chunk)
+        decomp = b"".join(chunks)
+        if decomp[:4] == b"%PDF":
+            return None
+        decoded = decomp.decode("utf-8", errors="replace")
+        if any(tok in decoded for tok in ("\\documentclass", "\\section", "\\begin{", "\\input{")):
+            main_tex = dest_resolved / "main.tex"
+            _atomic_write_text(main_tex, decoded)
+            extracted_files.append(main_tex)
+    else:
+        decoded = raw_bytes.decode("utf-8", errors="replace")
+        if any(tok in decoded for tok in ("\\documentclass", "\\section", "\\begin{document}")):
+            main_tex = dest_resolved / "main.tex"
+            _atomic_write_text(main_tex, decoded)
+            extracted_files.append(main_tex)
+
+    return _pick_primary_tex_in_dir(dest_resolved, extracted_files)
+
+
 def resolve_paper_source(cdir: Path, paper_spec: str) -> Dict[str, Any]:
-    """Resolve a paper from an arXiv ID/URL, an HTTPS URL, or a local file in the Cockpit."""
+    """Resolve a paper from an arXiv ID/URL (`/e-print/<id>` TeX bundle first, Atom XML fallback), an HTTPS URL, or a local file/directory."""
     spec = (paper_spec or "").strip()
     if not spec:
-        raise ValueError("Please provide a paper URL (e.g. arXiv link) or select a local paper file in this cockpit.")
+        raise ValueError("Please provide a paper URL (e.g. arXiv link) or select a local paper file or TeX folder in this cockpit.")
 
     papers_dir = _session_dir(cdir) / "papers"
     papers_dir.mkdir(parents=True, exist_ok=True)
@@ -460,6 +645,30 @@ def resolve_paper_source(cdir: Path, paper_spec: str) -> Dict[str, Any]:
     arxiv_match = ARXIV_ID_RE.search(spec)
     if arxiv_match:
         arxiv_id = arxiv_match.group(1)
+        safe_id = re.sub(r"[^A-Za-z0-9_.-]+", "_", arxiv_id)
+        eprint_url = f"https://arxiv.org/e-print/{urllib.parse.quote(arxiv_id)}"
+        eprint_bytes: Optional[bytes] = None
+        try:
+            eprint_bytes, _ = _safe_urlopen(eprint_url, max_bytes=8_000_000, timeout=15.0)
+        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, socket.timeout, OSError):
+            eprint_bytes = None
+
+        if eprint_bytes:
+            bundle_dir = papers_dir / f"arxiv_{safe_id}_src"
+            primary_tex = _safe_extract_arxiv_bundle(eprint_bytes, bundle_dir)
+            if primary_tex is not None and primary_tex.is_file():
+                tex_text = primary_tex.read_text(encoding="utf-8", errors="replace")
+                tex_title = _extract_latex_title(tex_text) or f"arXiv:{arxiv_id}"
+                return {
+                    "path": str(primary_tex),
+                    "bundle_dir": str(bundle_dir),
+                    "source_type": "arxiv_eprint",
+                    "title": tex_title,
+                    "url": f"https://arxiv.org/abs/{arxiv_id}",
+                    "text": tex_text,
+                    "spec": spec,
+                }
+
         api_url = f"https://export.arxiv.org/api/query?id_list={urllib.parse.quote(arxiv_id)}"
         xml_bytes, _ = _safe_urlopen(api_url, max_bytes=1_500_000, timeout=12.0)
         root = ET.fromstring(xml_bytes)
@@ -474,7 +683,7 @@ def resolve_paper_source(cdir: Path, paper_spec: str) -> Dict[str, Any]:
                 title = " ".join(t_el.text.split())
             if s_el is not None and s_el.text:
                 summary = " ".join(s_el.text.split())
-        dest = papers_dir / f"arxiv_{re.sub(r'[^A-Za-z0-9_.-]+', '_', arxiv_id)}.md"
+        dest = papers_dir / f"arxiv_{safe_id}.md"
         md_text = f"# {title}\n\nSource: https://arxiv.org/abs/{arxiv_id}\n\n## Abstract & Core Claims\n\n{summary}\n"
         _atomic_write_text(dest, md_text)
         return {
@@ -487,14 +696,33 @@ def resolve_paper_source(cdir: Path, paper_spec: str) -> Dict[str, Any]:
         }
 
     if spec.lower().startswith(("http://", "https://")):
-        raw_bytes, content_type = _safe_urlopen(spec, max_bytes=2_000_000, timeout=12.0)
+        raw_bytes, content_type = _safe_urlopen(spec, max_bytes=4_000_000, timeout=12.0)
         base_slug = re.sub(r"[^A-Za-z0-9_.-]+", "_", Path(urllib.parse.urlparse(spec).path).stem or "paper")[:44]
         url_hash = hashlib.sha1(spec.encode("utf-8")).hexdigest()[:8]
         slug = f"{base_slug}_{url_hash}"
+        if any(ext in spec.lower() for ext in (".tar.gz", ".tgz")) or "gzip" in content_type or "tar" in content_type:
+            bundle_dir = papers_dir / f"{slug}_src"
+            primary_tex = _safe_extract_arxiv_bundle(raw_bytes, bundle_dir)
+            if primary_tex is not None and primary_tex.is_file():
+                tex_text = primary_tex.read_text(encoding="utf-8", errors="replace")
+                tex_title = _extract_latex_title(tex_text) or slug
+                return {
+                    "path": str(primary_tex),
+                    "bundle_dir": str(bundle_dir),
+                    "source_type": "url_bundle",
+                    "title": tex_title[:110],
+                    "url": spec,
+                    "text": tex_text,
+                    "spec": spec,
+                }
         if "pdf" in content_type or spec.lower().endswith(".pdf"):
             dest = papers_dir / f"{slug}.pdf"
             dest.write_bytes(raw_bytes)
             text = _extract_text_from_file(dest)
+        elif spec.lower().endswith(".tex"):
+            text = raw_bytes.decode("utf-8", errors="replace")
+            dest = papers_dir / f"{slug}.tex"
+            _atomic_write_text(dest, text)
         else:
             raw_str = raw_bytes.decode("utf-8", errors="replace")
             if "<html" in raw_str.lower() or "<body" in raw_str.lower():
@@ -509,7 +737,7 @@ def resolve_paper_source(cdir: Path, paper_spec: str) -> Dict[str, Any]:
                 text = raw_str
             dest = papers_dir / f"{slug}.md"
             _atomic_write_text(dest, text)
-        first_line = next((ln.lstrip("# ").strip() for ln in text.splitlines() if ln.strip()), slug)
+        first_line = _extract_latex_title(text) or next((ln.lstrip("# ").strip() for ln in text.splitlines() if ln.strip()), slug)
         return {
             "path": str(dest),
             "source_type": "url",
@@ -520,11 +748,38 @@ def resolve_paper_source(cdir: Path, paper_spec: str) -> Dict[str, Any]:
         }
 
     candidate = _validate_and_resolve_local_path(cdir, spec)
+    if candidate.is_dir():
+        primary_tex = _pick_primary_tex_in_dir(candidate)
+        if primary_tex is not None:
+            tex_text = primary_tex.read_text(encoding="utf-8", errors="replace")
+            title = _extract_latex_title(tex_text) or candidate.name
+            return {
+                "path": str(candidate),
+                "primary_tex": str(primary_tex),
+                "source_type": "local_dir",
+                "title": title[:110],
+                "url": "",
+                "text": tex_text,
+                "spec": spec,
+            }
+        md_files = [p for p in sorted(candidate.glob("*.md")) if p.is_file() and not p.is_symlink()]
+        if md_files:
+            md_text = md_files[0].read_text(encoding="utf-8", errors="replace")
+            first_line = next((ln.lstrip("# ").strip() for ln in md_text.splitlines() if ln.strip()), candidate.name)
+            return {
+                "path": str(md_files[0]),
+                "source_type": "local",
+                "title": first_line[:110] or candidate.name,
+                "url": "",
+                "text": md_text,
+                "spec": spec,
+            }
+        raise ValueError(f"Paper directory '{spec}' at {candidate} contains no .tex or .md manuscript files.")
     if not candidate.is_file():
         raise ValueError(f"Paper file '{spec}' was not found at {candidate}.")
 
     text = _extract_text_from_file(candidate)
-    first_line = next((ln.lstrip("# ").strip() for ln in text.splitlines() if ln.strip()), candidate.name)
+    first_line = _extract_latex_title(text) or next((ln.lstrip("#% ").strip() for ln in text.splitlines() if ln.strip()), candidate.name)
     return {
         "path": str(candidate),
         "source_type": "local",
@@ -1064,7 +1319,7 @@ def _build_best_in_class_remap(
 
     # Detect any existing extracted *_core.py blocks in module_buckets so we can link directly to them
     core_mod = next(
-        (m for m in module_buckets if Path(m.get("file") or "").name == "steward_core.py"),
+        (m for m in module_buckets if (m.get("file") or "").lower().endswith("_core.py")),
         next((m for m in module_buckets if "core" in (m.get("file") or "").lower()), None),
     )
     core_arch_bucket = (
@@ -1083,11 +1338,11 @@ def _build_best_in_class_remap(
             "drill_block_id": ingest_bucket["id"] if ingest_bucket else "",
             "stage": "ingest",
             "stage_badge": "STAGE 1 · GET-DATA (INGEST)",
-            "title": f"New Block 1 — {clean_stem}_ingest.py (Pure Data & State Readers)",
+            "title": f"New Block 1 — {clean_stem}_ingest.py (Data & State Readers)",
             "file": f"{clean_stem}_ingest.py",
             "summary": (
                 f"Consolidates {len(ingest_all)} Peel (Get-Data) functions across {len(old_monoliths)} modules into "
-                "pure, side-effect-isolated file/JSON/request readers with explicit schema validation."
+                "side-effect-isolated file/JSON/request readers with explicit schema validation."
             ),
             "function_count": len(ingest_all),
             "functions": [
@@ -1107,16 +1362,11 @@ def _build_best_in_class_remap(
             "drill_block_id": (core_arch_bucket or (buckets[0] if buckets else {})).get("id", ""),
             "stage": "compute",
             "stage_badge": "STAGE 2 · DO-ANALYSIS (ESSENTIAL CORE / JUICE)",
-            "title": (
-                f"New Block 2 — {core_file_name} & high_seat_core.py "
-                "(Pure Essential Core · Hypothesis Verified)"
-                if "anchor" in clean_stem
-                else f"New Block 2 — {core_file_name} (Pure Essential Core · Hypothesis Verified)"
-            ),
+            "title": f"New Block 2 — {core_file_name} (Pure Essential Core · Differential Equivalence Gate)",
             "file": core_file_name,
             "summary": (
                 f"Isolates {len(compute_all)} Essential Core (Juice) domain & analysis functions with zero "
-                "disk/network/UI side effects, enabling fast property-based Hypothesis differential equivalence testing."
+                "disk/network/UI side effects so differential equivalence checks can run deterministically."
             ),
             "function_count": len(compute_all),
             "functions": [
@@ -1139,7 +1389,7 @@ def _build_best_in_class_remap(
             "drill_block_id": emit_bucket["id"] if emit_bucket else "",
             "stage": "emit",
             "stage_badge": "STAGE 3 · CREATE-OUTPUT (EMIT & SERIALIZATION)",
-            "title": f"New Block 3 — {clean_stem}_emit.py (Pure Output & Route Renderers)",
+            "title": f"New Block 3 — {clean_stem}_emit.py (Output & Route Renderers)",
             "file": f"{clean_stem}_emit.py",
             "summary": (
                 f"Consolidates {len(emit_all)} Peel (Create-Output) formatters, HTML/JSON serializers, and "
@@ -1187,9 +1437,9 @@ def _build_best_in_class_remap(
                 "num": "OLD",
                 "title": f"Old Monolithic Modules ({len(old_monoliths)} files)",
                 "shape": "program",
-                "Summary": f"{sum(1 for m in old_monoliths if m['mixed_concerns'])} mixed-stage modules decomposed via LibCST.",
+                "Summary": f"{sum(1 for m in old_monoliths if m['mixed_concerns'])} mixed-stage modules decomposed via CST/AST.",
                 "reads": [m["file"] for m in old_monoliths[:4]],
-                "writes": ["AST & LibCST Decomposition"],
+                "writes": ["AST & CST Decomposition"],
             },
             {
                 "id": "new-block-ingest",
@@ -1207,7 +1457,7 @@ def _build_best_in_class_remap(
                 "shape": "model-call",
                 "Summary": new_blocks[1]["summary"],
                 "reads": ["Validated Input Dicts"],
-                "writes": ["Pure Domain Decisions (Hypothesis Verified)"],
+                "writes": ["Pure Domain Decisions & Typed Contracts"],
             },
             {
                 "id": "new-block-emit",
@@ -1271,21 +1521,24 @@ def _build_best_in_class_remap(
     }
 
 
-
 def extract_paper_claims_and_align(
     repo: Path,
     buckets: List[Dict[str, Any]],
     paper_info: Dict[str, Any],
+    code_map: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Extract equations/claims from a paper and align each to matching software functions honestly."""
+    """Extract sections, algorithms, and MathML equations from a paper and align to companion software."""
     text = str(paper_info.get("text") or "")
     paper_title = str(paper_info.get("title") or "Paper")
-    raw_claims: List[Dict[str, str]] = []
+    paper_path_str = str(paper_info.get("path") or "").strip()
 
-    # 1. Extract explicit JSON claims if paper_info is a JSON spec
+    # Check if paper_info is an explicit inline JSON {"claims": [...]} spec
+    is_inline_json_claims = False
+    raw_claims: List[Dict[str, str]] = []
     try:
         parsed = json.loads(text)
         if isinstance(parsed, dict) and isinstance(parsed.get("claims"), list):
+            is_inline_json_claims = True
             for idx, item in enumerate(parsed["claims"]):
                 raw_claims.append({
                     "id": str(item.get("id") or f"eq-{idx + 1}"),
@@ -1294,9 +1547,22 @@ def extract_paper_claims_and_align(
                     "context": str(item.get("description") or item.get("title") or ""),
                 })
     except Exception:
-        pass
+        is_inline_json_claims = False
 
-    # 2. Extract LaTeX display equations ($$...$$ or \begin{equation}...\end{equation})
+    # Delegate directly to anvil_engine.paper_to_code_map for rich sections[], algorithms[], and equations[]
+    if not is_inline_json_claims and anvil_engine is not None and hasattr(anvil_engine, "paper_to_code_map") and paper_path_str:
+        p_path = Path(paper_path_str)
+        if p_path.exists():
+            pmap = anvil_engine.paper_to_code_map(repo, p_path, code_map=code_map)
+            pmap["paper_source_type"] = paper_info.get("source_type", pmap.get("paper_source_type", "local"))
+            pmap["paper_url"] = paper_info.get("url", pmap.get("paper_url", ""))
+            if paper_info.get("bundle_dir"):
+                pmap["bundle_dir"] = paper_info["bundle_dir"]
+            if paper_title and (not pmap.get("paper_title") or pmap.get("paper_title") == p_path.stem):
+                pmap["paper_title"] = paper_title
+            return pmap
+
+    # Fallback for inline JSON claim specs or when anvil_engine is unavailable
     if not raw_claims:
         eq_blocks = re.findall(
             r"(?:\$\$(.+?)\$\$|\\begin\{equation\*?\}(.+?)\\end\{equation\*?\})",
@@ -1313,34 +1579,6 @@ def extract_paper_claims_and_align(
                 "context": " ".join(lines[:12]),
             })
 
-        # 3. Extract markdown headings / bullet claims or sentences with mathematical formulas
-        for ln in lines:
-            if len(raw_claims) >= 8:
-                break
-            if ln.startswith("## ") or ln.startswith("### ") or ln.startswith("- "):
-                clean_title = ln.lstrip("#- *").strip()
-                if len(clean_title) < 6:
-                    continue
-                inline_eq = re.search(r"\$([^$]+)\$", clean_title)
-                expr = inline_eq.group(1) if inline_eq else ""
-                raw_claims.append({
-                    "id": f"claim-{len(raw_claims) + 1}",
-                    "title": clean_title[:110],
-                    "expr": expr,
-                    "context": clean_title,
-                })
-
-    if not raw_claims:
-        sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if len(s.strip()) > 25][:4]
-        for idx, sent in enumerate(sentences or [paper_title]):
-            inline_eq = re.search(r"\$([^$]+)\$", sent)
-            raw_claims.append({
-                "id": f"claim-{idx + 1}",
-                "title": sent[:105],
-                "expr": inline_eq.group(1) if inline_eq else "",
-                "context": sent,
-            })
-
     all_funcs: List[Dict[str, Any]] = []
     for b in buckets:
         for fn in b.get("functions", []):
@@ -1354,8 +1592,9 @@ def extract_paper_claims_and_align(
     def _toks(s: str) -> set[str]:
         return {t for t in re.split(r"[^a-z0-9]+", s.lower()) if len(t) >= 3}
 
+    mml_fn = getattr(anvil_engine, "latex_to_mathml", None) if anvil_engine is not None else None
     alignments: List[Dict[str, Any]] = []
-    for c in raw_claims[:10]:
+    for c in raw_claims[:12]:
         claim_tokens = _toks(f"{c['title']} {c['context']} {c['expr']}")
         best_fn: Optional[Dict[str, Any]] = None
         best_score = 0.0
@@ -1371,12 +1610,12 @@ def extract_paper_claims_and_align(
                 best_fn = fn
                 best_overlap = common[:5]
 
-        mml = latex_to_mathml(c["expr"]) if c.get("expr") else ""
+        mml = (mml_fn(c["expr"]) if mml_fn else latex_to_mathml(c["expr"])) if c.get("expr") else ""
         if best_fn is not None:
-            status = "VERIFIED" if best_fn.get("bucket_validated") else "HEURISTIC_MATCH"
+            status = "EXECUTED_PASS" if best_fn.get("bucket_validated") else "STATIC_ALIGNED"
             rationale = f"Matched on shared domain terms ({', '.join(best_overlap)}) in {best_fn['stage'].upper()} stage"
         else:
-            status = "UNMAPPED"
+            status = "PAPER_ONLY_UNIMPLEMENTED"
             rationale = "No function shared domain terms with this claim"
 
         alignments.append({
@@ -1396,10 +1635,13 @@ def extract_paper_claims_and_align(
         "paper_title": paper_title,
         "paper_source_type": paper_info.get("source_type", "local"),
         "paper_url": paper_info.get("url", ""),
-        "paper_path": paper_info.get("path", ""),
+        "paper_path": paper_path_str,
         "repo": str(repo),
         "claims_mapped": len(alignments),
         "native_mathml_enforced": True,
+        "sections": [],
+        "algorithms": [],
+        "equations": [],
         "alignments": alignments,
     }
 
@@ -1451,11 +1693,11 @@ def _build_anvil_v2_report_section(session: Dict[str, Any], heading_prefix: str 
 
     steps = wt.get("steps") or []
     if steps:
-        acc_cnt = (wt.get("counts") or {}).get("accurate", wt.get("accurate_steps", len(steps)))
+        acc_cnt = (wt.get("counts") or {}).get("accurate", wt.get("accurate_steps", 0))
         tot_cnt = wt.get("total_steps", wt.get("step_count", len(steps)))
         lines.extend([
             "",
-            f"### C. Live Code Walkthrough Trace (`{wt.get('language', 'python').upper()}` · `{acc_cnt}/{tot_cnt}` Steps Accurate · Verdict: `{wt.get('overall_verdict', 'ACCURATE')}`)",
+            f"### C. Live Code Walkthrough Trace (`{wt.get('language', 'python').upper()}` · `{acc_cnt}/{tot_cnt}` Steps Executed · Verdict: `{wt.get('overall_verdict', 'STATIC_ONLY')}`)",
             "",
             "| Step | Function | What Code Claims To Do | Concrete Input Data | Actual Runtime Calculation & Output | Accuracy Verdict |",
             "|---|---|---|---|---|---|",
@@ -1470,7 +1712,7 @@ def _build_anvil_v2_report_section(session: Dict[str, Any], heading_prefix: str 
             claim_s = str(st.get("claim") or st.get("claimed_behavior") or "").replace("|", "\\|")[:100]
             lines.append(
                 f"| **{step_idx}/{st.get('total_steps', len(steps))}** | `{fn_nm}` (`{st.get('file')}:L{st.get('lineno', 1)}`) "
-                f"| {claim_s} | `{inp_s}` | {out_s} ({note_s}) | **`{st.get('verdict', 'ACCURATE')}`** |"
+                f"| {claim_s} | `{inp_s}` | {out_s} ({note_s}) | **`{st.get('verdict', 'STATIC_ONLY')}`** |"
             )
     return lines
 
@@ -1570,7 +1812,200 @@ def _write_anvil_report(cdir: Path, session: Dict[str, Any]) -> Path:
     return report_path
 
 
-def get_session_status(cockpit_dir: str | Path) -> Dict[str, Any]:
+def _project_session_summary(session: Dict[str, Any]) -> Dict[str, Any]:
+    """Build a compact (<15 KB) status projection of an active Anvil session for `?summary=1`."""
+    code_map = session.get("code_map") or {}
+    buckets = code_map.get("conceptual_buckets") or []
+    compact_buckets: List[Dict[str, Any]] = []
+    for b in buckets[:10]:
+        l1 = b.get("level1_summary") or {}
+        mfiles = list(b.get("member_files") or [])
+        compact_buckets.append({
+            "id": b.get("id"),
+            "title": b.get("title"),
+            "file": b.get("file"),
+            "primary_file": b.get("primary_file") or b.get("file"),
+            "pipeline_stage": b.get("pipeline_stage", "compute"),
+            "validated": bool(b.get("validated")),
+            "static_syntax_ok": bool(b.get("static_syntax_ok")),
+            "function_count": len(b.get("functions") or []),
+            "member_file_count": len(mfiles) or 1,
+            "member_files": mfiles[:8],
+            "summary": str(b.get("summary") or "")[:160],
+            "level1_summary": {
+                "role": str(l1.get("role") or l1.get("purpose") or "")[:140],
+                "pure_core_pct": l1.get("pure_core_pct", 0),
+            },
+        })
+    paper = session.get("paper_map")
+    compact_paper = None
+    if isinstance(paper, dict):
+        compact_paper = {
+            "schema": paper.get("schema", "anvil-paper-map/v1"),
+            "paper_title": str(paper.get("paper_title") or "")[:120],
+            "paper_source_type": paper.get("paper_source_type"),
+            "paper_url": paper.get("paper_url", ""),
+            "claims_mapped": paper.get("claims_mapped", 0),
+            "summary_counts": paper.get("summary_counts") or {
+                "sections": len(paper.get("sections") or []),
+                "algorithms": len(paper.get("algorithms") or []),
+                "equations": len(paper.get("equations") or []),
+            },
+        }
+    panel = session.get("beta_reader_panel") or {}
+    wt = session.get("walkthrough_trace") or {}
+    remap = session.get("remap") or {}
+    ns = remap.get("null_space") or {}
+    return {
+        "schema": session.get("schema", "anvil-cockpit-session/v1"),
+        "summary_only": True,
+        "active": bool(session.get("active")),
+        "cockpit_dir": session.get("cockpit_dir"),
+        "cockpit_name": session.get("cockpit_name"),
+        "mode": session.get("mode", "code"),
+        "created_at": session.get("created_at"),
+        "updated_at": session.get("updated_at"),
+        "software": session.get("software"),
+        "compare_software": session.get("compare_software"),
+        "selected_block_id": session.get("selected_block_id", ""),
+        "signed_off_drops": list(session.get("signed_off_drops") or [])[:25],
+        "code_map": {
+            "schema": code_map.get("schema", "anvil-map/v1"),
+            "total_files": code_map.get("total_files", len(code_map.get("module_buckets") or buckets)),
+            "total_functions": code_map.get("total_functions", sum(len(b.get("functions") or []) for b in buckets)),
+            "languages": code_map.get("languages") or {},
+            "conceptual_buckets": compact_buckets,
+            "process_map_counts": {
+                "nodes": len((code_map.get("process_map") or {}).get("nodes") or []),
+                "edges": len((code_map.get("process_map") or {}).get("edges") or []),
+            },
+        },
+        "orange_split": {
+            "counts": (session.get("orange_split") or {}).get("counts") or {},
+        },
+        "remap": {
+            "verdict": remap.get("verdict", "PASS"),
+            "null_space": {
+                "count": ns.get("count", 0),
+                "unexplained_blockers": ns.get("unexplained_blockers", 0),
+            },
+        },
+        "paper_map": compact_paper,
+        "beta_reader_panel": {
+            "overall_status": panel.get("overall_status") or panel.get("overall_verdict") or "PASS",
+            "overall_score": panel.get("overall_score", 0),
+            "seats": [
+                {
+                    "seat_id": s.get("seat_id"),
+                    "title": s.get("title") or s.get("persona_name"),
+                    "status": s.get("status") or s.get("verdict"),
+                    "score": s.get("score"),
+                }
+                for s in (panel.get("seats") or [])[:5]
+            ],
+        },
+        "walkthrough_trace": {
+            "overall_verdict": wt.get("overall_verdict", "STATIC_ONLY"),
+            "total_steps": wt.get("total_steps", len(wt.get("steps") or [])),
+            "counts": wt.get("counts") or {},
+        },
+        "chat_history": [
+            {
+                "role": m.get("role"),
+                "mode": m.get("mode"),
+                "target": m.get("target"),
+                "text": str(m.get("text") or "")[:240],
+                "answer_mode": m.get("answer_mode", "static_ast"),
+                "at": m.get("at"),
+            }
+            for m in (session.get("chat_history") or [])[-5:]
+        ],
+    }
+
+
+def get_cockpit_file_source(cockpit_dir: str | Path, rel_file: str) -> Dict[str, Any]:
+    """Serve on-demand Level-3 numbered source, symbol table, and callers/callees for one file inside the session software root."""
+    raw = (rel_file or "").strip()
+    if not raw:
+        raise ValueError("Query parameter 'file' is required.")
+    if raw.startswith(("/", "\\")) or re.match(r"^[A-Za-z]:", raw):
+        raise ValueError("Absolute, UNC, or drive-prefixed file paths are not permitted.")
+    parts = [p for p in re.split(r"[\\/]+", raw) if p]
+    if not parts:
+        raise ValueError("Invalid file path.")
+    for part in parts:
+        low = part.lower()
+        if part == "..":
+            raise ValueError("Parent directory traversal ('..') is not permitted.")
+        if low in FORBIDDEN_DOT_PARTS or low in FORBIDDEN_SECRET_NAMES or (part.startswith(".") and part != "."):
+            raise ValueError(f"Access to restricted path component '{part}' is not permitted.")
+
+    cdir = Path(cockpit_dir).resolve()
+    sfile = _session_file(cdir)
+    session: Optional[Dict[str, Any]] = None
+    if sfile.is_file():
+        try:
+            loaded = json.loads(sfile.read_text(encoding="utf-8", errors="replace"))
+            if isinstance(loaded, dict) and loaded.get("active"):
+                session = loaded
+        except Exception:
+            session = None
+
+    sw_root = Path((session.get("software") or {}).get("path") or cdir).resolve() if session else cdir
+    rel_clean = Path(*[p for p in parts if p != "."])
+    if sw_root.is_file():
+        if rel_clean.as_posix() != sw_root.name:
+            raise ValueError(f"File '{raw}' is outside the bound single-file software target '{sw_root.name}'.")
+        resolved_target = sw_root
+        repo_for_lookup = sw_root.parent
+    else:
+        walk = sw_root
+        for part in rel_clean.parts:
+            walk = walk / part
+            if walk.is_symlink():
+                raise ValueError("Symbolic links are not permitted.")
+        cand = walk
+        resolved_target = cand.resolve()
+        if resolved_target == sw_root or sw_root not in resolved_target.parents:
+            raise ValueError(f"File '{raw}' escapes software root boundary.")
+        if resolved_target.is_symlink():
+            raise ValueError("Symbolic links are not permitted.")
+        repo_for_lookup = sw_root
+
+    for part in resolved_target.parts:
+        low = part.lower()
+        if low in FORBIDDEN_DOT_PARTS or low in FORBIDDEN_SECRET_NAMES:
+            raise ValueError(f"Access to restricted path component '{part}' is not permitted.")
+    if not resolved_target.is_file():
+        raise ValueError(f"Source file '{rel_clean.as_posix()}' was not found.")
+    st_target = os.stat(resolved_target, follow_symlinks=False)
+    if getattr(st_target, "st_nlink", 1) > 1:
+        raise ValueError("Hard-linked files are not permitted.")
+
+    rel_posix = rel_clean.as_posix()
+    if anvil_engine is not None and hasattr(anvil_engine, "get_file_level3_source"):
+        payload = anvil_engine.get_file_level3_source(
+            repo_for_lookup,
+            rel_posix,
+            code_map=(session.get("code_map") if session else None),
+        )
+        return {"ok": True, **payload}
+
+    src_text = resolved_target.read_text(encoding="utf-8", errors="replace")
+    src_lines = src_text.splitlines()
+    numbered = "\n".join(f"{i:4d} | {ln}" for i, ln in enumerate(src_lines, start=1))
+    return {
+        "ok": True,
+        "schema": "anvil-level3-source/v1",
+        "file": rel_posix,
+        "total_lines": len(src_lines),
+        "raw_source": src_text,
+        "numbered_source": numbered,
+        "symbols": [],
+    }
+
+
+def get_session_status(cockpit_dir: str | Path, summary_only: bool = False) -> Dict[str, Any]:
     cdir = Path(cockpit_dir).resolve()
     sfile = _session_file(cdir)
     session = None
@@ -1580,11 +2015,15 @@ def get_session_status(cockpit_dir: str | Path) -> Dict[str, Any]:
             loaded = json.loads(sfile.read_text(encoding="utf-8", errors="replace"))
             if isinstance(loaded, dict) and loaded.get("active"):
                 session = loaded
-                session["cockpit_name"] = _cockpit_display_name(cdir)
+                migrated = False
+                disp_name = _cockpit_display_name(cdir)
+                if session.get("cockpit_name") != disp_name:
+                    session["cockpit_name"] = disp_name
+                    migrated = True
                 code_map = session.get("code_map") or {}
                 buckets = code_map.get("conceptual_buckets") or []
                 sw_path = Path((session.get("software") or {}).get("path") or cdir)
-                if len(buckets) > 8 and anvil_engine is not None and hasattr(anvil_engine, "_cluster_into_architectural_buckets"):
+                if len(buckets) > 9 and anvil_engine is not None and hasattr(anvil_engine, "_cluster_into_architectural_buckets"):
                     code_map["module_buckets"] = buckets
                     buckets = anvil_engine._cluster_into_architectural_buckets(sw_path, buckets)
                     code_map["conceptual_buckets"] = buckets
@@ -1592,12 +2031,15 @@ def get_session_status(cockpit_dir: str | Path) -> Dict[str, Any]:
                         code_map.setdefault("process_map", {})["flow_diagram"] = anvil_engine._build_foundry_flow_diagram(
                             buckets, (code_map.get("process_map") or {}).get("edges") or []
                         )
+                    migrated = True
                 elif buckets and not (code_map.get("process_map") or {}).get("flow_diagram") and anvil_engine is not None and hasattr(anvil_engine, "_build_foundry_flow_diagram"):
                     code_map.setdefault("process_map", {})["flow_diagram"] = anvil_engine._build_foundry_flow_diagram(
                         buckets, (code_map.get("process_map") or {}).get("edges") or []
                     )
+                    migrated = True
                 if buckets and (not buckets[0].get("inner_process_map") or not (buckets[0].get("inner_process_map") or {}).get("flow_diagram")):
                     _enrich_buckets_with_previews(sw_path, buckets)
+                    migrated = True
                 remap = session.get("remap")
                 if isinstance(remap, dict) and (not remap.get("best_in_class_map") or not (remap.get("best_in_class_map") or {}).get("flow_diagram")):
                     cmp_path = Path((session.get("compare_software") or {}).get("path") or sw_path)
@@ -1608,6 +2050,7 @@ def get_session_status(cockpit_dir: str | Path) -> Dict[str, Any]:
                         session.get("orange_split") or {},
                         remap,
                     )
+                    migrated = True
                 if anvil_engine is not None:
                     if buckets and (not buckets[0].get("level1_summary") or not buckets[0].get("level3_code")):
                         if hasattr(anvil_engine, "_enrich_progressive_levels"):
@@ -1617,6 +2060,7 @@ def get_session_status(cockpit_dir: str | Path) -> Dict[str, Any]:
                                 paper_map=session.get("paper_map"),
                                 remap=remap,
                             )
+                            migrated = True
                     if not session.get("beta_reader_panel") and hasattr(anvil_engine, "run_beta_reader_panel"):
                         session["beta_reader_panel"] = anvil_engine.run_beta_reader_panel(
                             sw_path,
@@ -1624,29 +2068,47 @@ def get_session_status(cockpit_dir: str | Path) -> Dict[str, Any]:
                             orange_split=session.get("orange_split"),
                             remap=remap,
                         )
+                        migrated = True
                     if not session.get("walkthrough_trace") and hasattr(anvil_engine, "run_code_walkthrough"):
                         session["walkthrough_trace"] = anvil_engine.run_code_walkthrough(
                             sw_path,
+                            code_map=code_map,
                             block_id=str(session.get("selected_block_id") or ""),
                         )
+                        migrated = True
                     if not (_session_dir(cdir) / "manifest.json").is_file():
                         try:
                             _write_anvil_manifest(cdir, session)
                         except Exception:
                             pass
+                if migrated:
+                    try:
+                        _atomic_write_text(sfile, json.dumps(session, indent=2))
+                    except Exception:
+                        pass
         except Exception as exc:
             corrupt_error = f"Session file {sfile.name} could not be parsed: {exc}"
+    cands = discover_cockpit_candidates(cdir)
+    if summary_only:
+        cands = {
+            "software": (cands.get("software") or [])[:6],
+            "papers": (cands.get("papers") or [])[:6],
+        }
     out: Dict[str, Any] = {
         "ok": True,
         "cockpit_dir": str(cdir),
         "cockpit_name": _cockpit_display_name(cdir),
         "active": bool(session),
-        "session": session,
-        "candidates": discover_cockpit_candidates(cdir),
+        "summary_only": bool(summary_only),
+        "session": (_project_session_summary(session) if (session and summary_only) else session),
+        "candidates": cands,
     }
     if corrupt_error:
         out["warning"] = corrupt_error
     return out
+
+
+get_cockpit_status = get_session_status
 
 
 def start_cockpit_session(
@@ -1657,7 +2119,7 @@ def start_cockpit_session(
     paper_spec: str = "",
     signed_off_drops: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    """Create or replace the active Per-Cockpit Anvil Session for `cockpit_dir`."""
+    """Create or replace the active Per-Cockpit Anvil Session for `cockpit_dir` using a single AST scan."""
     if anvil_engine is None:
         raise ValueError("Anvil engine (skills/anvil/scripts/anvil_engine.py) is unavailable on this host.")
 
@@ -1685,7 +2147,18 @@ def start_cockpit_session(
         cmp_info = resolve_software_target(cdir, compare_spec, role="compare") if compare_spec.strip() else sw_info
         cmp_path = Path(cmp_info["path"])
 
-        code_map = anvil_engine.build_map(sw_path)
+        # Single full-repo AST scan for sw_path; reuse `code_map` across all downstream steps!
+        try:
+            code_map = anvil_engine.build_map(sw_path, _include_v2_enrichment=False)
+        except TypeError:
+            code_map = anvil_engine.build_map(sw_path)
+        cmp_map = code_map if sw_path == cmp_path else None
+        if cmp_map is None:
+            try:
+                cmp_map = anvil_engine.build_map(cmp_path, _include_v2_enrichment=False)
+            except TypeError:
+                cmp_map = anvil_engine.build_map(cmp_path)
+
         if not (code_map.get("conceptual_buckets") or []):
             extra_buckets = _scan_non_python_buckets(sw_path, start_idx=1)
             for eb in extra_buckets:
@@ -1701,9 +2174,21 @@ def start_cockpit_session(
 
         _enrich_buckets_with_previews(sw_path, code_map.get("conceptual_buckets") or [])
 
-        orange_split = anvil_engine.extract_orange_split(sw_path)
+        try:
+            orange_split = anvil_engine.extract_orange_split(sw_path, code_map=code_map)
+        except TypeError:
+            orange_split = anvil_engine.extract_orange_split(sw_path)
         signed_list = list(signed_off_drops) if signed_off_drops is not None else prior_signed
-        remap = anvil_engine.remap_code(sw_path, cmp_path, signed_off_drops=signed_list)
+        try:
+            remap = anvil_engine.remap_code(
+                sw_path,
+                cmp_path,
+                signed_off_drops=signed_list,
+                old_map=code_map,
+                new_map=cmp_map,
+            )
+        except TypeError:
+            remap = anvil_engine.remap_code(sw_path, cmp_path, signed_off_drops=signed_list)
 
         if sw_path == cmp_path and not (remap.get("null_space") or {}).get("items"):
             pith_items = []
@@ -1718,7 +2203,7 @@ def start_cockpit_session(
                 pith_items.append({
                     "old_function": fname,
                     "old_file": p.get("file", ""),
-                    "summary": p.get("summary", "Unreferenced / legacy scaffolding candidate"),
+                    "summary": p.get("summary", "Truly unreferenced candidate"),
                     "stage": p.get("stage", "compute"),
                     "disposition": disp,
                 })
@@ -1743,6 +2228,7 @@ def start_cockpit_session(
                 sw_path,
                 code_map.get("conceptual_buckets") or [],
                 paper_info,
+                code_map=code_map,
             )
 
         now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -1754,28 +2240,45 @@ def start_cockpit_session(
             if hasattr(anvil_engine, "run_beta_reader_panel")
             else {}
         )
-        walkthrough_trace = (
-            anvil_engine.run_code_walkthrough(sw_path, block_id=buckets[0]["id"] if buckets else "")
-            if hasattr(anvil_engine, "run_code_walkthrough")
-            else {}
-        )
+        if hasattr(anvil_engine, "run_code_walkthrough"):
+            try:
+                walkthrough_trace = anvil_engine.run_code_walkthrough(
+                    sw_path,
+                    code_map=code_map,
+                    block_id=buckets[0]["id"] if buckets else "",
+                )
+            except TypeError:
+                walkthrough_trace = anvil_engine.run_code_walkthrough(
+                    sw_path,
+                    block_id=buckets[0]["id"] if buckets else "",
+                )
+        else:
+            walkthrough_trace = {}
         first_block = buckets[0]["title"] if buckets else sw_info["label"]
         total_fns = sum(len(b.get("functions") or []) for b in buckets)
         total_mods = len(code_map.get("module_buckets") or buckets)
         seating = _read_model_seating_info()
 
+        paper_sentence = ""
+        if isinstance(paper_map, dict):
+            sc = paper_map.get("summary_counts") or {}
+            sec_n = sc.get("sections", len(paper_map.get("sections") or []))
+            alg_n = sc.get("algorithms", len(paper_map.get("algorithms") or []))
+            eq_n = sc.get("equations", paper_map.get("claims_mapped", 0))
+            paper_sentence = (
+                f"Attached paper **{paper_map.get('paper_title')}** (`{sec_n}` sections, "
+                f"`{alg_n}` algorithm(s), `{eq_n}` native MathML equations). "
+            )
+
         greeting = (
-            f"I have mapped `{sw_info['label']}` ({total_mods} modules, {total_fns} functions) into the "
-            f"**{len(buckets)} Agreed-Upon Architectural Buckets** "
+            f"Mapped `{sw_info['label']}` (`{total_mods}` source files, `{total_fns}` functions) into "
+            f"**{len(buckets)} clustered architectural module(s)** "
             f"(`{orange_split.get('counts', {}).get('juice_count', 0)}` Essential Core functions, "
             f"`{orange_split.get('counts', {}).get('peel_count', 0)}` I/O contracts, and "
-            f"`{orange_split.get('counts', {}).get('pith_and_seeds_count', 0)}` `∅ Null Space` candidates). "
-            + (
-                f"Attached paper **{paper_map.get('paper_title')}** with {paper_map.get('claims_mapped', 0)} equations in native MathML. "
-                if paper_map else ""
-            )
-            + f"Coding seat is **{seating['coding_short']}** and cross-family adversarial review is **{seating['review_short']}**. "
-            "Ask me anything about the map, blocks, or refactoring plan just like in the main AI Cockpit."
+            f"`{orange_split.get('counts', {}).get('pith_and_seeds_count', 0)}` truly unreferenced `∅ Null Space` candidates). "
+            + paper_sentence
+            + f"Coding seat: **{seating['coding_short']}**; cross-family review seat: **{seating['review_short']}**. "
+            "Ask about any symbol, module, caller/callee edge, security finding, or paper equation/algorithm."
         )
 
         session: Dict[str, Any] = {
@@ -1802,6 +2305,7 @@ def start_cockpit_session(
                     "mode": "paper-map" if paper_map else "map",
                     "target": first_block,
                     "text": greeting,
+                    "answer_mode": "static_ast",
                     "at": now_iso,
                 }
             ],
@@ -1813,34 +2317,79 @@ def start_cockpit_session(
         return get_session_status(cdir)
 
 
+def _is_placeholder_model_label(label: str) -> bool:
+    low = (label or "").strip().lower()
+    return not low or any(tok in low for tok in ("-argon", "-fable-", "-sol"))
+
+
 def _read_model_seating_info() -> Dict[str, str]:
-    """Read live Universal Seating Law preferences from ~/.anchor/model_prefs.json and verified CLI frontier models."""
-    prefs_path = Path.home() / ".anchor" / "model_prefs.json"
+    """Read real configured Anchor model seating from preferences, env, and in-memory CLI capabilities."""
     coding_fam = "gemini"
     review_fam = "claude"
     steward = "aladdin"
+    explicit_coding_model = ""
+    explicit_review_model = ""
+
+    pref_candidates: List[Path] = []
     try:
-        if prefs_path.is_file():
-            data = json.loads(prefs_path.read_text(encoding="utf-8", errors="replace"))
-            coding_fam = str(data.get("coding_family") or data.get("default_cli") or "gemini").lower()
-            review_fam = str(data.get("review_family") or "claude").lower()
-            steward = str(data.get("steward_type") or "aladdin").lower()
+        import paths as _paths
+        pref_candidates.append(_paths.data_dir() / ".anchor" / "model_prefs.json")
+    except Exception:
+        pass
+    try:
+        pref_candidates.append(Path.home() / ".anchor" / "model_prefs.json")
     except Exception:
         pass
 
+    for prefs_path in pref_candidates:
+        try:
+            if prefs_path.is_file():
+                data = json.loads(prefs_path.read_text(encoding="utf-8", errors="replace"))
+                if isinstance(data, dict):
+                    coding_fam = str(data.get("coding_family") or data.get("default_cli") or coding_fam).lower()
+                    review_fam = str(data.get("review_family") or review_fam).lower()
+                    steward = str(data.get("steward_type") or steward).lower()
+                    cm = str(data.get("coding_model") or "").strip()
+                    rm = str(data.get("review_model") or "").strip()
+                    if cm and not _is_placeholder_model_label(cm):
+                        explicit_coding_model = cm
+                    if rm and not _is_placeholder_model_label(rm):
+                        explicit_review_model = rm
+                break
+        except Exception:
+            continue
+
     frontier_defaults = {
-        "gemini": "gemini-4-argon · high",
-        "claude": "claude-fable-5-1 · max",
-        "chatgpt": "gpt-6.1-sol · ultra",
-        "codex": "gpt-6.1-sol · ultra",
-        "grok": "grok-4.7 · xhigh",
+        "gemini": "gemini · latest_supported · high",
+        "claude": "claude · latest_supported · max",
+        "chatgpt": "chatgpt · latest_supported · xhigh",
+        "codex": "codex · latest_supported · xhigh",
+        "grok": "grok · latest_supported · high",
     }
+
+    # Consult live in-memory model_policy cache if already populated (zero subprocesses spawned)
     try:
-        import usage_allowance_monitor as _uam
-        for k, v in (_uam.DEFAULT_FRONTIER_MODELS or {}).items():
-            frontier_defaults[k.lower()] = v
+        import model_policy as _mp
+        mem = getattr(_mp, "_MEMORY", None)
+        if isinstance(mem, dict):
+            for entry in mem.values():
+                if isinstance(entry, dict) and entry.get("family") and entry.get("model"):
+                    fam_k = str(entry["family"]).lower()
+                    mdl = str(entry["model"]).strip()
+                    eff = str(entry.get("effort") or "high").strip()
+                    if not _is_placeholder_model_label(mdl):
+                        frontier_defaults[fam_k] = f"{mdl} · {eff}"
     except Exception:
         pass
+
+    for env_key, fam_key in (
+        ("GEMINI_MODEL", "gemini"),
+        ("CLAUDE_MODEL", "claude"),
+        ("TRIO_MODEL", coding_fam),
+    ):
+        env_val = (os.environ.get(env_key) or "").strip()
+        if env_val and not _is_placeholder_model_label(env_val):
+            frontier_defaults[fam_key] = env_val if "·" in env_val else f"{env_val} · high"
 
     cli_transports = {
         "gemini": "via `agy` subscription CLI",
@@ -1849,8 +2398,8 @@ def _read_model_seating_info() -> Dict[str, str]:
         "codex": "via `codex` subscription CLI",
         "grok": "via `grok` subscription CLI",
     }
-    coding_short = frontier_defaults.get(coding_fam, f"{coding_fam} · latest")
-    review_short = frontier_defaults.get(review_fam, f"{review_fam} · latest")
+    coding_short = explicit_coding_model or frontier_defaults.get(coding_fam, f"{coding_fam} · latest_supported")
+    review_short = explicit_review_model or frontier_defaults.get(review_fam, f"{review_fam} · latest_supported")
     coding_label = f"{coding_short} ({cli_transports.get(coding_fam, 'via subscription CLI')})"
     cross_ok = coding_fam != review_fam
     review_label = (
@@ -1866,26 +2415,26 @@ def _read_model_seating_info() -> Dict[str, str]:
         "coding_short": coding_short,
         "review_short": review_short,
         "coding_model_id": coding_parts[0] if coding_parts else coding_fam,
-        "coding_effort": coding_parts[1] if len(coding_parts) > 1 else "high",
+        "coding_effort": coding_parts[-1] if len(coding_parts) > 1 else "high",
         "review_model_id": review_parts[0] if review_parts else review_fam,
-        "review_effort": review_parts[1] if len(review_parts) > 1 else "max",
+        "review_effort": review_parts[-1] if len(review_parts) > 1 else "max",
         "coding_label": coding_label,
         "review_label": review_label,
     }
 
 
 def _verify_all_buckets_in_place(session: Dict[str, Any], cdir: Path) -> Tuple[int, int]:
-    """Deterministically AST-parse and bytecode-compile all buckets in session so they lock cleanly."""
+    """Check static syntax/bytecode and isolated runtime walkthrough per bucket honestly (`EXECUTED_PASS` vs `STATIC_ONLY`)."""
     buckets = (session.get("code_map") or {}).get("conceptual_buckets") or []
     sw_path = Path((session.get("software") or {}).get("path") or cdir)
     base_dir = sw_path.parent if sw_path.is_file() else sw_path
     now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    newly_verified = 0
-    total_verified = 0
+    newly_probed = 0
+    total_executed = 0
 
     for b in buckets:
         if b.get("validated"):
-            total_verified += 1
+            total_executed += 1
             continue
         member_rel = list(b.get("member_files") or [])
         if not member_rel:
@@ -1906,31 +2455,75 @@ def _verify_all_buckets_in_place(session: Dict[str, Any], cdir: Path) -> Tuple[i
                 except Exception as exc:
                     passed = False
                     notes.append(f"✗ Syntax error in {tf.name}: {exc}")
-        if passed and compiled > 0:
-            notes.append(
-                f"✓ AST parse & bytecode compile verified across {compiled} Python module(s) "
-                f"in '{b.get('title')}' ({len(b.get('functions') or [])} functions)."
-            )
-            notes.append("✓ Static undefined-name & syntax gate: PASS (0 issues).")
+
+        executed_ok = False
+        if passed and anvil_engine is not None and hasattr(anvil_engine, "run_code_walkthrough"):
+            try:
+                wt = anvil_engine.run_code_walkthrough(
+                    sw_path,
+                    code_map=session.get("code_map"),
+                    block_id=str(b.get("id") or ""),
+                )
+                verdict = str(wt.get("overall_verdict") or "")
+                if verdict == "EXECUTED_PASS" or bool(wt.get("accurate_execution")):
+                    executed_ok = True
+                    notes.append(f"✓ Isolated child-subprocess runtime walkthrough: EXECUTED_PASS.")
+                elif verdict in ("DIVERGENCE", "MISMATCH"):
+                    passed = False
+                    notes.append(f"✗ Isolated runtime walkthrough reported {verdict}.")
+            except Exception:
+                pass
+
+        if not passed:
+            b["static_syntax_ok"] = False
+            b["validated"] = False
+            b["empirical_validation"] = {
+                "ran": True,
+                "status": "DIVERGENCE",
+                "checked_at": now_iso,
+                "stdout": "\n".join(notes) or "✗ Static or runtime check failed.",
+            }
+            newly_probed += 1
+        elif executed_ok:
+            if compiled > 0:
+                notes.insert(0, f"✓ AST parse & bytecode compile passed across {compiled} Python module(s).")
+            b["static_syntax_ok"] = True
             b["validated"] = True
             b["validated_description"] = b.get("validated_description") or b.get("summary")
             b["empirical_validation"] = {
                 "ran": True,
-                "status": "PASS",
+                "status": "EXECUTED_PASS",
                 "checked_at": now_iso,
                 "stdout": "\n".join(notes),
             }
-            newly_verified += 1
-            total_verified += 1
-    return newly_verified, total_verified
+            newly_probed += 1
+            total_executed += 1
+        else:
+            if compiled > 0:
+                notes.append(
+                    f"✓ Static AST parse & bytecode compile passed across {compiled} Python module(s) (no runtime test executed yet)."
+                )
+            else:
+                notes.append("ℹ Static module scan complete; no runtime test executed yet.")
+            b["static_syntax_ok"] = passed
+            b["validated"] = False
+            b["empirical_validation"] = {
+                "ran": False,
+                "status": "STATIC_ONLY",
+                "checked_at": now_iso,
+                "stdout": "\n".join(notes),
+            }
+            newly_probed += 1
+    return newly_probed, total_executed
 
 
 def probe_block_in_session(
     cockpit_dir: str | Path,
     block_id: str,
     lock_description: str = "",
+    test_cmd: str = "",
 ) -> Dict[str, Any]:
-    """Run a safe deterministic AST + compilation/Ruff empirical probe on a block (or architectural bucket)."""
+    """Run static AST/Ruff checks AND isolated child-subprocess runtime walkthrough on a block honestly."""
     cdir = Path(cockpit_dir).resolve()
     with _get_cockpit_lock(cdir):
         status = get_session_status(cdir)
@@ -1975,9 +2568,8 @@ def probe_block_in_session(
                     non_py_targets.append(tf)
 
         probe_notes: List[str] = []
-        emp_status = "PASS"
+        static_ok = True
         if py_targets:
-            passed = True
             compiled_count = 0
             for tf in py_targets:
                 try:
@@ -1986,11 +2578,11 @@ def probe_block_in_session(
                     compile(tree, filename=tf.name, mode="exec")
                     compiled_count += 1
                 except Exception as exc:
-                    passed = False
+                    static_ok = False
                     probe_notes.append(f"✗ Syntax/compile error in {tf.name}: {exc}")
-            if passed:
+            if static_ok:
                 probe_notes.append(
-                    f"✓ AST parse & bytecode compile verified across {compiled_count} Python module(s) "
+                    f"✓ Static AST parse & bytecode compile passed across {compiled_count} Python module(s) "
                     f"in '{block.get('title')}' ({len(block.get('functions') or [])} functions)."
                 )
             try:
@@ -2000,6 +2592,8 @@ def probe_block_in_session(
                     text=True,
                     timeout=25,
                     shell=False,
+                    stdin=subprocess.DEVNULL,
+                    creationflags=(subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0),
                 )
                 combined = (r.stdout + r.stderr).strip()
                 if r.returncode == 0:
@@ -2007,23 +2601,69 @@ def probe_block_in_session(
                 elif "No module named ruff" in combined:
                     probe_notes.append("ℹ Ruff not installed in Python environment; AST & bytecode compile passed.")
                 else:
-                    passed = False
+                    static_ok = False
                     probe_notes.append(f"✗ Ruff static check findings:\n{combined[:400]}")
             except Exception:
                 pass
-            emp_status = "PASS" if passed else "MISMATCH"
-            block["validated"] = passed
         elif non_py_targets:
-            emp_status = "UNPROBED"
-            block["validated"] = False
-            probe_notes.append(f"ℹ Non-Python module {block.get('file')} ({non_py_targets[0].stat().st_size} bytes) — static Python AST probe not applicable.")
+            probe_notes.append(
+                f"ℹ Polyglot module {block.get('file')} ({len(non_py_targets)} file(s)) — checking isolated runtime walkthrough."
+            )
         else:
-            emp_status = "MISMATCH"
-            block["validated"] = False
+            static_ok = False
             probe_notes.append(f"✗ Source file {block.get('file')} not found.")
 
+        ran_runtime = False
+        runtime_ok = False
+        explicit_cmd = (test_cmd or "").strip()
+        if static_ok and explicit_cmd and anvil_engine is not None and hasattr(anvil_engine, "_safe_subprocess_run"):
+            ran_runtime = True
+            proc = anvil_engine._safe_subprocess_run(explicit_cmd, cwd=base_dir, timeout=30.0)
+            if proc.returncode == 0:
+                runtime_ok = True
+                probe_notes.append(f"✓ Isolated child-subprocess test command exited 0 (EXECUTED_PASS).\n{(proc.stdout or '').strip()[:300]}".strip())
+            else:
+                runtime_ok = False
+                static_ok = False
+                err_out = (proc.stderr or proc.stdout or "").strip()[:300]
+                probe_notes.append(f"✗ Isolated child-subprocess test command failed (exit={proc.returncode}): {err_out}".strip())
+        elif static_ok and anvil_engine is not None and hasattr(anvil_engine, "run_code_walkthrough"):
+            try:
+                wt = anvil_engine.run_code_walkthrough(
+                    sw_path,
+                    code_map=session.get("code_map"),
+                    block_id=str(block.get("id") or ""),
+                )
+                verdict = str(wt.get("overall_verdict") or "")
+                if verdict == "EXECUTED_PASS" or bool(wt.get("accurate_execution")):
+                    ran_runtime = True
+                    runtime_ok = True
+                    probe_notes.append("✓ Isolated child-subprocess walkthrough exited 0 (EXECUTED_PASS).")
+                elif verdict in ("DIVERGENCE", "MISMATCH"):
+                    ran_runtime = True
+                    runtime_ok = False
+                    static_ok = False
+                    probe_notes.append(f"✗ Isolated child-subprocess walkthrough reported {verdict}.")
+                else:
+                    probe_notes.append("ℹ No runnable entrypoint/test executed for this module (STATIC_ONLY).")
+            except Exception as exc:
+                probe_notes.append(f"ℹ Runtime walkthrough skipped: {exc}")
+
+        if not static_ok:
+            emp_status = "DIVERGENCE"
+            block["static_syntax_ok"] = False
+            block["validated"] = False
+        elif ran_runtime and runtime_ok:
+            emp_status = "EXECUTED_PASS"
+            block["static_syntax_ok"] = True
+            block["validated"] = True
+        else:
+            emp_status = "STATIC_ONLY"
+            block["static_syntax_ok"] = True
+            block["validated"] = False
+
         empirical = {
-            "ran": True,
+            "ran": bool(ran_runtime),
             "status": emp_status,
             "checked_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "stdout": "\n".join(probe_notes),
@@ -2040,7 +2680,7 @@ def probe_block_in_session(
         if isinstance(paper_map, dict):
             for al in paper_map.get("alignments") or []:
                 if al.get("bucket_id") == block["id"] and al.get("mapped_function"):
-                    al["empirical_status"] = "VERIFIED" if block["validated"] else "HEURISTIC_MATCH"
+                    al["empirical_status"] = "EXECUTED_PASS" if block["validated"] else "STATIC_ALIGNED"
 
         session["selected_block_id"] = block["id"]
         session["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -2050,6 +2690,10 @@ def probe_block_in_session(
             **get_session_status(cdir),
             "block": block,
             "empirical": empirical,
+            "inspection": {
+                "validated": bool(block.get("validated")),
+                "empirical_validation": empirical,
+            },
         }
 
 
@@ -2094,9 +2738,10 @@ def attach_paper_to_session(cockpit_dir: str | Path, paper_spec: str) -> Dict[st
 
     with _get_cockpit_lock(cdir):
         sw_path = Path((session.get("software") or {}).get("path") or cdir)
-        buckets = (session.get("code_map") or {}).get("conceptual_buckets") or []
+        code_map = session.get("code_map") or {}
+        buckets = code_map.get("conceptual_buckets") or []
         paper_info = resolve_paper_source(cdir, paper_spec)
-        paper_map = extract_paper_claims_and_align(sw_path, buckets, paper_info)
+        paper_map = extract_paper_claims_and_align(sw_path, buckets, paper_info, code_map=code_map)
         session["paper_map"] = paper_map
         session["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         _atomic_write_text(_session_file(cdir), json.dumps(session, indent=2))
@@ -2117,11 +2762,11 @@ def _infer_setup_targets_from_chat(
 
     # 1. Check for explicit arXiv ID or URL in message
     matched_paper = ""
-    arxiv_m = re.search(r"(?:arxiv\s*:\s*|arxiv\.org/(?:abs|pdf)/)(\d{4}\.\d{4,5}(?:v\d+)?)", q, re.IGNORECASE)
+    arxiv_m = re.search(r"(?:arxiv\s*:\s*|arxiv\.org/(?:abs|pdf|e-print)/)(\d{4}\.\d{4,5}(?:v\d+)?)", q, re.IGNORECASE)
     url_m = re.search(r"(https?://[^\s)\"'>]+)", q, re.IGNORECASE)
     if arxiv_m:
         matched_paper = f"arXiv:{arxiv_m.group(1)}"
-    elif url_m and ("arxiv" in url_m.group(1).lower() or url_m.group(1).lower().endswith((".pdf", ".md", ".tex", ".html"))):
+    elif url_m and ("arxiv" in url_m.group(1).lower() or url_m.group(1).lower().endswith((".pdf", ".md", ".tex", ".html", ".tgz", ".tar.gz"))):
         matched_paper = url_m.group(1)
 
     # 2. Check for local paper filename or title match in message
@@ -2157,7 +2802,7 @@ def _infer_setup_targets_from_chat(
         for kw in (
             "set up", "setup", "launch", "start", "initialize", "init", "analyze", "map",
             "look for", "pull", "load", "loaded locally", "open", "run anvil", "paper",
-            "essential core", "scaffolding", "codebase", "software", "solver", ".py", ".md", ".pdf"
+            "essential core", "scaffolding", "codebase", "software", "solver", ".py", ".md", ".pdf", ".tex"
         )
     )
     return {
@@ -2165,6 +2810,273 @@ def _infer_setup_targets_from_chat(
         "software_spec": matched_sw,
         "paper_spec": matched_paper,
     }
+
+
+def _split_runner_argv(cmd_str: str) -> List[str]:
+    parts = shlex.split(cmd_str, posix=(os.name != "nt"))
+    if os.name == "nt":
+        cleaned: List[str] = []
+        for tok in parts:
+            if len(tok) >= 2 and ((tok[0] == '"' and tok[-1] == '"') or (tok[0] == "'" and tok[-1] == "'")):
+                tok = tok[1:-1]
+            cleaned.append(tok)
+        return cleaned
+    return parts
+
+
+def _try_live_cli_chat(question: str, grounded_facts: str) -> Optional[str]:
+    """Optional live CLI synthesis when `ANCHOR_ANVIL_LIVE_CHAT=1` and `ANCHOR_RUNNER_CMD` is configured."""
+    if os.environ.get("ANCHOR_ANVIL_LIVE_CHAT") != "1":
+        return None
+    runner_cmd = (os.environ.get("ANCHOR_RUNNER_CMD") or "").strip()
+    if not runner_cmd:
+        return None
+    argv = _split_runner_argv(runner_cmd)
+    if not argv:
+        return None
+    prompt = (
+        "You are Anvil inside an Anchor AI Cockpit. Answer the user's question concisely and accurately "
+        "using ONLY the verified AST, Null Space, Aegis, and Paper-to-Code facts below. Never invent file names, "
+        "test counts, or model IDs.\n\n"
+        f"VERIFIED SESSION FACTS:\n{grounded_facts}\n\nUSER QUESTION:\n{question}\n"
+    )
+    try:
+        proc = subprocess.run(
+            argv,
+            input=prompt,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=20,
+            shell=False,
+            creationflags=(subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0),
+        )
+        if proc.returncode == 0 and (proc.stdout or "").strip():
+            return proc.stdout.strip()[:2400]
+    except Exception:
+        return None
+    return None
+
+
+def _synthesize_grounded_anvil_answer(
+    session: Dict[str, Any],
+    question: str,
+    mode: str,
+    target: str,
+    seating: Dict[str, str],
+) -> Tuple[str, str]:
+    """Answer Anvil dialogue questions from real AST symbols, callers/callees, Null Space, Aegis, and Paper-Map facts."""
+    q = (question or "").strip()
+    q_low = q.lower()
+    code_map = session.get("code_map") or {}
+    buckets = code_map.get("conceptual_buckets") or []
+    mod_buckets = code_map.get("module_buckets") or buckets
+    orange = session.get("orange_split") or {}
+    counts = orange.get("counts") or {}
+    remap = session.get("remap") or {}
+    ns_obj = remap.get("null_space") or {}
+    ns_items = ns_obj.get("items") or []
+    unaccounted = [it for it in ns_items if it.get("disposition") != "intentional_drop_signed_off"]
+    paper_map = session.get("paper_map")
+    panel = session.get("beta_reader_panel") or {}
+    sw_label = (session.get("software") or {}).get("label") or "."
+
+    executed_cnt = sum(1 for b in buckets if b.get("validated"))
+    static_cnt = sum(1 for b in buckets if b.get("static_syntax_ok") and not b.get("validated"))
+    total_fns = sum(len(b.get("functions") or []) for b in buckets)
+
+    # Index all functions and callers across the repository
+    all_fns: List[Dict[str, Any]] = []
+    callers_of: Dict[str, List[str]] = {}
+    for b in mod_buckets:
+        b_file = b.get("file") or ""
+        for fn in b.get("functions") or []:
+            rec = {**fn, "file": fn.get("file") or b_file, "bucket_title": b.get("title") or b_file}
+            all_fns.append(rec)
+            caller_label = f"{rec['file']}:{fn['name']}"
+            for callee in (fn.get("all_calls") or fn.get("calls") or []):
+                short_c = str(callee).split(".")[-1]
+                callers_of.setdefault(short_c, []).append(caller_label)
+
+    # 1. Model / Seating / Session Status questions
+    if any(kw in q_low for kw in ("who is", "what model", "which model", "skill and model", "coding seat", "review seat")):
+        seat5 = next((s for s in (panel.get("seats") or []) if s.get("seat_id") == "security_boundary_auditor"), None)
+        sec_note = (
+            f"Seat 5 (`Defensive & Security Boundaries`) status is `{seat5.get('status') or seat5.get('verdict')}` (`{seat5.get('score')}/100`)."
+            if seat5 else ""
+        )
+        base_reply = (
+            f"Anvil is configured with **{seating['coding_short']}** in the coding seat (`{seating['coding_family']}` CLI) "
+            f"and **{seating['review_short']}** in the cross-family review seat (`{seating['review_family']}` CLI). "
+            f"For `{sw_label}`, AST indexing covers **{len(buckets)} clustered module(s)** (`{len(mod_buckets)}` files, `{total_fns}` functions: "
+            f"`{counts.get('juice_count', 0)}` Essential Core, `{counts.get('peel_count', 0)}` I/O Peel, `{len(unaccounted)}` open `∅ Null Space` item(s); "
+            f"`{executed_cnt}` module(s) `EXECUTED_PASS`, `{static_cnt}` `STATIC_ONLY`). {sec_note}"
+        ).strip()
+        live = _try_live_cli_chat(q, base_reply)
+        return (live, "live_model") if live else (base_reply, "static_ast")
+
+    # 2. Security / Aegis / Seat 5 questions
+    if any(kw in q_low for kw in ("security", "aegis", "vulnerability", "cwe", "injection", "traversal", "seat 5", "beta reader")):
+        seats = panel.get("seats") or []
+        seat5 = next((s for s in seats if s.get("seat_id") == "security_boundary_auditor"), seats[-1] if seats else {})
+        findings = [f for f in (seat5.get("aegis_findings") or []) if isinstance(f, dict)]
+        if findings:
+            f_preview = "; ".join(
+                f"`{f.get('rule_id', 'AEG')}` in `{f.get('file', '?')}:L{f.get('line') or f.get('lineno', 1)}` ({str(f.get('title') or f.get('message') or '')[:80]})"
+                for f in findings[:4]
+            )
+            base_reply = (
+                f"Seat 5 (**Defensive & Security Boundaries · Aegis**) scored `{seat5.get('score', 0)}/100` "
+                f"(`{seat5.get('status') or seat5.get('verdict', 'ACTION_REQUIRED')}`) with `{len(findings)}` finding(s): {f_preview}."
+            )
+        else:
+            base_reply = (
+                f"Seat 5 (**Defensive & Security Boundaries · Aegis**) scored `{seat5.get('score', 100)}/100` "
+                f"(`{seat5.get('status') or seat5.get('verdict', 'PASS')}`) with `0` CWE taint/sink findings across `{sw_label}`. "
+                f"Overall 5-Seat Beta-Reader score: `{panel.get('overall_score', 0)}/100`."
+            )
+        live = _try_live_cli_chat(q, base_reply)
+        return (live, "live_model") if live else (base_reply, "static_ast")
+
+    # 3. Null Space / Dead-Code / Unreferenced questions
+    if any(kw in q_low for kw in ("null space", "dead code", "unreferenced", "unused", "pith")):
+        test_only = orange.get("referenced_by_tests_only") or []
+        if unaccounted:
+            preview = ", ".join(
+                f"`{it.get('old_function')}()` (`{it.get('old_file')}`)"
+                for it in unaccounted[:6]
+            )
+            base_reply = (
+                f"Full-repo AST + `tests/` reference indexing found **{len(unaccounted)} truly unreferenced function(s)** in `∅ Null Space`: "
+                f"{preview}" + (f" (+{len(unaccounted) - 6} more)." if len(unaccounted) > 6 else ".")
+                + (f" `{len(test_only)}` additional helper(s) are referenced by `tests/` only and excluded from dead-code flags." if test_only else "")
+            )
+        else:
+            base_reply = (
+                f"`∅ Null Space` has **0 truly unreferenced functions** remaining across `{sw_label}` "
+                f"(Remap verdict: `{remap.get('verdict', 'PASS')}`"
+                + (f"; `{len(test_only)}` function(s) referenced by `tests/` only" if test_only else "")
+                + ")."
+            )
+        live = _try_live_cli_chat(q, base_reply)
+        return (live, "live_model") if live else (base_reply, "static_ast")
+
+    # 4. Paper / Equation / Algorithm / Section questions
+    q_toks = {t for t in re.split(r"[^a-z0-9_]+", q_low) if len(t) >= 3}
+    if isinstance(paper_map, dict) and (
+        mode in ("paper", "paper-map")
+        or any(kw in q_low for kw in ("equation", "algorithm", "section", "paper", "latex", "mathml", "elbo", "jacobian"))
+    ):
+        eqs = paper_map.get("equations") or []
+        algs = paper_map.get("algorithms") or []
+        secs = paper_map.get("sections") or []
+        if "algorithm" in q_low and algs:
+            alg = algs[0]
+            steps = alg.get("steps") or []
+            base_reply = (
+                f"In **{paper_map.get('paper_title')}**, **{alg.get('title') or alg.get('id')}** (`{alg.get('source_file')}:L{alg.get('line_start', 1)}`, "
+                f"`{len(steps)}` steps, status `{alg.get('status')}`) aligns primarily with `{alg.get('primary_function') or 'unmapped'}` "
+                f"in module `{alg.get('matched_module') or 'unmapped'}`."
+            )
+            live = _try_live_cli_chat(q, base_reply)
+            return (live, "live_model") if live else (base_reply, "static_ast")
+        if eqs:
+            best_eq = next((e for e in eqs if e.get("id") == target or e.get("label") == target), None)
+            if best_eq is None:
+                best_eq = max(
+                    eqs,
+                    key=lambda e: len(q_toks & {t for t in re.split(r"[^a-z0-9_]+", f"{e.get('id','')} {e.get('label','')} {e.get('raw_latex','')}".lower()) if len(t) >= 3}),
+                )
+            mfs = best_eq.get("matched_functions") or []
+            top_fn = mfs[0] if mfs else {}
+            base_reply = (
+                f"In **{paper_map.get('paper_title')}** (`{len(secs)}` sections, `{len(algs)}` algorithm(s), `{len(eqs)}` equations), "
+                f"equation `{best_eq.get('id')}` (`{best_eq.get('source_file')}:L{best_eq.get('line_start', 1)}`, status `{best_eq.get('status')}`) "
+                + (
+                    f"aligns with `{top_fn.get('qualname')}` (`{top_fn.get('file')}:L{top_fn.get('line_start', 1)}–L{top_fn.get('line_end', 1)}`, "
+                    f"matched identifiers: `{', '.join((top_fn.get('matched_identifiers') or [])[:5]) or 'structural ops'}`)."
+                    if top_fn else "has no static implementation match yet (`PAPER_ONLY_UNIMPLEMENTED`)."
+                )
+            )
+            live = _try_live_cli_chat(q, base_reply)
+            return (live, "live_model") if live else (base_reply, "static_ast")
+        if paper_map.get("alignments"):
+            al = next((a for a in paper_map["alignments"] if a.get("claim_id") == target), paper_map["alignments"][0])
+            base_reply = (
+                f"In **{paper_map.get('paper_title')}**, `{al.get('claim_id')}` (**{al.get('title')}**) maps to "
+                f"`{al.get('mapped_function') or 'unmapped'}` (`{al.get('mapped_file') or ''}:{al.get('lineno') or ''}`, "
+                f"status `{al.get('empirical_status')}`)."
+            )
+            live = _try_live_cli_chat(q, base_reply)
+            return (live, "live_model") if live else (base_reply, "static_ast")
+
+    # 5. Direct Symbol / Function lookup in AST
+    best_fn: Optional[Dict[str, Any]] = None
+    best_fn_score = 0
+    for fn in all_fns:
+        fn_name = str(fn.get("name") or "")
+        short_fn = fn_name.split(".")[-1].lower()
+        score = 0
+        if short_fn and short_fn in q_low:
+            score += 10 + len(short_fn)
+        else:
+            fn_toks = {t for t in re.split(r"[^a-z0-9_]+", f"{fn_name} {fn.get('summary','')} {fn.get('file','')}".lower()) if len(t) >= 3}
+            score += len(q_toks & fn_toks) * 2
+        if target and (fn.get("file") == target or fn_name == target):
+            score += 4
+        if score > best_fn_score:
+            best_fn_score = score
+            best_fn = fn
+
+    if best_fn is not None and best_fn_score >= 4:
+        short_nm = str(best_fn["name"]).split(".")[-1]
+        callees = (best_fn.get("all_calls") or best_fn.get("calls") or [])[:6]
+        callers = sorted(set(callers_of.get(short_nm, [])))[:5]
+        base_reply = (
+            f"`{best_fn['name']}({', '.join(best_fn.get('args') or [])})` in `{best_fn['file']}:L{best_fn.get('lineno', 1)}–L{best_fn.get('end_lineno', best_fn.get('lineno', 1))}` "
+            f"(module **{best_fn.get('bucket_title')}**, stage `{str(best_fn.get('stage', 'compute')).upper()}`) — {best_fn.get('summary') or 'AST symbol'}. "
+            f"Calls: {', '.join(f'`{c}`' for c in callees) if callees else 'none'}; "
+            f"referenced by: {', '.join(f'`{c}`' for c in callers) if callers else 'top-level/external entrypoint'}."
+        )
+        live = _try_live_cli_chat(q, base_reply)
+        return (live, "live_model") if live else (base_reply, "static_ast")
+
+    # 6. Target Module / Bucket summary grounded in AST
+    matched = next(
+        (
+            b for b in buckets
+            if b.get("id") == target or b.get("file") == target or b.get("title") == target
+            or (b.get("title") and b["title"].lower() in q_low)
+        ),
+        buckets[0] if buckets else None,
+    )
+    if matched:
+        fns = ", ".join(f"`{fn['name']}()`" for fn in (matched.get("functions") or [])[:5])
+        stage = (matched.get("pipeline_stage") or "compute").upper()
+        member_files = matched.get("member_files") or ([matched.get("file")] if matched.get("file") else [])
+        mods_preview = ", ".join(f"`{m}`" for m in member_files[:6])
+        if len(member_files) > 6:
+            mods_preview += f" (+{len(member_files) - 6} more)"
+        v_state = (
+            "EXECUTED_PASS (runtime verified)"
+            if matched.get("validated")
+            else ("STATIC_ONLY (AST parsed, not yet executed)" if matched.get("static_syntax_ok") else "STATIC_ONLY")
+        )
+        base_reply = (
+            f"Module **{matched.get('title')}** (`{stage}`, status `{v_state}`) spans `{len(member_files)}` file(s) ({mods_preview}) "
+            f"with `{len(matched.get('functions') or [])}` AST function(s) ({fns or 'none'}). "
+            f"{matched.get('validated_description') or matched.get('summary') or ''}"
+        ).strip()
+        live = _try_live_cli_chat(q, base_reply)
+        return (live, "live_model") if live else (base_reply, "static_ast")
+
+    base_reply = (
+        f"`{sw_label}` is indexed across `{len(buckets)}` architectural module(s) (`{total_fns}` functions; "
+        f"`{executed_cnt}` `EXECUTED_PASS`, `{len(unaccounted)}` `∅ Null Space` items). Ask about any file, function, security check, or paper equation."
+    )
+    live = _try_live_cli_chat(q, base_reply)
+    return (live, "live_model") if live else (base_reply, "static_ast")
 
 
 def chat_in_session(
@@ -2180,7 +3092,7 @@ def chat_in_session(
 
     status = get_session_status(cdir)
     session = status.get("session")
-    candidates = status.get("candidates") or _discover_cockpit_candidates(cdir)
+    candidates = status.get("candidates") or discover_cockpit_candidates(cdir)
 
     # If no session is active yet, allow natural-language setup & discovery via Steward/Anvil dialogue
     if not session:
@@ -2201,22 +3113,32 @@ def chat_in_session(
                 sw_label = (session.get("software") or {}).get("label") or inferred["software_spec"]
                 paper_map = session.get("paper_map")
                 if paper_map:
+                    sc = paper_map.get("summary_counts") or {}
                     reply = (
-                        f"[Steward · Anvil Setup] Located paper **{paper_map.get('paper_title')}** (`{inferred['paper_spec']}`) "
-                        f"and initialized your Anvil Paper ↔ Software session against `{sw_label}` "
-                        f"({paper_map.get('claims_mapped', 0)} claims/equations extracted into native MathML)."
+                        f"[Steward · Anvil Setup] Loaded paper **{paper_map.get('paper_title')}** (`{inferred['paper_spec']}`) "
+                        f"and mapped it against `{sw_label}` "
+                        f"(`{sc.get('sections', len(paper_map.get('sections') or []))}` sections, "
+                        f"`{sc.get('algorithms', len(paper_map.get('algorithms') or []))}` algorithm(s), "
+                        f"`{sc.get('equations', paper_map.get('claims_mapped', 0))}` native MathML equations)."
                     )
                 else:
                     buckets = (session.get("code_map") or {}).get("conceptual_buckets") or []
                     reply = (
-                        f"[Steward · Anvil Setup] Initialized your Anvil Software Analysis session for `{sw_label}` "
-                        f"({len(buckets)} Agreed-Upon Conceptual Architectural Buckets mapped into Essential Core vs. Scaffolding)."
+                        f"[Steward · Anvil Setup] Initialized Anvil Software Analysis session for `{sw_label}` "
+                        f"(`{len(buckets)}` clustered architectural module(s) mapped across Essential Core, I/O Peel, and `∅ Null Space`)."
                     )
-                history.append({"role": "anvil", "mode": mode, "target": target or "setup", "text": reply, "at": now_iso})
+                history.append({
+                    "role": "anvil",
+                    "mode": mode,
+                    "target": target or "setup",
+                    "text": reply,
+                    "answer_mode": "static_ast",
+                    "at": now_iso,
+                })
                 session["chat_history"] = history[-40:]
                 session["updated_at"] = now_iso
                 _atomic_write_text(_session_file(cdir), json.dumps(session, indent=2))
-                return {**get_session_status(cdir), "reply": reply}
+                return {**get_session_status(cdir), "reply": reply, "answer_mode": "static_ast"}
         else:
             sw_list = ", ".join(f"`{c['path']}`" for c in (candidates.get("software") or [])[:5]) or "`.`"
             pp_list = ", ".join(f"`{c['path']}`" for c in (candidates.get("papers") or [])[:5]) or "none detected yet"
@@ -2225,7 +3147,7 @@ def chat_in_session(
                 f"Local software detected: {sw_list}. Local papers/docs detected: {pp_list}. "
                 f"Tell me which paper or codebase to load (e.g. \"Set up Anvil with local paper and map to code\" or \"Pull arXiv:1706.03762\"), and I will launch the session immediately."
             )
-            return {**status, "reply": reply}
+            return {**status, "reply": reply, "answer_mode": "static_ast"}
 
     with _get_cockpit_lock(cdir):
         status = get_session_status(cdir)
@@ -2238,40 +3160,23 @@ def chat_in_session(
         q_low = q.lower()
         if inferred["paper_spec"] and any(kw in q_low for kw in ("attach", "pull", "look for", "load", "loaded locally", "switch paper", "map paper")):
             sw_path = Path((session.get("software") or {}).get("path") or cdir)
-            buckets = (session.get("code_map") or {}).get("conceptual_buckets") or []
+            code_map = session.get("code_map") or {}
+            buckets = code_map.get("conceptual_buckets") or []
             paper_info = resolve_paper_source(cdir, inferred["paper_spec"])
-            paper_map = extract_paper_claims_and_align(sw_path, buckets, paper_info)
+            paper_map = extract_paper_claims_and_align(sw_path, buckets, paper_info, code_map=code_map)
             session["paper_map"] = paper_map
 
         buckets = (session.get("code_map") or {}).get("conceptual_buckets") or []
-        mod_buckets = (session.get("code_map") or {}).get("module_buckets") or buckets
-        matched = next(
-            (b for b in buckets if b.get("id") == target or b.get("file") == target or b.get("title") == target),
-            buckets[0] if buckets else None,
-        )
-        orange = session.get("orange_split") or {}
-        counts = orange.get("counts") or {}
         remap = session.get("remap") or {}
         ns_obj = remap.get("null_space") or {}
         ns_items = ns_obj.get("items") or []
         unaccounted = [it for it in ns_items if it.get("disposition") != "intentional_drop_signed_off"]
-        paper_map = session.get("paper_map")
         seating = _read_model_seating_info()
 
-        # Check intent categories so Anvil Steward responds intelligently and executes actions!
-        asks_who_or_model = any(
+        asks_verify = any(
             kw in q_low
             for kw in (
-                "who is", "what model", "which model", "gemini", "fable", "claude", "adversarial",
-                "advesarial", "skill and model", "updates of what you are doing", "status", "update",
-                "what does this mean", "no idea what this output means", "explain this output",
-            )
-        )
-        asks_next_or_verify = any(
-            kw in q_low
-            for kw in (
-                "what do we do", "first or next", "what next", "go forward", "move forward", "proceed",
-                "verfied", "verified", "verify", "ready to refactor", "probe all", "lock all", "start refactor",
+                "verfied", "verified", "verify", "probe all", "lock all", "run probe", "run checks",
             )
         )
         asks_sign_off = any(
@@ -2279,85 +3184,56 @@ def chat_in_session(
             for kw in ("sign off", "approve drop", "approve null space", "clear null space")
         )
 
-        # If user asks to verify / go forward / what next / updates, automatically run empirical verification on all buckets!
-        newly_probed = 0
-        verified_total = sum(1 for b in buckets if b.get("validated"))
-        if asks_next_or_verify or asks_who_or_model:
-            newly_probed, verified_total = _verify_all_buckets_in_place(session, cdir)
-
-        if asks_sign_off and unaccounted:
-            signed_list = list(session.get("signed_off_drops") or [])
-            for it in ns_items:
-                fn_name = it.get("old_function") or ""
-                if fn_name and fn_name not in signed_list:
-                    signed_list.append(fn_name)
-                it["disposition"] = "intentional_drop_signed_off"
-            session["signed_off_drops"] = signed_list
-            ns_obj["unexplained_blockers"] = 0
-            if session.get("remap"):
-                session["remap"]["verdict"] = "PASS"
-            unaccounted = []
-
-        if asks_who_or_model:
-            reply = (
-                f"I'm running **Anvil** on **{seating['coding_short']}** (coding seat via `{seating['coding_family']}` CLI) "
-                f"with **{seating['review_short']}** in the cross-family adversarial review seat (`{seating['review_family']}` CLI). "
-                f"All {verified_total}/{len(buckets)} Agreed-Upon Anchor Architectural Buckets and the 3-stage Old-to-New map "
-                f"(`{counts.get('peel_count', 0)}` Get-Data I/O contracts → `{counts.get('juice_count', 0)}` Essential Core functions → Create-Output) "
-                f"are empirically verified, with `high_seat_core.py` and `steward_core.py` passing 47/47 Hypothesis equivalence tests "
-                f"and `{len(unaccounted)}` Null Space helper candidates remaining."
-            )
-        elif asks_next_or_verify:
+        answer_mode = "static_ast"
+        if asks_verify:
+            newly_probed, executed_total = _verify_all_buckets_in_place(session, cdir)
+            static_ok_total = sum(1 for b in buckets if b.get("static_syntax_ok"))
             ns_tail = (
-                f"We have `{len(unaccounted)}` unreferenced private helper candidates in the `∅ Null Space` ledger—say **sign off null space** if you want to approve retiring them, or tell me which bucket to extract next."
+                f"`{len(unaccounted)}` truly unreferenced function(s) remain in `∅ Null Space`."
                 if unaccounted
-                else "The `∅ Null Space` ledger is clean (`0` blockers, Verdict: `PASS`), so we are ready to run the next isolated worktree extraction cut whenever you say the word."
+                else "`∅ Null Space` has `0` unexplained blockers."
             )
             reply = (
-                f"I just ran the empirical AST, bytecode compilation, and static name checks across all **{verified_total}/{len(buckets)} Agreed-Upon Anchor Architectural Buckets**, and every bucket is verified (`PASS`). "
-                f"Both the **System Process Map** (Mode 1) and the **Old-to-New Best-in-Class Map** (Mode 3) are live. {ns_tail}"
+                f"Probed `{len(buckets)}` clustered architectural module(s) (`{newly_probed}` updated): "
+                f"`{executed_total}/{len(buckets)}` reached `EXECUTED_PASS` via isolated child-subprocess walkthrough, "
+                f"and `{static_ok_total}/{len(buckets)}` passed static AST/bytecode checks (`STATIC_ONLY` where no runtime test ran). {ns_tail}"
             )
         elif asks_sign_off:
+            if unaccounted:
+                signed_list = list(session.get("signed_off_drops") or [])
+                for it in ns_items:
+                    fn_name = it.get("old_function") or ""
+                    if fn_name and fn_name not in signed_list:
+                        signed_list.append(fn_name)
+                    it["disposition"] = "intentional_drop_signed_off"
+                session["signed_off_drops"] = signed_list
+                ns_obj["unexplained_blockers"] = 0
+                if session.get("remap"):
+                    session["remap"]["verdict"] = "PASS"
             reply = (
-                f"Done — I signed off all `{len(ns_items)}` unreferenced helper candidates in the `∅ Null Space` ledger, flipping the Old-to-New Remap verdict to **`PASS`** with `0` blockers. "
-                f"All {verified_total}/{len(buckets)} architectural buckets are locked and ready in `ANVIL-REPORT.md`."
+                f"Signed off `{len(ns_items)}` `∅ Null Space` candidate(s); Old-to-New Remap verdict is now **`{remap.get('verdict', 'PASS')}`** with `0` unexplained blockers."
             )
-        elif mode in ("paper", "paper-map") and paper_map and paper_map.get("alignments"):
-            al = next((a for a in paper_map["alignments"] if a.get("claim_id") == target), paper_map["alignments"][0])
-            reply = (
-                f"In `{paper_map.get('paper_title')}`, claim `{al.get('claim_id')}` (**{al.get('title')}**) maps directly to `{al.get('mapped_function')}()` in `{al.get('mapped_file')}:{al.get('lineno')}` ({al.get('match_rationale')}). "
-                f"Click **▶ Probe Mapped Block** to lock its empirical equivalence."
-            )
-        elif matched:
-            fns = ", ".join(f"`{fn['name']}()`" for fn in (matched.get("functions") or [])[:4])
-            stage = (matched.get("pipeline_stage") or "compute").upper()
-            member_files = matched.get("member_files") or ([matched.get("file")] if matched.get("file") else [])
-            mods_preview = ", ".join(f"`{m}`" for m in member_files[:5])
-            if len(member_files) > 5:
-                mods_preview += f" (+{len(member_files) - 5} more)"
-            status_phrase = "empirically verified and locked" if matched.get("validated") else "ready for a live probe"
-            reply = (
-                f"**{matched.get('title')}** (`{stage}`) spans {len(member_files)} modules ({mods_preview}) with key entrypoints {fns or 'mapped in AST'} and is currently {status_phrase}. "
-                f"{matched.get('validated_description') or matched.get('summary') or ''} "
-                f"What would you like to inspect or change in this bucket?"
-            ).strip()
         else:
-            reply = (
-                f"We have all **{verified_total}/{len(buckets)} Agreed-Upon Anchor Architectural Buckets** mapped and verified on **{seating['coding_short']}** (with **{seating['review_short']}** for adversarial review). "
-                f"What part of the architecture or Old-to-New map would you like to look at?"
-            )
+            reply, answer_mode = _synthesize_grounded_anvil_answer(session, q, mode, target, seating)
 
-        history.append({"role": "anvil", "mode": mode, "target": target, "text": reply, "at": now_iso})
+        history.append({
+            "role": "anvil",
+            "mode": mode,
+            "target": target,
+            "text": reply,
+            "answer_mode": answer_mode,
+            "at": now_iso,
+        })
         session["chat_history"] = history[-40:]
         session["updated_at"] = now_iso
         _atomic_write_text(_session_file(cdir), json.dumps(session, indent=2))
         _write_anvil_report(cdir, session)
-        return {**get_session_status(cdir), "reply": reply}
+        return {**get_session_status(cdir), "reply": reply, "answer_mode": answer_mode}
 
 
 def apply_conversational_anvil_side_effects(cockpit_dir: str | Path, question: str) -> str:
     """When a user speaks in the real AI Cockpit dialogue while an Anvil session is active,
-    apply any requested Anvil verification / Null Space sign-off in place and return a
+    apply any explicitly requested Anvil probe / Null Space sign-off in place and return a
     compact 1-line Anvil context note for the Steward Engine."""
     cdir = Path(cockpit_dir).resolve()
     sfile = _session_file(cdir)
@@ -2378,7 +3254,7 @@ def apply_conversational_anvil_side_effects(cockpit_dir: str | Path, question: s
         unaccounted = [it for it in ns_items if it.get("disposition") != "intentional_drop_signed_off"]
         changed = False
 
-        if any(kw in q_low for kw in ("verify", "verified", "probe all", "lock all", "go forward", "move forward")):
+        if any(kw in q_low for kw in ("verify", "verified", "probe all", "lock all")):
             newly, _ = _verify_all_buckets_in_place(session, cdir)
             if newly > 0:
                 changed = True
@@ -2401,10 +3277,10 @@ def apply_conversational_anvil_side_effects(cockpit_dir: str | Path, question: s
             _atomic_write_text(sfile, json.dumps(session, indent=2))
             _write_anvil_report(cdir, session)
 
-        verified_total = sum(1 for b in buckets if b.get("validated"))
+        executed_total = sum(1 for b in buckets if b.get("validated"))
         seating = _read_model_seating_info()
         return (
-            f"\n(anvil workbench state: {verified_total}/{len(buckets)} Agreed-Upon Anchor Architectural Buckets verified; "
+            f"\n(anvil workbench state: {executed_total}/{len(buckets)} architectural modules EXECUTED_PASS; "
             f"coding seat={seating['coding_short']}, review seat={seating['review_short']}; "
             f"Old-to-New map verdict={remap.get('verdict', 'PASS')}, unaccounted Null Space items={len(unaccounted)}. "
             f"Answer John's question naturally and conversationally in 2-4 plain sentences — never dump a standardized template.)"
@@ -2438,7 +3314,14 @@ def walkthrough_in_session(cockpit_dir: str | Path, block_id: str = "") -> Dict[
                     orange_split=session.get("orange_split"),
                     remap=session.get("remap"),
                 )
-            wt = anvil_engine.run_code_walkthrough(sw_path, block_id=bid)
+            try:
+                wt = anvil_engine.run_code_walkthrough(
+                    sw_path,
+                    code_map=session.get("code_map"),
+                    block_id=bid,
+                )
+            except TypeError:
+                wt = anvil_engine.run_code_walkthrough(sw_path, block_id=bid)
             session["walkthrough_trace"] = wt
             session["walkthrough"] = wt
             if bid:

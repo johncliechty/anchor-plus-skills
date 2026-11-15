@@ -26,7 +26,7 @@
       "title": "anvil_engine.py (scripts/anvil_engine.py)",
       "category": "tools",
       "path": "scripts/anvil_engine.py",
-      "description": "Executable .py module (2276 LOC; key symbols: _classify_stage, _detect_ai_interaction, _summarize_function, _scan_python_files)."
+      "description": "Executable polyglot AST/CST & LaTeX-MathML engine (key symbols: _classify_stage, _detect_ai_interaction, _summarize_function, _scan_python_files, build_map, run_code_walkthrough, run_beta_reader_panel, paper_to_code_map, cst_rewrite_module, extract_repo_facts, extract_repo_slice, verify_repo_diff)."
     },
     {
       "id": "anvil-tool-tests-test-anvil-engine-py",

@@ -852,3 +852,10 @@ def assign_legacy_ids(legacy_entries) -> list:
             result.append(entry)
         _save_registry(reg)
         return result
+
+
+def is_spurious_non_project_folder(folder_path) -> bool:
+    """Return True if ``folder_path`` is a Foundry skill folder or an Anchor install/backup directory."""
+    import brownfield_scan as _bfs
+    return _bfs.is_skill_or_anchor_dir(folder_path)
+

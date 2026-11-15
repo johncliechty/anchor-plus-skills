@@ -8,6 +8,7 @@
 <body class="provider-setup">
   <header class="setup-top">
     <span class="setup-brand">⚓ Anchor · Cave of Wonders</span>
+    <span class="w3-badge" id="setup-version-pill" style="font-family:Consolas,monospace;color:#f0b866;border:1px solid rgba(240,184,102,0.45);background:rgba(240,184,102,0.12);padding:4px 10px;border-radius:999px;font-weight:700;">v1.5.2</span>
     <span id="setup-host" class="muted"></span>
     <a href="/onboard-wizard" id="open-onboard-wizard-btn" style="background:linear-gradient(135deg,#f0b866,#d89638);color:#11131a;font-weight:700;padding:7px 14px;border-radius:8px;text-decoration:none;font-size:13px;margin-right:8px;">🧭 Onboarding &amp; Setup Wizard (or Sandbox Test Walkthrough)</a>
     <a href="/onboard-wizard?sandbox=1" id="open-onboard-sandbox-btn" style="background:rgba(240,184,102,0.14);border:1px solid rgba(240,184,102,0.45);color:#f0b866;font-weight:600;padding:7px 12px;border-radius:8px;text-decoration:none;font-size:12px;margin-right:8px;">🧪 Sandbox Walkthrough</a>
@@ -76,7 +77,7 @@
             <h2>This computer is my mother ship</h2>
             <p id="host-runtime">Reading existing setup…</p>
             <p>First installation uses Anchor’s existing installer: Anchor and Foundry skills, directories, then service startup. This page continues that setup after the service is reachable.</p>
-            <a href="/setup/install" target="_blank" rel="noopener">Installation instructions</a>
+            <a href="/setup/install" id="setup-install-instructions-link">Installation instructions</a>
           </article>
           <article class="setup-card">
             <h2>Connect to my existing mother ship</h2>
@@ -103,6 +104,58 @@
             <div class="wave1-code-row"><code id="w1-gh-cmd">gh auth status</code></div>
           </article>
         </div>
+
+        <article class="setup-card" id="mothership-update-registry-card" style="margin:14px 0">
+          <div class="wave2-matrix-top">
+            <h2>🚀 Anchor Version, Self-Update &amp; Mother Ship Registry (Push / Pull Updates)</h2>
+            <span class="w3-badge w3-badge-emerald" id="ms-current-version-label" style="font-family:Consolas,monospace;">v1.5.2</span>
+          </div>
+          <p class="muted small">Check for or pull the latest Anchor release + 20 bundled Foundry skills on this machine, register your Mother Ship in the shared Anchor repository, or push updates from the Lead Mother Ship to registered collaborator Mother Ships.</p>
+          <div class="setup-actions" style="margin:10px 0;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+            <button type="button" id="btn-ms-check-update">🔍 Check for Updates</button>
+            <button type="button" id="btn-ms-pull-update" style="background:linear-gradient(135deg,#4ade80,#22c55e);color:#09140e;font-weight:700;">⬆ Pull &amp; Update to Latest Version</button>
+            <span id="ms-update-status-msg" class="muted small">Installed version: v1.5.2</span>
+          </div>
+          <hr style="border:0;border-top:1px solid rgba(255,255,255,0.08);margin:14px 0;">
+          <h3 style="margin:6px 0 8px;">📋 Register Mother Ship in Anchor Repository (<code>mothership_registry.json</code>)</h3>
+          <div class="quality-grid">
+            <div>
+              <label for="ms-reg-owner">Owner / Collaborator Name</label>
+              <input id="ms-reg-owner" type="text" placeholder="e.g., Merrill, Collaborator">
+            </div>
+            <div>
+              <label for="ms-reg-pseudonym">Steward Pseudonym</label>
+              <input id="ms-reg-pseudonym" type="text" placeholder="e.g., Aladdin, Ecgberht">
+            </div>
+            <div>
+              <label for="ms-reg-tailscale-url">Tailscale / Mother Ship URL</label>
+              <input id="ms-reg-tailscale-url" type="text" placeholder="e.g., https://merrill-pc.tailnet.ts.net or http://127.0.0.1:8777">
+            </div>
+            <div>
+              <label for="ms-reg-platform">Operating System / Platform</label>
+              <select id="ms-reg-platform">
+                <option value="windows">Windows (Anchor.exe / NSSM)</option>
+                <option value="macos-arm64">Apple Mac / MacBook Air (Apple Silicon M1–M4)</option>
+                <option value="macos-x64">Apple Mac (Intel x86_64)</option>
+                <option value="linux">Linux (Ubuntu / Debian / Fedora)</option>
+              </select>
+            </div>
+            <div>
+              <label for="ms-reg-github-repo">Anchor GitHub Repository</label>
+              <input id="ms-reg-github-repo" type="text" value="GWL-John/Anchor">
+            </div>
+            <div style="display:flex;align-items:flex-end;">
+              <button type="button" id="btn-ms-register">📌 Register Mother Ship in Repo</button>
+            </div>
+          </div>
+          <div style="margin-top:14px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+              <h3 style="margin:0;">🌐 Registered Mother Ships</h3>
+              <button type="button" id="btn-ms-push-update">🚀 Push Latest Anchor to Registered Mother Ships</button>
+            </div>
+            <div id="ms-registry-list" class="muted small" style="margin-top:8px;">Loading registered Mother Ships…</div>
+          </div>
+        </article>
 
         <article class="setup-card" id="host-security-credentials-card" style="margin:14px 0">
           <div class="wave2-matrix-top">

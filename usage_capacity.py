@@ -148,10 +148,24 @@ def latest_limit_signal(now=None, directory=None, max_logs=300, connection_id=No
     d = directory or jobs_dir()
     cut = (now - WEEK).timestamp()
     try:
-        logs = sorted((p for p in glob.glob(os.path.join(d, "*.log")) if os.path.getmtime(p) >= cut), key=os.path.getmtime, reverse=True)[:max_logs]
+        cand = []
+        with os.scandir(d) as it:
+            for ent in it:
+                if ent.name.startswith(".") or not ent.name.lower().endswith(".log"):
+                    continue
+                try:
+                    if not ent.is_file():
+                        continue
+                    mt = ent.stat().st_mtime
+                except OSError:
+                    continue
+                if mt >= cut:
+                    cand.append((mt, ent.path))
+        cand.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        logs = cand[:max_logs]
     except Exception:
         logs = []
-    for p in logs:
+    for mt, p in logs:
         if connection_id is not None:
             # Legacy events are unqualified: never borrow their meter for a
             # selected subscription, including the apparent native default.
@@ -183,7 +197,7 @@ def latest_limit_signal(now=None, directory=None, max_logs=300, connection_id=No
                 r = None
             return {"utilization": u, "resets_at": r}
         try:
-            seen = datetime.fromtimestamp(os.path.getmtime(p), tz=timezone.utc)
+            seen = datetime.fromtimestamp(mt, tz=timezone.utc)
         except Exception:
             seen = now
         return {"five_hour": win("five_hour"), "seven_day": win("seven_day"), "status": str(info.get("status") or ""),

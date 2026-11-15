@@ -4,7 +4,7 @@
 <title>Aladdin — AI Cockpit</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" href="/anchor.ico" type="image/x-icon">
-<link rel="stylesheet" href="/static/shared.css">
+<link rel="stylesheet" href="/static/shared.css?v=400dc07cdf37">
 </head>
 <body>
 <div class="app appx app3">
@@ -72,6 +72,14 @@
       </div>
       <div class="progress" data-progress hidden></div>
       <div class="plan-progress-bar" data-progress-bar><i data-progress-fill style="width:0%"></i></div>
+      <div class="plan-error-banner" data-plan-error role="alert" hidden></div>
+      <section class="plan-focus-card" data-plan-focus aria-label="Current Focus and Next Move" hidden></section>
+      <section class="plan-proposal-banner" data-plan-proposal aria-label="Steward Proposed Plan Update" hidden></section>
+      <form class="plan-add-bar" data-plan-add autocomplete="off">
+        <input type="text" class="plan-add-input" data-plan-add-title placeholder="+ Add Step…" aria-label="New step title">
+        <input type="text" class="plan-add-goal-input" data-plan-add-goal placeholder="Done when / goal (optional)" aria-label="Step goal or done-when">
+        <button type="submit" class="plan-add-btn" data-plan-add-submit title="Add step to The Plan">+ Add Step</button>
+      </form>
       <ul class="steps" data-steps></ul>
       <div class="fresh" data-fresh></div>
       <div class="gaps" data-gaps></div>
@@ -136,9 +144,8 @@
       <div class="right-scroll-area">
         <div class="pdeliv" data-delivmount></div>
         <div class="pstatus" data-pstatus>
-          <h2 class="pstatushead" hidden>Status</h2>
+          <h2 class="pstatushead" hidden>Status <span class="pcount" data-statusstamp></span></h2>
           <div class="platest" data-latest></div>
-          <div class="pmsgs" data-msgs></div>
           <div class="pscroll"></div>
           <details class="prev-status-log earlier-updates-box" data-prev-status-log>
             <summary class="psl-head eu-head">
@@ -183,20 +190,34 @@
 <script src="/static/md.js"></script>
 <script src="/static/plate.js"></script>
 <script src="/static/skill-icons.js"></script>
-<script src="/static/shared.js"></script>
+<script src="/static/shared.js?v=f7fac0ad1590"></script>
 <script>
 Proto.init({ statusPane: true });
 const app = document.querySelector(".app");
+const _v1Params = new URLSearchParams(location.search || "");
+const isEmbeddedTile = window.STEWARD_EMBED === true ||
+  _v1Params.get("embed") === "1" ||
+  /^(?:tile|talk)$/i.test(_v1Params.get("view") || "") ||
+  app.classList.contains("tileview") ||
+  app.classList.contains("talkview");
+if (isEmbeddedTile) {
+  document.documentElement.classList.add("is-embed-tile");
+  document.body.classList.add("is-embed-tile");
+  app.classList.add("embed-tile", "railhide");
+  if (!app.classList.contains("talkview")) app.classList.add("tileview");
+  app.classList.remove("statusopen");
+}
 // The status pane carries the deliverables and the 10-minute status — the two
 // things John asked to be top of mind — so it opens by DEFAULT (2026-08-26:
 // pinning the tile achieved nothing while the whole pane started collapsed).
 // His choice wins after that, and is remembered.
 try {
-  if (!app.classList.contains("tileview") && !app.classList.contains("talkview") && localStorage.getItem("steward_status_pane") !== "shut")
+  if (!isEmbeddedTile && !app.classList.contains("tileview") && !app.classList.contains("talkview") && localStorage.getItem("steward_status_pane") !== "shut")
     app.classList.add("statusopen");
-} catch (e) { if (!app.classList.contains("tileview") && !app.classList.contains("talkview")) app.classList.add("statusopen"); }
+} catch (e) { if (!isEmbeddedTile && !app.classList.contains("tileview") && !app.classList.contains("talkview")) app.classList.add("statusopen"); }
 document.querySelectorAll("[data-statustoggle],[data-statustoggle2]").forEach(b =>
   b.onclick = () => {
+    if (isEmbeddedTile) return;
     app.classList.toggle("statusopen");
     if (app.dataset.narrow || app.dataset.secondwin) return;   // a narrow or split window's open/close is for now, never his remembered choice
     try {
@@ -205,7 +226,7 @@ document.querySelectorAll("[data-statustoggle],[data-statustoggle2]").forEach(b 
     } catch (e) { /* no-op */ }
   });
 const t2 = document.querySelector("[data-railtoggle2]");
-if (t2) t2.onclick = () => app.classList.toggle("railhide");
+if (t2) t2.onclick = () => { if (isEmbeddedTile) return; app.classList.toggle("railhide"); };
 const planGrip=document.querySelector('[data-plangrip]');
 const setPlanWidth=w=>{const other=app.classList.contains('statusopen')?document.querySelector('.rightcol').offsetWidth:0;
   const width=Math.min(620,Math.max(340,window.innerWidth-other-320),Math.max(340,w));document.documentElement.style.setProperty('--planw',width+'px');
@@ -301,8 +322,13 @@ window.__restoreSayFocusIfActive = function () {
   } catch (e) {}
 };
 function enterSecondWindowMode() {
-  const title = arguments[0];
-  const rawHref = arguments[1];
+  let title = arguments[0];
+  let rawHref = arguments[1];
+  if (typeof title === "string" && typeof rawHref === "string" && /^(?:\/|https?:\/\/)/i.test(title) && !/^(?:\/|https?:\/\/)/i.test(rawHref)) {
+    const tmp = title;
+    title = rawHref;
+    rawHref = tmp;
+  }
   const href = toScrollableDeliverableHref(rawHref);
   const fromSplitEvent = Boolean(arguments[2]);
   if (!app.dataset.secondwin) {
@@ -352,7 +378,10 @@ function exitSecondWindowMode() {
       try { topApp.closeRightDeliverable(); } catch (e) {}
     }
   }
-  if (!app.dataset.narrow) {
+  if (isEmbeddedTile || app.classList.contains("tileview") || app.classList.contains("talkview")) {
+    app.classList.add("railhide");
+    app.classList.remove("statusopen");
+  } else if (!app.dataset.narrow) {
     app.classList.toggle("railhide", wantHide);
     app.classList.toggle("statusopen", wantOpen);
   }
@@ -370,7 +399,7 @@ try {
 } catch (e) {}
 const NARROW=1100;
 function fitConversation(){
-  if(app.classList.contains('tileview')||app.classList.contains('talkview')){app.classList.add('railhide');app.classList.remove('statusopen');return;}
+  if(isEmbeddedTile||app.classList.contains('tileview')||app.classList.contains('talkview')){app.classList.add('railhide');app.classList.remove('statusopen');return;}
   if(app.dataset.secondwin) return;
   // 2026-10-07 (John, evidence E6: a narrow cockpit squeezed the dialogue to a sliver): below 1100 px the plan rail
   // AND the status pane close - in memory only, never written to his preferences - and both come back as they were
@@ -404,7 +433,7 @@ const aegisToggleBtn = document.querySelector("[data-aegis-toggle]");
 const aegisTakeover = document.querySelector("[data-aegis-takeover]");
 const aegisFrame = document.querySelector("[data-aegis-frame]");
 const _anvilQ = new URLSearchParams(location.search || "");
-const _isEmbeddedAnvilDock = _anvilQ.get("inst") === "anvil" || _anvilQ.get("view") === "tile";
+const _isEmbeddedAnvilDock = _anvilQ.get("inst") === "anvil" || isEmbeddedTile;
 const anvilStorageKey = "anchor_anvil_open:" + (_anvilQ.get("pid") || "") + ":" + (_anvilQ.get("dir") || "");
 const aegisStorageKey = "anchor_aegis_open:" + (_anvilQ.get("pid") || "") + ":" + (_anvilQ.get("dir") || "");
 

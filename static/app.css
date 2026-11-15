@@ -70,6 +70,9 @@ body.hosted { border: 1px solid #2f3a4d; box-sizing: border-box; }
 .tile:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
 
 #bar .panes { display: flex; flex: none; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin: 8px 6px 0 0; }
+#bar .bar-version-pill { flex: none; margin: 9px 6px 0 0; padding: 3px 9px; border: 1px solid var(--line); border-radius: 999px; background: var(--tile); color: var(--amber); font: 600 11px Consolas, monospace; cursor: pointer; }
+#bar .bar-version-pill:hover { color: var(--text); border-color: var(--amber); }
+#bar .bar-version-pill.update-ready { background: rgba(74, 222, 128, 0.14); border-color: #4ade80; color: #4ade80; }
 #bar .panes button { background: none; border: 0; color: var(--faint); width: 32px; height: 26px; cursor: pointer; display: grid; place-items: center; }
 #bar .panes button[aria-pressed="true"] { background: #2a3344; color: var(--text); }
 #bar .panes button:hover { color: var(--text); }

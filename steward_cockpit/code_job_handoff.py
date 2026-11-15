@@ -163,14 +163,19 @@ def process_state(pid, birth, completed_at=None):
     if not pid:
         return "completed" if completed_at else "unknown"
     state, actual, _ = proc_probe.probe_status(pid)
+    if actual is None:
+        actual = proc_probe.creation_time(pid)
     if actual is not None and birth is not None and abs(actual - birth) > 0.001:
         return "unknown"
+    birth_ok = (birth is not None and actual is not None and abs(actual - birth) <= 0.001)
     if state == proc_probe.PROBE_RUNNING:
-        return "active" if birth is not None and actual == birth and not completed_at else "unknown"
-    if state == proc_probe.PROBE_EXITED and actual == birth and birth is not None:
+        return "active" if birth_ok and not completed_at else "unknown"
+    if state == proc_probe.PROBE_EXITED and birth_ok:
         return "completed" if completed_at else "dead"
     if proc_probe.pid_alive_via_enum(pid) is False:
         return "completed" if completed_at else "dead"
+    if birth_ok and not completed_at and proc_probe.pid_alive_via_enum(pid) is True:
+        return "active"
     return "unknown"
 
 

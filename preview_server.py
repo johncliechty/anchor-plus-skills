@@ -233,14 +233,16 @@ def _health_check(port: int, proc, timeout: float) -> bool:
     """
     deadline = time.time() + max(0.0, float(timeout))
     url = f"http://127.0.0.1:{port}/api/version"
+    if not url.startswith(("http://", "https://")):
+        return False
     while time.time() < deadline:
         if proc.poll() is not None:
             return False  # child exited before becoming reachable
         try:
-            with urllib.request.urlopen(url, timeout=_PROBE_TIMEOUT) as r:
+            with _paths.safe_urlopen(url, timeout=min(float(_PROBE_TIMEOUT), 15.0)) as r:
                 if r.status == 200:
                     return True
-        except (urllib.error.URLError, urllib.error.HTTPError, OSError):
+        except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError):
             pass
         time.sleep(_PROBE_INTERVAL)
     return False

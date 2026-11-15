@@ -74,6 +74,7 @@ tools/steward_review.mjs
 tools/steward_settings.py
 tools/steward_skill.py
 tools/steward_comms.py
+tools/steward_plan.py
 tools/gitguard/__init__.py
 tools/gitguard/git
 tools/gitguard/git.cmd
@@ -538,6 +539,10 @@ gwl_clearinghouse.py
 cockpit_baton_and_tiers.py
 foundry_federation.py
 mothership_collab.py
+mothership_updater.py
+mothership_registry.json
+install-mac-linux.sh
+Anchor.command
 website_portal.py
 onboard_wizard.py
 librarian_kb.py
@@ -579,7 +584,11 @@ tests/test_*.py
 !tests/test_star_chart_2026_10_03.py
 !tests/test_steward_deliverables_register.py
 !tests/test_scribe_skill_and_comms.py
+!tests/test_scribe_email_hardening.py
+!tests/test_w1_scribe_gmail_overhaul_2026_11_13.py
+!tests/test_speed_racer_edit_persistence_and_scribe_learning.py
 !tests/test_wave23_outlook_split_email_and_list_in_cos.py
+!vendor/bundled-skills/**/journal/**
 tests/fixtures/fake_stream.jsonl
 tests/fixtures/gate_stream.jsonl
 tests/fixtures/model-policy-v1.json

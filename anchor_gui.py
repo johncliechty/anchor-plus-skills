@@ -24,6 +24,7 @@ import html as html_lib
 # Single-folder layout (was previously dual-folder PSU + Axmra; consolidated 2026-05-02).
 # Wave 2: data paths resolve via the shared `paths` helper, honoring the
 # ANCHOR_DATA_DIR env var (unset -> the code dir, so behavior is unchanged).
+import paths
 import paths as _paths
 # Declarative HTTP route table + strangler dispatch substrate (rearch W7 / C2).
 # Pure data + pure functions (stdlib only); the migrated handler *functions* live
@@ -535,6 +536,7 @@ import foundry_gui_write as _fgw  # foundry-v2 Wave 10 — GUI write surface (op
 import foundry_api as _fapi  # foundry GUI fold-in — the React app's real-data API layer (port of server.mjs)
 import foundry_page as _fpage  # read-only skill walkthrough / Library discovery
 import pillar_flags as _pillar  # rearch W3/W4 — per-pillar off-switch flags (stdlib-only)
+import paths
 import paths as _paths  # re-import alias (already imported above; harmless)
 
 
@@ -1495,9 +1497,8 @@ def _zh_node_base():
 
 def _zh_node_is_up(timeout=1.0):
     """True when the System-Wide Sentinel on :48484 answers /api/state."""
-    import urllib.request
     try:
-        with urllib.request.urlopen(f"{_zh_node_base()}/api/state", timeout=timeout) as r:
+        with paths.safe_urlopen(f"{_zh_node_base()}/api/state", timeout=min(float(timeout or 1.0), 15.0)) as r:
             return 200 <= getattr(r, "status", 200) < 500
     except Exception:
         return False
@@ -1511,9 +1512,8 @@ def _zh_node_is_stale(timeout=1.0):
     reports ``server_mtime`` in /api/state; a hunter that reports none is an
     old build and therefore stale."""
     import json as _json
-    import urllib.request
     try:
-        with urllib.request.urlopen(f"{_zh_node_base()}/api/state", timeout=timeout) as r:
+        with paths.safe_urlopen(f"{_zh_node_base()}/api/state", timeout=min(float(timeout or 1.0), 15.0)) as r:
             st = _json.loads(r.read().decode("utf-8", "replace") or "{}")
     except Exception:
         return False  # not up / unreadable — the caller's liveness logic decides
@@ -7749,7 +7749,10 @@ def _high_seat_context():
         if entry and (camp_dir / "roadmap.json").is_file():
             from steward_cockpit.steward_campaign import read_map as _read_map
             from steward_cockpit.campaign_parts import resolve_parts as _resolve
-            m = _read_map(str(camp_dir))
+            try:
+                m = _read_map(str(camp_dir), include_overview=False)
+            except TypeError:
+                m = _read_map(str(camp_dir))
             # the resolver reads the roadmaps home_rows already read this request
             _cache = {("projection", str(f.get("folder") or "")): f.get("projection")
                       for f in facts_list if f.get("folder") and f.get("projection") is not None}
@@ -8370,6 +8373,7 @@ def render_high_seat_page(logged_in=False) -> str:
     """GET /high-seat — the steward's portfolio surface (W1b); an honest error page, never a blank. ``logged_in``: the
     request carried a valid token or the login cookie (W2c-4: the page shows its login box only when it did not)."""
     try:
+        _doctor_sync_live_code()
         import high_seat_page as _hsp
         if not logged_in and bool(_paths.expected_token()):
             return _hsp.render_locked_html({"build": BUILD_ID, "steward": _steward_ui(), "auth_required": True, "logged_in": False})
@@ -11985,10 +11989,10 @@ def handle_version(handler, path, body):
     except Exception:
         health = ""
     try:
-        rel_ver = (Path(__file__).resolve().parent / "VERSION").read_text(encoding="utf-8").strip() or "1.4.3"
+        rel_ver = (Path(__file__).resolve().parent / "VERSION").read_text(encoding="utf-8").strip() or "1.5.2"
     except OSError:
-        rel_ver = "1.4.3"
-    payload = json.dumps({"version": BUILD_ID, "release_version": rel_ver, "health": health, "boot": os.environ.get("ANCHOR_STARTED_AT", "")}).encode()
+        rel_ver = "1.5.2"
+    payload = json.dumps({"version": BUILD_ID, "release_version": rel_ver, "display_version": f"v{rel_ver}", "health": health, "boot": os.environ.get("ANCHOR_STARTED_AT", "")}).encode()
     handler.send_response(200)
     handler.send_header("Content-Type", "application/json")
     handler.send_header("Content-Length", str(len(payload)))
@@ -15025,7 +15029,7 @@ def handle_zombie_spenders(handler, path, body):
     actionable_red_allowed = False
     observe_would_be = 0
     try:
-        with urllib.request.urlopen('http://127.0.0.1:48484/api/state', timeout=3) as r:
+        with paths.safe_urlopen('http://127.0.0.1:48484/api/state', timeout=3.0) as r:
             st = json.loads(r.read().decode('utf-8'))
         classifier_mode = str(st.get("classifierMode") or "shadow").lower()
         actionable_red_allowed = bool(st.get("actionableRedAllowed"))
@@ -16265,7 +16269,7 @@ def _zombie_scan_and_skill_briefing():
     import urllib.request
     out = "\n\n## Whole-Computer Token-Spend Scan (System-Wide Sentinel)\n"
     try:
-        with urllib.request.urlopen('http://127.0.0.1:48484/api/state', timeout=3) as r:
+        with paths.safe_urlopen('http://127.0.0.1:48484/api/state', timeout=3.0) as r:
             st = json.loads(r.read().decode('utf-8'))
         tot = (st.get("ledger", {}) or {}).get("totals", {}) or {}
         zombies = st.get("zombies", []) or []
@@ -17107,8 +17111,7 @@ def handle_zombie_terminal_start(handler, path, body):
         briefing = plan["seedText"]
         # Optional: append a short live scan tip without multi-minute assembly.
         try:
-            import urllib.request
-            with urllib.request.urlopen('http://127.0.0.1:48484/api/state', timeout=1.5) as r:
+            with paths.safe_urlopen('http://127.0.0.1:48484/api/state', timeout=1.5) as r:
                 st = json.loads(r.read().decode('utf-8'))
             tot = (st.get("ledger", {}) or {}).get("totals", {}) or {}
             briefing += (
@@ -17742,13 +17745,15 @@ def _doctor_live_probe(path, timeout=10.0):
     import urllib.error
     t0 = time.time()
     url = "http://127.0.0.1:%d%s" % (_doctor_live_port(), path)
+    if not url.startswith(("http://", "https://")):
+        return {"path": path, "ok": False, "code": None, "error": "DisallowedUrlSchemeError", "ms": 0}
     hdrs = {}
     tok = (os.environ.get("ANCHOR_TOKEN") or "").strip()
     if tok:
         hdrs["Authorization"] = "Bearer " + tok
     try:
-        with urllib.request.urlopen(urllib.request.Request(url, method="GET", headers=hdrs),
-                                    timeout=timeout) as r:
+        with paths.safe_urlopen(urllib.request.Request(url, method="GET", headers=hdrs),
+                                timeout=min(float(timeout or 10.0), 15.0)) as r:
             code = r.getcode()
     except urllib.error.HTTPError as exc:
         code = exc.code
@@ -17818,9 +17823,10 @@ def _doctor_sync_live_code():
     try:
         import importlib
         _mod_mtimes = globals().setdefault("_DOCTOR_MOD_MTIMES", {})
-        for mod_name in ("proc_probe", "lanes", "deliverables_register", "home_rows", "high_seat_page",
+        for mod_name in ("paths", "office_preview", "proc_probe", "lanes", "deliverables_register", "home_rows", "high_seat_page",
                          "campaign_page", "desk", "desk_page", "mothership_collab", "website_portal",
-                         "foundry_page", "foundry_api", "usage_allowance_monitor", "usage_nightly_sync",
+                         "foundry_page", "foundry_api", "usage_capacity", "usage_ledger", "usage_index",
+                         "usage_allowance_monitor", "usage_nightly_sync",
                          "steward_cockpit.gui_ingress_routes", "steward_cockpit.gui_domain_core",
                          "steward_cockpit.gui_surface_emit",
                          "steward_cockpit.steward_campaign", "steward_cockpit.steward_engine",
@@ -20423,7 +20429,7 @@ def _zh_proxy_to_node(method, upstream_path, query="", headers=None, body=None, 
     data = body if body is not None and method.upper() not in ("GET", "HEAD") else None
     req = urllib.request.Request(url, data=data, headers=req_headers, method=method.upper())
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with paths.safe_urlopen(req, timeout=min(float(timeout or 15.0), 15.0)) as resp:
             raw = resp.read()
             return {
                 "ok": True,
@@ -22421,6 +22427,7 @@ class AnchorHandler(BaseHTTPRequestHandler):
                 elif verb == "setup_chart":
                     obj, code = _scr.setup_chart_get(qs)
                 elif verb == "comms":
+                    _doctor_sync_live_code()
                     import comms_connector as _cc
                     obj, code = _cc.handle_comms_get(qs)
                 elif verb == "collab":
@@ -22451,6 +22458,7 @@ class AnchorHandler(BaseHTTPRequestHandler):
                 elif verb == "setup_chart":
                     obj, code = _scr.setup_chart_post(body or {})
                 elif verb == "comms":
+                    _doctor_sync_live_code()
                     import comms_connector as _cc
                     obj, code = _cc.handle_comms_post(body or {})
                 elif verb == "collab":
@@ -23314,13 +23322,35 @@ class AnchorHandler(BaseHTTPRequestHandler):
                     self._send_json({"error": "unauthorized"}, code=401); return
                 import comms_connector as _cc_att
                 import mimetypes as _mimetypes
-                _q_att = {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
-                _resolved_att = _cc_att.resolve_attachment_file_path(
-                    raw_path=str(_q_att.get("path") or ""),
-                    filename=str(_q_att.get("name") or _q_att.get("filename") or ""),
-                    uid=str(_q_att.get("uid") or ""),
-                    account_id=str(_q_att.get("account_id") or ""),
-                )
+                _raw_query_att = urlparse(self.path).query
+                if "%2e%2e" in _raw_query_att.lower() or "%00" in _raw_query_att.lower():
+                    self._send_json(
+                        {
+                            "ok": False,
+                            "failure_state": "dependency-returns-garbage",
+                            "error": "Blocked unsafe path traversal or disallowed URL scheme",
+                        },
+                        code=403,
+                    )
+                    return
+                _q_att = {k: v[0] for k, v in parse_qs(_raw_query_att).items()}
+                try:
+                    _resolved_att = _cc_att.resolve_attachment_file_path(
+                        raw_path=str(_q_att.get("path") or ""),
+                        filename=str(_q_att.get("name") or _q_att.get("filename") or ""),
+                        uid=str(_q_att.get("uid") or ""),
+                        account_id=str(_q_att.get("account_id") or ""),
+                    )
+                except paths.UnsafePathError:
+                    self._send_json(
+                        {
+                            "ok": False,
+                            "failure_state": "dependency-returns-garbage",
+                            "error": "Blocked unsafe path traversal or disallowed URL scheme",
+                        },
+                        code=403,
+                    )
+                    return
                 if _resolved_att is None or not _resolved_att.is_file():
                     self._send_json({"ok": False, "error": "attachment not found"}, code=404); return
                 _ctype, _ = _mimetypes.guess_type(str(_resolved_att))
@@ -23426,6 +23456,17 @@ class AnchorHandler(BaseHTTPRequestHandler):
                 q = parse_qs(urlparse(self.path).query)
                 is_sb = str((q.get("sandbox") or [""])[0]).strip().lower() in ("1", "true", "yes")
                 self._send_json(_gag.get_gwl_admin_state(sandbox=is_sb), 200)
+            elif _path_only == "/api/system/version":
+                import mothership_updater as _mu
+                self._send_json(_mu.get_version_status(), 200)
+            elif _path_only == "/api/system/check_update":
+                import mothership_updater as _mu
+                q = parse_qs(urlparse(self.path).query)
+                rem_url = str((q.get("remote_url") or [""])[0]).strip() or None
+                self._send_json(_mu.check_for_updates(remote_url=rem_url), 200)
+            elif _path_only == "/api/mothership/registry":
+                import mothership_updater as _mu
+                self._send_json(_mu.load_mothership_registry(), 200)
             elif _path_only == "/api/foundry/page":
                 self._send_json(_fpage.catalog())
             elif _path_only == "/api/foundry/skill":
@@ -23776,6 +23817,27 @@ class AnchorHandler(BaseHTTPRequestHandler):
                 if not folder:
                     self.send_response(404)
                     self.end_headers()
+                    return
+                try:
+                    _folder_real = Path(folder).resolve()
+                    _contained_art = paths.resolve_contained_path(_folder_real, rel, allow_missing=True)
+                    if not _contained_art.is_relative_to(_folder_real):
+                        raise paths.UnsafePathError("Blocked unsafe path traversal or disallowed URL scheme")
+                    _rel_parts_art = _contained_art.relative_to(_folder_real).parts
+                    if any(p.lower() in (".git", ".anchor") for p in _rel_parts_art):
+                        raise paths.UnsafePathError("Blocked unsafe path traversal or disallowed URL scheme")
+                    from provider_native import private_account_path as _priv_acc_art
+                    if _priv_acc_art(str(_contained_art)):
+                        raise paths.UnsafePathError("Blocked unsafe path traversal or disallowed URL scheme")
+                except paths.UnsafePathError:
+                    self._send_json(
+                        {
+                            "ok": False,
+                            "failure_state": "dependency-returns-garbage",
+                            "error": "Blocked unsafe path traversal or disallowed URL scheme",
+                        },
+                        code=400,
+                    )
                     return
                 asset = _rv.resolve_project_artifact(folder, rel)
                 if asset is None:
@@ -24132,6 +24194,27 @@ class AnchorHandler(BaseHTTPRequestHandler):
             is_sb = bool(_b.get("sandbox")) or str((q.get("sandbox") or [""])[0]).strip().lower() in ("1", "true", "yes")
             _act = str(_b.get("action") or "").strip()
             _out = _gag.dispatch_gwl_admin_action(_act, _b, sandbox=is_sb)
+            self._send_json(_out, 200 if _out.get("ok") else 400)
+            return
+        if _path_only in ("/api/system/pull_update", "/api/mothership/register", "/api/mothership/push_update"):
+            if not (_paths.auth_ok(provided) or _local_browser(self)):
+                self._send_json({"ok": False, "error": "unauthorized"}, 401)
+                return
+            import mothership_updater as _mu
+            _b = body if isinstance(body, dict) else {}
+            if _path_only == "/api/system/pull_update":
+                _out = _mu.pull_latest_update(
+                    target_version=str(_b.get("target_version") or "").strip() or None,
+                    sync_skills=bool(_b.get("sync_skills", True)),
+                )
+            elif _path_only == "/api/mothership/register":
+                _out = _mu.register_mothership_in_repo(_b)
+            else:
+                _out = _mu.push_update_to_motherships(
+                    target_id=str(_b.get("target_id") or "").strip(),
+                    notes=str(_b.get("notes") or "").strip(),
+                    push_git=bool(_b.get("push_git", False)),
+                )
             self._send_json(_out, 200 if _out.get("ok") else 400)
             return
         _post_route = _routes.match("POST", _path_only)

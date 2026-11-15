@@ -87,10 +87,164 @@ def _write_job(cdir, job):
         _write_all(cdir, jobs)
 
 
+def _extract_skill_log_usage(cdir, job) -> dict:
+    """Best-effort extract reported usage JSON/tokens from the bounded skill log tail."""
+    raw_text = ""
+    log_rel = job.get("log") or job.get("log_path") or ""
+    if cdir and log_rel:
+        try:
+            lp = Path(cdir) / str(log_rel)
+            if lp.is_file():
+                with lp.open("rb") as fh:
+                    fh.seek(0, os.SEEK_END)
+                    sz = fh.tell()
+                    span = min(sz, 65536)
+                    if sz > span:
+                        fh.seek(-span, os.SEEK_END)
+                    else:
+                        fh.seek(0)
+                    raw_text = fh.read(span).decode("utf-8", errors="replace")
+        except Exception:
+            raw_text = ""
+    if not raw_text:
+        raw_text = str(job.get("tail") or "")
+    if not raw_text:
+        return {}
+
+    usage_keys = (
+        "input_tokens", "output_tokens", "total_tokens",
+        "cache_read_input_tokens", "cache_creation_input_tokens",
+        "cached_input_tokens", "total_all_classes",
+    )
+    for raw_line in reversed(raw_text.splitlines()):
+        s = raw_line.strip()
+        if "{" not in s:
+            continue
+        cand = s if s.startswith("{") else s[s.find("{"):]
+        try:
+            obj = json.loads(cand)
+        except ValueError:
+            continue
+        if not isinstance(obj, dict):
+            continue
+        ub = obj.get("usage") if isinstance(obj.get("usage"), dict) else (
+            obj.get("token_totals") if isinstance(obj.get("token_totals"), dict) else None
+        )
+        has_u = isinstance(ub, dict) and any(ub.get(k) is not None for k in usage_keys)
+        has_top = any(
+            obj.get(k) is not None
+            for k in ("input_tokens", "output_tokens", "total_tokens", "tokens",
+                      "cost_usd", "total_cost_usd")
+        )
+        if not (has_u or has_top):
+            continue
+        src_u = dict(ub) if isinstance(ub, dict) else {}
+        for tk in ("input_tokens", "output_tokens", "cache_read_input_tokens",
+                   "cache_creation_input_tokens", "cached_input_tokens", "total_tokens"):
+            if tk not in src_u and obj.get(tk) is not None:
+                src_u[tk] = obj.get(tk)
+        tokens_val = obj.get("total_tokens")
+        if tokens_val is None:
+            tokens_val = obj.get("tokens")
+        if tokens_val is None and isinstance(ub, dict):
+            tokens_val = ub.get("total_tokens") if ub.get("total_tokens") is not None else ub.get("total_all_classes")
+        cost_val = obj.get("cost_usd")
+        if cost_val is None:
+            cost_val = obj.get("total_cost_usd")
+        if cost_val is None and isinstance(ub, dict):
+            cost_val = ub.get("cost_usd") if ub.get("cost_usd") is not None else ub.get("total_cost_usd")
+        model_val = obj.get("model_served") or obj.get("model") or src_u.get("model")
+        cli_val = obj.get("cli") or obj.get("family") or obj.get("backend")
+        sess_val = obj.get("engine_session_uuid") or obj.get("session_id") or obj.get("native_id")
+        return {
+            "found": True,
+            "usage": src_u if src_u else None,
+            "tokens": tokens_val,
+            "cost_usd": cost_val,
+            "model": model_val if isinstance(model_val, str) else None,
+            "cli": cli_val if isinstance(cli_val, str) else None,
+            "session_uuid": sess_val if isinstance(sess_val, str) and sess_val else None,
+        }
+    return {}
+
+
+def _ingest_skill_job_usage(cdir, job) -> None:
+    """Best-effort record attributed usage for a completed skill job."""
+    try:
+        import usage_capture as _uc
+        job_id = str((job or {}).get("id") or "")
+        if not job_id:
+            return
+        eff_str = str(cdir) if cdir else None
+        if eff_str:
+            try:
+                _uc.ingest_receipts(parent_effort=eff_str)
+            except Exception:
+                pass
+        pid, fpath = _uc.resolve_project(eff_str) if eff_str else (None, None)
+        if not pid and eff_str:
+            try:
+                import rnd_registry as _rr
+                norm_eff = os.path.normcase(os.path.realpath(eff_str))
+                for p in _rr.list_projects():
+                    fp = (p or {}).get("folder_path")
+                    if fp:
+                        nfp = os.path.normcase(os.path.realpath(str(fp)))
+                        if norm_eff == nfp or norm_eff.startswith(nfp.rstrip(os.sep) + os.sep):
+                            pid, fpath = p.get("id"), fp
+                            break
+            except Exception:
+                pass
+        parsed = _extract_skill_log_usage(cdir, job)
+        started_ep = job.get("started_epoch")
+        ended_ep = ((job.get("process") or {}).get("ended_at")) or time.time()
+        dur_ms = 0
+        if isinstance(started_ep, (int, float)) and isinstance(ended_ep, (int, float)) and ended_ep >= started_ep:
+            dur_ms = int(round((ended_ep - started_ep) * 1000))
+        idx_key = f"skill-job:{job_id}"
+        doc_uuid = parsed.get("session_uuid") or f"skill-job-{job_id}"
+        if parsed.get("found"):
+            _uc.ingest_usage(
+                doc_uuid,
+                idx_key,
+                index_key=idx_key,
+                source=_uc.SOURCE_JOB,
+                native_id=job_id,
+                tokens=parsed.get("tokens"),
+                cost_usd=parsed.get("cost_usd"),
+                project_id=pid,
+                folder_path=fpath,
+                effort_dir=eff_str,
+                cli=parsed.get("cli"),
+                model=parsed.get("model"),
+                duration_ms=dur_ms,
+                usage=parsed.get("usage"),
+            )
+        else:
+            _uc.ingest_usage(
+                doc_uuid,
+                idx_key,
+                index_key=idx_key,
+                source=_uc.SOURCE_JOB,
+                native_id=job_id,
+                tokens=0,
+                cost_usd=None,
+                project_id=pid,
+                folder_path=fpath,
+                effort_dir=eff_str,
+                duration_ms=dur_ms,
+                usage_state="unmeasured",
+            )
+    except Exception as exc:
+        _log.debug("skill job %s: usage ingest skipped: %s", (job or {}).get("id"), exc)
+
+
 def _transition(cdir, job_id, expect, **updates):
     """One locked status change (the code-job contract): ``updates`` apply only while the job's status is in
     ``expect``; returns the job after the change, else None (an end and a Stop never both win). Leaving ``running``
     leaves a durable obligation: a result that has not been written yet is ``needs_report``."""
+    left_live = False
+    out_job = None
     with _LOCK:
         jobs = read_jobs(cdir, strict=True)
         j = jobs.get(job_id)
@@ -98,11 +252,20 @@ def _transition(cdir, job_id, expect, **updates):
             return None
         was_live = j.get("status") in LIVE
         j.update(updates)
-        if was_live and j.get("status") not in LIVE and not (j.get("handoff") or {}).get("id"):
+        left_live = bool(was_live and j.get("status") not in LIVE)
+        if left_live and not (j.get("handoff") or {}).get("id"):
             j["handoff"] = {"state": "needs_report", "attempt": j.get("attempt", 1)}
         jobs[job_id] = j
         _write_all(cdir, jobs)
-        return dict(j)
+        out_job = dict(j)
+    if left_live:
+        _ingest_skill_job_usage(cdir, out_job)
+        try:
+            from steward_cockpit import steward_campaign
+            steward_campaign.push_effort_status(cdir, reason="skill_job_finish")
+        except Exception:
+            pass
+    return out_job
 
 
 def validate(argv):
@@ -154,7 +317,16 @@ def _stamp():
 
 def _tail(path, n=1500):
     try:
-        return Path(path).read_text(encoding="utf-8", errors="replace")[-n:]
+        p = Path(path)
+        with p.open("rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            sz = fh.tell()
+            span = max(4096, int(n) * 4)
+            if sz > span:
+                fh.seek(-span, os.SEEK_END)
+            else:
+                fh.seek(0)
+            return fh.read(span).decode("utf-8", errors="replace")[-n:]
     except Exception:
         return ""
 
@@ -215,12 +387,39 @@ def start(cdir, argv, label="", actor=""):
     now = time.time()
     job = {"id": job_id, "label": (label or Path(argv[1]).stem)[:120], "argv": argv, "status": "running",
            "attempt": 1, "started": _stamp(), "started_epoch": now, "started_by": str(actor or "the steward"),
-           "log": log_rel, "cwd": str(Path(cdir)), "phase": "running", "phase_at": now,
+           "log": log_rel, "log_path": log_rel, "cwd": str(Path(cdir)), "phase": "running", "phase_at": now,
            "process": {"state": "starting", "pid": None, "birth": None, "contained": None, "activity_at": None,
                        "output_bytes": 0}}
     env = dict(os.environ)
     env.pop("ANTHROPIC_API_KEY", None)          # subscription billing, as every skill launcher does
     env["CRUCIBLE_AGENT_LIVE"] = "1"
+    try:
+        import paths as _paths
+        import usage_capture as _uc
+        env["ANCHOR_DATA_DIR"] = str(_paths.data_dir())
+        pid, fpath = _uc.resolve_project(cdir)
+        if not pid and cdir:
+            try:
+                import rnd_registry as _rr
+                norm_eff = os.path.normcase(os.path.realpath(str(cdir)))
+                for p in _rr.list_projects():
+                    fp = (p or {}).get("folder_path")
+                    if fp:
+                        nfp = os.path.normcase(os.path.realpath(str(fp)))
+                        if norm_eff == nfp or norm_eff.startswith(nfp.rstrip(os.sep) + os.sep):
+                            pid, fpath = p.get("id"), fp
+                            break
+            except Exception:
+                pass
+        env.update(_uc.attribution_env(
+            project_id=pid,
+            effort_dir=str(cdir),
+            folder_path=fpath,
+            job_id=job_id,
+            source="skill-job",
+        ))
+    except Exception:
+        pass
     try:
         log_path.parent.mkdir(parents=True, exist_ok=True)
         out = open(log_path, "w", encoding="utf-8")
@@ -249,8 +448,14 @@ def start(cdir, argv, label="", actor=""):
                          pid=u.run.pid, contained=False, launched_at=time.time())
                 threading.Thread(target=_wait, args=(cdir, job_id, u.run, out, log_path),
                                  name="skill-job-" + job_id, daemon=True).start()
+                try:
+                    from steward_cockpit import steward_campaign
+                    steward_campaign.register_active_effort(str(cdir))
+                    steward_campaign.push_effort_status(cdir, reason="skill_job_start")
+                except Exception:
+                    pass
                 return {"ok": False, "error": "%s; the job keeps its place until Stop ends it" % u, "job": job_id,
-                        "log": log_rel}
+                        "log": log_rel, "log_path": log_rel}
             _PROCS[job_id] = run
     except Exception as e:
         out.close()
@@ -271,7 +476,13 @@ def start(cdir, argv, label="", actor=""):
              launched_at=time.time())
     threading.Thread(target=_wait, args=(cdir, job_id, run, out, log_path), name="skill-job-" + job_id,
                      daemon=True).start()
-    return {"ok": True, "job": job_id, "log": log_rel, "pid": run.pid, "contained": run.wjob is not None}
+    try:
+        from steward_cockpit import steward_campaign
+        steward_campaign.register_active_effort(str(cdir))
+        steward_campaign.push_effort_status(cdir, reason="skill_job_start")
+    except Exception:
+        pass
+    return {"ok": True, "job": job_id, "log": log_rel, "log_path": log_rel, "pid": run.pid, "contained": run.wjob is not None}
 
 
 def _wait(cdir, job_id, run, out, log_path):

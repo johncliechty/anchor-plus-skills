@@ -22,6 +22,7 @@ import os
 import re
 import shutil
 import time
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -140,8 +141,10 @@ def probe_chrome_cdp_usage(port: int = 9222, timeout: float = 2.0, open_family: 
     }
     url = f"http://127.0.0.1:{int(port)}/json/list"
     try:
+        if urllib.parse.urlparse(url).scheme not in ("http", "https"):
+            raise _paths.DisallowedUrlSchemeError("Blocked unsafe path traversal or disallowed URL scheme")
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with _paths.safe_urlopen(req, timeout=min(float(timeout), 15.0)) as resp:
             tabs = json.loads(resp.read().decode("utf-8", errors="replace"))
         if isinstance(tabs, list):
             result["cdp_reachable"] = True

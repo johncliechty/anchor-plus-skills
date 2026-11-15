@@ -1169,6 +1169,95 @@
       if($('host-sec-feedback'))$('host-sec-feedback').textContent='✓ Saved Mother Ship username, contact email, password hash (OS Vault), 2FA & ANCHOR_TOKEN.';
     };
   }
+  function renderMothershipRegistryList(motherships){
+    const el=$('ms-registry-list');
+    if(!el)return;
+    if(!Array.isArray(motherships) || !motherships.length){
+      el.textContent='No Mother Ships registered yet.';
+      return;
+    }
+    el.innerHTML=motherships.map(m=>{
+      const id=String(m.id||'');
+      const owner=String(m.owner||'Collaborator');
+      const pseudo=String(m.pseudonym||'Steward');
+      const plat=String(m.platform||'windows');
+      const url=String(m.tailscale_url||m.local_url||'');
+      const ver=String(m.version_installed||'unknown');
+      return '<div style="padding:6px 10px;border:1px solid rgba(255,255,255,0.08);border-radius:8px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">'
+        +'<div><strong>'+owner+' ('+pseudo+')</strong> · <code>'+id+'</code> · <span class="muted">'+plat+'</span> · <code>'+url+'</code></div>'
+        +'<span class="w3-badge">v'+ver.replace(/^v/,'')+'</span>'
+        +'</div>';
+    }).join('');
+  }
+  function loadMothershipUpdateAndRegistry(){
+    fetch('/api/system/version',{credentials:'same-origin'}).then(r=>r.ok?r.json():null).then(v=>{
+      if(v && v.display_version){
+        if($('setup-version-pill'))$('setup-version-pill').textContent=v.display_version;
+        if($('ms-current-version-label'))$('ms-current-version-label').textContent=v.display_version;
+        if($('ms-update-status-msg'))$('ms-update-status-msg').textContent='Installed version: '+v.display_version+' ('+(v.platform||'host')+')';
+      }
+    }).catch(()=>{});
+    fetch('/api/mothership/registry',{credentials:'same-origin'}).then(r=>r.ok?r.json():null).then(reg=>{
+      if(reg && Array.isArray(reg.motherships))renderMothershipRegistryList(reg.motherships);
+    }).catch(()=>{});
+  }
+  loadMothershipUpdateAndRegistry();
+  if($('btn-ms-check-update')){
+    $('btn-ms-check-update').onclick=async()=>{
+      const msg=$('ms-update-status-msg');
+      if(msg)msg.textContent='Checking GitHub & Mother Ship registry for updates…';
+      try{
+        const res=await fetch('/api/system/check_update',{credentials:'same-origin'}).then(r=>r.json());
+        if(res.update_available){
+          if(msg)msg.textContent='⬆ Update available: '+(res.remote_version||res.remote_head||'latest')+' (installed: '+(res.display_version||'v1.5.2')+'). Click Pull & Update to install.';
+        }else{
+          if(msg)msg.textContent='✓ Up to date ('+(res.display_version||'v1.5.2')+').';
+        }
+      }catch(e){if(msg)msg.textContent='Check failed: '+e.message;}
+    };
+  }
+  if($('btn-ms-pull-update')){
+    $('btn-ms-pull-update').onclick=async()=>{
+      const msg=$('ms-update-status-msg');
+      if(msg)msg.textContent='Pulling latest Anchor update & syncing 20 bundled Foundry skills…';
+      try{
+        const res=await api.request('/api/system/pull_update',{restart_service:false});
+        if(res && res.display_version){
+          if($('setup-version-pill'))$('setup-version-pill').textContent=res.display_version;
+          if($('ms-current-version-label'))$('ms-current-version-label').textContent=res.display_version;
+        }
+        if(msg)msg.textContent=(res && res.ok ? '✓ Updated to '+(res.display_version||'latest')+' ('+(res.method||'git')+') · Skills synced: '+((res.skills_synced||[]).length) : '⚠ Update status: '+((res&&res.errors||[]).join('; ')||'check logs'));
+      }catch(e){if(msg)msg.textContent='Update failed: '+e.message;}
+    };
+  }
+  if($('btn-ms-register')){
+    $('btn-ms-register').onclick=async()=>{
+      const msg=$('ms-update-status-msg');
+      try{
+        const res=await api.request('/api/mothership/register',{
+          owner:$('ms-reg-owner')?$('ms-reg-owner').value:'',
+          pseudonym:$('ms-reg-pseudonym')?$('ms-reg-pseudonym').value:'',
+          tailscale_url:$('ms-reg-tailscale-url')?$('ms-reg-tailscale-url').value:'',
+          platform:$('ms-reg-platform')?$('ms-reg-platform').value:'windows',
+          github_repo:$('ms-reg-github-repo')?$('ms-reg-github-repo').value:'GWL-John/Anchor'
+        });
+        if(res && res.registry && Array.isArray(res.registry.motherships))renderMothershipRegistryList(res.registry.motherships);
+        if(msg)msg.textContent='✓ Registered Mother Ship ('+((res.entry&&res.entry.id)||'saved')+') in mothership_registry.json.';
+      }catch(e){if(msg)msg.textContent='Registration failed: '+e.message;}
+    };
+  }
+  if($('btn-ms-push-update')){
+    $('btn-ms-push-update').onclick=async()=>{
+      const msg=$('ms-update-status-msg');
+      if(msg)msg.textContent='Pushing latest Anchor release to registered Mother Ships…';
+      try{
+        const res=await api.request('/api/mothership/push_update',{push_git_first:true});
+        const count=Array.isArray(res.notified)?res.notified.length:0;
+        if(msg)msg.textContent='✓ Push completed (v'+(res.version||'1.5.2')+') · Processed '+count+' registered Mother Ship(s).';
+        loadMothershipUpdateAndRegistry();
+      }catch(e){if(msg)msg.textContent='Push failed: '+e.message;}
+    };
+  }
   renderWave3All();
   const reqSec=new URLSearchParams(location.search).get('section') || (location.hash?location.hash.replace('#',''):'');
   api.request('/api/provider-setup').then(value=>{

@@ -17,17 +17,17 @@
     "SKILL.md": "10bc3c3a383a2d156d3b1eb52cd304b68ea7def513ed24e1a7aa8c21e0a09f2d"
   },
   "anvil": {
-    "FLOW.json": "a58003dc3ce199be56c80f26fe505be9cd82770e43150a3480946abd67c332a9",
-    "HUMAN.md": "3fb29884c393b2d9a1aa0d70ab5d8355bbeb3d6ef7d12b34d7b82df05086d673",
-    "LIBRARY.json": "d619c295c7dc0a2dc5ad4c818d8ef7f0faa49f854097afced633188cb785579d",
-    "NORTH-STAR.md": "d3fb303fb58a383e1c918746cedb089f083eb1514416f08dc02104818e23b649",
-    "SKILL.md": "170138bdb7a8a15f6967f7108d65ea4e5be26c690c9fa60ccacbeebe3e9019ef",
+    "FLOW.json": "d58edd046c8876fd4edc1ae88f543cb8fef13970add49d8447c86bc35a7ffbda",
+    "HUMAN.md": "fa112dacc52821a21148b8eb3f452833ffa874cad0b5da5a0afd056aca13dcc9",
+    "LIBRARY.json": "f1c56574d6bdcdbdac0ab2a6495288419c08b911b7658bff61a6e2917a085424",
+    "NORTH-STAR.md": "d9b0b2d76e7f98d1db9653c134121e6d1d7cccd37cbcc9626185d9ed4dd28f28",
+    "SKILL.md": "caa52071066835c3d85ee69861a7640beb17c6ea58205c800d9131a9dc639f12",
     "assets/anvil-sword-crystal-v1.jpg": "047be1ddb732fb9549ef3f38b135da97ac70da6b8a20ac634922399bd05b727d",
     "assets/anvil-sword-crystal-v2.jpg": "4110560cc52457697b2e3ddfafe5ac1ba97459f0fedadac120aea1b874c03da2",
     "assets/icon.jpg": "047be1ddb732fb9549ef3f38b135da97ac70da6b8a20ac634922399bd05b727d",
     "knowledge/graph.json": "9183b10602c0a6aca5d42bd0b716b4a281173fdac30b011b4a2b7d6e8299f72a",
-    "references/RESEARCHPRIME-CODE-REWRITING-TOOLS.md": "72905ca8f4435fbe22c33a854d8a04c7d92081277201f21ad7ab72a0f1c1e360",
-    "scripts/anvil_engine.py": "08b2bfcdb6fda7288648dd5d0f21151d302b10ee3b57b3a4a987f2bc3bb1a80b"
+    "references/RESEARCHPRIME-CODE-REWRITING-TOOLS.md": "b52dd4ba4d5c4ef3a100f29ee5961e22c3ef1ef15027672e5f0e24a090962b18",
+    "scripts/anvil_engine.py": "b9c9c48b2cb9b11d9fe1dc7c557cf82f0ed67794a228bffff0d0837a05e516a9"
   },
   "chekhov": {
     ".gitignore": "2bdd44c7c195ac538d83db81f91ed72cac628b1597824f74377110c96b2b6f5a",
@@ -201,10 +201,10 @@
     "DESCRIPTION.md": "5a43e69221ae5ddf978bec09e1d61bfe0e9396c3d592263aa0f7ea4aa7bba0b0",
     "foreman.config.steward-v3-heavy.backup.json": "3a9c1bd3708f73acfc89ecbeaf7d372b3ce2823be4ac1c53d9b893a9fe3bf134",
     "LESSONS.md": "0cd0af4236ce7bf21d16bde7ebac5a0aeee9aa95d3c5bbe2a3effa7754d2831e",
-    "package.json": "fe963458a034ed72ba311242aadb5d97d10b07dd09d114beb4dd0b48ed359ebd",
+    "package.json": "81f92148e7573dc9512877af27d4db4cac5c7e1ba3e4d917d24e3838f105e7d6",
     "README.md": "b90c6c4415c7d6a3bce4e498cc51780c9879897679b91c3a556b7cfad00d0c58",
     "SKILL.md": "83494a6b11a529cdeb44a16697b2864eb2f48232609f566b17accc96c23aaa15",
-    "VERSION": "a64708b010e2bcf628154ddc205ed49688a6347ef93a66a42492430f63f021b1",
+    "VERSION": "ded1b601e81d31ca1f65c4f3ccf2ebd7992b6390e37bc2a86f3837282f1e00cf",
     "VISION.md": "ff81b487fbd7ffaaabf893e40384d8a8f0efe79720f0823fcaedef5eb9fbc420",
     "assets/ecgberht-portfolio-high-seat.jpg": "6e4b8fc1516d4831a872c362813e160c3f3b1d1e1b79e331d6931b12cb60e34c",
     "assets/ecgberht-project-seal.jpg": "1fe17671016150aff11b3ed3a42a8b0ada3bfc908325d76ea62f9e3c45a3e111",
@@ -301,7 +301,7 @@
     "engine/status-reconciler.mjs": "edfbba3f067e659919bb93c52d102e8f0088fee62de76f0576d135d1c7658730",
     "engine/step-findings.mjs": "e8183008a4b945f7de9479ab40d589be22985091c03af590557ebc77c7c9ec80",
     "engine/step-type-map.mjs": "dd1e0dacb204d53ee3760cfe77ab4edc8522d3ebdcfa61f75503d74cafb4c991",
-    "engine/steward-conversation.mjs": "2bcf51351744511814c4c47680fed7b46ba46c690f20b4a02096fde6f9f44515",
+    "engine/steward-conversation.mjs": "ac48cfcceff6781535a43aff3a3c0d3b45873475cc8623492d4b153e8ccee972",
     "engine/steward-run-ingest.mjs": "0a05fb996135f2092917b0c5159f2c6da5bfd566cac7d615f5754df148fbde2f",
     "engine/steward-surface.mjs": "89e53e0bf9147746d92e6e7840a8ef17740e02bb7c6767b239bd937cc6ce4384",
     "engine/storage-primitive.mjs": "117f590da042da574dd77c51e07a1aa63d26010bfe29b7c74d4a923715ab281e",
@@ -452,7 +452,6 @@
     "conformance/handback-contract/write-intercept.mjs": "68dd408397f73301ba0e2fbe21b243f3002149c03cab472c36244dd40f83f399",
     "conformance/handback-contract/adapters/anchor.mjs": "8ff96afcfc9491d3a38251f48c745833647f557a8f787eb8bc84db455cb1d415",
     "conformance/handback-contract/adapters/insession.mjs": "9e0ed930767ec88c35332ef06b7e9f5b5e8a1cb681a872c3a2941f387bd0c0fe",
-    "conformance/handback-contract/__pycache__/anchor-child.cpython-313.pyc": "cc46a30e6a376bd0870350d061b6cd3e7f8d5f190035c6d802d3d5020573f0b3",
     "assets/icons/candidate-crown-codex.jpg": "fdab93f564a6ac6c712853623844be5fb83c23b08a3274c26d7905f0734a6263",
     "assets/icons/candidate-seal-of-office.jpg": "bb991019664249cb82769aac416861ae3c89909aa1c153c5c7c1276c4e813324",
     "assets/icons/candidate-throne-steward.jpg": "95854ac293eaf6bfe65084de4ed71b08724d75f65d3578e4bdf2c343ef9edc28",
@@ -838,7 +837,7 @@
     "assets/icon.jpg": "ed92a3c7241f6d934f5c35ad559fb0a9c99121b16ff29bbcfce52d48d01787e6",
     "knowledge/graph.json": "81d914b4ec300d10c352e6b0a3bc5c8ba0d9c2a27370dd053b45149831cc634c",
     "references/SCRIBE-VOICE-TONE-MEMORY-REFERENCE.md": "3502a0ddfe4ca80db4a34133e074150e23cd12e9275ac07877f81f91420d3c65",
-    "scripts/scribe_engine.py": "78223fa09fb1d717ca61ff9c401dd72b5cbfc7422407c1096f6d65738492cc47"
+    "scripts/scribe_engine.py": "8d434ee07d3f1d10fbdc08ad3c816343f61a49c357ac26134f49bd2a0caaa6a2"
   },
   "superjump": {
     "calibration.json": "5e3ba217766836845fe45d1e755e2eedba77bbe9b6682df5889a3b49e76f2f18",

@@ -52,7 +52,10 @@ def _log_rejected_transition(session_id, from_status, to_status) -> None:
 
 # Sessions JSON filename, stored under ``.anchor/`` at the data-dir root.
 SESSIONS_NAME = "sessions.json"
+SESSIONS_LOCK_NAME = "sessions.lock"
+SESSIONS_LOCK_TIMEOUT_S = 2.0
 ANCHOR_DIRNAME = ".anchor"
+_SESSIONS_LOCK_TLS = threading.local()
 
 
 # ── Status constants (locked color mapping; Wave 4 maps these → colors) ──────
@@ -207,6 +210,71 @@ def anchor_dir() -> Path:
 def sessions_path() -> Path:
     """Absolute path to the sessions JSON file (``.anchor/sessions.json``)."""
     return anchor_dir() / SESSIONS_NAME
+
+
+def _sessions_path() -> Path:
+    """Internal alias for :func:`sessions_path`."""
+    return sessions_path()
+
+
+def _sessions_lock_path() -> Path:
+    """Absolute path to the cross-process lock file (``.anchor/sessions.lock``)."""
+    return _paths.data_dir() / ANCHOR_DIRNAME / SESSIONS_LOCK_NAME
+
+
+class _CrossProcessLockGuard:
+    """Thread-reentrant guard combining ``paths.WRITE_LOCK`` + ``cross_process_lock``."""
+
+    def __init__(self, timeout_sec: float = SESSIONS_LOCK_TIMEOUT_S):
+        self._timeout_sec = timeout_sec
+        self._norm = None
+        self._cp_cm = None
+        self._outer = False
+
+    def __enter__(self):
+        lp = _sessions_lock_path()
+        norm = os.path.normcase(os.path.abspath(str(lp)))
+        self._norm = norm
+        held = getattr(_SESSIONS_LOCK_TLS, "held", None)
+        if held is None:
+            held = {}
+            _SESSIONS_LOCK_TLS.held = held
+        depth = held.get(norm, 0)
+        if depth > 0:
+            held[norm] = depth + 1
+            self._outer = False
+            return self
+        anchor_dir().mkdir(parents=True, exist_ok=True)
+        _paths.WRITE_LOCK.acquire()
+        try:
+            cp_cm = _paths.cross_process_lock(lp, timeout_sec=self._timeout_sec)
+            cp_cm.__enter__()
+        except BaseException:
+            _paths.WRITE_LOCK.release()
+            raise
+        self._cp_cm = cp_cm
+        self._outer = True
+        held[norm] = 1
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        held = getattr(_SESSIONS_LOCK_TLS, "held", None) or {}
+        norm = self._norm
+        if not self._outer:
+            cur = held.get(norm, 1)
+            if cur <= 1:
+                held.pop(norm, None)
+            else:
+                held[norm] = cur - 1
+            return False
+        held.pop(norm, None)
+        try:
+            if self._cp_cm is not None:
+                self._cp_cm.__exit__(exc_type, exc_val, exc_tb)
+        finally:
+            self._cp_cm = None
+            _paths.WRITE_LOCK.release()
+        return False
 
 
 def _new_id() -> str:
@@ -669,53 +737,31 @@ def _atomic_replace(tmp: str, target: str) -> None:
 
 
 def _write_sessions_locked(reg: dict) -> None:
-    """The atomic write itself — the caller MUST already hold ``paths.WRITE_LOCK``.
+    """The atomic write itself — the caller MUST already hold ``_CrossProcessLockGuard``.
 
-    Writes to a temp file in the same directory then ``os.replace`` over the
-    target so a crash mid-write can never leave a truncated/corrupt store
-    (durability discipline). Ensures the ``.anchor/`` dir exists first.
-
-    The replace goes through :func:`_atomic_replace` so a concurrent read-only
-    sweep holding the target open (the Windows sharing-violation race) is
-    tolerated with a bounded retry rather than surfacing a spurious
-    ``PermissionError``.
+    Persists the normalized session list via ``paths.atomic_write_json`` so a
+    concurrent thread/process or a crash mid-write can never leave a torn store,
+    then invalidates the process-local read cache.
     """
     d = anchor_dir()
     d.mkdir(parents=True, exist_ok=True)
     items = [reg[k] for k in reg]
-    target = sessions_path()
-    tmp = target.with_name(target.name + ".tmp")
-    # Explicit open + flush + fsync (not Path.write_text) so the temp file's
-    # bytes are on stable storage BEFORE the atomic rename — a crash between the
-    # write and the replace can never leave a torn store (W2 durability
-    # substrate). The write site stays attributed to session_registry (the
-    # write-tripwire mutation-of-record inventory), and the tmp→target replace
-    # keeps the atomic idiom.
-    with open(tmp, "w", encoding="utf-8", newline="") as f:
-        f.write(json.dumps(items, indent=2, ensure_ascii=False))
-        f.flush()
-        os.fsync(f.fileno())
-    _atomic_replace(str(tmp), str(target))
+    _paths.atomic_write_json(_sessions_path(), items)
     _drop_read_cache()      # this process wrote: no reader is served the store as it was
 
 
 def _save_sessions(reg: dict, *, _locked: bool = False) -> None:
     """Persist the registry (dict keyed by id) as a JSON list, atomically.
 
-    WRITE_LOCK reentrancy (zombie-hunter → safe-to-arm, Wave 3): the mutating
-    CRUD entrypoints (:func:`register_session`, :func:`update_session`,
-    :func:`set_current_stage`, :func:`remove_session`, :func:`reconcile`) already
-    run inside ``with paths.WRITE_LOCK``. They call this with ``_locked=True`` so
-    the write does NOT re-acquire the lock — the critical section is SPLIT (the
-    held lock is passed down as the ``_locked`` flag), rather than relying on the
-    lock being reentrant. The code is therefore correct even if ``WRITE_LOCK`` is
-    a plain, non-reentrant ``threading.Lock`` — no self-deadlock on a held lock.
-    A standalone caller (the default ``_locked=False``) acquires the lock here.
+    Mutating CRUD entrypoints hold :class:`_CrossProcessLockGuard` across their
+    entire read-modify-write cycle and pass ``_locked=True``; standalone callers
+    (``_locked=False``) acquire :class:`_CrossProcessLockGuard` here, which is
+    also thread-reentrant against self-deadlock.
     """
     if _locked:
         _write_sessions_locked(reg)
     else:
-        with _paths.WRITE_LOCK:
+        with _CrossProcessLockGuard():
             _write_sessions_locked(reg)
 
 
@@ -745,7 +791,7 @@ def register_session(project_id, lane, backend=BACKEND_CLAUDE,
     session starts its own singleton chain. A child should pass its parent's
     ``chain_id`` to join that chain.
     """
-    with _paths.WRITE_LOCK:
+    with _CrossProcessLockGuard():
         reg = load_sessions()
         sid = session_id or _new_id()
         while sid in reg and session_id is None:  # cheap collision safety
@@ -927,7 +973,7 @@ def set_current_stage(session_id: str, stage: str, store_lane: str,
 
     Returns the updated record. Raises ``KeyError`` for an unknown id.
     """
-    with _paths.WRITE_LOCK:
+    with _CrossProcessLockGuard():
         reg = load_sessions()
         if session_id not in reg:
             raise KeyError(session_id)
@@ -1004,7 +1050,7 @@ def update_session(session_id: str, **fields) -> dict:
                # mirrored from the job record so tiles never show a bare
                # "failed".
                "failure_reason"}
-    with _paths.WRITE_LOCK:
+    with _CrossProcessLockGuard():
         reg = load_sessions()
         if session_id not in reg:
             raise KeyError(session_id)
@@ -1030,7 +1076,7 @@ def update_session(session_id: str, **fields) -> dict:
 
 def remove_session(session_id: str) -> bool:
     """Hard-delete a session record from the registry. Returns success."""
-    with _paths.WRITE_LOCK:
+    with _CrossProcessLockGuard():
         reg = load_sessions()
         if session_id in reg:
             del reg[session_id]
@@ -1052,15 +1098,15 @@ def finalize_cost_once(session_id: str) -> bool:
     set — and ``False`` for every subsequent caller (and for an unknown id). The
     caller that gets ``True`` is the sole writer of the finalized cost record.
 
-    Atomicity: the whole read-check-write runs under ``paths.WRITE_LOCK`` and the
-    flag is persisted WITH the record (``cost_final`` + ``cost_final_at``) via the
-    registry's atomic tmp→rename write, so the latch survives a crash and a
+    Atomicity: the whole read-check-write runs under ``_CrossProcessLockGuard`` and
+    the flag is persisted WITH the record (``cost_final`` + ``cost_final_at``) via
+    ``paths.atomic_write_json``, so the latch survives a crash and a
     restart never re-finalizes an already-finalized session. Idempotent by
     construction: calling again after the win is a no-op that returns ``False``.
     """
     if not session_id:
         return False
-    with _paths.WRITE_LOCK:
+    with _CrossProcessLockGuard():
         reg = load_sessions()
         rec = reg.get(session_id)
         if rec is None:
@@ -1083,14 +1129,14 @@ def add_engine_session_uuid(session_id: str, engine_session_uuid: str) -> dict:
     Sets ``engine_session_uuid`` (the CURRENT/last segment) and APPENDS it to the
     append-only ``engine_session_uuids`` history — so a session that switches
     engine mid-run accumulates BOTH sidecar segments and finalize sums over all of
-    them (counted once). Atomic (under ``paths.WRITE_LOCK``), idempotent (a
+    them (counted once). Atomic (under ``_CrossProcessLockGuard``), idempotent (a
     duplicate uuid is not re-appended). A no-op returning the current record for an
     unknown id or a blank uuid.
     """
     if not session_id or not engine_session_uuid:
         return get_session(session_id) or {}
     u = str(engine_session_uuid)
-    with _paths.WRITE_LOCK:
+    with _CrossProcessLockGuard():
         reg = load_sessions()
         rec = reg.get(session_id)
         if rec is None:
@@ -1148,7 +1194,7 @@ def claim_job(session_id: str, job_id: str) -> bool:
     if not session_id or not job_id:
         return False
     job_id = str(job_id)
-    with _paths.WRITE_LOCK:
+    with _CrossProcessLockGuard():
         reg = load_sessions()
         if session_id not in reg:
             return False
@@ -1176,7 +1222,7 @@ def release_job(session_id: str, job_id: str) -> bool:
     if not session_id or not job_id:
         return False
     job_id = str(job_id)
-    with _paths.WRITE_LOCK:
+    with _CrossProcessLockGuard():
         reg = load_sessions()
         if session_id not in reg:
             return False
@@ -1264,37 +1310,37 @@ def reconcile(live_session_ids=None, worktree_exists=None,
     stale sessions → nothing written → ``applied`` is ``False``).
     """
     live = set(live_session_ids) if live_session_ids is not None else set()
-    reg = load_sessions()
 
-    stale = []
-    orphaned = []
-    for sid, rec in reg.items():
-        if rec.get("status") == STATUS_RUNNING and sid not in live:
-            stale.append(sid)
-        wp = rec.get("worktree_path") or ""
-        if wp:
-            if worktree_exists is not None:
-                gone = not bool(worktree_exists(sid))
-            else:
-                try:
-                    gone = not Path(wp).exists()
-                except (OSError, ValueError):
-                    gone = False
-            if gone:
-                orphaned.append(sid)
+    def _scan(reg_map):
+        st, orph = [], []
+        for sid, rec in reg_map.items():
+            if rec.get("status") == STATUS_RUNNING and sid not in live:
+                st.append(sid)
+            wp = rec.get("worktree_path") or ""
+            if wp:
+                if worktree_exists is not None:
+                    gone = not bool(worktree_exists(sid))
+                else:
+                    try:
+                        gone = not Path(wp).exists()
+                    except (OSError, ValueError):
+                        gone = False
+                if gone:
+                    orph.append(sid)
+        return st, orph
 
-    report = {
-        "stale": stale,
-        "orphaned_worktrees": orphaned,
-        "marked": [],
-        "applied": bool(apply),
-    }
-    if not apply or not stale:
-        report["applied"] = bool(apply) and bool(stale)
-        return report
+    if not apply:
+        stale, orphaned = _scan(load_sessions())
+        return {
+            "stale": stale,
+            "orphaned_worktrees": orphaned,
+            "marked": [],
+            "applied": False,
+        }
 
-    with _paths.WRITE_LOCK:
+    with _CrossProcessLockGuard():
         reg = load_sessions()
+        stale, orphaned = _scan(reg)
         marked = []
         for sid in stale:
             if sid in reg and reg[sid].get("status") == STATUS_RUNNING:
@@ -1306,9 +1352,12 @@ def reconcile(live_session_ids=None, worktree_exists=None,
                 marked.append(sid)
         if marked:
             _save_sessions(reg, _locked=True)
-        report["marked"] = marked
-        report["applied"] = True
-    return report
+        return {
+            "stale": stale,
+            "orphaned_worktrees": orphaned,
+            "marked": marked,
+            "applied": bool(marked),
+        }
 
 
 # ── Wave 5: conservative legacy STATUS_IDLE → STATUS_PARKED_WARM migration ────
@@ -1329,20 +1378,19 @@ def migrate_idle_to_parked_warm(apply=True) -> dict:
 
     Returns ``{"migrated": [session_id, ...], "applied": bool}``.
     """
-    reg = load_sessions()
-    targets = [sid for sid, rec in reg.items()
-               if rec.get("status") == STATUS_IDLE]
-    report = {"migrated": [], "applied": bool(apply)}
-    if not targets:
-        report["applied"] = False
-        return report
     if not apply:
-        report["migrated"] = list(targets)
-        report["applied"] = False
-        return report
-
-    with _paths.WRITE_LOCK:
         reg = load_sessions()
+        targets = [sid for sid, rec in reg.items()
+                   if rec.get("status") == STATUS_IDLE]
+        return {"migrated": list(targets), "applied": False}
+
+    report = {"migrated": [], "applied": False}
+    with _CrossProcessLockGuard():
+        reg = load_sessions()
+        targets = [sid for sid, rec in reg.items()
+                   if rec.get("status") == STATUS_IDLE]
+        if not targets:
+            return report
         migrated = []
         for sid in targets:
             if sid in reg and reg[sid].get("status") == STATUS_IDLE:
@@ -1353,6 +1401,7 @@ def migrate_idle_to_parked_warm(apply=True) -> dict:
         if migrated:
             _save_sessions(reg, _locked=True)
         report["migrated"] = migrated
+        report["applied"] = bool(migrated)
 
     if report["migrated"]:
         # First post-migration boot sweeps report-only (never a live delete on the

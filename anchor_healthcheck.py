@@ -76,6 +76,8 @@ SERVER_READY_WARN = 30      # seconds — soft budget → non-blocking warn
 SERVER_BOOT_TIMEOUT = SERVER_READY_TIMEOUT  # legacy alias
 SYNTHETIC_TAG = "__healthcheck__"
 _TOKEN_MINTED = False  # set by _ensure_walk_token() — see check_route_table_walk
+_LAST_SERVER_DATA_DIR: "Path | None" = None
+_SERVER_TEMP_DIRS: "list[Path]" = []
 TODAY = date.today().isoformat()
 
 _paths.ensure_data_dirs()
@@ -400,8 +402,10 @@ def _http_ready(port: int, timeout: float = 3.0) -> bool:
     of a connect-probe reporting "booted" into a backlog nobody drains).
     """
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/version",
-                                    timeout=timeout) as r:
+        url = f"http://127.0.0.1:{port}/api/version"
+        if not url.startswith(("http://", "https://")):
+            return False
+        with _paths.safe_urlopen(url, timeout=min(float(timeout), 15.0)) as r:
             return r.status == 200
     except Exception:
         return False
@@ -443,9 +447,31 @@ def check_pillar_state(report: Report):
         report.check(name, False, f"{type(e).__name__}: {e}")
 
 
+def _seed_server_data_dir() -> Path:
+    """Create an isolated throwaway ANCHOR_DATA_DIR for the test server.
+
+    Seeds minimal required markdown headers + domains/ + logs/ + .anchor/ so
+    server boot, HTTP endpoint pings, synthetic task round-trip, and R&D v2
+    HTTP checks never mutate live Anchor markdown or .anchor/ stores.
+    """
+    import tempfile as _tf
+    srv_data = Path(_tf.mkdtemp(prefix="anchor-hc-data-"))
+    _SERVER_TEMP_DIRS.append(srv_data)
+    for filename, template in REQUIRED_FILES.items():
+        (srv_data / filename).write_text(template, encoding="utf-8")
+    domains_dir = srv_data / "domains"
+    domains_dir.mkdir(parents=True, exist_ok=True)
+    for df in DOMAIN_FILES:
+        stem = Path(df).stem.title()
+        (domains_dir / df).write_text(f"# {stem}\n\n## Active\n\n", encoding="utf-8")
+    (srv_data / "logs").mkdir(parents=True, exist_ok=True)
+    (srv_data / ".anchor").mkdir(parents=True, exist_ok=True)
+    return srv_data
+
+
 def check_server_and_endpoints(report: Report):
     """Boot the server on TEST_PORT, exercise endpoints, return the popen handle."""
-    global TEST_PORT
+    global TEST_PORT, _LAST_SERVER_DATA_DIR
     name = "server boot"
 
     # The fixed test port can be left occupied by a stale server we can't reap
@@ -464,15 +490,26 @@ def check_server_and_endpoints(report: Report):
         report.check(name, False, "refused: the test server may never bind 8777")
         return None
 
+    srv_data = _seed_server_data_dir()
+    _LAST_SERVER_DATA_DIR = srv_data
+    proc_env = dict(os.environ)
+    proc_env["ANCHOR_DATA_DIR"] = str(srv_data)
+    tok = _paths.expected_token()
+    if tok is not None and not proc_env.get(_paths.AUTH_TOKEN_ENV):
+        proc_env[_paths.AUTH_TOKEN_ENV] = tok
+
     cmd = [sys.executable, str(ANCHOR_DIR / "anchor_gui.py"), "--port", str(TEST_PORT), "--no-browser"]
     try:
         proc = subprocess.Popen(
             cmd,
             cwd=str(ANCHOR_DIR),
+            env=proc_env,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
         )
+        proc._hc_data_dir = srv_data
     except Exception as e:
+        _rmtree_force(srv_data)
         report.check(name, False, f"could not launch: {e}")
         return None
 
@@ -522,7 +559,7 @@ def check_server_and_endpoints(report: Report):
     for _attempt in range(3):
         _t0 = _t.time()
         try:
-            with urllib.request.urlopen(base + "/", timeout=20) as r:
+            with _paths.safe_urlopen(base + "/", timeout=15.0) as r:
                 body = r.read().decode("utf-8", errors="replace")
                 _dt = _t.time() - _t0
                 if r.status == 200 and "Anchor" in body and len(body) > 1000:
@@ -543,7 +580,7 @@ def check_server_and_endpoints(report: Report):
 
     # GET /api/status
     try:
-        with urllib.request.urlopen(base + "/api/status", timeout=5) as r:
+        with _paths.safe_urlopen(base + "/api/status", timeout=5.0) as r:
             data = json.loads(r.read().decode("utf-8"))
             ok = "active" in data and "projects" in data and "inbox" in data
             endpoint_results.append(("GET /api/status", ok, json.dumps(data)))
@@ -576,7 +613,7 @@ def check_server_and_endpoints(report: Report):
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
-            urllib.request.urlopen(req, timeout=5).read()
+            _paths.safe_urlopen(req, timeout=5.0).read()
             # Reaching here means it was NOT rejected — a failure.
             endpoint_results.append(("POST /api/done (tokenless)", False, "expected 401, got 200"))
         except urllib.error.HTTPError as e:
@@ -608,7 +645,7 @@ def _status_of(req_or_url, timeout=10.0):
     re-raises for the caller to record.
     """
     try:
-        with urllib.request.urlopen(req_or_url, timeout=timeout) as r:
+        with _paths.safe_urlopen(req_or_url, timeout=min(float(timeout), 15.0)) as r:
             return r.status
     except urllib.error.HTTPError as e:
         return e.code
@@ -1142,7 +1179,7 @@ def _post(base: str, path: str, payload: dict, timeout: float = 5.0,
         headers=headers,
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=timeout) as r:
+    with _paths.safe_urlopen(req, timeout=min(float(timeout), 15.0)) as r:
         return json.loads(r.read().decode("utf-8"))
 
 
@@ -1202,12 +1239,17 @@ def check_synthetic_roundtrip(report: Report, server_proc):
 def _cleanup_synthetic_task(task_text: str) -> tuple[bool, str]:
     """Remove the synthetic task from CANCELLED.md / SAVED_FOR_LATER.md / any md file."""
     search = task_text.lower()
+    target_root = (
+        _LAST_SERVER_DATA_DIR
+        if (_LAST_SERVER_DATA_DIR is not None and _LAST_SERVER_DATA_DIR.exists())
+        else _paths.data_dir()
+    )
     files_to_clean: list[Path] = [
-        DATA_DIR / "CANCELLED.md",
-        DATA_DIR / "SAVED_FOR_LATER.md",
-        DATA_DIR / "DASHBOARD.md",
+        target_root / "CANCELLED.md",
+        target_root / "SAVED_FOR_LATER.md",
+        target_root / "DASHBOARD.md",
     ]
-    domains = DATA_DIR / "domains"
+    domains = target_root / "domains"
     if domains.exists():
         files_to_clean.extend(domains.glob("*.md"))
 
@@ -1312,11 +1354,29 @@ def check_rnd_v2_surface(report: Report, server_proc, rnd_env: dict):
         report.check(name, True, "skipped (no stub runner; live claude avoided)")
         return
 
+    import tempfile as _tf
     base = f"http://127.0.0.1:{TEST_PORT}"
     steps: list[tuple[str, bool, str]] = []
     folder = rnd_env["folder"]
+    srv_hc_dir = getattr(server_proc, "_hc_data_dir", None)
+    own_probe_data = srv_hc_dir is None
+    probe_data = (
+        Path(srv_hc_dir)
+        if srv_hc_dir is not None
+        else Path(_tf.mkdtemp(prefix="anchor-hc-data-"))
+    )
+    if own_probe_data:
+        rnd_env.setdefault("v3_temp_dirs", []).append(probe_data)
+    prev_data = os.environ.get("ANCHOR_DATA_DIR")
+    had_rnd_data = "ANCHOR_DATA_DIR" in rnd_env
+    prev_rnd_data = rnd_env.get("ANCHOR_DATA_DIR")
+    pid = None
+    tjid = None
 
     try:
+        os.environ["ANCHOR_DATA_DIR"] = str(probe_data)
+        rnd_env["ANCHOR_DATA_DIR"] = str(probe_data)
+        _paths.ensure_data_dirs()
         import rnd_registry as _rnd
         import effort_history as _eh
         import sessions as _sessions
@@ -1325,7 +1385,6 @@ def check_rnd_v2_surface(report: Report, server_proc, rnd_env: dict):
         # 1. Register a synthetic project in the throwaway folder.
         proj = _rnd.add_project(SYNTHETIC_RND_NAME, str(folder))
         pid = proj["id"]
-        rnd_env["created_ids"].append(pid)
         steps.append(("register project", bool(pid), pid))
 
         # 2. add_idea -> grass lane (POST, token-aware).
@@ -1333,10 +1392,8 @@ def check_rnd_v2_surface(report: Report, server_proc, rnd_env: dict):
                   {"project_id": pid, "text": "hc synthetic idea"})
         steps.append(("add_idea", r.get("ok", False), str(r.get("error", ""))))
 
-        # 3. promote_inbox -> grass lane (reads the live INBOX.md, copy-by-default).
-        #    Seed a synthetic inbox line first so the match is deterministic and
-        #    tagged for cleanup; copy-by-default leaves it for _cleanup to remove.
-        inbox = DATA_DIR / "INBOX.md"
+        # 3. promote_inbox -> grass lane (reads isolated INBOX.md, copy-by-default).
+        inbox = _paths.data_dir() / "INBOX.md"
         probe_line = f"- {TODAY}: {SYNTHETIC_TAG} inbox idea\n"
         try:
             if inbox.exists():
@@ -1385,8 +1442,8 @@ def check_rnd_v2_surface(report: Report, server_proc, rnd_env: dict):
             sid = plan_sessions[0]["session_id"]
             # GET /summary (run-once: generates through the stub runner on first view)
             try:
-                with urllib.request.urlopen(
-                    f"{base}/summary/{pid}/planning/{sid}", timeout=20) as rr:
+                with _paths.safe_urlopen(
+                    f"{base}/summary/{pid}/planning/{sid}", timeout=15.0) as rr:
                     body = rr.read().decode("utf-8", errors="replace")
                     steps.append(("GET /summary", rr.status == 200
                                   and len(body) > 200, f"{len(body)}b"))
@@ -1442,6 +1499,44 @@ def check_rnd_v2_surface(report: Report, server_proc, rnd_env: dict):
 
     except Exception as e:
         steps.append(("exception", False, f"{type(e).__name__}: {e}"))
+    finally:
+        try:
+            if tjid:
+                import job_runner as _jr_c
+                try:
+                    _jr_c.cancel(tjid)
+                except Exception:
+                    pass
+            if pid:
+                import session_registry as _sreg_v2
+                import rnd_registry as _rnd_v2
+                for srec in _sreg_v2.list_sessions(project_id=pid):
+                    try:
+                        _sreg_v2.remove_session(srec.get("session_id"))
+                    except Exception:
+                        pass
+                try:
+                    _rnd_v2.remove_project(pid)
+                except Exception:
+                    pass
+            probe_inbox = probe_data / "INBOX.md"
+            if probe_inbox.exists():
+                txt = probe_inbox.read_text(encoding="utf-8")
+                kept = [ln for ln in txt.splitlines() if SYNTHETIC_TAG not in ln.lower()]
+                if len(kept) != len(txt.splitlines()):
+                    probe_inbox.write_text("\n".join(kept) + "\n", encoding="utf-8")
+        except Exception:
+            pass
+        if prev_data is None:
+            os.environ.pop("ANCHOR_DATA_DIR", None)
+        else:
+            os.environ["ANCHOR_DATA_DIR"] = prev_data
+        if had_rnd_data:
+            rnd_env["ANCHOR_DATA_DIR"] = prev_rnd_data
+        else:
+            rnd_env.pop("ANCHOR_DATA_DIR", None)
+        if own_probe_data:
+            _rmtree_force(probe_data)
 
     failures = [f"{s}: {d}" for s, ok, d in steps if not ok]
     if failures:
@@ -1507,16 +1602,27 @@ def check_rnd_v3_surface(report: Report, server_proc, rnd_env: dict):
     import tempfile as _tf
     steps: list[tuple[str, bool, str]] = []
 
-    # Force the STUB PTY backend + a hermetic worktree base for the whole walk;
-    # both are restored in `finally`.
+    # Force an isolated ANCHOR_DATA_DIR + the STUB PTY backend + a hermetic
+    # worktree base for the whole walk; all restored in `finally`.
+    import pty_manager as _pty_pre
+    previous_ptys = set(_pty_pre.live_sessions())
+    prev_data = os.environ.get("ANCHOR_DATA_DIR")
+    had_rnd_data = "ANCHOR_DATA_DIR" in rnd_env
+    prev_rnd_data = rnd_env.get("ANCHOR_DATA_DIR")
+    probe_data = Path(_tf.mkdtemp(prefix="anchor-hc-data-"))
+    rnd_env.setdefault("v3_temp_dirs", []).append(probe_data)
     prev_pty = os.environ.get("ANCHOR_PTY_BACKEND")
     prev_wtbase = os.environ.get("ANCHOR_WORKTREE_BASE")
     os.environ["ANCHOR_PTY_BACKEND"] = "stub"
     wt_base = Path(_tf.mkdtemp(prefix="anchor-hc-v3-wt-"))
     os.environ["ANCHOR_WORKTREE_BASE"] = str(wt_base)
     rnd_env.setdefault("v3_temp_dirs", []).append(wt_base)
+    pid = None
 
     try:
+        os.environ["ANCHOR_DATA_DIR"] = str(probe_data)
+        rnd_env["ANCHOR_DATA_DIR"] = str(probe_data)
+        _paths.ensure_data_dirs()
         import rnd_registry as _rnd
         import session_registry as _sreg
         import pty_manager as _pty
@@ -1538,7 +1644,6 @@ def check_rnd_v3_surface(report: Report, server_proc, rnd_env: dict):
             return
         proj = _rnd.add_project(SYNTHETIC_RND_NAME + " v3", str(proj_folder))
         pid = proj["id"]
-        rnd_env["created_ids"].append(pid)
         steps.append(("register v3 project", bool(pid), pid))
 
         # ── 1. Session registry: register → reconcile(dead) → remove ───────────
@@ -1665,15 +1770,39 @@ def check_rnd_v3_surface(report: Report, server_proc, rnd_env: dict):
     except Exception as e:
         steps.append(("exception", False, f"{type(e).__name__}: {e}"))
     finally:
-        # Restore the PTY backend + worktree-base env we forced for this walk.
-        if prev_pty is None:
-            os.environ.pop("ANCHOR_PTY_BACKEND", None)
+        try:
+            import pty_manager as _pty_v3
+            import session_registry as _sreg_v3
+            import rnd_registry as _rnd_v3
+            for sid_ in set(_pty_v3.live_sessions()) - previous_ptys:
+                try:
+                    _pty_v3.kill(sid_)
+                except Exception:
+                    pass
+            if pid:
+                for srec in _sreg_v3.list_sessions(project_id=pid):
+                    try:
+                        _sreg_v3.remove_session(srec.get("session_id"))
+                    except Exception:
+                        pass
+                try:
+                    _rnd_v3.remove_project(pid)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        for var, prev in (("ANCHOR_DATA_DIR", prev_data),
+                          ("ANCHOR_PTY_BACKEND", prev_pty),
+                          ("ANCHOR_WORKTREE_BASE", prev_wtbase)):
+            if prev is None:
+                os.environ.pop(var, None)
+            else:
+                os.environ[var] = prev
+        if had_rnd_data:
+            rnd_env["ANCHOR_DATA_DIR"] = prev_rnd_data
         else:
-            os.environ["ANCHOR_PTY_BACKEND"] = prev_pty
-        if prev_wtbase is None:
-            os.environ.pop("ANCHOR_WORKTREE_BASE", None)
-        else:
-            os.environ["ANCHOR_WORKTREE_BASE"] = prev_wtbase
+            rnd_env.pop("ANCHOR_DATA_DIR", None)
+        _rmtree_force(probe_data)
 
     failures = [f"{s}: {d}" for s, ok, d in steps if not ok]
     if failures:
@@ -1720,8 +1849,15 @@ def check_rnd_v4_surface(report: Report, server_proc, rnd_env: dict):
     import tempfile as _tf
     steps: list[tuple[str, bool, str]] = []
 
-    # Force the STUB PTY backend + a hermetic worktree base + a temp skills dir
-    # for the whole walk; all restored in `finally`.
+    # Force an isolated ANCHOR_DATA_DIR + the STUB PTY backend + a hermetic
+    # worktree base + a temp skills dir for the whole walk; all restored in `finally`.
+    import pty_manager as _pty_pre
+    previous_ptys = set(_pty_pre.live_sessions())
+    prev_data = os.environ.get("ANCHOR_DATA_DIR")
+    had_rnd_data = "ANCHOR_DATA_DIR" in rnd_env
+    prev_rnd_data = rnd_env.get("ANCHOR_DATA_DIR")
+    probe_data = Path(_tf.mkdtemp(prefix="anchor-hc-data-"))
+    rnd_env.setdefault("v3_temp_dirs", []).append(probe_data)
     prev_pty = os.environ.get("ANCHOR_PTY_BACKEND")
     prev_wtbase = os.environ.get("ANCHOR_WORKTREE_BASE")
     prev_skills = os.environ.get("ANCHOR_SKILLS_DIR")
@@ -1735,8 +1871,12 @@ def check_rnd_v4_surface(report: Report, server_proc, rnd_env: dict):
     os.environ["ANCHOR_TERMINAL_SEED"] = "HC-V4-SEED-LOAD-SKILL"
     rnd_env.setdefault("v3_temp_dirs", []).append(wt_base)
     rnd_env["v3_temp_dirs"].append(skills_dir)
+    pid = None
 
     try:
+        os.environ["ANCHOR_DATA_DIR"] = str(probe_data)
+        rnd_env["ANCHOR_DATA_DIR"] = str(probe_data)
+        _paths.ensure_data_dirs()
         import rnd_registry as _rnd
         import terminal_session as _ts
         import pty_manager as _pty
@@ -1757,7 +1897,6 @@ def check_rnd_v4_surface(report: Report, server_proc, rnd_env: dict):
             return
         proj = _rnd.add_project(SYNTHETIC_RND_NAME + " v4", str(proj_folder))
         pid = proj["id"]
-        rnd_env["created_ids"].append(pid)
         steps.append(("register v4 project", bool(pid), pid))
 
         seed_tsid = None
@@ -1929,8 +2068,30 @@ def check_rnd_v4_surface(report: Report, server_proc, rnd_env: dict):
     except Exception as e:
         steps.append(("exception", False, f"{type(e).__name__}: {e}"))
     finally:
+        try:
+            import pty_manager as _pty_v4
+            import session_registry as _sreg_v4
+            import rnd_registry as _rnd_v4
+            for sid_ in set(_pty_v4.live_sessions()) - previous_ptys:
+                try:
+                    _pty_v4.kill(sid_)
+                except Exception:
+                    pass
+            if pid:
+                for srec in _sreg_v4.list_sessions(project_id=pid):
+                    try:
+                        _sreg_v4.remove_session(srec.get("session_id"))
+                    except Exception:
+                        pass
+                try:
+                    _rnd_v4.remove_project(pid)
+                except Exception:
+                    pass
+        except Exception:
+            pass
         # Restore every env var we forced for this walk.
-        for var, prev in (("ANCHOR_PTY_BACKEND", prev_pty),
+        for var, prev in (("ANCHOR_DATA_DIR", prev_data),
+                          ("ANCHOR_PTY_BACKEND", prev_pty),
                           ("ANCHOR_WORKTREE_BASE", prev_wtbase),
                           ("ANCHOR_SKILLS_DIR", prev_skills),
                           ("ANCHOR_TERMINAL_SEED", prev_seed)):
@@ -1938,6 +2099,11 @@ def check_rnd_v4_surface(report: Report, server_proc, rnd_env: dict):
                 os.environ.pop(var, None)
             else:
                 os.environ[var] = prev
+        if had_rnd_data:
+            rnd_env["ANCHOR_DATA_DIR"] = prev_rnd_data
+        else:
+            rnd_env.pop("ANCHOR_DATA_DIR", None)
+        _rmtree_force(probe_data)
 
     failures = [f"{s}: {d}" for s, ok, d in steps if not ok]
     if failures:
@@ -1983,6 +2149,13 @@ def check_rnd_v5_surface(report: Report, server_proc, rnd_env: dict):
     import tempfile as _tf
     steps: list[tuple[str, bool, str]] = []
 
+    import pty_manager as _pty_pre
+    previous_ptys = set(_pty_pre.live_sessions())
+    prev_data = os.environ.get("ANCHOR_DATA_DIR")
+    had_rnd_data = "ANCHOR_DATA_DIR" in rnd_env
+    prev_rnd_data = rnd_env.get("ANCHOR_DATA_DIR")
+    probe_data = Path(_tf.mkdtemp(prefix="anchor-hc-data-"))
+    rnd_env.setdefault("v3_temp_dirs", []).append(probe_data)
     prev_pty = os.environ.get("ANCHOR_PTY_BACKEND")
     prev_wtbase = os.environ.get("ANCHOR_WORKTREE_BASE")
     prev_seed = os.environ.get("ANCHOR_TERMINAL_SEED")
@@ -1991,8 +2164,12 @@ def check_rnd_v5_surface(report: Report, server_proc, rnd_env: dict):
     os.environ["ANCHOR_WORKTREE_BASE"] = str(wt_base)
     os.environ["ANCHOR_TERMINAL_SEED"] = "HC-V5-SEED-LOAD-SKILL"
     rnd_env.setdefault("v3_temp_dirs", []).append(wt_base)
+    pid = None
 
     try:
+        os.environ["ANCHOR_DATA_DIR"] = str(probe_data)
+        rnd_env["ANCHOR_DATA_DIR"] = str(probe_data)
+        _paths.ensure_data_dirs()
         import rnd_registry as _rnd
         import terminal_session as _ts
         import pty_manager as _pty
@@ -2017,7 +2194,6 @@ def check_rnd_v5_surface(report: Report, server_proc, rnd_env: dict):
             return
         proj = _rnd.add_project(SYNTHETIC_RND_NAME + " v5", str(proj_folder))
         pid = proj["id"]
-        rnd_env["created_ids"].append(pid)
         steps.append(("register v5 project", bool(pid), pid))
 
         # ── (Wave 1) run lifecycle: close keeps record; kill reaps ────────────
@@ -2200,27 +2376,38 @@ def check_rnd_v5_surface(report: Report, server_proc, rnd_env: dict):
         try:
             import pty_manager as _pty2
             import session_registry as _sreg2
-            for sid in list(_pty2.live_sessions()):
+            import rnd_registry as _rnd2
+            for sid in set(_pty2.live_sessions()) - previous_ptys:
                 try:
                     _pty2.kill(sid)
                 except Exception:
                     pass
-            for pid_ in rnd_env.get("created_ids", []):
-                for srec in _sreg2.list_sessions(project_id=pid_):
+            if pid:
+                for srec in _sreg2.list_sessions(project_id=pid):
                     try:
                         _sreg2.remove_session(srec.get("session_id"))
                     except Exception:
                         pass
+                try:
+                    _rnd2.remove_project(pid)
+                except Exception:
+                    pass
         except Exception:
             pass
         # Restore every env var we forced for this walk.
-        for var, prev in (("ANCHOR_PTY_BACKEND", prev_pty),
+        for var, prev in (("ANCHOR_DATA_DIR", prev_data),
+                          ("ANCHOR_PTY_BACKEND", prev_pty),
                           ("ANCHOR_WORKTREE_BASE", prev_wtbase),
                           ("ANCHOR_TERMINAL_SEED", prev_seed)):
             if prev is None:
                 os.environ.pop(var, None)
             else:
                 os.environ[var] = prev
+        if had_rnd_data:
+            rnd_env["ANCHOR_DATA_DIR"] = prev_rnd_data
+        else:
+            rnd_env.pop("ANCHOR_DATA_DIR", None)
+        _rmtree_force(probe_data)
 
     failures = [f"{s}: {d}" for s, ok, d in steps if not ok]
     if failures:
@@ -4966,6 +5153,11 @@ def check_gandalf_surface(report: Report, server_proc, rnd_env: dict):
     import tempfile as _tf
     steps: list[tuple[str, bool, str]] = []
 
+    prev_data = os.environ.get("ANCHOR_DATA_DIR")
+    had_rnd_data = "ANCHOR_DATA_DIR" in rnd_env
+    prev_rnd_data = rnd_env.get("ANCHOR_DATA_DIR")
+    probe_data = Path(_tf.mkdtemp(prefix="anchor-hc-data-"))
+    rnd_env.setdefault("v3_temp_dirs", []).append(probe_data)
     prev_runner = os.environ.get("ANCHOR_RUNNER_CMD")
     prev_host = os.environ.get("ANCHOR_GANDALF_HOST_CMD")
     prev_skill = os.environ.get("ANCHOR_GANDALF_SKILL_DIR")
@@ -4984,6 +5176,9 @@ def check_gandalf_surface(report: Report, server_proc, rnd_env: dict):
 
     pid = None
     try:
+        os.environ["ANCHOR_DATA_DIR"] = str(probe_data)
+        rnd_env["ANCHOR_DATA_DIR"] = str(probe_data)
+        _paths.ensure_data_dirs()
         import rnd_registry as _rnd
         import gandalf as _gandalf
 
@@ -5008,7 +5203,6 @@ def check_gandalf_surface(report: Report, server_proc, rnd_env: dict):
         proj = _rnd.add_project(SYNTHETIC_RND_NAME + " gandalf",
                                 str(proj_folder), scaffold=False)
         pid = proj["id"]
-        rnd_env["created_ids"].append(pid)
         fp = str(proj_folder)
         steps.append(("register gandalf project", bool(pid), str(pid)))
 
@@ -5103,7 +5297,14 @@ def check_gandalf_surface(report: Report, server_proc, rnd_env: dict):
     except Exception as e:
         steps.append(("exception", False, f"{type(e).__name__}: {e}"))
     finally:
-        for var, prev in (("ANCHOR_RUNNER_CMD", prev_runner),
+        if pid:
+            try:
+                import rnd_registry as _rnd_g
+                _rnd_g.remove_project(pid)
+            except Exception:
+                pass
+        for var, prev in (("ANCHOR_DATA_DIR", prev_data),
+                          ("ANCHOR_RUNNER_CMD", prev_runner),
                           ("ANCHOR_GANDALF_HOST_CMD", prev_host),
                           ("ANCHOR_GANDALF_SKILL_DIR", prev_skill),
                           ("ANCHOR_PROACTIVE_SUMMARY", prev_proactive),
@@ -5113,6 +5314,11 @@ def check_gandalf_surface(report: Report, server_proc, rnd_env: dict):
                 os.environ.pop(var, None)
             else:
                 os.environ[var] = prev
+        if had_rnd_data:
+            rnd_env["ANCHOR_DATA_DIR"] = prev_rnd_data
+        else:
+            rnd_env.pop("ANCHOR_DATA_DIR", None)
+        _rmtree_force(probe_data)
 
     failures = [f"{s}: {d}" for s, ok, d in steps if not ok]
     if failures:
@@ -5255,6 +5461,13 @@ def check_telemetry_capture_surface(report: Report, server_proc, rnd_env: dict):
     steps: list[tuple[str, bool, str]] = []
     ledger_uuids: list[str] = []
 
+    import pty_manager as _pty_pre
+    previous_ptys = set(_pty_pre.live_sessions())
+    prev_data = os.environ.get("ANCHOR_DATA_DIR")
+    had_rnd_data = "ANCHOR_DATA_DIR" in rnd_env
+    prev_rnd_data = rnd_env.get("ANCHOR_DATA_DIR")
+    probe_data = Path(_tf.mkdtemp(prefix="anchor-hc-data-"))
+    rnd_env.setdefault("v3_temp_dirs", []).append(probe_data)
     prev_pty = os.environ.get("ANCHOR_PTY_BACKEND")
     prev_wtbase = os.environ.get("ANCHOR_WORKTREE_BASE")
     prev_sidecar = os.environ.get("ANCHOR_SIDECAR_DIR")
@@ -5269,8 +5482,12 @@ def check_telemetry_capture_surface(report: Report, server_proc, rnd_env: dict):
     # seam would otherwise leave every session uncorrelated — force the default.
     os.environ.pop("ANCHOR_TERMINAL_SESSION_ID_FLAG", None)
     rnd_env.setdefault("v3_temp_dirs", []).extend([wt_base, sidecars])
+    pid = None
 
     try:
+        os.environ["ANCHOR_DATA_DIR"] = str(probe_data)
+        rnd_env["ANCHOR_DATA_DIR"] = str(probe_data)
+        _paths.ensure_data_dirs()
         import rnd_registry as _rnd
         import terminal_session as _ts
         import usage_capture as _uc
@@ -5288,7 +5505,6 @@ def check_telemetry_capture_surface(report: Report, server_proc, rnd_env: dict):
             return
         proj = _rnd.add_project(SYNTHETIC_RND_NAME + " w7", str(proj_folder))
         pid = proj["id"]
-        rnd_env["created_ids"].append(pid)
         steps.append(("register w7 project", bool(pid), pid))
 
         if not git_ok:
@@ -5367,14 +5583,14 @@ def check_telemetry_capture_surface(report: Report, server_proc, rnd_env: dict):
         # Reap any stub PTY this walk left live (defensive).
         try:
             import pty_manager as _pty2
-            for s in list(_pty2.live_sessions()):
+            for s in set(_pty2.live_sessions()) - previous_ptys:
                 try:
                     _pty2.kill(s)
                 except Exception:
                     pass
         except Exception:
             pass
-        # Remove the throwaway ledger docs so the walk never pollutes live data.
+        # Remove throwaway ledger docs + project inside isolated probe_data.
         try:
             import usage_ledger as _ul2
             for u in ledger_uuids:
@@ -5384,7 +5600,20 @@ def check_telemetry_capture_surface(report: Report, server_proc, rnd_env: dict):
                     pass
         except Exception:
             pass
-        for var, prev in (("ANCHOR_PTY_BACKEND", prev_pty),
+        if pid:
+            try:
+                import session_registry as _sreg_w7
+                import rnd_registry as _rnd_w7
+                for srec in _sreg_w7.list_sessions(project_id=pid):
+                    try:
+                        _sreg_w7.remove_session(srec.get("session_id"))
+                    except Exception:
+                        pass
+                _rnd_w7.remove_project(pid)
+            except Exception:
+                pass
+        for var, prev in (("ANCHOR_DATA_DIR", prev_data),
+                          ("ANCHOR_PTY_BACKEND", prev_pty),
                           ("ANCHOR_WORKTREE_BASE", prev_wtbase),
                           ("ANCHOR_SIDECAR_DIR", prev_sidecar),
                           ("ANCHOR_TERMINAL_SESSION_ID_FLAG", prev_id_flag)):
@@ -5392,6 +5621,11 @@ def check_telemetry_capture_surface(report: Report, server_proc, rnd_env: dict):
                 os.environ.pop(var, None)
             else:
                 os.environ[var] = prev
+        if had_rnd_data:
+            rnd_env["ANCHOR_DATA_DIR"] = prev_rnd_data
+        else:
+            rnd_env.pop("ANCHOR_DATA_DIR", None)
+        _rmtree_force(probe_data)
 
     failures = [f"{s}: {d}" for s, ok, d in steps if not ok]
     if failures:
@@ -6197,17 +6431,21 @@ def _cleanup_synthetic_rnd(rnd_env: dict, report: Report):
             _rmtree_force(d)
         except Exception:
             pass
-    # Strip the synthetic inbox probe line we appended.
-    inbox = DATA_DIR / "INBOX.md"
-    if inbox.exists():
+    # Remove isolated server data dirs created by check_server_and_endpoints.
+    global _LAST_SERVER_DATA_DIR
+    for sd in list(_SERVER_TEMP_DIRS):
         try:
-            text = inbox.read_text(encoding="utf-8")
-            new_lines = [ln for ln in text.splitlines()
-                         if SYNTHETIC_TAG not in ln.lower()]
-            if len(new_lines) != len(text.splitlines()):
-                inbox.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
-        except OSError:
+            _rmtree_force(sd)
+        except Exception:
             pass
+    _SERVER_TEMP_DIRS.clear()
+    _LAST_SERVER_DATA_DIR = None
+    # Purge any historical synthetic healthcheck usage ledgers / index rows.
+    try:
+        import usage_capture as _uc_purge
+        _uc_purge.purge_synthetic_healthcheck_records()
+    except Exception:
+        pass
 
 
 # â”€â”€ Check 6: logging works â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -6215,8 +6453,13 @@ def check_logging(report: Report):
     name = "logging"
     issues = []
 
-    # Today's log should exist and have content (the test server boot+ops should have written)
+    # Today's log should exist and have content (either in DATA_DIR/logs or in
+    # the isolated throwaway server's logs dir when running before first user action).
     log_today = DATA_DIR / "logs" / f"{TODAY}.md"
+    if (not log_today.exists() or log_today.stat().st_size < 10) and _LAST_SERVER_DATA_DIR is not None:
+        srv_log = _LAST_SERVER_DATA_DIR / "logs" / f"{TODAY}.md"
+        if srv_log.exists():
+            log_today = srv_log
     if not log_today.exists():
         issues.append(f"log {TODAY}.md not written")
     elif log_today.stat().st_size < 10:
@@ -6326,7 +6569,7 @@ def check_running_service(report: Report):
     name = "the running service answers on %d" % port
     global SERVICE_BOOT
     try:
-        with urllib.request.urlopen("http://127.0.0.1:%d/api/version" % port, timeout=10) as r:
+        with _paths.safe_urlopen("http://127.0.0.1:%d/api/version" % port, timeout=10.0) as r:
             ok = 200 <= r.getcode() < 300
             info = json.loads(r.read().decode("utf-8")) or {}
             build, SERVICE_BOOT = str(info.get("version") or ""), str(info.get("boot") or "")
@@ -6338,7 +6581,7 @@ def check_running_service(report: Report):
     # after '+', computed the same way by the throwaway server on this run's code) - never the commit, which a
     # steward's record checkpoint moves without changing a line of code (ChatGPT hardening)
     try:
-        with urllib.request.urlopen("http://127.0.0.1:%d/api/version" % TEST_PORT, timeout=10) as r:
+        with _paths.safe_urlopen("http://127.0.0.1:%d/api/version" % TEST_PORT, timeout=10.0) as r:
             checked = str((json.loads(r.read().decode("utf-8")) or {}).get("version") or "")
     except Exception:
         try:
@@ -6361,7 +6604,7 @@ def check_running_service(report: Report):
     for path in dict.fromkeys(paths):
         req = urllib.request.Request("http://127.0.0.1:%d%s" % (port, path), headers=({"Authorization": "Bearer " + tok} if tok else {}))
         try:
-            with urllib.request.urlopen(req, timeout=30) as r:
+            with _paths.safe_urlopen(req, timeout=15.0) as r:
                 code, text = r.getcode(), r.read(4000).decode("utf-8", "replace")
         except urllib.error.HTTPError as e:
             code, text = e.code, ""
@@ -6428,7 +6671,7 @@ def _live_boot():
     import urllib.request
     try:
         port = int(os.environ.get("ANCHOR_HEALTHCHECK_LIVE_PORT") or 8777)
-        with urllib.request.urlopen("http://127.0.0.1:%d/api/version" % port, timeout=10) as r:
+        with _paths.safe_urlopen("http://127.0.0.1:%d/api/version" % port, timeout=10.0) as r:
             return str((json.loads(r.read().decode("utf-8")) or {}).get("boot") or "")
     except Exception:
         return ""

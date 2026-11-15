@@ -415,3 +415,251 @@ def extract_offered_paths(data: Dict[str, Any] | None) -> List[str]:
                 if isinstance(c, dict):
                     take(c.get("item"))
     return sorted(out)
+
+
+_HEX_HASH_TOKEN_RE = re.compile(r"\b(?:sha256[:_-])?[0-9a-f]{40,64}\b", re.I)
+_INTERNAL_ID_TOKEN_RE = re.compile(
+    r"\(\s*code\s+job\s+[A-Za-z0-9_.:-]+\s*\)"
+    r"|\[\s*code\s+job\s+[A-Za-z0-9_.:-]+\s*\]"
+    r"|\bcode\s+job\s+\d{8}[A-Za-z0-9_.:-]*\b"
+    r"|\b(?:rev|pres|prod|slice|job)[_-][0-9a-f]{8,64}\b",
+    re.I,
+)
+_DELIV_PREFIX_STRIP_RE = re.compile(
+    r"^(?:[\u2605\u2b50]\s*|"
+    r"(?:START\s+HERE|FOR\s+REVIEW|AWAITING\s+REVIEW|NEEDS\s+REVIEW|CURRENT|"
+    r"Primary\s+Deliverable(?:\s+\d+(?:\s+of\s+\d+)?)?|"
+    r"Approved\s*[\u2014\u2013\-:]\s*Finalized|FINAL(?:IZED)?|APPROVED(?:\s+VISUAL\s+DIRECTION)?|"
+    r"ACCEPTED|IN[\s_-]+PROGRESS|DRAFTING|WORKING|PENDING|"
+    r"SUPPORTING|SUPPLEMENTAL|COMPANION|ARCHIVE(?:D)?|SUPERSEDED)"
+    r"\s*(?:\([^)]*\)\s*)?(?:[\u2014\u2013\-:]\s*|\s+))",
+    re.I,
+)
+_KNOWN_FILE_EXT_RE = re.compile(
+    r"\.(?:pdf|pptx|ppt|docx|doc|xlsx|xls|md|markdown|html|htm|csv|txt|r|rmd|qmd|py|ipynb|json|zip|png|jpg|jpeg|svg|log)$",
+    re.I,
+)
+_SAFE_EXT_RE = re.compile(r"^\.[a-z0-9]{1,10}$")
+_SUPPORTING_OR_ARCHIVE_RE = re.compile(
+    r"^(?:SUPPORTING|SUPPLEMENTAL|REFERENCE|COMPANION|HISTORICAL|SUPERSEDED|ARCHIVED|EARLIER|PREVIOUS)\b"
+    r"|^Existing\s+(?:Earlier|Prior|Historical)\b"
+    r"|\b(?:gandalf[-_\s]+(?:read|report|analysis|review|audit)|beta[-_\s]*reader[-_\s]+(?:report|panel|review|audit)|"
+    r"verification[-_\s]+log|audit[-_\s]+receipt|smoke[-_\s]+test|working[-_\s]+notes|journal\s+\d+|kept\s*\(not\s+landed\))\b",
+    re.I,
+)
+
+
+def _extract_ext(path_or_ext: Any) -> str:
+    raw = str(path_or_ext or "").strip()
+    if not raw:
+        return ""
+    raw = raw.split("?", 1)[0].split("#", 1)[0].replace("\\", "/").strip()
+    if raw.startswith(".") and "/" not in raw and _SAFE_EXT_RE.match(raw.lower()):
+        return raw.lower()
+    base = raw.rsplit("/", 1)[-1]
+    if "." in base:
+        cand = "." + base.rsplit(".", 1)[-1].lower()
+        if _SAFE_EXT_RE.match(cand):
+            return cand
+    return ""
+
+
+def clean_human_deliverable_title(
+    raw_title: Any = "",
+    fallback_path: Any = "",
+    *,
+    path: Any = "",
+    fallback: Any = "",
+) -> str:
+    """Return a clean human-readable deliverable title stripped of status prefixes, hashes, and internal IDs."""
+    if not fallback_path and path:
+        fallback_path = path
+    raw = str(raw_title or "").replace("**", "").replace("`", "").strip()
+    s = raw
+    for _ in range(6):
+        nxt = _DELIV_PREFIX_STRIP_RE.sub("", s).strip()
+        if nxt == s:
+            break
+        s = nxt
+    s = _INTERNAL_ID_TOKEN_RE.sub("", s)
+    s = _HEX_HASH_TOKEN_RE.sub("", s)
+    s = re.sub(r"[\r\n\t]+", " ", s).strip(" \t\u2014\u2013-:|")
+
+    # If empty or reduced to punctuation, fall back to non-hash path segments
+    if not s and fallback_path:
+        p_norm = str(fallback_path or "").split("?", 1)[0].replace("\\", "/").strip("/")
+        parts = [seg for seg in p_norm.split("/") if seg]
+        fname = parts[-1] if parts else ""
+        stem = _KNOWN_FILE_EXT_RE.sub("", fname)
+        stem = _HEX_HASH_TOKEN_RE.sub("", _INTERNAL_ID_TOKEN_RE.sub("", stem)).strip(" -_.")
+        if not stem and len(parts) >= 2:
+            parent = parts[-2]
+            if parent.lower() not in ("deliverables", "revisions", ".ecgberht", "final deliverables", "finished deliverables"):
+                stem = _HEX_HASH_TOKEN_RE.sub("", parent).strip(" -_.")
+        s = stem
+
+    s = re.sub(r"\(\s*\)", "", s)
+    s = re.sub(r"\s+(\.[A-Za-z0-9]{1,10})$", r"\1", s)
+    # Strip trailing known file extension when present on a filename/title
+    if _KNOWN_FILE_EXT_RE.search(s):
+        if " " not in s and ("/" in s or "\\" in s):
+            s = s.replace("\\", "/").rsplit("/", 1)[-1]
+        s = _KNOWN_FILE_EXT_RE.sub("", s)
+
+    # Convert slug-shaped identifiers and underscore runs into clean words
+    if s and " " not in s and ("-" in s or "_" in s):
+        s = re.sub(r"[-_]+", " ", s)
+    elif "_" in s:
+        s = re.sub(r"_+", " ", s)
+
+    s = re.sub(r"\s+", " ", s).strip(" \t\u2014\u2013-:|")
+    if not s and fallback:
+        fb = _HEX_HASH_TOKEN_RE.sub("", _INTERNAL_ID_TOKEN_RE.sub("", str(fallback or ""))).strip(" \t\u2014\u2013-:|._")
+        if fb and " " not in fb and ("-" in fb or "_" in fb):
+            fb = re.sub(r"[-_]+", " ", fb)
+        s = re.sub(r"\s+", " ", fb).strip(" \t\u2014\u2013-:|")
+    return s or "Deliverable"
+
+
+def sanitize_download_filename(raw_filename: Any, fallback_ext: str = "") -> str:
+    """Sanitize a suggested download filename for Content-Disposition while preserving extension and stripping hashes/IDs."""
+    ext = _extract_ext(fallback_ext)
+    raw = str(raw_filename or "")
+    # Strip CR/LF/NUL/control chars, quotes, and path separators immediately
+    cleaned = re.sub(r'[\x00-\x1f\x7f"\\\r\n/]+', " ", raw)
+    cleaned = cleaned.replace("'", "")
+    if not ext:
+        ext = _extract_ext(cleaned)
+    if ext and cleaned.lower().endswith(ext):
+        stem = cleaned[: -len(ext)]
+    else:
+        stem = _KNOWN_FILE_EXT_RE.sub("", cleaned) if ext else cleaned
+
+    for _ in range(4):
+        nxt = _DELIV_PREFIX_STRIP_RE.sub("", stem).strip()
+        if nxt == stem:
+            break
+        stem = nxt
+    stem = _INTERNAL_ID_TOKEN_RE.sub("", stem)
+    stem = _HEX_HASH_TOKEN_RE.sub("", stem)
+    stem = re.sub(r'[<>:"/\\|?*\x00-\x1f\x7f]+', " ", stem)
+    stem = re.sub(r"\(\s*\)", "", stem)
+    stem = re.sub(r"\s+", " ", stem).strip(" ._-")
+    if not stem:
+        stem = "Deliverable"
+    if len(stem) > 140:
+        stem = stem[:140].rstrip(" ._-") or "Deliverable"
+    return f"{stem}{ext}" if ext else stem
+
+
+def suggested_deliverable_filename(human_title: Any, path_or_ext: Any = "") -> str:
+    """Build `<Clean Human Title>.<ext>` for a deliverable item."""
+    ext = _extract_ext(path_or_ext)
+    title = clean_human_deliverable_title(human_title, fallback_path=path_or_ext)
+    return sanitize_download_filename(title, fallback_ext=ext)
+
+
+def classify_deliverable_buckets(
+    items: Iterable[Dict[str, Any]] | None,
+    approved: Iterable[Dict[str, Any]] | None = None,
+) -> Dict[str, Any]:
+    """Deterministically partition deliverables into server-computed `buckets` and `key_deliverables` with NO age/2-day eviction."""
+    buckets: Dict[str, List[Dict[str, Any]]] = {
+        "for_review": [],
+        "final": [],
+        "in_progress": [],
+        "archive": [],
+    }
+    seen_keys = set()
+
+    def _item_key(d: Dict[str, Any]) -> tuple:
+        p = str(d.get("open_path") or d.get("path") or d.get("route") or "").replace("\\", "/").strip().lower()
+        rev = str(d.get("revision_id") or d.get("hash") or "").strip().lower()
+        w = str(d.get("what") or d.get("human_title") or "").strip().lower()
+        return (p, rev) if p else ("", rev, w)
+
+    def _decorate(d: Dict[str, Any], bucket_name: str) -> Dict[str, Any]:
+        row = dict(d)
+        p_ref = row.get("open_path") or row.get("path") or ""
+        ht = str(row.get("human_title") or "").strip()
+        if not ht or _HEX_HASH_TOKEN_RE.search(ht) or _INTERNAL_ID_TOKEN_RE.search(ht):
+            ht = clean_human_deliverable_title(row.get("what") or row.get("title") or row.get("product_id") or "", p_ref)
+        row["human_title"] = ht
+        sf = str(row.get("suggested_filename") or "").strip()
+        if not sf or _HEX_HASH_TOKEN_RE.search(sf) or _INTERNAL_ID_TOKEN_RE.search(sf):
+            sf = suggested_deliverable_filename(ht, p_ref)
+        else:
+            sf = sanitize_download_filename(sf, fallback_ext=_extract_ext(p_ref))
+        row["suggested_filename"] = sf
+        row["bucket"] = bucket_name
+        return row
+
+    for it in items or []:
+        if not isinstance(it, dict):
+            continue
+        what = str(it.get("what") or it.get("title") or "").strip()
+        phase = str(it.get("phase") or "").strip().lower()
+        tier = str(it.get("tier") or "").strip().lower()
+        explicit_bucket = str(it.get("bucket") or "").strip().lower()
+        disp = str(it.get("disposition") or "").strip().lower()
+        is_inter = bool(it.get("is_intermediate")) or (
+            tier in ("supporting", "supplemental", "archive", "archived")
+        ) or bool(_SUPPORTING_OR_ARCHIVE_RE.search(what)) or bool(it.get("auto"))
+
+        if explicit_bucket in buckets:
+            b = explicit_bucket
+        elif (
+            it.get("final_promoted")
+            or tier == "final"
+            or it.get("accepted") is True
+            or it.get("accepted_current") is True
+            or phase in ("accepted", "done", "closed", "final")
+            or (it.get("reviewed_done") and disp in ("", "approved") and not is_inter)
+            or bool(re.match(r"^(?:[\u2605\u2b50]\s*)?(?:FINAL(?:IZED)?|APPROVED|ACCEPTED)\b", what, re.I))
+        ) and not (it.get("dismissed") and disp in ("dismissed", "archived", "superseded", "revision_requested")):
+            b = "final"
+        elif not it.get("reviewed_done") and not it.get("dismissed") and not is_inter and (
+            it.get("is_current") is True
+            or tier == "for_review"
+            or phase in ("awaiting_review", "review", "for_review", "blocked")
+            or bool(re.match(r"^(?:[\u2605\u2b50]\s*)?(?:START\s+HERE|FOR\s+REVIEW|AWAITING\s+REVIEW|NEEDS\s+REVIEW|READY\s+FOR\s+REVIEW|CURRENT)\b", what, re.I))
+        ):
+            b = "for_review"
+        elif not it.get("reviewed_done") and not it.get("dismissed") and not is_inter and (
+            it.get("provisional") is True
+            or tier == "in_progress"
+            or phase in ("working", "drafting", "in_progress", "running", "pending")
+            or bool(re.match(r"^(?:IN[\s_-]+PROGRESS|DRAFTING|WORKING|PENDING|BUILDING)\b", what, re.I))
+        ):
+            b = "in_progress"
+        else:
+            b = "archive"
+
+        k = _item_key(it)
+        seen_keys.add(k)
+        buckets[b].append(_decorate(it, b))
+
+    for ap in approved or []:
+        if not isinstance(ap, dict):
+            continue
+        k = _item_key(ap)
+        if k in seen_keys:
+            continue
+        seen_keys.add(k)
+        what_ap = str(ap.get("what") or ap.get("title") or "").strip()
+        is_inter_ap = bool(ap.get("is_intermediate")) or bool(_SUPPORTING_OR_ARCHIVE_RE.search(what_ap))
+        b_ap = "archive" if is_inter_ap else "final"
+        buckets[b_ap].append(_decorate(ap, b_ap))
+
+    key_deliverables: List[Dict[str, Any]] = []
+    for b_key in ("for_review", "in_progress", "final"):
+        for entry in buckets[b_key]:
+            kd = dict(entry)
+            kd.setdefault("status", b_key)
+            key_deliverables.append(kd)
+
+    return {
+        "buckets": buckets,
+        "key_deliverables": key_deliverables,
+    }
+
