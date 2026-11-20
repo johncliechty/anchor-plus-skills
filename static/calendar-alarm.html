@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Anchor — Calendar Alarm</title>
+<link rel="icon" href="/vendor/brand/anchor-tab-32.png" type="image/png">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    min-height: 100vh;
+    background: radial-gradient(circle at top, #1f2738 0%, #0d121b 75%);
+    color: #e6ebf2;
+    font: 13.5px/1.45 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 14px;
+  }
+  @keyframes alarmBorderFlash {
+    0%, 100% { border-color: #fbbf24; box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.4), 0 12px 32px rgba(0, 0, 0, 0.65); }
+    50% { border-color: #ef4444; box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.55), 0 12px 32px rgba(0, 0, 0, 0.65); }
+  }
+  .card {
+    width: 100%;
+    max-width: 440px;
+    background: #141b27;
+    border: 2px solid #fbbf24;
+    border-radius: 14px;
+    padding: 18px 20px;
+    animation: alarmBorderFlash 1.1s ease-in-out infinite;
+  }
+  .top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .badge {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #fbbf24;
+  }
+  .src {
+    font-size: 11px;
+    color: #94a3b8;
+    border: 1px solid #2d384c;
+    border-radius: 999px;
+    padding: 2px 9px;
+  }
+  h1 {
+    margin-top: 10px;
+    font-size: 18px;
+    font-weight: 750;
+    color: #f8fafc;
+    line-height: 1.3;
+  }
+  .when {
+    margin-top: 6px;
+    font-size: 13px;
+    font-weight: 650;
+    color: #fde68a;
+  }
+  .loc {
+    margin-top: 6px;
+    font-size: 12px;
+    color: #cbd5e1;
+    word-break: break-word;
+  }
+  .acts {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 18px;
+    padding-top: 13px;
+    border-top: 1px solid #263144;
+  }
+  .btn {
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    border-radius: 8px;
+    padding: 7px 15px;
+    font: 700 12.5px "Segoe UI", system-ui, sans-serif;
+    cursor: pointer;
+    text-decoration: none;
+  }
+  .btn.goto {
+    background: #fbbf24;
+    border-color: #fbbf24;
+    color: #0f172a;
+  }
+  .btn.goto:hover { background: #fde68a; }
+  .btn.exit {
+    background: rgba(15, 23, 42, 0.85);
+    border-color: rgba(248, 113, 113, 0.6);
+    color: #fca5a5;
+  }
+  .btn.exit:hover { background: rgba(127, 29, 29, 0.7); color: #fff; }
+  .btn.join {
+    background: rgba(56, 189, 248, 0.2);
+    border-color: rgba(56, 189, 248, 0.7);
+    color: #e0f2fe;
+    margin-right: auto;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .card { animation: none !important; }
+  }
+</style>
+</head>
+<body>
+  <div class="card" role="alertdialog" aria-labelledby="evTitle">
+    <div class="top">
+      <span class="badge" id="evCountdown">&#128276; Calendar Alarm</span>
+      <span class="src" id="evSource">Calendar</span>
+    </div>
+    <h1 id="evTitle">Calendar Appointment</h1>
+    <div class="when" id="evWhen"></div>
+    <div class="loc" id="evLoc" hidden></div>
+    <div class="acts">
+      <a class="btn join" id="btnJoin" href="#" target="_blank" rel="noopener noreferrer" hidden>&#128279; Join &#8599;</a>
+      <button type="button" class="btn goto" id="btnGoto">&#128197; Go to</button>
+      <button type="button" class="btn exit" id="btnExit">&#10005; Exit</button>
+    </div>
+  </div>
+<script>
+(function () {
+  "use strict";
+  var q = new URLSearchParams(location.search);
+  var key = q.get("key") || "";
+  var evPayload = {
+    uid: q.get("uid") || "",
+    title: q.get("title") || "Calendar Event",
+    date: q.get("date") || "",
+    start_time: q.get("start") || "",
+    end_time: q.get("end") || "",
+    location: q.get("loc") || "",
+    calendar_badge: q.get("source") || "Calendar"
+  };
+  document.getElementById("evCountdown").textContent = "\ud83d\udd14 " + (q.get("countdown") || "Calendar Alarm");
+  document.getElementById("evSource").textContent = evPayload.calendar_badge;
+  document.getElementById("evTitle").textContent = evPayload.title;
+  document.getElementById("evWhen").textContent = "\u23f0 " + (q.get("range") || evPayload.start_time || "Today") + (evPayload.date ? " \u00b7 " + evPayload.date : "");
+  document.title = "\ud83d\udd14 " + evPayload.title + " \u2014 Anchor Alarm";
+
+  if (evPayload.location) {
+    var locEl = document.getElementById("evLoc");
+    locEl.hidden = false;
+    locEl.textContent = "\ud83d\udccd " + evPayload.location;
+  }
+  var joinUrl = q.get("join") || "";
+  if (joinUrl && /^https?:\/\//i.test(joinUrl)) {
+    var jBtn = document.getElementById("btnJoin");
+    jBtn.hidden = false;
+    jBtn.href = joinUrl;
+  }
+
+  function playPopupChime() {
+    if (q.get("sound") === "0" || q.get("chime_played") === "1") return;
+    try {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      var ctx = new AC();
+      if (ctx.state === "suspended") ctx.resume().catch(function () {});
+      var now = ctx.currentTime;
+      [523.25, 659.25, 783.99, 1046.5].forEach(function (f, idx) {
+        var osc = ctx.createOscillator();
+        var gain = ctx.createGain();
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(f, now + idx * 0.14);
+        gain.gain.setValueAtTime(0.0001, now + idx * 0.14);
+        gain.gain.exponentialRampToValueAtTime(0.16, now + idx * 0.14 + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.14 + 0.42);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now + idx * 0.14);
+        osc.stop(now + idx * 0.14 + 0.45);
+      });
+    } catch (_e) {}
+  }
+  playPopupChime();
+
+  var bc = null;
+  try {
+    if (typeof BroadcastChannel === "function") {
+      bc = new BroadcastChannel("anchor_calendar_alarm_v1");
+      bc.onmessage = function (ev) {
+        var m = ev && ev.data;
+        if (m && (m.type === "alarm_dismissed" || m.type === "alarm_goto") && (!m.key || m.key === key)) {
+          window.close();
+        }
+      };
+    }
+  } catch (_e) {}
+
+  function ackServer(via) {
+    if (!key || key.indexOf("test-alarm@") === 0) return Promise.resolve();
+    var hdrs = { "Content-Type": "application/json" };
+    try {
+      var tok = localStorage.getItem("anchor_token") || "";
+      if (tok) { hdrs["X-Anchor-Token"] = tok; hdrs["Authorization"] = "Bearer " + tok; }
+    } catch (_e) {}
+    return fetch("/api/steward/comms", {
+      method: "POST",
+      headers: hdrs,
+      body: JSON.stringify({
+        action: "calendar_alarm_ack",
+        sub_action: via,
+        via: via,
+        alarm_key: key,
+        uid: evPayload.uid,
+        title: evPayload.title,
+        date: evPayload.date,
+        start_time: evPayload.start_time
+      })
+    }).catch(function () {});
+  }
+
+  document.getElementById("btnExit").addEventListener("click", function () {
+    try {
+      if (window.opener && !window.opener.closed) {
+        window.opener.postMessage({ proto: "anchor-calendar-alarm", action: "exit", key: key }, location.origin);
+      }
+    } catch (_e) {}
+    try { if (bc) bc.postMessage({ type: "alarm_dismissed", key: key, ts: Date.now() }); } catch (_e2) {}
+    ackServer("exit").finally(function () { window.close(); });
+  });
+
+  document.getElementById("btnGoto").addEventListener("click", function () {
+    var handledByOpener = false;
+    try {
+      if (window.opener && !window.opener.closed) {
+        window.opener.focus();
+        window.opener.postMessage({ proto: "anchor-calendar-alarm", action: "goto", key: key, event: evPayload }, location.origin);
+        handledByOpener = true;
+      }
+    } catch (_e) {}
+    try { if (bc) bc.postMessage({ type: "alarm_goto", key: key, event: evPayload, ts: Date.now() }); } catch (_e2) {}
+    ackServer("goto").finally(function () {
+      if (handledByOpener) {
+        window.close();
+      } else {
+        var gp = new URLSearchParams();
+        if (evPayload.uid) gp.set("cal_goto_uid", evPayload.uid);
+        if (evPayload.title) gp.set("cal_goto_title", evPayload.title);
+        if (evPayload.date) gp.set("cal_goto_date", evPayload.date);
+        if (evPayload.start_time) gp.set("cal_goto_start", evPayload.start_time);
+        location.href = "/?" + gp.toString();
+      }
+    });
+  });
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") document.getElementById("btnExit").click();
+  });
+})();
+</script>
+</body>
+</html>
