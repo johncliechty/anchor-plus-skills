@@ -198,10 +198,14 @@ def _apply_bundled_core_overlay(dest: Path) -> bool:
         return False
     dest_path = Path(dest)
     candidates = []
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        candidates.append(Path(sys._MEIPASS) / "anchor-core-overlay.zip")
     try:
         exe_dir = Path(sys.executable).resolve().parent
         candidates.extend([
             exe_dir / "anchor-core-overlay.zip",
+            exe_dir.parent / "Resources" / "anchor-core-overlay.zip",
+            exe_dir.parent / "Frameworks" / "anchor-core-overlay.zip",
             exe_dir.parent / "anchor-core-overlay.zip",
         ])
     except Exception:

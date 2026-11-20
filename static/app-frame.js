@@ -55,9 +55,18 @@
   function onDocClick(ev, isCapture) {
     if (ev.defaultPrevented || ev.button !== 0 || ev.ctrlKey || ev.metaKey || ev.shiftKey || ev.altKey) return;
     var a = ev.target && ev.target.closest ? ev.target.closest("a[href]") : null;
-    if (!a || a.hasAttribute("download")) return;
+    if (!a) return;
     var href = a.getAttribute("href") || "";
     if (!href || href === "#" || /^javascript:/i.test(href)) return;
+    if (a.hasAttribute("download")) {
+      var topWv = null;
+      try { topWv = window.top && window.top.pywebview && window.top.pywebview.api; } catch (e) { topWv = null; }
+      if (topWv && typeof topWv.save_download === "function" && !/^(blob|data):/i.test(href)) {
+        if (isCapture && typeof a.onclick === "function") return;
+        try { if (app.download(a.href, window, a.getAttribute("download") || true)) { ev.preventDefault(); return; } } catch (e) {}
+      }
+      return;
+    }
     if (isCapture && typeof a.onclick === "function") return;
     try { if (app.download(a.href, window)) { ev.preventDefault(); return; } } catch (e) { /* the link goes as it was */ }
     if (/^(ms-\w+|mailto|tel|file):/i.test(href)) {          // an app link: Windows opens it, never the frame

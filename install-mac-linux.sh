@@ -131,14 +131,25 @@ if [ "${ANCHOR_BUILD_NATIVE_APP:-1}" = "1" ] && [ -f "$ANCHOR_INSTALL_DIR/shell/
   echo "[*] Building standalone native Anchor desktop app..."
   bash "$ANCHOR_INSTALL_DIR/shell/build_unix.sh" || echo "[!] Standalone PyInstaller bundle step skipped; using direct native pywebview window."
   if [ "$OS_NAME" = "Darwin" ] && [ -d "$ANCHOR_INSTALL_DIR/shell/dist/Anchor.app" ]; then
+    INSTALLED_MAC_APP="$ANCHOR_INSTALL_DIR/shell/dist/Anchor.app"
     if [ -w "/Applications" ]; then
+      STAGE_APP="/Applications/.Anchor.app.tmp.$$"
+      rm -rf "$STAGE_APP" 2>/dev/null || true
+      ditto "$ANCHOR_INSTALL_DIR/shell/dist/Anchor.app" "$STAGE_APP" || cp -R "$ANCHOR_INSTALL_DIR/shell/dist/Anchor.app" "$STAGE_APP"
+      xattr -cr "$STAGE_APP" 2>/dev/null || true
+      if command -v codesign >/dev/null 2>&1; then
+        codesign --force --deep --sign - "$STAGE_APP" || true
+      fi
       rm -rf "/Applications/Anchor.app" 2>/dev/null || true
-      cp -R "$ANCHOR_INSTALL_DIR/shell/dist/Anchor.app" "/Applications/Anchor.app" || true
-      echo "[*] Installed standalone macOS app -> /Applications/Anchor.app"
+      mv "$STAGE_APP" "/Applications/Anchor.app" || true
+      if [ -d "/Applications/Anchor.app" ]; then
+        INSTALLED_MAC_APP="/Applications/Anchor.app"
+        echo "[*] Installed standalone macOS app -> /Applications/Anchor.app"
+      fi
     fi
     if [ -d "$HOME/Desktop" ]; then
       rm -rf "$HOME/Desktop/Anchor.app" 2>/dev/null || true
-      ln -sf "$ANCHOR_INSTALL_DIR/shell/dist/Anchor.app" "$HOME/Desktop/Anchor.app" || true
+      ln -sf "$INSTALLED_MAC_APP" "$HOME/Desktop/Anchor.app" || true
     fi
   elif [ "$OS_NAME" = "Linux" ] && [ -x "$ANCHOR_INSTALL_DIR/shell/dist/Anchor/install-desktop-entry.sh" ]; then
     bash "$ANCHOR_INSTALL_DIR/shell/dist/Anchor/install-desktop-entry.sh" || true

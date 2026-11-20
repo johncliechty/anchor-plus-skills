@@ -102,23 +102,30 @@ mkdir -p "$DOWNLOADS_DIR"
 if [ "$OS_NAME" = "Darwin" ]; then
     APP_BUNDLE="$DIST_DIR/Anchor.app"
     if [ -d "$APP_BUNDLE" ]; then
-        cp -f "$OVERLAY_ZIP" "$APP_BUNDLE/Contents/MacOS/anchor-core-overlay.zip" || true
+        # Keep Contents/MacOS strictly Mach-O binaries only (--add-data already places
+        # anchor-core-overlay.zip in Contents/Resources + sys._MEIPASS; non-binaries in
+        # Contents/MacOS store signatures in xattrs and break Apple Silicon codesign).
+        rm -f "$APP_BUNDLE/Contents/MacOS/anchor-core-overlay.zip" 2>/dev/null || true
+        xattr -cr "$APP_BUNDLE" 2>/dev/null || true
         if command -v codesign >/dev/null 2>&1; then
-            codesign --force --deep --sign - "$APP_BUNDLE" || true
+            codesign --force --deep --sign - "$APP_BUNDLE"
+            codesign --verify --deep --strict "$APP_BUNDLE" || true
         fi
-        MAC_ZIP="$HERE/Anchor-macOS.zip"
-        rm -f "$MAC_ZIP"
-        ditto -c -k --sequesterRsrc --keepParent "$APP_BUNDLE" "$MAC_ZIP"
-        cp -f "$MAC_ZIP" "$DOWNLOADS_DIR/Anchor-macOS.zip"
-        echo "Built macOS app archive: $MAC_ZIP"
+        if [ "${ANCHOR_SKIP_ARCHIVES:-0}" != "1" ]; then
+            MAC_ZIP="$HERE/Anchor-macOS.zip"
+            rm -f "$MAC_ZIP"
+            ditto -c -k --sequesterRsrc --keepParent "$APP_BUNDLE" "$MAC_ZIP"
+            cp -f "$MAC_ZIP" "$DOWNLOADS_DIR/Anchor-macOS.zip"
+            echo "Built macOS app archive: $MAC_ZIP"
 
-        if command -v hdiutil >/dev/null 2>&1; then
-            MAC_DMG="$HERE/Anchor-macOS.dmg"
-            rm -f "$MAC_DMG"
-            hdiutil create -volname "Anchor" -srcfolder "$APP_BUNDLE" -ov -format UDZO "$MAC_DMG" || true
-            if [ -f "$MAC_DMG" ]; then
-                cp -f "$MAC_DMG" "$DOWNLOADS_DIR/Anchor-macOS.dmg"
-                echo "Built macOS disk image: $MAC_DMG"
+            if command -v hdiutil >/dev/null 2>&1; then
+                MAC_DMG="$HERE/Anchor-macOS.dmg"
+                rm -f "$MAC_DMG"
+                hdiutil create -volname "Anchor" -srcfolder "$APP_BUNDLE" -ov -format UDZO "$MAC_DMG" || true
+                if [ -f "$MAC_DMG" ]; then
+                    cp -f "$MAC_DMG" "$DOWNLOADS_DIR/Anchor-macOS.dmg"
+                    echo "Built macOS disk image: $MAC_DMG"
+                fi
             fi
         fi
     fi

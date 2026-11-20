@@ -199,8 +199,8 @@
 
   function isDownload(r) {
     if (r.q.get("download") === "1") return true;
-    return r.path === "/api/steward/deliverable-file" && r.q.get("view") !== "1" &&
-           /\.(docx|pptx|xlsx|zip|7z|exe|msi)$/i.test(r.q.get("path") || "");
+    return (r.path === "/api/steward/deliverable-file" || r.path.indexOf("/artifact/") === 0) && r.q.get("view") !== "1" &&
+           /\.(docx|pptx|xlsx|zip|7z|exe|msi|dmg|pkg|tar\.gz|tgz)$/i.test((r.q.get("path") || r.path) || "");
   }
 
   // Anchor's own pages open where they were asked from; everything else (a report, an artifact, a deliverable
@@ -287,16 +287,17 @@
       if (cockpitTarget(t)) refreshFeedback();
       return t.frame.contentWindow;
     },
-    download: function (u, fromWin) {
+    download: function (u, fromWin, suggestedAttr) {
       var r = resolve(u, fromWin);
-      if (!r || r.blank || !isDownload(r)) return false;
+      if (!r || r.blank || (!suggestedAttr && !isDownload(r))) return false;
       var h = host();
       if (h && typeof h.save_download === "function") {
         showDownloadToast("Downloading\u2026", false);
         fetch(r.url, { credentials: "same-origin" })
           .then(function (resp) {
             if (!resp.ok) throw new Error("HTTP " + resp.status);
-            var fname = extractDownloadFilename(resp, r);
+            var attrName = (typeof suggestedAttr === "string" && suggestedAttr.trim()) ? suggestedAttr.trim() : "";
+            var fname = attrName || extractDownloadFilename(resp, r);
             return resp.arrayBuffer().then(function (buf) {
               return h.save_download(fname, bufferToBase64(buf));
             });
