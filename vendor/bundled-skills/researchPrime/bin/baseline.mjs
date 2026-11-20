@@ -226,8 +226,18 @@ export function regenerate() {
   return { hash };
 }
 
+function isMain() {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return fs.realpathSync(fileURLToPath(import.meta.url)) === fs.realpathSync(path.resolve(entry));
+  } catch {
+    try { return path.resolve(entry) === fileURLToPath(import.meta.url); } catch { return false; }
+  }
+}
+
 // CLI: `node bin/baseline.mjs --write` regenerates; `node bin/baseline.mjs` prints the live hash.
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isMain()) {
   if (process.argv.includes('--write')) {
     const { hash } = regenerate();
     console.log(`wrote fixture + baseline; hash=${hash}`);

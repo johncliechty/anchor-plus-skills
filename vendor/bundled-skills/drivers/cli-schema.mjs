@@ -5,7 +5,8 @@ import {
 } from './seat-contract.mjs';
 
 const SUPPORTED_SCHEMA_KEYS = new Set([
-  'type', 'properties', 'required', 'items', 'enum', 'nullable', 'pattern', 'minimum',
+  'type', 'properties', 'required', 'items', 'enum', 'nullable', 'pattern',
+  'minimum', 'maximum', 'minItems', 'maxItems', 'additionalProperties',
   // Annotation-only keys do not change conformance.
   '$schema', '$id', 'title', 'description',
 ]);
@@ -40,6 +41,15 @@ function schemaShapeIsSupported(schema, seen = new WeakSet()) {
   }
   if (schema.minimum !== undefined
       && (typeof schema.minimum !== 'number' || !Number.isFinite(schema.minimum))) return false;
+  if (schema.maximum !== undefined
+      && (typeof schema.maximum !== 'number' || !Number.isFinite(schema.maximum))) return false;
+  if (schema.minItems !== undefined
+      && (!Number.isInteger(schema.minItems) || schema.minItems < 0)) return false;
+  if (schema.maxItems !== undefined
+      && (!Number.isInteger(schema.maxItems) || schema.maxItems < 0)) return false;
+  if (schema.additionalProperties !== undefined
+      && typeof schema.additionalProperties !== 'boolean'
+      && !schemaShapeIsSupported(schema.additionalProperties, seen)) return false;
   for (const key of ['$schema', '$id', 'title', 'description']) {
     if (schema[key] !== undefined && typeof schema[key] !== 'string') return false;
   }
@@ -96,14 +106,30 @@ function valueConforms(value, schema) {
   if (typeof value === 'number' && schema.minimum !== undefined && value < schema.minimum) {
     return false;
   }
+  if (typeof value === 'number' && schema.maximum !== undefined && value > schema.maximum) {
+    return false;
+  }
   if (isObject(value)) {
     if (schema.required?.some((key) => !Object.hasOwn(value, key))) return false;
     for (const [key, child] of Object.entries(schema.properties ?? {})) {
       if (Object.hasOwn(value, key) && !valueConforms(value[key], child)) return false;
     }
+    if (schema.additionalProperties !== undefined && schema.properties !== undefined) {
+      for (const key of Object.keys(value)) {
+        if (!Object.hasOwn(schema.properties, key)) {
+          if (schema.additionalProperties === false) return false;
+          if (isObject(schema.additionalProperties) && !valueConforms(value[key], schema.additionalProperties)) {
+            return false;
+          }
+        }
+      }
+    }
   }
-  if (Array.isArray(value) && schema.items !== undefined
-      && value.some((item) => !valueConforms(item, schema.items))) return false;
+  if (Array.isArray(value)) {
+    if (schema.minItems !== undefined && value.length < schema.minItems) return false;
+    if (schema.maxItems !== undefined && value.length > schema.maxItems) return false;
+    if (schema.items !== undefined && value.some((item) => !valueConforms(item, schema.items))) return false;
+  }
   return true;
 }
 
@@ -135,15 +161,15 @@ export async function runCliSchemaAttempts({
   parse,
 } = {}) {
   if (typeof parse !== 'function') throw new TypeError('runCliSchemaAttempts requires parse()');
-  const invoke = async (physicalPrompt, physicalLabel, kind) => {
-    if (callOpts.signal?.aborted) {
-      const rec = localAbortReceipt(physicalLabel, callOpts.model ?? null);
+  const invoke = async (physicalPrompt, physicalLabel, kind, activeCallOpts = callOpts) => {
+    if (activeCallOpts.signal?.aborted) {
+      const rec = localAbortReceipt(physicalLabel, activeCallOpts.model ?? null);
       reportPhysicalReceipt(driverOpts, { kind, label: physicalLabel, outcome: 'aborted', receipt: rec });
       throw rawTransportError(rec, familyName);
     }
     let result;
     try {
-      result = await run(physicalPrompt, physicalLabel, callOpts);
+      result = await run(physicalPrompt, physicalLabel, activeCallOpts);
     } catch (error) {
       const rec = error?.raw_receipt ?? null;
       reportPhysicalReceipt(driverOpts, {
@@ -194,18 +220,42 @@ export async function runCliSchemaAttempts({
     kind: 'initial', label, outcome: 'schema_rejected', receipt: first.rec,
   });
   const cancelled = first.rec?.turn_cancelled === true;
+  const firstTrimmed = first.text.trim();
+  const canFastRepair = !cancelled && firstTrimmed.length > 50;
   log(cancelled
     ? `   !! ${label} turn was CANCELLED (a tool ask cannot be answered headless) — retrying once with the read-only constraint`
-    : `   !! ${label} reply was schema-nonconforming — retrying once (strict reprompt)`);
+    : canFastRepair
+      ? `   !! ${label} reply was schema-nonconforming (${firstTrimmed.length} chars) — running fast zero-tool JSON repair`
+      : `   !! ${label} reply was schema-nonconforming — retrying once (strict reprompt)`);
 
-  const strict = `${prompt}\n\n` + (cancelled
-    ? 'Your previous turn was CANCELLED because a shell command needed an approval nobody can give in this seat. '
-      + 'Do not chain (;), branch (if/else) or redirect (2>$null, >) commands; use plain single commands or your file tools. '
-    : 'Your previous reply did not conform to the requested JSON Schema. ')
-    + `Respond with ONLY a single raw JSON object that conforms to this JSON Schema — `
-    + `no prose, no markdown fences, nothing else:\n${JSON.stringify(schema)}`;
+  const repairPrompt = canFastRepair
+    ? `Repair the following response into valid JSON matching this schema. `
+      + `Do not run shell commands, search, or read files; translate ONLY the response text below `
+      + `into a single raw JSON object (no prose, no markdown fences, nothing else).\n\n`
+      + `SCHEMA:\n${JSON.stringify(schema)}\n\n`
+      + `RESPONSE TO REPAIR:\n${firstTrimmed.slice(0, 32000)}`
+    : `${prompt}\n\n` + (cancelled
+      ? 'Your previous turn was CANCELLED because a shell command needed an approval nobody can give in this seat. '
+        + 'Do not chain (;), branch (if/else) or redirect (2>$null, >) commands; use plain single commands or your file tools. '
+      : 'Your previous reply did not conform to the requested JSON Schema. ')
+      + `Respond with ONLY a single raw JSON object that conforms to this JSON Schema — `
+      + `no prose, no markdown fences, nothing else:\n${JSON.stringify(schema)}`;
+  const retryCallOpts = canFastRepair
+    ? {
+      ...callOpts,
+      repairOnly: true,
+      allowedTools: '',
+      sandbox: 'read-only',
+      timeoutMs: Math.min(
+        Number.isFinite(Number(callOpts?.timeoutMs)) && Number(callOpts.timeoutMs) > 0
+          ? Number(callOpts.timeoutMs)
+          : 60_000,
+        60_000,
+      ),
+    }
+    : callOpts;
   const retryLabel = `${label}#retry`;
-  const retry = await invoke(strict, retryLabel, 'schema_reprompt');
+  const retry = await invoke(repairPrompt, retryLabel, 'schema_reprompt', retryCallOpts);
   parsed = parse(retry.text);
   if (parsed && conforms(parsed, schema)) {
     reportPhysicalReceipt(driverOpts, {

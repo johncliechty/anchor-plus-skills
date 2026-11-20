@@ -100,6 +100,24 @@ A `rung: "REFUTED"` elevation **drops**.
 The result is validated by the shipped `test/harness.assertIncrement1Conformant` before it is written;
 if it would not pass, the host exits non-zero and writes nothing.
 
+## Executive Human-Facing Report Standard (draft prose & deterministic rendering)
+
+Write `verdict`, `reasoning`, `what_would_refute_it`, `future_state_condition`, and `enabling_assumption` in
+clear, boardroom-ready human language from the raw draft onward — do **NOT** embed raw internal IDs (`d-1`,
+`e-2`), JSON property names, or machine hashes inside prose sentences.
+
+After `runtime/gandalf-run.mjs` grades the draft into `read.json` (keeping 100% backward compatibility with
+all `gandalf-advisor-1` schema fields and historical runs), `runtime/render-report.mjs` (`--report-html` /
+`--report-md` on `gandalf-run.mjs`, or standalone `node runtime/render-report.mjs --input read.json`)
+deterministically formats the human-facing HTML & Markdown report with zero post-grade LLM calls:
+- Translates earned stamps honestly (*Cross-Family Verified*, *Single-Family Checked*, *Unverified Hypothesis*,
+  plus prominent **Scope & Verification Qualification** callouts whenever `degraded: true` or `cross_model: false`).
+- Renders `kill_log` visibly in the body under **Ideas Tested & Rejected by Adversarial Review** with each
+  falsifying defeater.
+- Replaces raw item IDs in prose cards with numbered footnotes `[1..N]` linked to a collapsed `<details>`
+  **Verification & Machine Provenance Appendix** holding `d-*`/`e-*`, `what_would_refute_it`, seat families,
+  `result_digest`, and `refuter_commission_id`.
+
 ## Scope note (Tier-1)
 
 This host runs the **deterministic** seam pass on ONE model run. It does **not** dispatch the live

@@ -16,7 +16,7 @@
 // SPIKEFIRST normalize to the SPIKE pin. SPIKE_FIRST property is an alias of SPIKE.
 
 /** @typedef {'Heavy' | 'Standard'} ModelTier */
-/** @typedef {'FULL' | 'LITE' | 'SPIKE'} ProcessDepth */
+/** @typedef {'FULL' | 'LITE' | 'SPIKE' | 'MATRIX-FAST-TRACK'} ProcessDepth */
 
 /**
  * Wave-1 deliverable pin — public surface identity for the NS-01 shared core.
@@ -31,20 +31,26 @@ export const MODEL_TIERS = Object.freeze({
 });
 
 /**
- * Process-depth vocabulary (NS-01 axis 2 / B3 operator pins).
- * SPIKE is first-class. SPIKE_FIRST is a property alias of the same pin string
- * so existing DEPTH_BANDS.SPIKE_FIRST readers keep working after the renorm.
+ * Process-depth vocabulary (NS-01 axis 2 / B3 + Wave-4 operator pins).
+ * SPIKE and MATRIX-FAST-TRACK are first-class. SPIKE_FIRST is a property alias
+ * of the SPIKE pin string so existing DEPTH_BANDS.SPIKE_FIRST readers keep working.
  */
 export const DEPTH_BANDS = Object.freeze({
   FULL: 'FULL',
   LITE: 'LITE',
   SPIKE: 'SPIKE',
+  MATRIX_FAST_TRACK: 'MATRIX-FAST-TRACK',
   /** @deprecated Prefer SPIKE — same pin value as SPIKE (legacy property name). */
   SPIKE_FIRST: 'SPIKE',
 });
 
-/** Operator / stderr accepted set (B3 NS SC3 tokens). */
-export const ACCEPTED_DEPTH_SET = Object.freeze(['LITE', 'SPIKE', 'FULL']);
+/** Operator / stderr accepted set. */
+export const ACCEPTED_DEPTH_SET = Object.freeze([
+  'LITE',
+  'MATRIX-FAST-TRACK',
+  'SPIKE',
+  'FULL',
+]);
 
 /** Frozen lists for exhaustiveness checks / greps. */
 export const MODEL_TIER_VALUES = Object.freeze([
@@ -56,6 +62,7 @@ export const DEPTH_BAND_VALUES = Object.freeze([
   DEPTH_BANDS.FULL,
   DEPTH_BANDS.LITE,
   DEPTH_BANDS.SPIKE,
+  DEPTH_BANDS.MATRIX_FAST_TRACK,
 ]);
 
 /**
@@ -125,6 +132,15 @@ export function normalizeDepth(value, opts = {}) {
   const key = value.trim().toUpperCase().replace(/_/g, '-');
   if (key === 'FULL') return DEPTH_BANDS.FULL;
   if (key === 'LITE' || key === 'LIGHT') return DEPTH_BANDS.LITE;
+  if (
+    key === 'MATRIX-FAST-TRACK' ||
+    key === 'MATRIX' ||
+    key === 'FAST-TRACK' ||
+    key === 'MATRIX-FAST' ||
+    key === 'MFT'
+  ) {
+    return DEPTH_BANDS.MATRIX_FAST_TRACK;
+  }
   // Aliases → SPIKE first-class pin (B3 operator vocabulary).
   if (key === 'SPIKE-FIRST' || key === 'SPIKEFIRST' || key === 'SPIKE') {
     return DEPTH_BANDS.SPIKE;
@@ -157,18 +173,72 @@ export function normalizeTier(value) {
   return null;
 }
 
+const FILE_TOKEN_RE =
+  /\b[\w./\\-]+\.(?:m?js|cjs|tsx?|jsx?|py|rs|go|java|cs|rb|php|sql|json|ya?ml|toml|md|html?|css|scss|vue|svelte)\b/gi;
+
+const IRREVERSIBLE_OR_SECURITY_TRIGGER_RE =
+  /\b(schema[\s-]+migration|drop\s+table|destructive\s+migration|irreversible|auth(?:entication|orization)?\s+(?:overhaul|rewrite|bypass)|cryptograph(?:y|ic)|key\s+rotation|production\s+cutover|pii\s+exfiltration|security\s+boundary|cwe-\d+)\b/i;
+
+const ARCHITECTURAL_MULTI_MODULE_RE =
+  /\b(multi-file|multi-module|cross-cutting|re-?architect(?:ure)?|system-wide|monorepo-wide|across\s+all\s+\w+|whole-repo|migration\s+across|architectural\s+(?:overhaul|redesign|refactor))\b/i;
+
 /**
- * Cheap scope signal from intake (explicit scope wins; else intent length).
+ * Count explicit or intent-referenced target files when available.
  * @param {object} i
+ * @param {string} intent
+ * @returns {number | null}
+ */
+function extractTargetFileCount(i, intent) {
+  if (Array.isArray(i.targetFiles)) return i.targetFiles.length > 0 ? i.targetFiles.length : null;
+  if (Number.isFinite(i.targetFiles)) return Number(i.targetFiles) > 0 ? Number(i.targetFiles) : null;
+  if (Array.isArray(i.files)) return i.files.length > 0 ? i.files.length : null;
+  if (Number.isFinite(i.files)) return Number(i.files) > 0 ? Number(i.files) : null;
+  if (Number.isFinite(i.fileCount)) return Number(i.fileCount) > 0 ? Number(i.fileCount) : null;
+  if (!intent) return null;
+  const matches = intent.match(FILE_TOKEN_RE);
+  if (!matches || matches.length === 0) return null;
+  const uniq = new Set(matches.map((m) => m.replace(/\\/g, '/').toLowerCase()));
+  return uniq.size;
+}
+
+/**
+ * Detect high-stakes irreversible / schema / security triggers in intake signals or intent.
+ * @param {object} i
+ * @param {string} intent
+ * @returns {boolean}
+ */
+function detectIrreversibleTrigger(i, intent) {
+  if (i.schemaMigration || i.securitySensitive) return true;
+  if (!intent) return false;
+  return IRREVERSIBLE_OR_SECURITY_TRIGGER_RE.test(intent);
+}
+
+/**
+ * Cheap scope signal from intake (explicit scope wins; else target file count + intent length).
+ * Localized tasks (<= 3 target files or clear localized intent <= 800 chars without
+ * multi-module/architectural scope) resolve to 'small' rather than jumping to 'medium'/'large'
+ * merely because intent.length > 180.
+ *
+ * @param {object} i
+ * @param {number | null} [targetFileCount]
  * @returns {'small' | 'medium' | 'large' | 'unknown'}
  */
-function resolveScope(i) {
+function resolveScope(i, targetFileCount = null) {
   const explicit = typeof i.scope === 'string' ? i.scope.trim().toLowerCase() : '';
   if (explicit === 'small' || explicit === 'medium' || explicit === 'large') return explicit;
   const intent = typeof i.intent === 'string' ? i.intent : '';
-  if (!intent) return 'unknown';
-  if (intent.length > 600) return 'large';
-  if (intent.length > 180) return 'medium';
+  const trimmed = intent.trim();
+  if (!trimmed && targetFileCount == null) return 'unknown';
+
+  const isArch = ARCHITECTURAL_MULTI_MODULE_RE.test(trimmed);
+  if (targetFileCount != null && targetFileCount > 0) {
+    if (targetFileCount <= 3 && trimmed.length <= 800 && !isArch) return 'small';
+    if (targetFileCount <= 12 && trimmed.length <= 2400) return 'medium';
+    return 'large';
+  }
+
+  if (trimmed.length > 2400) return 'large';
+  if (trimmed.length > 800 || isArch) return 'medium';
   return 'small';
 }
 
@@ -179,16 +249,26 @@ function resolveScope(i) {
  * closed (throws when `opts.failClosed` is true) or returns a full recommendation
  * with an explicit non-empty rationale and `defaulted: true`.
  *
+ * Right-sizing rules:
+ *   · Small/localized tasks (greenfield OR brownfield, <= 3 target files, clear intent
+ *     <= 800 chars, low risk) ⇒ LITE
+ *   · Novel / unconverged trade-offs ⇒ SPIKE (SPIKE-FIRST)
+ *   · Medium / multi-file brownfield / architectural tasks ⇒ MATRIX-FAST-TRACK
+ *   · Legacy multi-round FULL reserved for explicit `--depth FULL`, high-stakes /
+ *     irreversible / schema-security triggers, or empty unsizable intake.
+ *
  * @param {object} [intake]
- * @param {string}  [intake.intent]          raw intent text (length is a weak scope signal)
+ * @param {string}  [intake.intent]          raw intent text
  * @param {string}  [intake.scope]           'small' | 'medium' | 'large'
+ * @param {number|string[]} [intake.targetFiles] target file paths or count
  * @param {number}  [intake.unknowns]        count of open unknowns at intake
  * @param {boolean} [intake.novel]           genuinely novel / unfamiliar territory
+ * @param {boolean} [intake.unconverged]     competing designs / unconverged trade-offs
  * @param {boolean} [intake.highStakes]      high-impact outcome
  * @param {boolean} [intake.irreversible]    hard/impossible to undo if wrong
- * @param {boolean} [intake.brownfield]      existing project (raises the LITE floor)
+ * @param {boolean} [intake.brownfield]      existing project
  * @param {string}  [intake.tier]            explicit tier request (Heavy|Standard|aliases)
- * @param {string}  [intake.depth]           explicit depth request (FULL|LITE|SPIKE-FIRST|aliases)
+ * @param {string}  [intake.depth]           explicit depth request (FULL|LITE|MATRIX-FAST-TRACK|SPIKE-FIRST|aliases)
  * @param {string}  [intake.skill]           skill id (legal-beagle / financial-analyst floor Heavy)
  * @param {object}  [opts]
  * @param {boolean} [opts.failClosed=false]  when true, empty/unknown intake throws
@@ -207,11 +287,15 @@ export function recommend(intake = {}, opts = {}) {
   const failClosed = !!(opts && opts.failClosed);
 
   const intent = typeof i.intent === 'string' ? i.intent : '';
-  const scope = resolveScope(i);
+  const targetFileCount = extractTargetFileCount(i, intent);
+  const scope = resolveScope(i, targetFileCount);
   const unknowns = Number.isFinite(i.unknowns) ? Number(i.unknowns) : 0;
   const novel = !!i.novel;
+  const unconverged = !!(i.unconverged || (Number.isFinite(i.competingDesigns) && Number(i.competingDesigns) >= 2));
   const highStakes = !!i.highStakes;
   const irreversible = !!i.irreversible;
+  const hasIrreversibleTrigger = detectIrreversibleTrigger(i, intent);
+  const isArchitectural = ARCHITECTURAL_MULTI_MODULE_RE.test(intent);
   const brownfield = !!(i.brownfield || i.repoDir || i.projectDir || i.docs);
   const skill = typeof i.skill === 'string' ? i.skill.trim().toLowerCase() : '';
   const highStakesSkill =
@@ -224,12 +308,15 @@ export function recommend(intake = {}, opts = {}) {
   const explicitTier = normalizeTier(i.tier);
 
   const emptyIntake =
-    !intent &&
+    !intent.trim() &&
+    targetFileCount == null &&
     scope === 'unknown' &&
     unknowns === 0 &&
     !novel &&
+    !unconverged &&
     !highStakes &&
     !irreversible &&
+    !hasIrreversibleTrigger &&
     !brownfield &&
     !explicitDepth &&
     !explicitTier &&
@@ -247,10 +334,14 @@ export function recommend(intake = {}, opts = {}) {
 
   const signals = {
     scope,
+    targetFileCount,
     unknowns,
     novel,
+    unconverged,
     highStakes,
     irreversible,
+    hasIrreversibleTrigger,
+    isArchitectural,
     brownfield,
     skill: skill || null,
     highStakesSkill,
@@ -264,32 +355,46 @@ export function recommend(intake = {}, opts = {}) {
   let defaultedDepth = false;
   let depthWhy;
 
+  const isLocalizedSmall =
+    scope === 'small' &&
+    (targetFileCount == null || targetFileCount <= 3) &&
+    intent.length <= 800 &&
+    !isArchitectural &&
+    !novel &&
+    !unconverged &&
+    unknowns <= 1;
+
   if (explicitDepth) {
     depth = explicitDepth;
     depthWhy = `explicit depth request ⇒ ${depth}`;
-  } else if (highStakes || irreversible) {
-    depth = DEPTH_BANDS.FULL;
-    depthWhy =
-      `High stakes${irreversible ? '/irreversibility' : ''} ⇒ FULL: rigor is never silently ` +
-      `downgraded when the outcome is high-impact or hard to undo`;
-  } else if (novel && unknowns >= 3) {
-    depth = DEPTH_BANDS.SPIKE_FIRST;
-    depthWhy =
-      `Novel work with ${unknowns} open unknowns ⇒ SPIKE-FIRST: probe/experiment before ` +
-      `planning so the plan is grounded rather than over-committed`;
-  } else if (scope === 'small' && !novel && !brownfield && unknowns <= 1) {
-    depth = DEPTH_BANDS.LITE;
-    depthWhy =
-      `Small, clear, low-novelty, low-stakes intake with ${unknowns} unknown(s) ⇒ LITE: ` +
-      `single-pass plan, minimal ceremony (North Star still locked + drift-checked)`;
-  } else {
+  } else if (emptyIntake) {
     depth = DEPTH_BANDS.FULL;
     defaultedDepth = true;
     depthWhy =
-      `No clear case for a lighter path (scope=${scope}, unknowns=${unknowns}` +
-      `${novel ? ', novel' : ''}${brownfield ? ', brownfield' : ''}` +
-      `${emptyIntake ? ', empty intake' : ''}) ⇒ FULL by default — when uncertain, the safe ` +
-      `move is full machinery, never a silent downgrade`;
+      'Empty/unknown intake with no sizing signals ⇒ FULL by default — when unsizable, ' +
+      'never silently downgrade';
+  } else if (highStakes || irreversible || hasIrreversibleTrigger) {
+    depth = DEPTH_BANDS.FULL;
+    depthWhy =
+      `High stakes${irreversible || hasIrreversibleTrigger ? '/irreversibility' : ''} ⇒ FULL: rigor is never silently ` +
+      `downgraded when the outcome is high-impact, security-critical, or hard to undo`;
+  } else if (novel || unconverged || unknowns >= 3) {
+    depth = DEPTH_BANDS.SPIKE_FIRST;
+    depthWhy =
+      `Novel/unconverged work (${unknowns} open unknown(s)) ⇒ SPIKE-FIRST: probe/experiment and ` +
+      `compare options before planning so the plan is grounded rather than over-committed`;
+  } else if (isLocalizedSmall) {
+    depth = DEPTH_BANDS.LITE;
+    depthWhy =
+      `Small, localized ${brownfield ? 'brownfield ' : ''}task (` +
+      `${targetFileCount != null ? `${targetFileCount} target file(s), ` : ''}${unknowns} unknown(s), low risk) ⇒ LITE: ` +
+      `compact fast-path plan (<=4 model calls; North Star still locked + drift-checked)`;
+  } else {
+    depth = DEPTH_BANDS.MATRIX_FAST_TRACK;
+    depthWhy =
+      `Multi-file / architectural ${brownfield ? 'brownfield ' : ''}scope (scope=${scope}` +
+      `${targetFileCount != null ? `, files=${targetFileCount}` : ''}, unknowns=${unknowns}) ⇒ MATRIX-FAST-TRACK: ` +
+      `lean 2-stage L0–L5 adversarial matrix (6–9 bounded calls; legacy FULL reserved for --depth FULL or irreversible triggers)`;
   }
 
   // --- tier axis ------------------------------------------------------------
@@ -308,19 +413,23 @@ export function recommend(intake = {}, opts = {}) {
     } else {
       tierWhy = `explicit tier request ⇒ ${tier}`;
     }
-  } else if (highStakes || irreversible || highStakesSkill) {
+  } else if (highStakes || irreversible || hasIrreversibleTrigger || highStakesSkill) {
     tier = MODEL_TIERS.HEAVY;
     tierWhy = highStakesSkill
       ? `skill "${skill}" is high-stakes-class ⇒ Heavy (stakes-class floor)`
-      : `High stakes${irreversible ? '/irreversibility' : ''} ⇒ Heavy: frontier seats for high-impact work`;
-  } else if (depth === DEPTH_BANDS.SPIKE_FIRST || (depth === DEPTH_BANDS.FULL && (novel || scope === 'large'))) {
+      : `High stakes${irreversible || hasIrreversibleTrigger ? '/irreversibility' : ''} ⇒ Heavy: frontier seats for high-impact work`;
+  } else if (
+    depth === DEPTH_BANDS.SPIKE_FIRST ||
+    depth === DEPTH_BANDS.MATRIX_FAST_TRACK ||
+    (depth === DEPTH_BANDS.FULL && (novel || scope === 'large' || brownfield))
+  ) {
     tier = MODEL_TIERS.HEAVY;
     tierWhy =
-      `Depth ${depth} with ${novel ? 'novel/' : ''}${scope} scope ⇒ Heavy: uncertain or large work ` +
+      `Depth ${depth} with ${novel ? 'novel/' : ''}${scope} scope ⇒ Heavy: architectural or uncertain work ` +
       `warrants frontier coding/review seats`;
   } else if (depth === DEPTH_BANDS.LITE && scope === 'small' && !novel) {
     tier = MODEL_TIERS.STANDARD;
-    tierWhy = `LITE + small/clear intake ⇒ Standard: regular-tier seats are enough for low-ceremony work`;
+    tierWhy = `LITE + small/localized intake ⇒ Standard: regular-tier seats are enough for low-ceremony work`;
   } else {
     tier = MODEL_TIERS.HEAVY;
     defaultedTier = true;

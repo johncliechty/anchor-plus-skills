@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 
 export const CONTRACT_VERSION = 1;
 import { resolveTier } from './governor.mjs';
+import { detectRegulatedDomain, maxTier, REGULATED_DOMAIN_FLOOR } from './stakes.mjs';
 import { loopThresholds } from './round.mjs';
 import { loadPreregistration } from './preregistration.mjs';
 
@@ -117,6 +118,27 @@ export function deriveGovernorContract(inputs) {
     ? src.preregThresholds
     : {};
   const locked = lockGovernorOutput({ ...src, ...prereg });
-  const tier = resolveTier(src.stakes ?? src.stakesTier ?? {});
-  return { ...locked, tier };
+  let tier = resolveTier(src.stakes ?? src.stakesTier ?? {});
+  const regulated = detectRegulatedDomain(src);
+  if (regulated.matched) {
+    tier = maxTier(tier, REGULATED_DOMAIN_FLOOR);
+  }
+  return { ...locked, tier, ...(regulated.matched ? { regulatedEscalation: regulated } : {}) };
+}
+
+/**
+ * Reconcile a pre-locked governor output against regulated-domain safety floors.
+ * Leaves non-regulated or custom test tiers untouched; escalates low/medium tiers
+ * to high when medical/clinical, legal liability, or financial/fiduciary signals match.
+ */
+export function reconcileLockedGovernorContract(locked, inputs) {
+  if (!locked || typeof locked !== 'object') return deriveGovernorContract(inputs);
+  const regulated = detectRegulatedDomain(inputs);
+  if (!regulated.matched) return locked;
+  const escalated = (locked.tier === 'low' || locked.tier === 'medium')
+    ? maxTier(locked.tier, REGULATED_DOMAIN_FLOOR)
+    : locked.tier;
+  return escalated === locked.tier
+    ? locked
+    : { ...locked, tier: escalated, regulatedEscalation: regulated };
 }

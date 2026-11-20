@@ -312,3 +312,302 @@ def test_onboard_sh_build_unix_sh_and_github_workflow_contracts():
         hits = list(distro._scan_text(rel, (ROOT / rel).read_text(encoding="utf-8")))
         assert hits == [], f"Unexpected PII hits in {rel}: {hits}"
 
+
+def test_macos_cocoa_patches_bypass_modal_save_panel_and_selected_range_crash(tmp_path, monkeypatch):
+    import base64
+    import subprocess as _sp
+
+    # 1. HostApi.save_download writes unique files to ~/Downloads without modal dialogs
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    host = anchor_shell.HostApi()
+    res1 = host.save_download("Report Draft.docx", base64.b64encode(b"DOCX-1").decode("ascii"))
+    res2 = host.save_download("Report Draft.docx", base64.b64encode(b"DOCX-2").decode("ascii"))
+    assert res1["ok"] is True and res1["filename"] == "Report Draft.docx"
+    assert res2["ok"] is True and res2["filename"] == "Report Draft (1).docx"
+    assert Path(res1["path"]).read_bytes() == b"DOCX-1"
+    assert Path(res2["path"]).read_bytes() == b"DOCX-2"
+
+    # 2. _install_macos_cocoa_patches patches DownloadDelegate, BrowserDelegate, and WebKitHost.keyDown_
+    modal_called = []
+
+    class _FakeDownloadDelegate:
+        def download_decideDestinationUsingResponse_suggestedFilename_completionHandler_(
+            self, _dl, _resp, _suggested, _handler
+        ):
+            modal_called.append("dd_modal")
+
+    dl_started = []
+
+    class _FakeBrowserDelegate:
+        _file_name = None
+
+        def download_completionHandler_error_(self, _tmp, _resp, _err):
+            return "orig_done"
+
+        def webView_decidePolicyForNavigationResponse_decisionHandler_(self, _wv, _nav_resp, _handler):
+            modal_called.append("bd_modal")
+
+    key_actions = []
+
+    class _FakeResponder:
+        # Mirrors WKWebView: implements copy_/paste_/cut_/selectAll_ WITHOUT selectedRange()
+        def copy_(self, _sender):
+            key_actions.append("copy")
+
+        def paste_(self, _sender):
+            key_actions.append("paste")
+
+        def selectAll_(self, _sender):
+            key_actions.append("selectAll")
+
+    class _FakeWindow:
+        def firstResponder(self):
+            return _FakeResponder()
+
+        def performClose_(self, _ev):
+            key_actions.append("close")
+
+    class _FakeWebKitHost:
+        def window(self):
+            return _FakeWindow()
+
+        def keyDown_(self, _ev):
+            key_actions.append("super_keydown")
+
+    fake_cocoa = SimpleNamespace(
+        webview_settings={"ALLOW_DOWNLOADS": True},
+        WebKit=SimpleNamespace(WKNavigationResponsePolicyCancel=0),
+        BrowserView=SimpleNamespace(
+            DownloadDelegate=_FakeDownloadDelegate,
+            BrowserDelegate=_FakeBrowserDelegate,
+            WebKitHost=_FakeWebKitHost,
+            app=SimpleNamespace(stop_=lambda _s: key_actions.append("quit")),
+        ),
+    )
+    fake_foundation = SimpleNamespace(
+        NSURL=SimpleNamespace(fileURLWithPath_=lambda p: f"file://{p}"),
+        NSFileManager=SimpleNamespace(
+            defaultManager=lambda: SimpleNamespace(
+                fileExistsAtPath_=lambda _p: False,
+                removeItemAtURL_error_=lambda *_a: None,
+            )
+        ),
+        NSURLSession=SimpleNamespace(
+            sharedSession=lambda: SimpleNamespace(
+                downloadTaskWithURL_completionHandler_=lambda u, cb: SimpleNamespace(
+                    resume=lambda: dl_started.append((u, cb))
+                )
+            )
+        ),
+    )
+    fake_appkit = SimpleNamespace(NSCommandKeyMask=1 << 20)
+
+    dl_dir = tmp_path / "MacDownloads"
+    anchor_shell._install_macos_cocoa_patches(fake_cocoa, fake_foundation, fake_appkit, downloads_dir=dl_dir)
+
+    # Exercise DownloadDelegate (<a download> path)
+    dest_urls = []
+    dd_inst = _FakeDownloadDelegate()
+    dd_inst.download_decideDestinationUsingResponse_suggestedFilename_completionHandler_(
+        None, None, "Brief.docx", lambda u: dest_urls.append(u)
+    )
+    assert modal_called == []
+    assert len(dest_urls) == 1 and dest_urls[0].endswith("Brief.docx")
+
+    # Exercise BrowserDelegate (Content-Disposition: attachment path)
+    decisions = []
+    bd_inst = _FakeBrowserDelegate()
+    nav_resp = SimpleNamespace(
+        canShowMIMEType=lambda: False,
+        response=lambda: SimpleNamespace(
+            suggestedFilename=lambda: "Slides.pptx",
+            URL=lambda: "https://selected-host.example/api/steward/deliverable-file?download=1",
+        ),
+    )
+    bd_inst.webView_decidePolicyForNavigationResponse_decisionHandler_(None, nav_resp, lambda pol: decisions.append(pol))
+    assert modal_called == []
+    assert decisions == [0]
+    assert bd_inst._file_name.endswith("Slides.pptx")
+    assert len(dl_started) == 1
+
+    # Exercise WebKitHost.keyDown_ (Cmd+C, Cmd+V, Cmd+W, Cmd+Q without selectedRange())
+    wk_inst = _FakeWebKitHost()
+    for ch in ("c", "v", "w", "q"):
+        ev = SimpleNamespace(
+            modifierFlags=lambda: 1 << 20,
+            charactersIgnoringModifiers=lambda c=ch: c,
+            characters=lambda c=ch: c,
+        )
+        wk_inst.keyDown_(ev)
+    assert key_actions == ["copy", "paste", "close", "quit"]
+
+    # 3. bring_forward_existing reaps a hung macOS PID when osascript times out
+    monkeypatch.setattr(anchor_shell, "IS_WIN32", False)
+    monkeypatch.setattr(anchor_shell, "IS_MAC", True)
+    monkeypatch.setattr(anchor_shell, "user32", None)
+    monkeypatch.setattr(anchor_shell, "DATA", tmp_path)
+    hung_pid = os.getpid() + 5555
+    (tmp_path / "instance.lock").write_text(str(hung_pid), encoding="utf-8")
+    reaped = []
+    monkeypatch.setattr(
+        _sp,
+        "run",
+        lambda cmd, **kw: (_ for _ in ()).throw(_sp.TimeoutExpired(cmd, 3)),
+    )
+    monkeypatch.setattr(anchor_shell.os, "kill", lambda pid, sig: reaped.append((pid, sig)))
+    assert anchor_shell.bring_forward_existing() is False
+    assert reaped == [(hung_pid, getattr(signal, "SIGKILL", 9))]
+
+
+def test_macos_clean_close_releases_lock_exits_without_destroy_deadlock_and_wires_empty_api_race(tmp_path, monkeypatch):
+    import threading as _th
+
+    monkeypatch.setattr(anchor_shell, "IS_WIN32", False)
+    monkeypatch.setattr(anchor_shell, "IS_MAC", True)
+    monkeypatch.setattr(anchor_shell, "user32", None)
+    monkeypatch.setattr(anchor_shell, "DATA", tmp_path)
+    monkeypatch.setattr(anchor_shell, "_MAC_TERMINATING", False)
+
+    # 1. Acquire single-instance lock, then trigger _terminate_macos_app and verify immediate lock release + exit
+    class _LockTracker:
+        LOCK_EX = 2
+        LOCK_NB = 4
+        LOCK_UN = 8
+
+        def __init__(self):
+            self.locked = False
+
+        def flock(self, _fd, flags):
+            if flags & self.LOCK_UN:
+                self.locked = False
+            else:
+                if self.locked:
+                    raise BlockingIOError("locked")
+                self.locked = True
+
+    tracker = _LockTracker()
+    ok, lock_handle = anchor_shell._acquire_single_instance_lock(tmp_path, flock_mod=tracker)
+    assert ok is True and tracker.locked is True
+    monkeypatch.setattr(anchor_shell, "_ACTIVE_POSIX_LOCK", lock_handle)
+
+    exited = _th.Event()
+    exit_codes = []
+    ordered_out = []
+    destroy_calls = []
+
+    fake_ns_win = SimpleNamespace(orderOut_=lambda arg: ordered_out.append(arg))
+    fake_win = SimpleNamespace(native=fake_ns_win, destroy=lambda: destroy_calls.append("destroy"))
+
+    # Stub PyObjCTools.AppHelper so callAfter runs immediately in test
+    fake_app_helper = SimpleNamespace(
+        callAfter=lambda fn, *a: fn(*a),
+        stopEventLoop=lambda: ordered_out.append("stopEventLoop"),
+    )
+    monkeypatch.setitem(sys.modules, "PyObjCTools", SimpleNamespace(AppHelper=fake_app_helper))
+
+    # HostApi.window_control('close') on macOS with native NSWindow must call _terminate_macos_app (NOT w.destroy())
+    term_calls = []
+    orig_term = anchor_shell._terminate_macos_app
+    monkeypatch.setattr(
+        anchor_shell,
+        "_terminate_macos_app",
+        lambda w=None, **kw: (
+            term_calls.append((w, kw.get("reason"))),
+            orig_term(
+                w,
+                exit_fn=lambda code: (exit_codes.append(code), exited.set()),
+                exit_delay=0.0,
+                reason=kw.get("reason") or "test",
+            ),
+        ),
+    )
+
+    host = anchor_shell.HostApi()
+    host.bind(fake_win)
+    host.window_control("close")
+
+    assert exited.wait(timeout=2.0) is True
+    assert exit_codes == [0]
+    assert destroy_calls == []
+    assert tracker.locked is False
+    assert not (tmp_path / "instance.lock").exists()
+    assert ordered_out == [None, "stopEventLoop"]
+    assert term_calls == [(fake_win, "window_control:close")]
+
+    # Immediately re-opening Anchor must acquire instance.lock cleanly with zero Force Quit needed
+    ok_reopen, handle_reopen = anchor_shell._acquire_single_instance_lock(tmp_path, flock_mod=tracker)
+    assert ok_reopen is True
+    anchor_shell._release_single_instance_lock(handle_reopen, flock_mod=tracker)
+
+    # 2. Verify main() on macOS disables native ALLOW_DOWNLOADS (no PyObjC selector monkeypatching needed)
+    #    and wires BOTH win.events.closing (Menu/Dock Quit & Cmd+Q) and win.events.closed
+    closing_cbs = []
+    closed_cbs = []
+
+    class _Events:
+        def __init__(self, target):
+            self._target = target
+
+        def __iadd__(self, cb):
+            self._target.append(cb)
+            return self
+
+    dummy_win = SimpleNamespace(
+        native=fake_ns_win,
+        events=SimpleNamespace(
+            loaded=_Events([]),
+            shown=_Events([]),
+            closing=_Events(closing_cbs),
+            closed=_Events(closed_cbs),
+        ),
+        load_html=lambda *_: None,
+        load_url=lambda *_: None,
+        evaluate_js=lambda *_: None,
+    )
+    fake_wv = SimpleNamespace(
+        settings={},
+        create_window=lambda *_a, **_k: dummy_win,
+        start=lambda **_k: None,
+    )
+    monkeypatch.setitem(sys.modules, "webview", fake_wv)
+    monkeypatch.setattr(anchor_shell, "kernel32", None)
+    monkeypatch.setattr(anchor_shell, "PROFILE", tmp_path / "profile")
+    monkeypatch.setattr(connect, "choose", lambda *_a, **_k: "")
+    assert anchor_shell.main([]) == 0
+    assert fake_wv.settings["ALLOW_DOWNLOADS"] is False
+    assert len(closing_cbs) == 1
+    assert len(closed_cbs) == 1
+    term_calls.clear()
+    assert closing_cbs[0]() is True
+    closed_cbs[0]()
+    assert term_calls == [(dummy_win, "events.closing"), (dummy_win, "events.closed")]
+
+    # 3. Verify bring_forward_existing reaps a windowless ghost process (count of windows == 0)
+    import subprocess as _sp
+
+    ghost_pid = os.getpid() + 7777
+    (tmp_path / "instance.lock").write_text(str(ghost_pid), encoding="utf-8")
+    reaped_ghost = []
+    monkeypatch.setattr(
+        _sp,
+        "run",
+        lambda *_a, **_k: SimpleNamespace(returncode=0, stdout="0\n", stderr=""),
+    )
+    monkeypatch.setattr(anchor_shell.os, "kill", lambda pid, sig: reaped_ghost.append((pid, sig)))
+    assert anchor_shell.bring_forward_existing() is False
+    assert reaped_ghost == [(ghost_pid, getattr(signal, "SIGKILL", 9))]
+
+    # 4. Verify static/app.js + build_unix.sh + update-mac-app.sh invariants
+    app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    assert "if (!wireWindow()) {" in app_js
+    assert 'window.addEventListener("pywebviewready", wireWindow);' in app_js
+    assert 'h.window_control("close")' in app_js
+    assert "classAddMethods" not in (ROOT / "shell" / "anchor_shell.py").read_text(encoding="utf-8")
+    build_sh = (ROOT / "shell" / "build_unix.sh").read_text(encoding="utf-8")
+    assert 'cp -f "$OVERLAY_ZIP" "$APP_BUNDLE/Contents/MacOS/' not in build_sh
+    updater_sh = (ROOT / "update-mac-app.sh").read_text(encoding="utf-8")
+    assert "ditto " in updater_sh
+    assert "codesign --verify --deep --strict" in updater_sh
+
+
+

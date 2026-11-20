@@ -5,7 +5,15 @@
     document.body.classList.add('is-embedded');
   }
   let loginWindow,openedLogin;
-  let data,family='claude',connectionId,controller,login,poll;
+  let data,family='claude',connectionId,controller,login,poll,explicitFamilySelected=false,coldAutoRefreshDone=false,userPickedSection=false;
+  const initParams=new URLSearchParams(location.search);
+  const initFamily=(initParams.get('family')||'').trim().toLowerCase();
+  if(['claude','chatgpt','gemini','grok'].includes(initFamily)){
+    family=initFamily;
+    explicitFamilySelected=true;
+  }
+  const initConn=(initParams.get('connection_id')||'').trim();
+  if(initConn)connectionId=initConn;
 
   // ── Wave 3 State & Persistence ──────────────────────────────────────────
   let w3Synced=false;
@@ -154,7 +162,25 @@
     if(name==='chart' && !w3Synced){syncWave3FromServer();}
     if(name==='comms'){syncWave9CommsFromServer();}
   }
-  function leave(){if(window.parent!==window)window.parent.postMessage({type:'anchor-setup-close'},location.origin);else location.href=(window.pywebview?'/static/app.html':'/high-seat');}
+  function leave(){
+    if(window.parent!==window){
+      try{window.parent.postMessage({type:'anchor-overlay-close',source:'setup'},location.origin);}catch(e){}
+      try{window.parent.postMessage({type:'anchor-setup-close'},location.origin);}catch(e){}
+      return;
+    }
+    const ret=new URLSearchParams(location.search).get('return_to')||'';
+    if(ret && ret.startsWith('/') && !ret.startsWith('//')){location.href=ret;return;}
+    try{
+      if(document.referrer){
+        const refUrl=new URL(document.referrer);
+        if(refUrl.origin===location.origin && /^\/(high-seat|steward|project\/)/.test(refUrl.pathname)){
+          location.href=refUrl.pathname+refUrl.search;
+          return;
+        }
+      }
+    }catch(e){}
+    location.href=(window.pywebview?'/static/app.html':'/high-seat');
+  }
   function active(){return data.connections.find(c=>c.id===connectionId) || data.connections.find(c=>c.family===family);}
   function reportFacts(parent,account){
     const monAll=(data && data.usage_summary && data.usage_summary.allowance_monitor && data.usage_summary.allowance_monitor.families) || {};
@@ -306,16 +332,154 @@
     if(['starting','awaiting_browser','cancelling'].includes(login.state)){box.append(text('p','This attempt expires at '+new Date(login.expires_at*1000).toLocaleTimeString()));const cancel=button('Cancel sign-in',async()=>{login=await api.request('/api/provider-setup/cancel',{id:login.id});drawLogin();});cancel.disabled=login.state==='cancelling';box.append(cancel);}
   }
   function scheduleLogin(){clearTimeout(poll);if(!login || !['starting','awaiting_browser','cancelling'].includes(login.state))return;poll=setTimeout(async()=>{try{login=await api.request('/api/provider-setup/login?id='+encodeURIComponent(login.id));drawLogin();if(login.state==='completed')render(await api.request('/api/provider-setup'));scheduleLogin();}catch(error){$('setup-message').textContent=error.message;}},1000);}
+  function renderLoggedInServicesCard(value){
+    const card=$('logged-in-services-card');
+    if(!card || !value)return;
+    const routing=value.active_routing || {};
+    const lis=value.logged_in_services || {};
+    const conns=Array.isArray(value.connections)?value.connections:[];
+    const aiRows=Array.isArray(lis.ai_providers) && lis.ai_providers.length ? lis.ai_providers : ['claude','chatgpt','gemini','grok'].map(f=>{
+      const c=conns.find(x=>x.family===f) || {family:f,label:f,auth:'unknown'};
+      const q=(value.preferences && value.preferences.quality && value.preferences.quality[f]) || {};
+      return {
+        family:f,
+        label:c.label||f,
+        auth:c.auth||'unknown',
+        signed_in:c.auth==='signed_in',
+        account:c.account||'',
+        plan:c.plan||'',
+        model_display:api.displayModelLabel?api.displayModelLabel(f,q.model):String(q.model||'latest_supported'),
+        effort_display:String(q.effort||'highest_supported'),
+        status_note:c.auth==='signed_in'?'Signed in':(c.auth==='signed_out'?'Sign-in required':'Click Refresh status to inspect')
+      };
+    });
+    const commsRows=Array.isArray(lis.comms_accounts)?lis.comms_accounts:[];
+    const signedAiCount=aiRows.filter(r=>r.signed_in || r.effective_ready).length;
+    const syncedCommsCount=commsRows.filter(c=>c.status==='synced' || c.status==='connected' || c.has_credentials).length;
+    if($('lis-summary-badge')){
+      $('lis-summary-badge').textContent=signedAiCount+'/'+aiRows.length+' AI Services Ready · '+(commsRows.length?(syncedCommsCount+'/'+commsRows.length+' Email/Calendar Connected'):'Email/Calendar in Step 4');
+    }
+    if($('rail-status-providers')){
+      $('rail-status-providers').textContent=signedAiCount+'/'+aiRows.length+' AI Ready · Click to inspect';
+    }
+    if($('rail-status-comms') && commsRows.length){
+      $('rail-status-comms').textContent=syncedCommsCount+' Connected ('+commsRows.map(c=>c.label||c.family).join(', ')+')';
+    }
+
+    const roleGrid=$('lis-role-grid');
+    if(roleGrid){
+      roleGrid.replaceChildren();
+      const cod=routing.coding || {};
+      const codFam=cod.family || value.coding_family || (value.preferences && value.preferences.family) || 'gemini';
+      const codBox=document.createElement('div');
+      codBox.className='lis-role-box';
+      codBox.append(
+        text('span','⚙ Active Coding Engine ('+String(codFam).toUpperCase()+')','lis-role-kicker'),
+        text('div',(cod.effective_model_display || cod.configured_model_display || 'Latest Supported')+' · '+(cod.effective_effort || cod.configured_effort || 'highest_supported'),'lis-role-main'),
+        text('div',cod.status_note || ('Configured target: '+(cod.configured_model_display||'latest_supported')+' · '+(cod.configured_effort||'highest_supported')),'lis-role-sub')
+      );
+      roleGrid.append(codBox);
+
+      const rev=routing.adversarial_reviewer || {};
+      const revFam=rev.family || value.review_family || 'claude';
+      const revBox=document.createElement('div');
+      revBox.className='lis-role-box'+(rev.fallback_active?' is-fallback':'');
+      revBox.append(
+        text('span','🛡 Adversarial Reviewer ('+String(revFam).toUpperCase()+')','lis-role-kicker'),
+        text('div','Configured: '+(rev.configured_model_display || 'claude-fable-5-1 (Fable 5.1)')+' · '+(rev.configured_effort || 'max'),'lis-role-main')
+      );
+      if(rev.fallback_active){
+        revBox.append(
+          text('div','Currently Serving: '+(rev.effective_model_display || 'Claude Opus 5.5')+' · '+(rev.effective_effort || 'high')+' (via Antigravity agy fallback)','lis-role-sub is-warn'),
+          text('div',rev.fallback_reason || 'Standalone Claude CLI OAuth session expired — Antigravity agy ceiling is Claude Opus 5.5 (High). Sign in standalone Claude CLI once to run Fable 5.1 (claude-fable-5-1 · max) natively!','muted small')
+        );
+        const signBtn=button('🔐 Sign in Claude CLI → Activate Fable 5.1 (claude-fable-5-1)',async()=>{
+          family='claude';
+          const claudeConn=conns.find(x=>x.family==='claude');
+          if(claudeConn)connectionId=claudeConn.id;
+          drawAccounts();drawDetail();
+          const res=await api.request('/api/onboard-wizard/action',{action:'launch_service_login',family:'claude'});
+          $('setup-message').textContent=res.message || 'Launched standalone Claude CLI sign-in (`claude login`). Complete browser OAuth, then click Refresh status.';
+        });
+        signBtn.className='primary';
+        signBtn.style.marginTop='6px';
+        revBox.append(signBtn);
+      }else{
+        revBox.append(
+          text('div','Currently Serving: '+(rev.effective_model_display || rev.configured_model_display || 'claude-fable-5-1 (Fable 5.1)')+' · '+(rev.effective_effort || rev.configured_effort || 'max')+(rev.status_note?(' — '+rev.status_note):''),'lis-role-sub is-ok')
+        );
+      }
+      roleGrid.append(revBox);
+    }
+
+    const aiPills=$('lis-ai-pills');
+    if(aiPills){
+      aiPills.replaceChildren();
+      aiRows.forEach(row=>{
+        const pill=document.createElement('button');
+        pill.type='button';
+        const cls=row.signed_in?'is-ok':(row.effective_ready?'is-warn':'');
+        pill.className='lis-pill'+(cls?' '+cls:'');
+        const dot=document.createElement('span');
+        dot.className='ec-dot '+(row.signed_in?'ok':(row.effective_ready?'warn':'muted'));
+        const who=row.account ? (' · '+row.account) : (row.via_agy_fallback ? ' · via agy fallback' : '');
+        const modelTxt=row.effective_model_display || row.model_display || 'latest';
+        pill.append(
+          dot,
+          text('strong',row.label||row.family),
+          text('span',who+' — '+modelTxt+' · '+(row.effective_effort || row.effort_display || 'high'),'muted')
+        );
+        pill.title=(row.status_note||'')+' (Click to inspect '+(row.label||row.family)+' settings below)';
+        pill.onclick=()=>{
+          family=row.family;
+          const match=conns.find(c=>c.family===row.family);
+          if(match)connectionId=match.id;
+          drawAccounts();drawDetail();
+          const det=$('account-detail');
+          if(det && det.scrollIntoView)det.scrollIntoView({behavior:'smooth',block:'nearest'});
+        };
+        aiPills.append(pill);
+      });
+    }
+
+    const commsPills=$('lis-comms-pills');
+    if(commsPills){
+      commsPills.replaceChildren();
+      if(!commsRows.length){
+        const emptyBtn=button('📅 Connect Email & Calendar Services (Step 4) →',()=>section('comms'));
+        commsPills.append(emptyBtn);
+      }else{
+        commsRows.forEach(acc=>{
+          const ok=acc.status==='synced' || acc.status==='connected' || acc.has_credentials;
+          const pill=document.createElement('button');
+          pill.type='button';
+          pill.className='lis-pill '+(ok?'is-ok':'is-warn');
+          const dot=document.createElement('span');
+          dot.className='ec-dot '+(ok?'ok':'warn');
+          pill.append(
+            dot,
+            text('strong',acc.label||acc.family||'Account'),
+            text('span',(acc.email?(' · '+acc.email):'')+' · '+(ok?'Logged in & Synced':(acc.status||'Check setup')),'muted')
+          );
+          pill.onclick=()=>section('comms');
+          commsPills.append(pill);
+        });
+        const manageBtn=button('Manage Email & Calendar →',()=>section('comms'));
+        commsPills.append(manageBtn);
+      }
+    }
+  }
   function render(value){
     if(data && value.settings_revision<data.settings_revision)return;
     const preferences=data && controller && value.settings_revision===data.settings_revision ? {...controller.get(),warning_threshold:Number($('setup-threshold').value),warning_policy:$('setup-warning').value} : value.preferences;
-    data=value;const first=!connectionId;family=first ? value.preferences.family || value.default_family : family;
+    data=value;const first=!connectionId && !explicitFamilySelected;family=first ? value.preferences.family || value.default_family : family;
     $('setup-host').textContent=value.host.name+' · mother ship';$('provider-host-note').textContent='All actions run on '+value.host.name+'. This browser is the host’s interface. Authentication and capacity are separate facts.';
     $('host-runtime').textContent='Connected runtime: '+value.host.name+' · '+(value.host.configured?'existing setup retained':'first setup')+' · data directory '+value.host.data_directory;
     $('host-network').textContent=value.host.tailscale;$('setup-project-roots').replaceChildren();value.host.project_roots.forEach(root=>$('setup-project-roots').append(text('li',root)));
     $('setup-initialize').hidden=!value.host.first_setup;
     if(!value.host.project_roots.length)$('setup-project-roots').append(text('li','No configured project folders were reported. Choose the first storage location with Aladdin in Star Chart.'));
     if(value.host.star_chart_url)$('setup-star-chart').href=value.host.star_chart_url;
+    renderLoggedInServicesCard(value);
     drawAccounts();drawDetail();controller=api.controls({...data,preferences},'setup-',()=>{});$('setup-threshold').value=String(preferences.warning_threshold);$('setup-warning').value=preferences.warning_policy;
     if(data.settings_error)$('setup-message').textContent=data.settings_error;
   }
@@ -747,8 +911,8 @@
   }
 
   // ── Wire Event Listeners ───────────────────────────────────────────────
-  document.querySelectorAll('[data-section]').forEach(b=>b.onclick=()=>section(b.dataset.section));
-  document.querySelectorAll('.cave-rail-stage').forEach(b=>b.onclick=()=>section(b.getAttribute('data-rail-section')));
+  document.querySelectorAll('[data-section]').forEach(b=>b.onclick=()=>{userPickedSection=true;section(b.dataset.section);});
+  document.querySelectorAll('.cave-rail-stage').forEach(b=>b.onclick=()=>{userPickedSection=true;section(b.getAttribute('data-rail-section'));});
   const personaLabels={aladdin:'Aladdin · Cave of Wonders',jarvis:'Jarvis · The Helm',ecgberht:'Ecgberht · The High Seat'};
   document.querySelectorAll('[data-persona-choice]').forEach(btn=>{
     btn.onclick=()=>{
@@ -1076,16 +1240,35 @@
   };
 
   document.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();leave();}});
+  document.querySelectorAll('[data-overlay-close]').forEach(btn=>{
+    btn.addEventListener('click',ev=>{ev.preventDefault();ev.stopPropagation();leave();});
+  });
+  if(window.parent!==window){
+    document.querySelectorAll('a[href^="/high-seat"]').forEach(a=>{
+      a.addEventListener('click',ev=>{ev.preventDefault();ev.stopPropagation();leave();});
+    });
+  }
   window.addEventListener('message',event=>{
     if(window.parent===window || event.origin!==location.origin || event.source!==window.parent || !event.data || event.data.type!=='anchor-setup-open')return;
-    api.request('/api/provider-setup').then(render).catch(error=>$('setup-message').textContent=error.message);
+    const reqFam=String(event.data.family||'').trim().toLowerCase();
+    if(['claude','chatgpt','gemini','grok'].includes(reqFam)){
+      family=reqFam;
+      connectionId=undefined;
+      explicitFamilySelected=true;
+    }
+    const reqSecMsg=String(event.data.section||'').trim();
+    api.request('/api/provider-setup').then(value=>{
+      render(value);
+      if(reqSecMsg && ['host','providers','chart','comms'].includes(reqSecMsg))section(reqSecMsg);
+      else if(reqFam)section('providers');
+    }).catch(error=>$('setup-message').textContent=error.message);
   });
   function invokeSetupWindowControl(act){
+    if(act==='close'){leave();return;}
     try{
       if(window.pywebview && window.pywebview.api && window.pywebview.api.window_control){window.pywebview.api.window_control(act);return;}
       if(window.parent && window.parent!==window && window.parent.pywebview && window.parent.pywebview.api && window.parent.pywebview.api.window_control){window.parent.pywebview.api.window_control(act);return;}
     }catch(e){}
-    if(act==='close')window.close();
   }
   document.querySelectorAll('[data-winctl]').forEach(btn=>{
     btn.addEventListener('click',ev=>{ev.stopPropagation();invokeSetupWindowControl(btn.getAttribute('data-winctl'));});
@@ -1262,10 +1445,21 @@
   const reqSec=new URLSearchParams(location.search).get('section') || (location.hash?location.hash.replace('#',''):'');
   api.request('/api/provider-setup').then(value=>{
     render(value);
-    if(reqSec && ['host','providers','chart','comms'].includes(reqSec)){
-      section(reqSec);
-    }else{
-      section(value.host.configured?'providers':'host');
+    if(!userPickedSection){
+      if(reqSec && ['host','providers','chart','comms'].includes(reqSec)){
+        section(reqSec);
+      }else{
+        section(value.host.configured?'providers':'host');
+      }
+    }
+    const conns=Array.isArray(value && value.connections)?value.connections:[];
+    if(!coldAutoRefreshDone && conns.length>0 && conns.every(c=>!c.observed_at && c.auth==='unknown')){
+      coldAutoRefreshDone=true;
+      if($('refresh-message'))$('refresh-message').textContent='Checking live CLI sign-ins on the mother ship…';
+      api.request('/api/provider-setup?refresh=1').then(fresh=>{
+        render(fresh);
+        if($('refresh-message'))$('refresh-message').textContent='✓ Synced live sign-in status across installed CLIs.';
+      }).catch(()=>{});
     }
   }).catch(error=>$('setup-message').textContent=error.message);
 })();

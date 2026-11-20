@@ -38,7 +38,8 @@ import path from 'node:path';
 
 import { HaltError, haltForHuman, HALT_GATES } from './crucible-lib.mjs';
 import { startStatusHeartbeat } from './status-heartbeat.mjs';
-import { runSharkTank } from './shark-tank.mjs';
+import { runSharkTank, tracesToNorthStar } from './shark-tank.mjs';
+import { fileURLToPath } from 'node:url';
 import { installProcessLifetimeGuards, withPhaseProgress } from '../../drivers/process-lifetime.mjs';
 import {
   makeSynthesizer,
@@ -117,7 +118,7 @@ export const BRAINSTORM_IDEAS_SCHEMA = {
         properties: {
           id: { type: 'string' },
           idea: { type: 'string' },
-          traces_to_north_star: { enum: ['yes', 'no'] },
+          traces_to_north_star: { type: ['boolean', 'string'] },
           criterion: { type: ['string', 'null'] },
           tag: { enum: ['refinement', 'out-of-scope'] },
           disposition: { enum: ['integrate', 'grasscatcher', 'drop'] },
@@ -294,7 +295,7 @@ export function triageDisposition(idea) {
   if (Object.values(TRIAGE_DISPOSITIONS).includes(explicit)) return explicit;
 
   const tracesField = idea?.traces_to_north_star;
-  const traces = String(tracesField || '').toLowerCase() === 'yes';
+  const traces = tracesToNorthStar(tracesField);
   // Out-of-scope by tag, OR a stated non-tracing verdict ⇒ park in the Grasscatcher.
   if (idea?.tag === 'out-of-scope' || (tracesField != null && !traces)) {
     return TRIAGE_DISPOSITIONS.GRASSCATCHER;
@@ -484,11 +485,30 @@ export const REVISE_MARKDOWN_BYTES = 20000;
  * draft (the round makes no change rather than losing the plan). (EI1 guard, 2026-07-17) */
 export const REVISE_MIN_KEEP_RATIO = 0.5;
 
-function revisePrompt({ northStar, draft, verdict, direction, markdownFirst = false }) {
+export function revisePrompt({
+  northStar,
+  draft,
+  verdict,
+  direction,
+  markdownFirst = false,
+  stageLabel = 'STAGE-1',
+  artifactName = 'the Master Plan',
+  preserveWaveHeaders = false,
+}) {
+  const stageHeader = preserveWaveHeaders
+    ? [
+        `You are the Crucible ${stageLabel} Implementation-Plan wave-preserving revision step.`,
+        `Address the BLOCKING findings WITHOUT drifting from the North Star and WITHOUT removing or`,
+        `rewriting \`test-command:\`, \`## Wave N — ...\` headings, or \`**done-when:**\` lines into prose.`,
+        `Return the revised ${artifactName} draft in full with all \`## Wave N\` sections intact.`,
+      ]
+    : [
+        `You are the Crucible ${stageLabel} draft-revision step. Address the BLOCKING findings from the`,
+        `last Shark Tank and the Synthesizer's direction, WITHOUT drifting from the North Star.`,
+        `Return the revised ${artifactName} draft in full.`,
+      ];
   return [
-    `You are the Crucible STAGE-1 draft-revision step. Address the BLOCKING findings from the`,
-    `last Shark Tank and the Synthesizer's direction, WITHOUT drifting from the North Star.`,
-    `Return the revised Master-Plan draft in full.`,
+    ...stageHeader,
     ``,
     `=== THE NORTH STAR (verbatim) ===`,
     String(northStar),
@@ -543,7 +563,20 @@ export function detectDraftCorruption(text) {
 }
 
 /** Exported for tests (the schema-first / raw-text fallback contract). */
-export async function reviseDraft({ agent, northStar, draft, verdict, direction, round, depth = null, family = null, log = () => {} }) {
+export async function reviseDraft({
+  agent,
+  northStar,
+  draft,
+  verdict,
+  direction,
+  round,
+  depth = null,
+  family = null,
+  stageLabel = 'STAGE-1',
+  artifactName = 'the Master Plan',
+  preserveWaveHeaders = false,
+  log = () => {},
+}) {
   // EI1 (2026-07-17): a LARGE draft is revised MARKDOWN-FIRST — a document need not be a JSON
   // string, and serializing a ~100KB draft into JSON is the fragility that stalled Stage-1c
   // (repeated "reply was not valid JSON" retries). Small drafts stay schema-first so the
@@ -563,10 +596,20 @@ export async function reviseDraft({ agent, northStar, draft, verdict, direction,
     String(depth ?? '').toUpperCase() === 'LITE' ||
     String(family ?? '').toLowerCase().includes('grok') ||
     (Number.isInteger(findingCount) && findingCount > 0 && findingCount <= 2);
-  const prompt = revisePrompt({ northStar, draft, verdict, direction, markdownFirst });
+  const prompt = revisePrompt({
+    northStar,
+    draft,
+    verdict,
+    direction,
+    markdownFirst,
+    stageLabel,
+    artifactName,
+    preserveWaveHeaders,
+  });
+  const labelPrefix = String(stageLabel || 'stage1').toLowerCase().replace(/[^a-z0-9]+/g, '');
   const out = markdownFirst
-    ? await agent(prompt, { label: `stage1:revise:r${round}` })                       // schema-less → raw markdown
-    : await agent(prompt, { label: `stage1:revise:r${round}`, schema: REVISE_SCHEMA });
+    ? await agent(prompt, { label: `${labelPrefix}:revise:r${round}` })                       // schema-less → raw markdown
+    : await agent(prompt, { label: `${labelPrefix}:revise:r${round}`, schema: REVISE_SCHEMA });
   let revised = draft;
   let changelog;
   if (!markdownFirst && out && typeof out === 'object' && typeof out.draft === 'string') {
@@ -644,7 +687,16 @@ export async function reviseDraft({ agent, northStar, draft, verdict, direction,
       changelog = [];
     }
   }
-  log(`stage1 revise r${round}: draft revised (${changelog.length} change(s))${markdownFirst ? ' [markdown-first]' : ''}`);
+  if (preserveWaveHeaders && revised !== draft) {
+    const hadWaves = /^## Wave \d+\b/m.test(String(draft));
+    const hasWaves = /^## Wave \d+\b/m.test(String(revised));
+    if (hadWaves && !hasWaves) {
+      log(`${stageLabel.toLowerCase()} revise r${round}: REJECTED wave-stripping revision — keeping structured ## Wave N draft`);
+      revised = draft;
+      changelog = [];
+    }
+  }
+  log(`${stageLabel.toLowerCase()} revise r${round}: draft revised (${changelog.length} change(s))${markdownFirst ? ' [markdown-first]' : ''}`);
   // 2026-07: the changelog is no longer discarded — the next round's Sharks get
   // it (with the blocker register) so refutation focuses on new ground.
   return { draft: revised, changelog };
@@ -720,11 +772,14 @@ export async function runMasterPlanLoop({
   // locking "the Master Plan". Callers name what is actually being locked.
   artifactName = 'the Master Plan',
   haltStagePrefix = 'stage1',
+  preserveWaveHeaders = undefined,
   statusLog = null,
   statusLabel = 'Crucible plan',
   log = () => {},
 } = {}) {
   requireAgent(agent, 'runMasterPlanLoop');
+  const shouldPreserveWaves = preserveWaveHeaders ?? (haltStagePrefix === 'stage2');
+  const stageLabel = haltStagePrefix === 'stage2' ? 'STAGE-2' : 'STAGE-1';
   // If callers still pass depth into the loop (legacy launchers), honor band profile.
   if (depth != null) {
     const band = resolveBandProfile(depth);
@@ -734,27 +789,58 @@ export async function runMasterPlanLoop({
   }
   if (roundCap === undefined) roundCap = 5;
   if (sharkRoles === undefined) sharkRoles = 3;
-  const synth = synthesizer || makeSynthesizer({ agent, northStar, log });
+  // Normalize served/routed driver/family without silently defaulting non-Claude drivers to 'claude'.
+  const famOf = (r) => {
+    const d = String(r?.family ?? r?.driver ?? r?.model ?? '').trim().toLowerCase();
+    if (!d) return null;
+    if (d.includes('gemini') || d.includes('agy')) return 'gemini';
+    if (d.includes('grok')) return 'grok';
+    if (d.includes('chatgpt') || d.includes('codex') || d.includes('openai') || /\bgpt\b|^gpt[-_]/.test(d)) return 'chatgpt';
+    if (d.includes('claude') || d.includes('anthropic')) return 'claude';
+    return d.replace(/[^a-z0-9_-]+/g, '') || null;
+  };
+  const seatReceipts = [];
+  const servedFamilies = new Set();
+  const trackedAgent = async (prompt, opts = {}) => {
+    const callerReceipt = typeof opts.onReceipt === 'function' ? opts.onReceipt : null;
+    return agent(prompt, {
+      ...opts,
+      onReceipt: (rec) => {
+        const block = rec && typeof rec === 'object' && rec.served && typeof rec.served === 'object' ? rec.served : rec;
+        const fam = famOf(block);
+        const driver = block?.driver ? String(block.driver) : fam;
+        seatReceipts.push({
+          label: opts.label || null,
+          driver: driver || 'unknown',
+          family: fam || driver || 'unknown',
+          model: block?.model || block?.servedModel || null,
+        });
+        if (fam) servedFamilies.add(fam);
+        if (callerReceipt) callerReceipt(rec);
+      },
+    });
+  };
+  const synth = synthesizer || makeSynthesizer({ agent: trackedAgent, northStar, log });
   // T7 (2026-07-11): when the caller supplies the run's ROUTES, the Judge's
   // selection/stamp is DERIVED from where the judge role actually dispatches —
   // a route to a non-author family stamps enhanced/cross_model honestly.
-  const jdg = judge || makeJudge({ agent, routes, log });
-  // P1 2026-07-25: derive the revise seat's FAMILY and an honest per-seat substrate
-  // stamp from the live routes (journal 0070-e1 item 3: the status table hardcoded
-  // "(agy 5:1)" while every seat was grok — the prose lied about the substrate).
-  const famOf = (r) => {
-    const d = String(r?.family ?? r?.driver ?? '').toLowerCase();
-    if (!d) return null;
-    if (d.includes('gemini')) return 'gemini';
-    if (d.includes('grok')) return 'grok';
-    return 'claude';
-  };
+  const jdg = judge || makeJudge({ agent: trackedAgent, routes, log });
   const reviseFamily = famOf(routes?.revise) ?? famOf(routes?.default) ??
-    String(process.env.CODING_FAMILY ?? '').toLowerCase() ?? null;
-  const seatStamp = routes
-    ? `sharks∥(${famOf(routes.review) ?? famOf(routes.shark) ?? famOf(routes.default) ?? 'claude'}) + ` +
-      `judge(${famOf(routes.judge) ?? famOf(routes.default) ?? 'claude'}) + synthesizer(${famOf(routes.synthesizer) ?? famOf(routes.default) ?? 'claude'})`
-    : 'sharks∥ + judge + synthesizer (single-agent seam — no routes bound)';
+    (String(process.env.CODING_FAMILY ?? '').toLowerCase() || null);
+  const computeSeatStamp = () => {
+    const fallbackFam = servedFamilies.size === 1 ? [...servedFamilies][0] : 'unattested';
+    if (routes) {
+      const shFam = famOf(routes.review) ?? famOf(routes.shark) ?? famOf(routes.default) ?? fallbackFam;
+      const jdFam = famOf(routes.judge) ?? famOf(routes.default) ?? fallbackFam;
+      const syFam = famOf(routes.synthesizer) ?? famOf(routes.default) ?? fallbackFam;
+      return `sharks∥(${shFam}) + judge(${jdFam}) + synthesizer(${syFam})`;
+    }
+    if (servedFamilies.size > 0) {
+      const fams = [...servedFamilies].join(',');
+      return `sharks∥(${fams}) + judge(${jdg.stamp?.driver || fams}) + synthesizer(${fams})`;
+    }
+    return 'sharks∥ + judge + synthesizer (single-agent seam — no routes bound)';
+  };
   const bounds = resolveLoopBounds({ startRound, roundCap, additionalRounds });
   if (bounds.remaining === 0) {
     const err = haltForHuman(
@@ -792,7 +878,7 @@ export async function runMasterPlanLoop({
         status: `${rounds.length} this invoke / ${bounds.remaining} budgeted`,
         tests: last ? `last round: ${last.verdict.verdict}` : '—',
         blocker: openBlk ? `${openBlk} open blocker(s) this round` : 'none',
-        procs: seatStamp,
+        procs: computeSeatStamp(),
         eta: `<= ${Math.max(0, bounds.remaining - rounds.length)} more round(s) this window`,
         todo: 'converge or human-lockable HALT, then the user-approval gate',
       };
@@ -826,7 +912,7 @@ export async function runMasterPlanLoop({
 
     const nSharks = Math.max(2, Math.min(3, Number(sharkRoles) || 3));
     let verdict = await runSharkTank({
-      agent, northStar, draft: currentDraft, round, priorBlockerIds,
+      agent: trackedAgent, northStar, draft: currentDraft, round, priorBlockerIds,
       research: analystBrief, artifactsDir, log,
       sharkRoles: nSharks,
       changelog: lastChangelog && lastChangelog.length ? lastChangelog.join('\n') : null,
@@ -839,7 +925,7 @@ export async function runMasterPlanLoop({
     for (let q = 0; verdict.inconclusive && q < SHARK_QUORUM_RETRIES; q++) {
       log(`shark-tank round ${round}: only ${verdict.answered}/${nSharks} reviewers parseable — re-reviewing (${q + 1}/${SHARK_QUORUM_RETRIES}) before trusting the round`);
       verdict = await runSharkTank({
-        agent, northStar, draft: currentDraft, round, priorBlockerIds,
+        agent: trackedAgent, northStar, draft: currentDraft, round, priorBlockerIds,
         research: analystBrief, artifactsDir, log,
         sharkRoles: nSharks,
         changelog: lastChangelog && lastChangelog.length ? lastChangelog.join('\n') : null,
@@ -868,7 +954,10 @@ export async function runMasterPlanLoop({
       directed = true;
       rounds.push({ round, verdict, direction });
       priorBlockerIds = [...new Set([...priorBlockerIds, ...verdict.blockers.map((b) => b.id)])];
-      const rev = await reviseDraft({ agent, northStar, draft: currentDraft, verdict, direction, round, depth, family: reviseFamily, log });
+      const rev = await reviseDraft({
+        agent: trackedAgent, northStar, draft: currentDraft, verdict, direction, round, depth,
+        family: reviseFamily, stageLabel, artifactName, preserveWaveHeaders: shouldPreserveWaves, log,
+      });
       currentDraft = rev.draft;
       lastChangelog = rev.changelog;
       if (artifactsDir) {
@@ -892,7 +981,7 @@ export async function runMasterPlanLoop({
     }
 
     // Run the anti-anchoring fresh-eyes cold pass BEFORE the lock (Wave 3).
-    const cold = await freshEyesColdPass({ agent, transcripts: verdict.reviews, northStar, log });
+    const cold = await freshEyesColdPass({ agent: trackedAgent, transcripts: verdict.reviews, northStar, log });
     const oracle = freshEyesIsolationOracle({ cold, directorSnapshot: synth.snapshot() });
     const reconcile = reconcileFreshEyes({ directorPosition: synth.position(), freshEyes: cold.assessment });
 
@@ -919,6 +1008,9 @@ export async function runMasterPlanLoop({
         gate,
         synthesizerStamp: synth.stamp,
         judgeStamp: jdg.stamp,
+        seatStamp: computeSeatStamp(),
+        receipts: seatReceipts,
+        servedFamilies: [...servedFamilies],
       };
     }
 
@@ -990,6 +1082,10 @@ export async function runMasterPlanLoop({
         freshEyes: cold,
         judgeVerdict,
         gate,
+        judgeStamp: jdg.stamp,
+        seatStamp: computeSeatStamp(),
+        receipts: seatReceipts,
+        servedFamilies: [...servedFamilies],
       };
       throw err;
     }
@@ -1004,7 +1100,10 @@ export async function runMasterPlanLoop({
       rounds[rounds.length - 1].direction = direction;
     }
     priorBlockerIds = [...new Set([...priorBlockerIds, ...verdict.blockers.map((b) => b.id)])];
-    const rev = await reviseDraft({ agent, northStar, draft: currentDraft, verdict, direction, round, depth, family: reviseFamily, log });
+    const rev = await reviseDraft({
+      agent: trackedAgent, northStar, draft: currentDraft, verdict, direction, round, depth,
+      family: reviseFamily, stageLabel, artifactName, preserveWaveHeaders: shouldPreserveWaves, log,
+    });
     currentDraft = rev.draft;
     lastChangelog = rev.changelog;
     if (artifactsDir) {
@@ -1269,6 +1368,7 @@ export async function runStage1({
   approved = false,
   roundCap = undefined,
   depth = null,
+  matrixFastTrack = false,
   /** SPIKE-FIRST: path or string result of the pre-plan probe (Wave D). */
   spikeProbe = null,
   /** When true, allow SPIKE-FIRST without probe (tests only). */
@@ -1283,9 +1383,10 @@ export async function runStage1({
   if (!northStar) {
     throw new HaltError('runStage1 requires a locked North Star', 'Stage 1 starts from the Stage-0 North-Star lock');
   }
+  const effectiveDepth = matrixFastTrack ? 'MATRIX-FAST-TRACK' : depth;
   // cf-slick 2026-07-22: depth → band profile (LITE is real ceremony collapse, not
   // only roundCap 5→2 — journals 0022/0026/0028). Explicit roundCap still wins.
-  const band = resolveBandProfile(depth);
+  const band = resolveBandProfile(effectiveDepth);
   if (roundCap === undefined) roundCap = band.roundCap;
   log(`stage1: depth=${band.depth} → ${band.label} · roundCap=${roundCap} · liteBrainstorm=${band.skipFullOrangesBrainstorm} · sharks=${band.sharkRoles}`);
   log(`stage1: band stamp ${JSON.stringify(bandProfileStamp(band))}`);
@@ -1483,4 +1584,50 @@ function requireAgent(agent, who) {
   if (typeof agent !== 'function') {
     throw new HaltError(`${who} requires an agent() function`, `pass the Wave-1 seam: ${who}({ agent: makeAgentSeam(...).agent })`);
   }
+}
+
+function isMain() {
+  if (!process.argv[1]) return false;
+  try {
+    return fs.realpathSync(fileURLToPath(import.meta.url)) === fs.realpathSync(path.resolve(process.argv[1]));
+  } catch {
+    return path.resolve(fileURLToPath(import.meta.url)) === path.resolve(process.argv[1]);
+  }
+}
+
+if (isMain()) {
+  (async () => {
+    const argv = process.argv.slice(2);
+    if (argv.includes('--help') || argv.includes('-h')) {
+      process.stdout.write('Usage: node bin/stage1.mjs --north-star <text|file> [--matrix-fast-track] [--depth <band>] [--approved] [--artifacts-dir <dir>]\n');
+      process.exit(0);
+    }
+    const readFlag = (name, def = null) => {
+      const idx = argv.indexOf(name);
+      return idx >= 0 && idx + 1 < argv.length ? argv[idx + 1] : def;
+    };
+    const matrixFastTrack = argv.includes('--matrix-fast-track');
+    const approved = argv.includes('--approved');
+    const depth = readFlag('--depth', matrixFastTrack ? 'MATRIX-FAST-TRACK' : null);
+    const artifactsDir = readFlag('--artifacts-dir', null);
+    let northStar = readFlag('--north-star', '');
+    if (northStar && fs.existsSync(northStar)) {
+      northStar = fs.readFileSync(northStar, 'utf8').trim();
+    }
+    const { makeAgentSeam } = await import('./agent-seam.mjs');
+    const seam = makeAgentSeam({ cwd: process.cwd() });
+    const res = await runStage1({
+      agent: seam.agent,
+      northStar,
+      depth,
+      matrixFastTrack,
+      approved,
+      artifactsDir,
+      log: (m) => process.stderr.write(`[stage1] ${m}\n`),
+    });
+    process.stdout.write(JSON.stringify({ ok: true, band: res.band, roundsRun: res.loop?.roundsRun ?? 0 }, null, 2) + '\n');
+  })().catch((err) => {
+    process.stderr.write(`${err?.stack || err?.message || err}\n`);
+    process.exit(err?.halt_for_human ? 2 : 1);
+  });
 }

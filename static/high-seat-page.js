@@ -607,7 +607,12 @@
   // rule reaches a closed card's .t-body; the CSS pins [hidden] to none) and parked, so it holds no long-poll. Opening
   // the card reveals that view; closing hides it again. On deck and every other card load on the click, as before.
   var WARM_MAX = 8;   // a bound on the frames held, not a refusal: the rest of a wide Active row loads on the click
+  function isShellHidden() {
+    try { return !!(document.hidden || window.__anchorHidden || (window.frameElement && window.frameElement.hidden)); }
+    catch (e) { return !!document.hidden; }
+  }
   function warmTile(card) {
+    if (isShellHidden()) return;
     var body = $('.t-body', card), boot = window.ANCHOR_BOOT || {};
     if (!body || card._warmTalk || card.classList.contains('open') || !card.closest('#shActive')) return;
     if (boot.auth_required && !boot.logged_in && !token()) return;   // a browser that cannot read the record preloads nothing
@@ -617,8 +622,9 @@
     try { startTalk(card, card.getAttribute('data-tile'), card.getAttribute('data-dir') || ''); } finally { card._prewarm = false; }
   }
   function warmActive() {
+    if (isShellHidden()) return;
     var cards = $$('#shActive .tile[data-tile]').filter(function (c) { return !!$('.t-body', c); }).slice(0, WARM_MAX), i = 0;
-    (function next() { if (i >= cards.length) return; warmTile(cards[i++]); setTimeout(next, 1500); })();
+    (function next() { if (i >= cards.length || isShellHidden()) return; warmTile(cards[i++]); setTimeout(next, 1500); })();
   }
   function warmWhenIdle() { setTimeout(function () { if (window.requestIdleCallback) window.requestIdleCallback(warmActive, { timeout: 3000 }); else warmActive(); }, 1500); }
   if (document.readyState === 'complete') warmWhenIdle(); else window.addEventListener('load', warmWhenIdle);
@@ -754,7 +760,9 @@
   function placeWait() {
     var srTile = document.getElementById('caveSpeedRacerTile');
     var dlgTile = document.getElementById('caveCommsDialogueTile');
-    var inSrOrDlg = busyIn(srTile) || busyIn(dlgTile) || !!(window._srLastEditTs && (Date.now() - window._srLastEditTs < 15000));
+    var emailPane = document.getElementById('caveEmailDialoguePane');
+    var calPane = document.getElementById('caveCalDialoguePane');
+    var inSrOrDlg = busyIn(srTile) || busyIn(dlgTile) || busyIn(emailPane) || busyIn(calPane) || !!(window._srLastEditTs && (Date.now() - window._srLastEditTs < 15000));
     return inSrOrDlg || $$('.tile.open').some(function (c) { return !!c._typing || (busyIn(c) && Date.now() - lastCardKey < 10000); });
   }   // keys IN a card or Speed Racer, not the composer
   function held(card) { return card.classList.contains('open') || busyIn(card); }
@@ -788,12 +796,17 @@
     }
     // the steward's nudge (W3b), proactive triage strip, this-week board, comms pulse, collab strip, and the seeds
     var openHzBtn = $('#shTriage .chz-card.open'), openHzKey = openHzBtn ? openHzBtn.getAttribute('data-hz-toggle') : '';
+    var wlWasOpen = typeof _wlSpineIsOpen === 'boolean' ? _wlSpineIsOpen : !($('#wlSpineBody') && $('#wlSpineBody').hidden);
+    var wlBusyUi = busyIn($('#caveWorkingListSpine'));
     var calWasOpen = $('#cal') && $('#cal').classList.contains('open');
     var calWasLayout = ($('#commsGrid') && $('#commsGrid').getAttribute('data-layout')) || 'split';
     var mailWasFolder = ($('#caveMailBucketsGrid') && $('#caveMailBucketsGrid').getAttribute('data-mail-folder-mode')) || 'all';
     var calBusyUi = !!(
       (window._caveEmailActionInFlight && window._caveEmailActionInFlight > 0) ||
       ($('#caveSpeedRacerBody') && !$('#caveSpeedRacerBody').hidden) ||
+      ($('#caveEmailDialoguePane') && !$('#caveEmailDialoguePane').hidden && !window._emailDlgClosed && window._activeEmailDialogue && window._activeEmailDialogue.uid) ||
+      ($('#caveCalDialoguePane') && !$('#caveCalDialoguePane').hidden) ||
+      ($('#caveDlgAttachmentPreviewHost') && !$('#caveDlgAttachmentPreviewHost').hidden) ||
       ($('#caveCommsDialogueTile') && !$('#caveCommsDialogueTile').hidden) ||
       ($('#caveCommsSetupDrawer') && $('#caveCommsSetupDrawer').open) ||
       ($('#caveCommsConnectModal') && !$('#caveCommsConnectModal').hidden) ||
@@ -802,6 +815,7 @@
     var collabWasOpen = $('#caveCollabStrip') && $('#caveCollabStrip').classList.contains('open');
     ['shTriage', 'thisWeekBoard', 'cal', 'caveCollabStrip'].forEach(function (id) {
       if (id === 'cal' && calBusyUi) return;
+      if (id === 'shTriage' && wlBusyUi) return;
       var a = document.getElementById(id), b = doc.getElementById(id);
       if (a && b) morph(a, b);
     });
@@ -812,13 +826,15 @@
     }
     if (calWasOpen && $('#cal')) { $('#cal').classList.add('open'); if ($('#calTog')) $('#calTog').textContent = 'Collapse'; }
     if (typeof window._applyCaveCommsLayout === 'function') window._applyCaveCommsLayout(calWasLayout);
-    if (typeof window._applyCaveMailFolderMode === 'function') window._applyCaveMailFolderMode(mailWasFolder);
+    if (!calBusyUi && typeof window._applyCaveMailFolderMode === 'function') window._applyCaveMailFolderMode(mailWasFolder);
     if (!calBusyUi && typeof window._ensureCaveCommsDataLoaded === 'function') {
       window._ensureCaveCommsDataLoaded(true);
-    } else if (typeof window._applySourceFilterToDOM === 'function') {
+    } else if (!calBusyUi && typeof window._applySourceFilterToDOM === 'function') {
       window._applySourceFilterToDOM();
     }
+    if (typeof window._ensureActiveEmailPaneHydrated === 'function') window._ensureActiveEmailPaneHydrated();
     if (typeof _renderCaveSpeedRacerTile === 'function') _renderCaveSpeedRacerTile();
+    if (typeof _setTheListSpineOpen === 'function') _setTheListSpineOpen(wlWasOpen, true);
     if (typeof _renderWorkingListSpine === 'function') _renderWorkingListSpine();
     if (collabWasOpen && $('#caveCollabStrip')) {
       $('#caveCollabStrip').classList.add('open');
@@ -965,12 +981,13 @@
   }
   function refreshFeedback() {
     var boot = window.ANCHOR_BOOT || {};
-    if (document.hidden || (boot.auth_required && !boot.logged_in && !token())) return;
+    if (isShellHidden() || (boot.auth_required && !boot.logged_in && !token())) return;
     var feedback = feedbackModule(); if (!feedback) return;
     if (feedbackBusy) { feedbackAgain = true; return; }
     feedbackBusy = true;
     var cards = $$('.tile[data-tile]').filter(function (c) { return c.getClientRects().length > 0; }), moved = false, next = 0;
     function worker() {
+      if (isShellHidden()) return Promise.resolve();
       var card = cards[next++]; if (!card) return Promise.resolve();
       var epoch = card._feedbackEpoch || 0, target = {pid:card.getAttribute('data-tile'),dir:openDir(card)}, key = feedback.identity(target);
       function current() { return card.isConnected && key === feedback.identity({pid:card.getAttribute('data-tile'),dir:openDir(card)}) && epoch === (card._feedbackEpoch || 0); }
@@ -990,18 +1007,30 @@
         }
       }).catch(function () {}).then(worker);
     }
-    Promise.all([worker(),worker(),worker(),worker()]).finally(function () {
+    Promise.all([worker(),worker()]).finally(function () {
       feedbackBusy = false;
       var nowMs = Date.now();
-      if (moved && (!window._lastFaceRefreshAt || (nowMs - window._lastFaceRefreshAt) > 15000)) {
+      if (moved && !isShellHidden() && (!window._lastFaceRefreshAt || (nowMs - window._lastFaceRefreshAt) > 15000)) {
         window._lastFaceRefreshAt = nowMs;
         refreshFaces();
       }
-      if (feedbackAgain) { feedbackAgain = false; refreshFeedback(); }
+      if (feedbackAgain && !isShellHidden()) { feedbackAgain = false; refreshFeedback(); }
+      else feedbackAgain = false;
     });
   }
   setInterval(refreshFeedback, 5000);
-  document.addEventListener('visibilitychange', function () { if (!document.hidden) refreshFeedback(); });
+  document.addEventListener('visibilitychange', function () { if (!isShellHidden()) refreshFeedback(); });
+  window.addEventListener('anchor-app-visibility', function (ev) {
+    var hid = !!(ev && ev.detail && ev.detail.hidden);
+    window.__anchorHidden = hid;
+    $$('iframe').forEach(function (fr) {
+      try {
+        fr.contentWindow.__anchorHidden = hid;
+        fr.contentWindow.dispatchEvent(new fr.contentWindow.CustomEvent('anchor-app-visibility', { detail: { hidden: hid } }));
+      } catch (e) {}
+    });
+    if (!hid) refreshFeedback();
+  });
   window.addEventListener('focus', refreshFeedback);
   setTimeout(refreshFeedback, 0);
   function openTile(card, pid, dir) {
@@ -1550,12 +1579,21 @@
     if (syncBtn) {
       e.preventDefault(); e.stopPropagation();
       syncBtn.disabled = true; syncBtn.textContent = 'Syncing\u2026';
-      fetch('/api/steward/comms', { method: 'POST', headers: headers(), body: JSON.stringify({ action: 'sync_now' }) })
+      fetch('/api/steward/comms', { method: 'POST', headers: headers(), body: JSON.stringify({ action: 'sync_now', force: true, slim: true }) })
         .then(function (r) { return r.json(); })
         .then(function (d) {
           syncBtn.disabled = false; syncBtn.textContent = '\u21bb Sync Now';
-          if (d && d.ok) renewInPlace(d.sync_receipt || 'Calendar & Email Pulse synced.');
-          else receipt((d && d.error) || 'Sync did not complete.', true);
+          if (d && d.ok) {
+            _mergePreloadedEmailBodies(_caveCommsData, d);
+            _caveCommsData = d;
+            _hydrateMailCardsFromCommsData(d);
+            _renderCaveCalendarViewport(true);
+            if (d.speed_racer && typeof _syncSpeedRacerFromServer === 'function') _syncSpeedRacerFromServer(d.speed_racer);
+            if (d.working_list) { _wlState = d.working_list; _renderWorkingListSpine(); }
+            receipt(d.sync_receipt || 'Calendar & Email Pulse synced.');
+          } else {
+            receipt((d && d.error) || 'Sync did not complete.', true);
+          }
         })
         .catch(function () {
           syncBtn.disabled = false; syncBtn.textContent = '\u21bb Sync Now';
@@ -2712,9 +2750,10 @@
           var curStillHere = _activeEmailDialogue && visList.some(function (x) { return x && x.uid === _activeEmailDialogue.uid; });
           if (!curStillHere) {
             var firstInFolder = visList[0];
-            _openEmailDialogueTile(firstInFolder.uid, firstInFolder.subject, firstInFolder.sender_email || firstInFolder.from, firstInFolder.account_badge || 'Inbox', true);
-          } else if (typeof _setEmailDialogueOpen === 'function') {
-            _setEmailDialogueOpen(true);
+            _openEmailDialogueTile(firstInFolder.uid, firstInFolder.subject, firstInFolder.sender_email || firstInFolder.from, firstInFolder.account_badge || 'Inbox', true, firstInFolder.account_id || '');
+          } else {
+            if (typeof _setEmailDialogueOpen === 'function') _setEmailDialogueOpen(true);
+            if (typeof _ensureActiveEmailPaneHydrated === 'function') _ensureActiveEmailPaneHydrated();
           }
         } else if (typeof _setEmailDialogueOpen === 'function') {
           _setEmailDialogueOpen(false);
@@ -2738,6 +2777,30 @@
     }
   }
   window._applyCaveMailFolderMode = function(m) { _applyCaveMailFolderMode(m, true); setTimeout(_syncCaveMailOvalScrollbar, 30); };
+
+  function _syncRailEmailCount(explicitCount) {
+    var cnt = 0;
+    if (typeof explicitCount === 'number' && !isNaN(explicitCount)) {
+      cnt = Math.max(0, Math.floor(explicitCount));
+    } else if (_caveCommsData && Array.isArray(_caveCommsData.important_emails)) {
+      cnt = _caveCommsData.important_emails.filter(function (em) {
+        if (!em || em.is_read === true || em.acted_upon === true) return false;
+        if (window._caveSessionActedUids && window._caveSessionActedUids.has(String(em.uid || ''))) return false;
+        return _matchesSourceKey(em.account_badge || '');
+      }).length;
+    } else {
+      cnt = $$('#caveMailImportantList .cave-mail-card:not([hidden])').length;
+    }
+    var lblEl = document.getElementById('railEmailLabel') || $('#railNav button[data-rail="email"] .n');
+    if (lblEl) {
+      lblEl.textContent = 'Email (' + cnt + ')';
+    }
+    var railBtn = $('#railNav button[data-rail="email"]');
+    if (railBtn) {
+      railBtn.classList.toggle('has-unread', cnt > 0);
+    }
+  }
+  window._syncRailEmailCount = _syncRailEmailCount;
 
   function _applySourceFilterToDOM() {
     if (_caveCommsData && typeof _hydrateMailCardsFromCommsData === 'function') {
@@ -2766,9 +2829,22 @@
       card.hidden = !show;
       if (show) visOth++;
     });
+  var _PRIME_ICO_SVG = '<svg class="cave-pi-ico prime-ico" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><polygon points="8,1 14.5,8 8,15 1.5,8" fill="rgba(251,191,36,0.22)" stroke="#fbbf24" stroke-width="1.2"/><path d="M9.1 3.2L4.8 8.6h3.1l-.8 4.2 4.3-5.4H8.3z" fill="#fef08a"/></svg>';
+  var _IRRATIONAL_ICO_SVG = '<svg class="cave-pi-ico irrational-ico" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M8 8.2c0-.9.7-1.6 1.6-1.6 1.3 0 2.3 1.1 2.3 2.4 0 1.9-1.6 3.5-3.5 3.5-2.6 0-4.7-2.1-4.7-4.7C3.7 4.4 6.5 1.8 10 1.8c2.2 0 4.1 1.1 5 2.9" fill="none" stroke="#a78bfa" stroke-width="1.65" stroke-linecap="round"/><circle cx="8.3" cy="8.2" r="1.2" fill="#38bdf8"/></svg>';
+
     var impB = document.getElementById('caveImpCountBadge');
     if (impB && document.querySelectorAll('#caveMailImportantList .cave-mail-card').length) {
-      impB.innerHTML = '\u26a1 ' + visImp + ' Prime';
+      impB.innerHTML = _PRIME_ICO_SVG + ' ' + visImp + ' Prime';
+    }
+    var actInbDomB = document.getElementById('caveActiveInboxCountBadge');
+    if (actInbDomB && _caveCommsData && Array.isArray(_caveCommsData.important_emails)) {
+      var filtPrimeN = _caveCommsData.important_emails.filter(function (em) {
+        return em && !em.is_read && !em.acted_upon && _matchesSourceKey(em.account_badge || '');
+      }).length;
+      actInbDomB.textContent = String(filtPrimeN);
+      _syncRailEmailCount(filtPrimeN);
+    } else {
+      _syncRailEmailCount(visImp);
     }
     var sentB = document.getElementById('caveSentCountBadge');
     if (sentB && document.querySelectorAll('#caveMailSentList .cave-mail-card').length) {
@@ -2780,7 +2856,7 @@
     }
     var hdrOthB = document.getElementById('caveHdrOthBadge');
     if (hdrOthB && document.querySelectorAll('#caveMailOtherList .cave-mail-card').length) {
-      hdrOthB.innerHTML = '\ud83d\udce5 ' + visOth + ' Irrational';
+      hdrOthB.innerHTML = _IRRATIONAL_ICO_SVG + ' ' + visOth + ' Irrational';
     }
     $$('#caveCalViewport .cave-cal-card').forEach(function (card) {
       var src = card.getAttribute('data-cal-source') || '';
@@ -2942,18 +3018,24 @@
 
   function _eventRsvpInfo(ev) {
     var st = String((ev && ev.rsvp_status) || '').toLowerCase();
-    if (!st) {
-      var tLow = String((ev && ev.title) || '').toLowerCase();
-      var ownTeaching = ['seminar', 'lecture', 'team teach', 'ta meeting', 'office hours'].some(function (h) { return tLow.indexOf(h) >= 0; });
-      st = ownTeaching ? 'responded' : 'not_responded';
+    var src = String((ev && ev.rsvp_source) || '').toLowerCase();
+    var tLow = String((ev && ev.title) || '').toLowerCase();
+    var ownTeaching = (
+      ['seminar', 'lecture', 'team teach', 'ta meeting', 'office hours'].some(function (h) { return tLow.indexOf(h) >= 0; }) ||
+      /\b(?:mba|hmba|ba\s*815|stat\s*610|sunday\s+teaching|mba\s+teaching)\b/i.test(tLow)
+    );
+    if ((!st || (st === 'not_responded' && src !== 'user_override')) && ownTeaching) {
+      st = 'responded';
+    } else if (!st) {
+      st = 'not_responded';
     }
     if (st === 'accepted' || st === 'attending') st = 'responded';
     if (st === 'responded') {
       return {
         status: 'responded',
         responded: true,
-        label: (ev && ev.rsvp_label) || '\u2713 Accepted \u00b7 Going (Responded)',
-        shortLabel: '\u2713 Accepted \u00b7 Going',
+        label: '\u2713 Accepted',
+        shortLabel: '\u2713 Accepted',
         tone: 'emerald'
       };
     }
@@ -2961,7 +3043,7 @@
       return {
         status: 'tentative',
         responded: false,
-        label: (ev && ev.rsvp_label) || '? Tentative (Not Going Yet)',
+        label: '? Tentative',
         shortLabel: '? Tentative',
         tone: 'amber'
       };
@@ -2970,7 +3052,7 @@
       return {
         status: 'declined',
         responded: false,
-        label: (ev && ev.rsvp_label) || '\u2715 Declined',
+        label: '\u2715 Declined',
         shortLabel: '\u2715 Declined',
         tone: 'rose'
       };
@@ -2978,8 +3060,8 @@
     return {
       status: 'not_responded',
       responded: false,
-      label: (ev && ev.rsvp_label) || '? Not Accepted \u00b7 Not Going (Not Responded)',
-      shortLabel: '? Not Accepted',
+      label: '? RSVP',
+      shortLabel: '? RSVP',
       tone: 'amber'
     };
   }
@@ -3090,10 +3172,54 @@
     );
   }
 
-  function _renderCaveCalendarViewport() {
+  function _clientLocalClock() {
+    var now = (window.__ANCHOR_TEST_NOW instanceof Date && !isNaN(window.__ANCHOR_TEST_NOW.getTime()))
+      ? window.__ANCHOR_TEST_NOW
+      : (typeof window.__ANCHOR_TEST_NOW === 'string' && window.__ANCHOR_TEST_NOW
+          ? new Date(window.__ANCHOR_TEST_NOW)
+          : new Date());
+    if (isNaN(now.getTime())) now = new Date();
+    var yr = now.getFullYear();
+    var mo = String(now.getMonth() + 1).padStart(2, '0');
+    var dy = String(now.getDate()).padStart(2, '0');
+    var hr = now.getHours();
+    var mn = now.getMinutes();
+    var minsOfDay = hr * 60 + mn;
+    var ampm = hr >= 12 ? 'PM' : 'AM';
+    var hr12 = hr % 12 || 12;
+    var mmPad = String(mn).padStart(2, '0');
+    return {
+      dateIso: yr + '-' + mo + '-' + dy,
+      hours: hr,
+      minutes: mn,
+      minsOfDay: minsOfDay,
+      timeLabel: hr12 + ':' + mmPad + ' ' + ampm,
+      shortTimeLabel: hr12 + ':' + mmPad + (hr >= 12 ? 'p' : 'a')
+    };
+  }
+  window._clientLocalClock = _clientLocalClock;
+
+  function _renderCalNowLineHtml(nowClock, extraCls, styleAttr, showShortLbl) {
+    var cls = 'cave-cal-now-line' + (extraCls ? (' ' + extraCls) : '');
+    var st = styleAttr ? (' style="' + styleAttr + '"') : '';
+    var lblTxt = showShortLbl ? nowClock.shortTimeLabel : nowClock.timeLabel;
+    return (
+      '<div id="caveCalNowLine" class="' + cls + '" data-now-date="' + _escH(nowClock.dateIso) + '" data-now-mins="' + nowClock.minsOfDay + '"' + st + ' title="Current local time: ' + _escH(nowClock.timeLabel) + '">' +
+        '<span class="cave-cal-now-lbl">' + _escH(lblTxt) + '</span>' +
+      '</div>'
+    );
+  }
+
+  var _lastRenderedCalClockKey = '';
+
+  function _renderCaveCalendarViewport(preserveScroll) {
     var vp = document.getElementById('caveCalViewport');
     var lbl = document.getElementById('caveCalDateLabel');
     if (!vp || !_caveCommsData) return;
+    var prevScrollTop = preserveScroll ? vp.scrollTop : null;
+    var nowClock = _clientLocalClock();
+    var nowIso = nowClock.dateIso;
+    _lastRenderedCalClockKey = nowIso + ':' + nowClock.minsOfDay;
     var rawEvs = _caveCommsData.calendar_events_all || _caveCommsData.calendar_events || [];
     var srcEvs = rawEvs.filter(_eventMatchesSources);
     var respYesCnt = 0, respNoCnt = 0;
@@ -3120,10 +3246,8 @@
     });
     var visCntEl = document.getElementById('caveCalVisibleCount');
     if (visCntEl) visCntEl.textContent = String(allEvs.length);
-    var nowIso = new Date().toISOString().slice(0, 10);
     if (!_caveCalDay) {
-      var firstUp = allEvs.find(function (e) { return e.date >= nowIso; });
-      _caveCalDay = (firstUp && firstUp.date) || nowIso;
+      _caveCalDay = nowIso;
     }
 
     $$('[data-cave-cal-view]').forEach(function (b) {
@@ -3131,22 +3255,27 @@
     });
 
     if (_caveCalView === 'iphone') {
-      if (lbl) lbl.textContent = '\ud83d\udcf1 Apple iPhone Rolling Stream (\u2191 Past \u00b7 \ud83d\udd34 NOW \u00b7 \u2193 Upcoming)';
-      var pastEvs = allEvs.filter(function (e) { return e.date < nowIso; }).slice(-8);
-      var futEvs = allEvs.filter(function (e) { return e.date >= nowIso; }).slice(0, 28);
+      if (lbl) lbl.textContent = '\ud83d\udcf1 Rolling Stream (\u2191 Earlier \u00b7 Now ' + nowClock.timeLabel + ' \u00b7 \u2193 Upcoming)';
+      var pastEvs = allEvs.filter(function (e) {
+        if (e.date < nowIso) return true;
+        if (e.date > nowIso) return false;
+        var sp = _eventSpanInfo(e);
+        return !sp.isAllDay && sp.endMins <= nowClock.minsOfDay;
+      }).slice(-8);
+      var futEvs = allEvs.filter(function (e) {
+        if (e.date > nowIso) return true;
+        if (e.date < nowIso) return false;
+        var sp = _eventSpanInfo(e);
+        return sp.isAllDay || sp.endMins > nowClock.minsOfDay;
+      }).slice(0, 28);
       var html = [];
       if (pastEvs.length) {
-        html.push('<div style="font-size:10px;font-weight:750;color:var(--text-dim);text-transform:uppercase;padding:2px 4px">\u2191 Earlier Events (Scroll Up \u00b7 Click any event to open Dialogue Tile)</div>');
+        html.push('<div style="font-size:10px;font-weight:750;color:var(--text-dim);text-transform:uppercase;padding:2px 4px">\u2191 Earlier Events</div>');
         pastEvs.forEach(function (ev) {
           html.push('<div style="opacity:0.65">' + _renderCaveCalEventRow(ev) + '</div>');
         });
       }
-      html.push(
-        '<div class="cave-now-anchor" id="caveIphoneNowAnchor">' +
-        '<span class="cave-now-dot"></span>' +
-        '<span>\ud83d\udd34 NOW \u2014 ' + _escH(_fmtFriendlyDate(nowIso)) + ' \u00b7 Click any event below to open Dialogue Tile \u2193</span>' +
-        '</div>'
-      );
+      html.push(_renderCalNowLineHtml(nowClock, 'in-stream', 'margin:8px 2px', false));
       if (futEvs.length) {
         futEvs.forEach(function (ev) { html.push(_renderCaveCalEventRow(ev)); });
       } else {
@@ -3154,8 +3283,12 @@
       }
       vp.innerHTML = html.join('');
       setTimeout(function () {
-        var anch = document.getElementById('caveIphoneNowAnchor');
-        if (anch && vp) vp.scrollTop = Math.max(0, anch.offsetTop - vp.offsetTop - 60);
+        if (preserveScroll && prevScrollTop !== null) {
+          vp.scrollTop = prevScrollTop;
+        } else {
+          var anch = document.getElementById('caveCalNowLine');
+          if (anch && vp) vp.scrollTop = Math.max(0, anch.offsetTop - vp.offsetTop - 60);
+        }
         _syncCaveMailOvalScrollbar();
       }, 30);
       return;
@@ -3164,6 +3297,7 @@
     if (_caveCalView === 'day') {
       if (lbl) lbl.textContent = '\ud83d\udcc5 Day Time-Block Schedule \u2014 ' + _fmtFriendlyDate(_caveCalDay) + ' (' + _caveCalDay + ')';
       var dayEvs = allEvs.filter(function (e) { return e.date === _caveCalDay; });
+      var isTodayDayView = (_caveCalDay === nowIso);
       var allDayEvs = [];
       var timedEvs = [];
       dayEvs.forEach(function (ev) {
@@ -3197,11 +3331,17 @@
         cl.items.forEach(function (it) { it.colCount = colEnds.length; });
       });
 
-      var startHour = 6, endHour = 22, pxPerHour = 52;
+      var startHour = isTodayDayView ? Math.min(6, nowClock.hours) : 6;
+      var endHour = isTodayDayView ? Math.max(22, nowClock.hours) : 22;
+      timedEvs.forEach(function (it) {
+        startHour = Math.min(startHour, Math.floor(it.sp.startMins / 60));
+        endHour = Math.max(endHour, Math.min(23, Math.ceil(it.sp.endMins / 60)));
+      });
+      var pxPerHour = 52;
       var totalHeight = (endHour - startHour + 1) * pxPerHour;
       var out = [];
       if (!dayEvs.length) {
-        out.push('<div class="tw-empty" style="margin-bottom:8px;flex-shrink:0">No events scheduled on ' + _escH(_fmtFriendlyDate(_caveCalDay)) + '. Click <b>+ Add Calendar Event</b> or <b>Next \u25b6</b>.</div>');
+        out.push('<div class="tw-empty" style="margin-bottom:8px;flex-shrink:0">No events scheduled on ' + _escH(_fmtFriendlyDate(_caveCalDay)) + '. Click <b>+ Event</b> or <b>\u25b6</b>.</div>');
       }
       if (allDayEvs.length) {
         out.push('<div style="margin-bottom:8px;flex-shrink:0">' + allDayEvs.map(function (x) { return _renderCaveCalEventRow(x.ev); }).join('') + '</div>');
@@ -3209,12 +3349,17 @@
       out.push('<div class="cave-day-timegrid" style="position:relative;flex-shrink:0;height:' + totalHeight + 'px;min-height:' + totalHeight + 'px;border:1px solid #1e293b;border-radius:10px;background:#090d16;overflow:hidden">');
       for (var hr = startHour; hr <= endHour; hr++) {
         var topPx = (hr - startHour) * pxPerHour;
-        var hDisp = (hr > 12 ? (hr - 12) : hr) + ':00 ' + (hr >= 12 ? 'PM' : 'AM');
+        var h12 = (hr % 12) || 12;
+        var hDisp = h12 + ':00 ' + (hr >= 12 ? 'PM' : 'AM');
         out.push(
           '<div style="position:absolute;left:0;right:0;top:' + topPx + 'px;height:' + pxPerHour + 'px;border-top:1px dashed rgba(51,65,85,0.55);display:flex;align-items:flex-start;pointer-events:none">' +
             '<span style="width:66px;padding:3px 6px;font-size:10px;font-weight:700;color:#64748b;text-align:right;flex-shrink:0">' + hDisp + '</span>' +
           '</div>'
         );
+      }
+      if (isTodayDayView) {
+        var nowTopPx = Math.max(2, Math.min(totalHeight - 2, Math.round(((nowClock.minsOfDay - startHour * 60) / 60) * pxPerHour)));
+        out.push(_renderCalNowLineHtml(nowClock, 'in-day-grid', 'top:' + nowTopPx + 'px', false));
       }
       timedEvs.forEach(function (it) {
         var ev = it.ev, sp = it.sp;
@@ -3252,8 +3397,14 @@
       vp.innerHTML = out.join('');
       setTimeout(function () {
         if (vp) {
-          var firstMin = timedEvs.length ? Math.max(startHour * 60, timedEvs[0].sp.startMins - 45) : (8 * 60);
-          vp.scrollTop = Math.max(0, Math.round(((firstMin - startHour * 60) / 60) * pxPerHour));
+          if (preserveScroll && prevScrollTop !== null) {
+            vp.scrollTop = prevScrollTop;
+          } else {
+            var anchorMin = isTodayDayView
+              ? Math.max(startHour * 60, nowClock.minsOfDay - 90)
+              : (timedEvs.length ? Math.max(startHour * 60, timedEvs[0].sp.startMins - 45) : (8 * 60));
+            vp.scrollTop = Math.max(0, Math.round(((anchorMin - startHour * 60) / 60) * pxPerHour));
+          }
         }
         _syncCaveMailOvalScrollbar();
       }, 30);
@@ -3276,43 +3427,84 @@
       var cols = ['<div class="cave-week-grid">'];
       for (var i = 0; i < 7; i++) {
         var dIso = _shiftIsoDate(monIso, i);
-        var cEvs = allEvs.filter(function (e) { return e.date === dIso; });
-        var isT = (dIso === nowIso || dIso === _caveCalDay);
+        var isTodayCol = (dIso === nowIso);
+        var cEvs = allEvs.filter(function (e) { return e.date === dIso; }).slice().sort(function (a, b) {
+          var sa = _eventSpanInfo(a), sb = _eventSpanInfo(b);
+          if (!!sa.isAllDay !== !!sb.isAllDay) return sa.isAllDay ? -1 : 1;
+          return sa.startMins - sb.startMins;
+        });
+        var renderWeekEvChip = function (ev, inlineNowPct) {
+          var sp = _eventSpanInfo(ev);
+          var lkInfo = _extractCalendarEventLinks(ev);
+          var wkJoinBtn = lkInfo.joinUrl
+            ? '<a href="' + _escH(lkInfo.joinUrl) + '" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation();" style="padding:0px 5px;border-radius:4px;background:rgba(56,189,248,0.22);border:1px solid rgba(56,189,248,0.7);color:#e0f2fe;font-size:9px;font-weight:800;text-decoration:none" title="Open meeting / web link in browser">&#128279; Join &#8599;</a>'
+            : '';
+          var t = ev.merged_badge ? 'amber' : (ev.tone || 'sky');
+          var calsJoined = (ev.calendars && ev.calendars.length) ? ev.calendars.join(' + ') : (ev.calendar_badge || 'Calendar');
+          if (sp.isMarker) {
+            return (
+              '<div class="cave-week-chip ' + _escH(t) + '" data-cave-cal-open="' + _escH(ev.id || ev.uid || '') + '" data-cal-title="' + _escH(ev.title || '') + '" data-cal-date="' + _escH(ev.date || '') + '" data-cal-start="Marker" data-cal-end="" data-cal-loc="' + _escH(ev.location || '') + '" data-cal-source="' + _escH(calsJoined) + '" style="min-height:28px;border-style:dashed;border-color:rgba(167,139,250,0.6);background:rgba(167,139,250,0.10);padding:3px 6px" title="Non-Blocking Follow-Up Marker (Slot Open) — ' + _escH(ev.title || '') + '">' +
+                '<div style="font-weight:750;color:#ddd6fe;font-size:9.5px">\ud83d\udccc Follow-Up Marker \u00b7 Slot Open</div>' +
+                '<div style="font-weight:650;color:#e2e8f0;font-size:10.5px;margin-top:1px;line-height:1.2">' + _escH(ev.title || '') + '</div>' +
+              '</div>'
+            );
+          }
+          var minH = Math.max(48, Math.min(180, Math.round(sp.durMins * 0.56)));
+          var inChipLine = (typeof inlineNowPct === 'number')
+            ? _renderCalNowLineHtml(nowClock, 'in-active-chip', 'top:' + Math.max(6, Math.min(94, Math.round(inlineNowPct))) + '%', true)
+            : '';
+          return (
+            '<div class="cave-week-chip ' + _escH(t) + '" data-cave-cal-open="' + _escH(ev.id || ev.uid || '') + '" data-cal-title="' + _escH(ev.title || '') + '" data-cal-date="' + _escH(ev.date || '') + '" data-cal-start="' + _escH(sp.startHm || ev.start_time || '') + '" data-cal-end="' + _escH(sp.endHm || ev.end_time || '') + '" data-cal-loc="' + _escH(ev.location || '') + '" data-cal-source="' + _escH(calsJoined) + '" style="position:relative;min-height:' + minH + 'px;display:flex;flex-direction:column;justify-content:space-between;border-left-width:3px" title="Click to open Event Dialogue Tile (' + _escH(sp.rangeLabel) + ')">' +
+            inChipLine +
+            '<div>' +
+              '<div style="font-weight:800;color:#7dd3fc;font-size:10px">' + _escH(sp.rangeLabel) + '</div>' +
+              '<div style="font-weight:700;color:#f8fafc;margin-top:2px;line-height:1.25">' + _escH(ev.title || '') + '</div>' +
+            '</div>' +
+            '<div style="display:flex;align-items:center;justify-content:space-between;gap:3px;flex-wrap:wrap;font-size:9px;color:' + (ev.merged_badge ? '#fde68a' : 'var(--text-dim)') + ';margin-top:3px;font-weight:' + (ev.merged_badge ? '700' : '500') + '">' +
+              '<span>' + (ev.merged_badge ? ('\ud83d\udd17 ' + _escH(calsJoined)) : _escH(calsJoined)) + '</span>' +
+              '<span style="display:inline-flex;align-items:center;gap:3px">' + wkJoinBtn + _renderRsvpToggleBtnHtml(ev, true) + '</span>' +
+            '</div>' +
+            '</div>'
+          );
+        };
+        var colBodyHtml = '';
+        if (!cEvs.length) {
+          if (isTodayCol) {
+            var dayFracPct = Math.max(14, Math.min(92, Math.round(((nowClock.minsOfDay - 360) / 960) * 76 + 14)));
+            colBodyHtml = _renderCalNowLineHtml(nowClock, 'in-empty-col', 'top:' + dayFracPct + '%', true) +
+              '<div style="font-size:10px;color:var(--text-dim2);text-align:center;margin-top:16px">\u2014</div>';
+          } else {
+            colBodyHtml = '<div style="font-size:10px;color:var(--text-dim2);text-align:center;margin-top:16px">\u2014</div>';
+          }
+        } else if (!isTodayCol) {
+          colBodyHtml = cEvs.map(function (ev) { return renderWeekEvChip(ev, null); }).join('');
+        } else {
+          var placedNowLine = false;
+          var partsCol = [];
+          cEvs.forEach(function (ev) {
+            var sp = _eventSpanInfo(ev);
+            if (!placedNowLine && !sp.isAllDay) {
+              if (nowClock.minsOfDay < sp.startMins) {
+                partsCol.push(_renderCalNowLineHtml(nowClock, 'in-week-slot', 'margin:5px 0', true));
+                placedNowLine = true;
+              } else if (nowClock.minsOfDay >= sp.startMins && nowClock.minsOfDay < sp.endMins) {
+                var pct = ((nowClock.minsOfDay - sp.startMins) / Math.max(1, sp.durMins)) * 100;
+                partsCol.push(renderWeekEvChip(ev, pct));
+                placedNowLine = true;
+                return;
+              }
+            }
+            partsCol.push(renderWeekEvChip(ev, null));
+          });
+          if (!placedNowLine) {
+            partsCol.push(_renderCalNowLineHtml(nowClock, 'in-week-slot', 'margin:5px 0 2px', true));
+          }
+          colBodyHtml = partsCol.join('');
+        }
         cols.push(
-          '<div class="cave-week-col' + (isT ? ' today' : '') + '" data-cave-pick-day="' + dIso + '" style="cursor:pointer" title="Click day header to open proportional Day Time-Block Schedule">' +
+          '<div class="cave-week-col' + (isTodayCol ? ' today' : '') + '" data-cave-pick-day="' + dIso + '" style="position:relative;cursor:pointer" title="Click day header to open proportional Day Time-Block Schedule">' +
           '<div class="cave-week-hdr">' + _escH(_fmtFriendlyDate(dIso)) + '</div>' +
-          (cEvs.length
-            ? cEvs.map(function (ev) {
-                var sp = _eventSpanInfo(ev);
-                var lkInfo = _extractCalendarEventLinks(ev);
-                var wkJoinBtn = lkInfo.joinUrl
-                  ? '<a href="' + _escH(lkInfo.joinUrl) + '" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation();" style="padding:0px 5px;border-radius:4px;background:rgba(56,189,248,0.22);border:1px solid rgba(56,189,248,0.7);color:#e0f2fe;font-size:9px;font-weight:800;text-decoration:none" title="Open meeting / web link in browser">&#128279; Join &#8599;</a>'
-                  : '';
-                var t = ev.merged_badge ? 'amber' : (ev.tone || 'sky');
-                var calsJoined = (ev.calendars && ev.calendars.length) ? ev.calendars.join(' + ') : (ev.calendar_badge || 'Calendar');
-                if (sp.isMarker) {
-                  return (
-                    '<div class="cave-week-chip ' + _escH(t) + '" data-cave-cal-open="' + _escH(ev.id || ev.uid || '') + '" data-cal-title="' + _escH(ev.title || '') + '" data-cal-date="' + _escH(ev.date || '') + '" data-cal-start="Marker" data-cal-end="" data-cal-loc="' + _escH(ev.location || '') + '" data-cal-source="' + _escH(calsJoined) + '" style="min-height:28px;border-style:dashed;border-color:rgba(167,139,250,0.6);background:rgba(167,139,250,0.10);padding:3px 6px" title="Non-Blocking Follow-Up Marker (Slot Open) — ' + _escH(ev.title || '') + '">' +
-                      '<div style="font-weight:750;color:#ddd6fe;font-size:9.5px">\ud83d\udccc Follow-Up Marker \u00b7 Slot Open</div>' +
-                      '<div style="font-weight:650;color:#e2e8f0;font-size:10.5px;margin-top:1px;line-height:1.2">' + _escH(ev.title || '') + '</div>' +
-                    '</div>'
-                  );
-                }
-                var minH = Math.max(48, Math.min(180, Math.round(sp.durMins * 0.56)));
-                return (
-                  '<div class="cave-week-chip ' + _escH(t) + '" data-cave-cal-open="' + _escH(ev.id || ev.uid || '') + '" data-cal-title="' + _escH(ev.title || '') + '" data-cal-date="' + _escH(ev.date || '') + '" data-cal-start="' + _escH(sp.startHm || ev.start_time || '') + '" data-cal-end="' + _escH(sp.endHm || ev.end_time || '') + '" data-cal-loc="' + _escH(ev.location || '') + '" data-cal-source="' + _escH(calsJoined) + '" style="min-height:' + minH + 'px;display:flex;flex-direction:column;justify-content:space-between;border-left-width:3px" title="Click to open Event Dialogue Tile (' + _escH(sp.rangeLabel) + ')">' +
-                  '<div>' +
-                    '<div style="font-weight:800;color:#7dd3fc;font-size:10px">' + _escH(sp.rangeLabel) + '</div>' +
-                    '<div style="font-weight:700;color:#f8fafc;margin-top:2px;line-height:1.25">' + _escH(ev.title || '') + '</div>' +
-                  '</div>' +
-                  '<div style="display:flex;align-items:center;justify-content:space-between;gap:3px;flex-wrap:wrap;font-size:9px;color:' + (ev.merged_badge ? '#fde68a' : 'var(--text-dim)') + ';margin-top:3px;font-weight:' + (ev.merged_badge ? '700' : '500') + '">' +
-                    '<span>' + (ev.merged_badge ? ('\ud83d\udd17 ' + _escH(calsJoined)) : _escH(calsJoined)) + '</span>' +
-                    '<span style="display:inline-flex;align-items:center;gap:3px">' + wkJoinBtn + _renderRsvpToggleBtnHtml(ev, true) + '</span>' +
-                  '</div>' +
-                  '</div>'
-                );
-              }).join('')
-            : '<div style="font-size:10px;color:var(--text-dim2);text-align:center;margin-top:16px">\u2014</div>') +
+          colBodyHtml +
           '</div>'
         );
       }
@@ -3340,15 +3532,36 @@
       for (var dNum = 1; dNum <= daysInMo; dNum++) {
         var cellIso = yr + '-' + String(mo).padStart(2, '0') + '-' + String(dNum).padStart(2, '0');
         var cellEvs = allEvs.filter(function (e) { return e.date === cellIso; });
-        var isCur = (cellIso === _caveCalDay || cellIso === nowIso);
-        mCells.push(
-          '<div class="cave-month-cell' + (isCur ? ' today' : '') + '" data-cave-pick-day="' + cellIso + '">' +
-          '<div class="cave-month-num">' + dNum + (cellEvs.length ? ' <span style="color:#7dd3fc">(' + cellEvs.length + ')</span>' : '') + '</div>' +
-          cellEvs.slice(0, 3).map(function (ev) {
+        var isTodayCell = (cellIso === nowIso);
+        var cellDotsHtml = '';
+        if (!isTodayCell) {
+          cellDotsHtml = cellEvs.slice(0, 3).map(function (ev) {
             var cTone = ev.merged_badge ? 'amber' : (ev.tone || 'sky');
             var calsJoined = (ev.calendars && ev.calendars.length) ? ev.calendars.join(' + ') : (ev.calendar_badge || 'Calendar');
             return '<div class="cave-month-dot ' + _escH(cTone) + '" data-cave-cal-open="' + _escH(ev.id || ev.uid || '') + '" data-cal-title="' + _escH(ev.title || '') + '" data-cal-date="' + _escH(ev.date || '') + '" data-cal-start="' + _escH(ev.start_time || '') + '" data-cal-end="' + _escH(ev.end_time || '') + '" data-cal-loc="' + _escH(ev.location || '') + '" data-cal-source="' + _escH(calsJoined) + '" title="Click to open Event Dialogue Tile: ' + _escH((ev.time_label || '') + ' ' + (ev.title || '')) + '">' + _escH((ev.start_time || '').slice(0, 5) + ' ' + (ev.title || '')) + '</div>';
-          }).join('') +
+          }).join('');
+        } else {
+          var mPlaced = false;
+          var mParts = [];
+          cellEvs.slice(0, 3).forEach(function (ev) {
+            var spM = _eventSpanInfo(ev);
+            if (!mPlaced && !spM.isAllDay && nowClock.minsOfDay < spM.startMins) {
+              mParts.push(_renderCalNowLineHtml(nowClock, 'in-month-cell', 'margin:3px 0', true));
+              mPlaced = true;
+            }
+            var cTone = ev.merged_badge ? 'amber' : (ev.tone || 'sky');
+            var calsJoined = (ev.calendars && ev.calendars.length) ? ev.calendars.join(' + ') : (ev.calendar_badge || 'Calendar');
+            mParts.push('<div class="cave-month-dot ' + _escH(cTone) + '" data-cave-cal-open="' + _escH(ev.id || ev.uid || '') + '" data-cal-title="' + _escH(ev.title || '') + '" data-cal-date="' + _escH(ev.date || '') + '" data-cal-start="' + _escH(ev.start_time || '') + '" data-cal-end="' + _escH(ev.end_time || '') + '" data-cal-loc="' + _escH(ev.location || '') + '" data-cal-source="' + _escH(calsJoined) + '" title="Click to open Event Dialogue Tile: ' + _escH((ev.time_label || '') + ' ' + (ev.title || '')) + '">' + _escH((ev.start_time || '').slice(0, 5) + ' ' + (ev.title || '')) + '</div>');
+          });
+          if (!mPlaced) {
+            mParts.push(_renderCalNowLineHtml(nowClock, 'in-month-cell', 'margin:4px 0 2px', true));
+          }
+          cellDotsHtml = mParts.join('');
+        }
+        mCells.push(
+          '<div class="cave-month-cell' + (isTodayCell ? ' today' : '') + '" data-cave-pick-day="' + cellIso + '">' +
+          '<div class="cave-month-num">' + dNum + (cellEvs.length ? ' <span style="color:#7dd3fc">(' + cellEvs.length + ')</span>' : '') + '</div>' +
+          cellDotsHtml +
           (cellEvs.length > 3 ? '<div style="font-size:9px;color:var(--text-dim)">+' + (cellEvs.length - 3) + ' more</div>' : '') +
           '</div>'
         );
@@ -3360,6 +3573,54 @@
   }
 
   var _activeEmailDialogue = null;
+  var _emailDlgReqSeq = 0;
+
+  function _setActiveEmailDialogue(val) {
+    _activeEmailDialogue = val;
+    window._activeEmailDialogue = val;
+  }
+
+  function _isPlaceholderEmailBody(txt) {
+    var s = String(txt || '').trim();
+    if (!s) return true;
+    var low = s.toLowerCase();
+    return low === 'no message text.' || low === '(no message text)' || low === 'message content loaded from inbox header.';
+  }
+
+  function _ensureActiveEmailPaneHydrated() {
+    if (window._emailDlgClosed || !_activeEmailDialogue || !_activeEmailDialogue.uid) return;
+    var mailPane = document.getElementById('caveEmailDialoguePane');
+    var thList = document.getElementById('caveDialogueThreadList');
+    if (!mailPane || !thList) return;
+    if (mailPane.hidden) mailPane.hidden = false;
+    var splitEl = document.getElementById('caveOutlookMailSplit');
+    if (splitEl) splitEl.classList.remove('email-dlg-closed');
+    if (!thList.children.length || !String(thList.textContent || '').trim()) {
+      var curReplyDraft = ((document.getElementById('caveReplyBody') || {}).value || '');
+      var curDirs = ((document.getElementById('caveDlgStewardDirectionsInput') || {}).value || '');
+      var drwEl = document.getElementById('caveDlgDirectReplyDrawer');
+      var wasDrwOpen = !!(drwEl && drwEl.open);
+      _populateEmailPaneFromItem(
+        _activeEmailDialogue,
+        _activeEmailDialogue.subject || '',
+        _activeEmailDialogue.sender_email || _activeEmailDialogue.from || '',
+        _activeEmailDialogue.account_badge || 'Inbox'
+      );
+      if (drwEl && wasDrwOpen) drwEl.open = true;
+      if (curReplyDraft) {
+        var rb = document.getElementById('caveReplyBody');
+        if (rb) rb.value = curReplyDraft;
+      }
+      if (curDirs) {
+        var di = document.getElementById('caveDlgStewardDirectionsInput');
+        if (di) { di.value = curDirs; _autoGrowTextarea(di); }
+      }
+    }
+    $$('#caveMailBucketsGrid .cave-mail-card').forEach(function (c) {
+      c.classList.toggle('is-selected', c.getAttribute('data-mail-uid') === String(_activeEmailDialogue.uid || ''));
+    });
+  }
+  window._ensureActiveEmailPaneHydrated = _ensureActiveEmailPaneHydrated;
 
   function _decodeEntitiesClient(rawStr) {
     var s = String(rawStr || '');
@@ -3484,7 +3745,8 @@
   function _autoGrowTextarea(el) {
     if (!el || el.tagName !== 'TEXTAREA') return;
     el.style.height = 'auto';
-    el.style.height = Math.min(150, Math.max(30, el.scrollHeight || 30)) + 'px';
+    var minH = el.id === 'caveDlgStewardDirectionsInput' ? 58 : 30;
+    el.style.height = Math.min(150, Math.max(minH, el.scrollHeight || minH)) + 'px';
   }
 
   function _stewardDirDraftKey(uid) {
@@ -3643,6 +3905,69 @@
     }
   });
 
+  function _threadMsgSortEpochMs(m) {
+    if (!m) return -1;
+    var raw = String(m.raw_date || m.sent_at_utc || m.approved_at_utc || m.date || '').trim();
+    if (!raw) return m.is_current ? Number.MAX_SAFE_INTEGER : -1;
+    var isoCandidate = raw;
+    if (/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}/.test(raw) && !/(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw)) {
+      isoCandidate = raw.replace(/\s+/, 'T') + 'Z';
+    }
+    var ms = Date.parse(isoCandidate);
+    if (!isNaN(ms)) return ms;
+    var ms2 = Date.parse(raw);
+    if (!isNaN(ms2)) return ms2;
+    return m.is_current ? Number.MAX_SAFE_INTEGER : -1;
+  }
+
+  function _sortThreadMsgsNewestFirst(arr) {
+    if (!Array.isArray(arr) || arr.length <= 1) return Array.isArray(arr) ? arr.slice() : [];
+    return arr.slice().sort(function (a, b) {
+      var ta = _threadMsgSortEpochMs(a);
+      var tb = _threadMsgSortEpochMs(b);
+      if (tb !== ta) return tb - ta;
+      var ca = (a && a.is_current) ? 1 : 0;
+      var cb = (b && b.is_current) ? 1 : 0;
+      if (cb !== ca) return cb - ca;
+      var ia = (a && a.direction === 'inbound') ? 1 : 0;
+      var ib = (b && b.direction === 'inbound') ? 1 : 0;
+      return ib - ia;
+    });
+  }
+
+  function _renderThreadMessagesStackHtml(rawMsgs, fallbackBody, fallbackQuoted) {
+    var msgs = _sortThreadMsgsNewestFirst(rawMsgs);
+    if (msgs.length <= 1) {
+      var m0 = msgs[0] || {};
+      var isSent0 = m0.direction === 'sent';
+      var bCol0 = isSent0 ? '#10b981' : '#38bdf8';
+      return (
+        '<div class="cave-single-msg-card" style="padding:8px 10px;border-radius:8px;background:' + (isSent0 ? 'rgba(16,185,129,0.08)' : '#111827') + ';border:1px solid #1e293b;border-left:3px solid ' + bCol0 + '">' +
+          _renderCleanEmailBodyHtml(m0.body || m0.snippet || fallbackBody || '', m0.quoted_history || fallbackQuoted || '') +
+        '</div>'
+      );
+    }
+    return msgs.map(function (m, idx) {
+      var isSent = m.direction === 'sent';
+      var isTop = idx === 0;
+      var borderCol = isSent ? '#10b981' : (isTop || m.is_current ? '#38bdf8' : '#334155');
+      var mBody = m.body || m.snippet || ((m.is_current || isTop) ? (fallbackBody || '') : '');
+      var mQuoted = m.quoted_history || (m.is_current ? (fallbackQuoted || '') : '');
+      var latestBadge = isTop
+        ? ' <span style="font-size:10px;padding:1px 6px;border-radius:999px;background:rgba(56,189,248,0.18);border:1px solid rgba(56,189,248,0.45);color:#bae6fd;font-weight:800;margin-left:4px">Latest</span>'
+        : '';
+      return (
+        '<div class="cave-thread-msg-card" data-thread-rank="' + idx + '" style="padding:9px 12px;border-radius:8px;background:' + (isSent ? 'rgba(16,185,129,0.08)' : (isTop ? '#111827' : '#0b111e')) + ';border:1px solid ' + (isTop ? '#283548' : '#1e293b') + ';border-left:4px solid ' + borderCol + '">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px;color:#94a3b8;margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid rgba(51,65,85,0.45)">' +
+            '<span style="display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap"><b style="color:' + (isSent ? '#6ee7b7' : '#f8fafc') + ';font-size:12px">' + _escH(_decodeEntitiesClient(m.from || 'Message')) + '</b>' + latestBadge + '</span>' +
+            '<span>' + _escH(m.account_badge || '') + (m.date ? (' \u00b7 ' + _escH(m.date)) : '') + '</span>' +
+          '</div>' +
+          _renderCleanEmailBodyHtml(mBody, mQuoted) +
+        '</div>'
+      );
+    }).join('');
+  }
+
   function _populateEmailPaneFromItem(d, fallbackSubj, fallbackSender, fallbackSource) {
     var subjEl = document.getElementById('caveDlgMailSubject');
     var badgeEl = document.getElementById('caveDlgMailBadge');
@@ -3716,35 +4041,16 @@
             uid: d.uid,
             from: d.from || d.sender_email || fallbackSender || 'Sender',
             date: d.date || '',
+            raw_date: d.raw_date || d.date || '',
             direction: d.direction || 'inbound',
             account_badge: d.account_badge || fallbackSource || 'Inbox',
             body: d.body || d.snippet || '',
             quoted_history: d.quoted_history || '',
             is_current: true
           }];
-      if (msgs.length <= 1) {
-        var m0 = msgs[0] || {};
-        var isSent0 = m0.direction === 'sent';
-        var bCol0 = isSent0 ? '#10b981' : '#38bdf8';
-        thList.innerHTML =
-          '<div class="cave-single-msg-card" style="padding:8px 10px;border-radius:8px;background:' + (isSent0 ? 'rgba(16,185,129,0.08)' : '#111827') + ';border:1px solid #1e293b;border-left:3px solid ' + bCol0 + '">' +
-            _renderCleanEmailBodyHtml(m0.body || m0.snippet || d.body || d.snippet || '', m0.quoted_history || d.quoted_history || '') +
-          '</div>';
-      } else {
-        thList.innerHTML = msgs.map(function (m) {
-          var isSent = m.direction === 'sent';
-          var borderCol = isSent ? '#10b981' : (m.is_current ? '#38bdf8' : '#334155');
-          return (
-            '<div style="padding:9px 12px;border-radius:8px;background:' + (isSent ? 'rgba(16,185,129,0.08)' : '#111827') + ';border:1px solid #1e293b;border-left:4px solid ' + borderCol + '">' +
-              '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px;color:#94a3b8;margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid rgba(51,65,85,0.45)">' +
-                '<b style="color:' + (isSent ? '#6ee7b7' : '#f8fafc') + ';font-size:12px">' + _escH(_decodeEntitiesClient(m.from || 'Message')) + '</b>' +
-                '<span>' + _escH(m.account_badge || '') + (m.date ? (' \u00b7 ' + _escH(m.date)) : '') + '</span>' +
-              '</div>' +
-              _renderCleanEmailBodyHtml(m.body || m.snippet || d.body || d.snippet || '', m.quoted_history || d.quoted_history || '') +
-            '</div>'
-          );
-        }).join('');
-      }
+      thList.innerHTML = _renderThreadMessagesStackHtml(msgs, d.body || d.snippet || '', d.quoted_history || '');
+      var thScrollBox = document.getElementById('caveDialogueThreadScrollBox');
+      if (thScrollBox) thScrollBox.scrollTop = 0;
     }
     var toIn = document.getElementById('caveReplyTo');
     var ccIn = document.getElementById('caveReplyCc');
@@ -3882,7 +4188,7 @@
     if (splitEl) splitEl.classList.toggle('email-dlg-closed', !isOpen);
     if (barCloseBtn) barCloseBtn.hidden = !isOpen;
     if (!isOpen) {
-      _activeEmailDialogue = null;
+      _setActiveEmailDialogue(null);
       $$('#caveMailBucketsGrid .cave-mail-card').forEach(function (c) {
         c.classList.remove('is-selected');
       });
@@ -3894,9 +4200,10 @@
   }
   window._setEmailDialogueOpen = _setEmailDialogueOpen;
 
-  function _openEmailDialogueTile(uid, fallbackSubj, fallbackSender, fallbackSource, quietAutoSelect) {
+  function _openEmailDialogueTile(uid, fallbackSubj, fallbackSender, fallbackSource, quietAutoSelect, fallbackAcctId) {
     var mailPane = document.getElementById('caveEmailDialoguePane');
     if (!mailPane) return;
+    var reqSeq = ++_emailDlgReqSeq;
     var prevUid = (_activeEmailDialogue && _activeEmailDialogue.uid) ? String(_activeEmailDialogue.uid) : '';
     var isSameUid = prevUid && prevUid === String(uid || '');
     var savedReplyDraft = isSameUid ? ((document.getElementById('caveReplyBody') || {}).value || '') : '';
@@ -3924,21 +4231,41 @@
         _caveCommsData.acted_upon_emails || [],
         _caveCommsData.sent_emails || []
       );
-      cachedEm = pools.find(function (x) { return x && String(x.uid || '') === String(uid || ''); });
+      if (fallbackAcctId) {
+        cachedEm = pools.find(function (x) {
+          return x && String(x.uid || '') === String(uid || '') && String(x.account_id || '') === String(fallbackAcctId);
+        }) || pools.find(function (x) {
+          return x && String(x.uid || '') === String(uid || '') && !String(x.account_id || '').trim();
+        }) || null;
+      } else {
+        var uidMatches = pools.filter(function (x) { return x && String(x.uid || '') === String(uid || ''); });
+        if (uidMatches.length === 1) {
+          cachedEm = uidMatches[0];
+        } else if (uidMatches.length > 1) {
+          var distinctAccts = {};
+          uidMatches.forEach(function (x) { if (x.account_id) distinctAccts[String(x.account_id)] = true; });
+          if (Object.keys(distinctAccts).length <= 1) cachedEm = uidMatches[0];
+        }
+      }
     }
+    if (!cachedEm && isSameUid && _activeEmailDialogue && (_activeEmailDialogue.body || _activeEmailDialogue.snippet)) {
+      cachedEm = _activeEmailDialogue;
+    }
+    var acctIdToSend = String(fallbackAcctId || (cachedEm && cachedEm.account_id) || '');
     if (cachedEm && (cachedEm.body || cachedEm.snippet)) {
-      _activeEmailDialogue = cachedEm;
+      _setActiveEmailDialogue(cachedEm);
       _populateEmailPaneFromItem(cachedEm, fallbackSubj, fallbackSender, fallbackSource);
       if (savedReplyDraft) { var rb0 = document.getElementById('caveReplyBody'); if (rb0) rb0.value = savedReplyDraft; }
       if (savedDirs) { var di0 = document.getElementById('caveDlgStewardDirectionsInput'); if (di0) { di0.value = savedDirs; _autoGrowTextarea(di0); } }
     } else {
-      _activeEmailDialogue = {
+      _setActiveEmailDialogue({
         uid: String(uid || ''),
+        account_id: acctIdToSend,
         subject: fallbackSubj || '',
         sender_email: fallbackSender || '',
         from: fallbackSender || '',
         account_badge: fallbackSource || 'Inbox'
-      };
+      });
       var subjEl = document.getElementById('caveDlgMailSubject');
       var badgeEl = document.getElementById('caveDlgMailBadge');
       var metaEl = document.getElementById('caveDlgMailMeta');
@@ -3954,9 +4281,7 @@
     }
 
     // 2. Background sync of opened state (and full body only if not yet preloaded).
-    // When quietAutoSelect is true (e.g. auto-advancing after a triage click) and body is already preloaded,
-    // skip firing an immediate background POST so we never contend with in-flight triage writes.
-    if (quietAutoSelect && cachedEm && cachedEm.body_preloaded) {
+    if (quietAutoSelect && cachedEm && cachedEm.body_preloaded && !_isPlaceholderEmailBody(cachedEm.body)) {
       return;
     }
     fetch('/api/steward/comms', {
@@ -3965,6 +4290,7 @@
       body: JSON.stringify({
         action: 'email_dialogue',
         uid: uid,
+        account_id: acctIdToSend,
         subject: fallbackSubj || (cachedEm && cachedEm.subject) || '',
         sender_email: fallbackSender || (cachedEm && cachedEm.sender_email) || '',
         generate_draft: false
@@ -3973,41 +4299,76 @@
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (!d || !d.ok) return;
-        // Guard against stale response if dialogue was closed, email was acted/replied, or user switched emails
-        if (window._emailDlgClosed || !_activeEmailDialogue) {
-          return;
+        if (reqSeq !== _emailDlgReqSeq) return;
+        if (window._emailDlgClosed || !_activeEmailDialogue) return;
+        if (window._caveSessionActedUids && window._caveSessionActedUids.has(String(uid || ''))) return;
+        if (_activeEmailDialogue.uid && String(_activeEmailDialogue.uid) !== String(uid || '')) return;
+
+        var fallbackBestBody = (cachedEm && !_isPlaceholderEmailBody(cachedEm.body) ? cachedEm.body : '')
+          || (cachedEm && cachedEm.snippet ? cachedEm.snippet : '');
+        if (_isPlaceholderEmailBody(d.body) && fallbackBestBody) {
+          d.body = fallbackBestBody;
         }
-        if (window._caveSessionActedUids && window._caveSessionActedUids.has(String(uid || ''))) {
-          return;
+        if (!d.snippet && cachedEm && cachedEm.snippet) {
+          d.snippet = cachedEm.snippet;
         }
-        if (_activeEmailDialogue.uid && String(_activeEmailDialogue.uid) !== String(uid || '')) {
-          return;
+        if (Array.isArray(d.thread_messages) && d.thread_messages.length) {
+          d.thread_messages = d.thread_messages.map(function (tm) {
+            if (!tm || typeof tm !== 'object') return tm;
+            if (tm.is_current && _isPlaceholderEmailBody(tm.body) && !_isPlaceholderEmailBody(d.body)) {
+              var copyTm = Object.assign({}, tm);
+              copyTm.body = d.body;
+              return copyTm;
+            }
+            return tm;
+          });
         }
-        _activeEmailDialogue = d;
-        var wasPreloaded = !!(cachedEm && (cachedEm.body_preloaded || cachedEm.body));
+
+        var wasFullyPreloaded = !!(cachedEm && cachedEm.body_preloaded && !_isPlaceholderEmailBody(cachedEm.body));
+        var prevBodyLen = (cachedEm && (cachedEm.body || cachedEm.snippet)) ? String(cachedEm.body || cachedEm.snippet).length : 0;
+        var newBodyLen = !_isPlaceholderEmailBody(d.body) ? String(d.body).length : 0;
         var preloadedThreadLen = (cachedEm && Array.isArray(cachedEm.thread_messages)) ? cachedEm.thread_messages.length : 0;
+        var preloadedAttLen = (cachedEm && Array.isArray(cachedEm.attachments)) ? cachedEm.attachments.length : 0;
+
         if (cachedEm) {
-          cachedEm.body = d.body || cachedEm.body;
+          if (!_isPlaceholderEmailBody(d.body)) cachedEm.body = d.body;
           cachedEm.quoted_history = d.quoted_history || cachedEm.quoted_history;
-          cachedEm.links = d.links || cachedEm.links;
-          cachedEm.attachments = d.attachments || cachedEm.attachments;
+          cachedEm.links = (Array.isArray(d.links) && d.links.length) ? d.links : cachedEm.links;
+          cachedEm.attachments = (Array.isArray(d.attachments) && d.attachments.length) ? d.attachments : cachedEm.attachments;
           if (Array.isArray(d.thread_messages) && d.thread_messages.length >= preloadedThreadLen) {
             cachedEm.thread_messages = d.thread_messages;
           }
-          cachedEm.body_preloaded = true;
+          if (!_isPlaceholderEmailBody(cachedEm.body)) {
+            cachedEm.body_preloaded = true;
+          }
         }
+        _setActiveEmailDialogue(d);
+
         if (d.address_book && Array.isArray(d.address_book)) {
           _syncAddressBookDatalist(d.address_book);
         }
         if (d.reply_to && cachedEm) cachedEm.reply_to = d.reply_to;
         if (d.reply_all_to && cachedEm) cachedEm.reply_all_to = d.reply_all_to;
         if (d.reply_all_cc !== undefined && cachedEm) cachedEm.reply_all_cc = d.reply_all_cc;
-        // Only re-render if it wasn't preloaded or if additional thread messages/attachments arrived
-        if (!wasPreloaded || (Array.isArray(d.thread_messages) && d.thread_messages.length > preloadedThreadLen)) {
+
+        var thDomNow = document.getElementById('caveDialogueThreadList');
+        var domWasBlank = !thDomNow || !thDomNow.children.length || !String(thDomNow.textContent || '').trim();
+        var shouldRepaint = domWasBlank
+          || !wasFullyPreloaded
+          || (newBodyLen > prevBodyLen)
+          || (Array.isArray(d.thread_messages) && d.thread_messages.length > preloadedThreadLen)
+          || (Array.isArray(d.attachments) && d.attachments.length > preloadedAttLen);
+
+        if (shouldRepaint) {
           var curReplyDraft = ((document.getElementById('caveReplyBody') || {}).value || '');
           var curNoteText = ((document.getElementById('caveDlgStewardNote') || {}).textContent || '');
           var curDirs = ((document.getElementById('caveDlgStewardDirectionsInput') || {}).value || '');
+          var drwOpenBefore = !!((document.getElementById('caveDlgDirectReplyDrawer') || {}).open);
           _populateEmailPaneFromItem(d, fallbackSubj, fallbackSender, fallbackSource);
+          if (drwOpenBefore) {
+            var drwRest = document.getElementById('caveDlgDirectReplyDrawer');
+            if (drwRest) drwRest.open = true;
+          }
           if (curReplyDraft) {
             var rb = document.getElementById('caveReplyBody');
             if (rb) rb.value = curReplyDraft;
@@ -4047,7 +4408,7 @@
     var stEl = document.getElementById('caveCalSaveStatus');
     var relBox = document.getElementById('caveCalDialogueEmails');
 
-    var nowIso = new Date().toISOString().slice(0, 10);
+    var nowIso = _clientLocalClock().dateIso;
     var fullEv = null;
     if (!isNew && _caveCommsData) {
       var evPool = (_caveCommsData.calendar_events_all || []).concat(_caveCommsData.calendar_events || []);
@@ -4282,35 +4643,39 @@
     setTimeout(_syncCaveMailOvalScrollbar, 250);
   })();
 
+  var _CAVE_PRIME_ICO = '<svg class="cave-pi-ico prime-ico" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><polygon points="8,1 14.5,8 8,15 1.5,8" fill="rgba(251,191,36,0.22)" stroke="#fbbf24" stroke-width="1.2"/><path d="M9.1 3.2L4.8 8.6h3.1l-.8 4.2 4.3-5.4H8.3z" fill="#fef08a"/></svg>';
+  var _CAVE_IRRATIONAL_ICO = '<svg class="cave-pi-ico irrational-ico" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M8 8.2c0-.9.7-1.6 1.6-1.6 1.3 0 2.3 1.1 2.3 2.4 0 1.9-1.6 3.5-3.5 3.5-2.6 0-4.7-2.1-4.7-4.7C3.7 4.4 6.5 1.8 10 1.8c2.2 0 4.1 1.1 5 2.9" fill="none" stroke="#a78bfa" stroke-width="1.65" stroke-linecap="round"/><circle cx="8.3" cy="8.2" r="1.2" fill="#38bdf8"/></svg>';
+
   function _renderImportantMailCardHtml(em) {
     var uid = _escH(em.uid || '');
     var frmRaw = String(em.from || 'Inbox');
-    var frmClean = _escH((frmRaw.split('<')[0].replace(/^["'\s]+|["'\s]+$/g, '') || frmRaw).slice(0, 22));
+    var frmClean = _escH((frmRaw.split('<')[0].replace(/^["'\s]+|["'\s]+$/g, '') || frmRaw).slice(0, 34));
     var sEmail = _escH(em.sender_email || frmRaw);
     var subj = _escH(em.subject || '(No Subject)');
+    var acctId = _escH(em.account_id || '');
     var acctB = _escH(em.account_badge || 'Inbox');
     var acctShort = _escH(_shortAcctBadge(em.account_badge || 'Inbox'));
-    var attBadge = em.has_attachments ? '<span class="comms-badge amber" style="font-size:8px;padding:0 2px;flex-shrink:0" title="Has attachment">&#128206;</span>' : '';
+    var attBadge = em.has_attachments ? '<span class="cave-mail-att-ico" title="Has attachment">&#128206;</span>' : '';
     var dtShort = _escH(_shortMailDt(em.date || ''));
     var snip = _escH(em.snippet || 'Click to read full message body from account inbox.');
     var openedFlag = em.was_opened ? '1' : '0';
     var isSel = (_activeEmailDialogue && _activeEmailDialogue.uid === em.uid) ? ' is-selected' : '';
     return (
-      '<div class="comms-item amber cave-mail-card cave-mail-thin-row' + isSel + '" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" data-mail-source="' + acctB + '" data-mail-opened="' + openedFlag + '" data-cave-mail-open="' + uid + '" title="' + frmClean + ' — ' + subj + '">' +
-        '<div class="cave-mail-row-main">' +
-          '<span class="comms-badge sky cave-mail-mini-badge">' + acctShort + '</span>' +
+      '<div class="comms-item amber cave-mail-card cave-mail-2line-row' + isSel + '" data-mail-uid="' + uid + '" data-mail-account-id="' + acctId + '" data-mail-sender="' + sEmail + '" data-mail-source="' + acctB + '" data-mail-opened="' + openedFlag + '" data-cave-mail-open="' + uid + '" title="' + frmClean + ' — ' + subj + '">' +
+        '<div class="cave-mail-row-top">' +
+          '<span class="cave-mail-acct-pill prime">' + acctShort + '</span>' +
           '<b class="cave-mail-from" data-cave-mail-open="' + uid + '">' + frmClean + '</b>' +
-          '<span class="cave-mail-sep">&middot;</span>' +
-          '<span class="comms-item-title cave-mail-subj" data-cave-mail-open="' + uid + '">' + subj + '</span>' +
           attBadge +
-        '</div>' +
-        '<div class="comms-acts cave-mail-row-acts">' +
           '<span class="comms-meta cave-mail-date">' + dtShort + '</span>' +
-          '<button type="button" class="tw-btn cave-mail-act-pill sr-pill" data-speed-racer-queue="1" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" data-mail-from="' + frmClean + '" data-mail-subject="' + subj + '" data-mail-account="' + acctB + '" data-mail-source="' + acctB + '" data-mail-snippet="' + snip + '" title="Jump into Speed Racer and remove from Prime">&#127950;&#65039;</button>' +
-          '<button type="button" class="tw-btn done cave-mail-act-pill" data-cave-mail-triage="seen_important" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" data-mail-subject="' + subj + '" title="Seen &amp; Important: remove from Prime and teach Steward that emails like this belong in Prime">&#11088;</button>' +
-          '<button type="button" class="tw-btn cave-mail-act-pill" data-cave-mail-triage="seen" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" data-mail-subject="' + subj + '" title="Mark Looked At / Ignore (marks Read and removes from Prime)">&#128065;</button>' +
-          '<button type="button" class="tw-btn done cave-mail-act-pill" data-cave-mail-triage="done" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" data-mail-subject="' + subj + '" title="Mark Done and remove from Prime">&#10003;</button>' +
+          '<div class="comms-acts cave-mail-row-acts">' +
+            '<button type="button" class="tw-btn cave-mail-act-pill sr-pill" data-speed-racer-queue="1" data-mail-uid="' + uid + '" data-mail-account-id="' + acctId + '" data-mail-sender="' + sEmail + '" data-mail-from="' + frmClean + '" data-mail-subject="' + subj + '" data-mail-account="' + acctB + '" data-mail-source="' + acctB + '" data-mail-snippet="' + snip + '" title="Draft in Speed Racer">&#127950;&#65039;</button>' +
+            '<button type="button" class="tw-btn done cave-mail-act-pill" data-cave-mail-triage="seen_important" data-mail-uid="' + uid + '" data-mail-account-id="' + acctId + '" data-mail-sender="' + sEmail + '" data-mail-subject="' + subj + '" title="Seen &amp; Important">&#11088;</button>' +
+            '<button type="button" class="tw-btn cave-mail-act-pill" data-cave-mail-triage="seen" data-mail-uid="' + uid + '" data-mail-account-id="' + acctId + '" data-mail-sender="' + sEmail + '" data-mail-subject="' + subj + '" title="Looked At / Ignore">&#128065;</button>' +
+            '<button type="button" class="tw-btn done cave-mail-act-pill" data-cave-mail-triage="done" data-mail-uid="' + uid + '" data-mail-account-id="' + acctId + '" data-mail-sender="' + sEmail + '" data-mail-subject="' + subj + '" title="Mark Done">&#10003;</button>' +
+            '<button type="button" class="tw-btn cave-mail-act-pill spam-pill" data-cave-mail-triage="spam" data-mail-uid="' + uid + '" data-mail-account-id="' + acctId + '" data-mail-sender="' + sEmail + '" data-mail-subject="' + subj + '" title="Mark Spam">&#128683; Spam</button>' +
+          '</div>' +
         '</div>' +
+        '<div class="comms-item-title cave-mail-subj cave-mail-row-sub" data-cave-mail-open="' + uid + '">' + subj + '</div>' +
       '</div>'
     );
   }
@@ -4318,29 +4683,30 @@
   function _renderOtherMailCardHtml(em) {
     var uid = _escH(em.uid || '');
     var frmRaw = String(em.from || 'Sender');
-    var frmClean = _escH((frmRaw.split('<')[0].replace(/^["'\s]+|["'\s]+$/g, '') || frmRaw).slice(0, 22));
+    var frmClean = _escH((frmRaw.split('<')[0].replace(/^["'\s]+|["'\s]+$/g, '') || frmRaw).slice(0, 34));
     var sEmail = _escH(em.sender_email || frmRaw);
     var subj = _escH(em.subject || '(No Subject)');
+    var acctId = _escH(em.account_id || '');
     var acctB = _escH(em.account_badge || 'Inbox');
     var acctShort = _escH(_shortAcctBadge(em.account_badge || 'Inbox'));
     var dtShort = _escH(_shortMailDt(em.date || ''));
     var snip = _escH(em.snippet || 'Click to view full message body.');
     var openedFlag = em.was_opened ? '1' : '0';
     return (
-      '<div class="comms-item sky cave-mail-card cave-mail-thin-row" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" data-mail-source="' + acctB + '" data-mail-opened="' + openedFlag + '" data-cave-mail-open="' + uid + '" style="opacity:0.88" title="' + frmClean + ' — ' + subj + '">' +
-        '<div class="cave-mail-row-main">' +
-          '<span class="comms-badge cave-mail-mini-badge">' + acctShort + '</span>' +
+      '<div class="comms-item sky cave-mail-card cave-mail-2line-row is-irrational" data-mail-uid="' + uid + '" data-mail-account-id="' + acctId + '" data-mail-sender="' + sEmail + '" data-mail-source="' + acctB + '" data-mail-opened="' + openedFlag + '" data-cave-mail-open="' + uid + '" title="' + frmClean + ' — ' + subj + '">' +
+        '<div class="cave-mail-row-top">' +
+          '<span class="cave-mail-acct-pill irrational">' + acctShort + '</span>' +
           '<b class="cave-mail-from" data-cave-mail-open="' + uid + '">' + frmClean + '</b>' +
-          '<span class="cave-mail-sep">&middot;</span>' +
-          '<span class="comms-item-title cave-mail-subj" data-cave-mail-open="' + uid + '">' + subj + '</span>' +
-        '</div>' +
-        '<div class="comms-acts cave-mail-row-acts">' +
           '<span class="comms-meta cave-mail-date">' + dtShort + '</span>' +
-          '<button type="button" class="tw-btn cave-mail-act-pill sr-pill" data-speed-racer-queue="1" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" data-mail-from="' + frmClean + '" data-mail-subject="' + subj + '" data-mail-account="' + acctB + '" data-mail-source="' + acctB + '" data-mail-snippet="' + snip + '" title="Send to Speed Racer (moves out of Irrational)">&#127950;&#65039;</button>' +
-          '<button type="button" class="tw-btn done cave-mail-act-pill" data-cave-mail-triage="seen_important" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" data-mail-subject="' + subj + '" title="Seen &amp; Important: remove from Irrational and teach Steward">&#11088;</button>' +
-          '<button type="button" class="tw-btn cave-mail-act-pill" data-cave-mail-triage="seen" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" data-mail-subject="' + subj + '" title="Mark Looked At / Ignore">&#128065;</button>' +
-          '<button type="button" class="tw-btn done cave-mail-act-pill" data-cave-mail-triage="upgrade" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" data-mail-subject="' + subj + '" title="Promote to Prime &amp; teach Steward">&#11014;</button>' +
+          '<div class="comms-acts cave-mail-row-acts">' +
+            '<button type="button" class="tw-btn cave-mail-act-pill sr-pill" data-speed-racer-queue="1" data-mail-uid="' + uid + '" data-mail-account-id="' + acctId + '" data-mail-sender="' + sEmail + '" data-mail-from="' + frmClean + '" data-mail-subject="' + subj + '" data-mail-account="' + acctB + '" data-mail-source="' + acctB + '" data-mail-snippet="' + snip + '" title="Draft in Speed Racer">&#127950;&#65039;</button>' +
+            '<button type="button" class="tw-btn done cave-mail-act-pill" data-cave-mail-triage="seen_important" data-mail-uid="' + uid + '" data-mail-account-id="' + acctId + '" data-mail-sender="' + sEmail + '" data-mail-subject="' + subj + '" title="Seen &amp; Important">&#11088;</button>' +
+            '<button type="button" class="tw-btn cave-mail-act-pill" data-cave-mail-triage="seen" data-mail-uid="' + uid + '" data-mail-account-id="' + acctId + '" data-mail-sender="' + sEmail + '" data-mail-subject="' + subj + '" title="Looked At / Ignore">&#128065;</button>' +
+            '<button type="button" class="tw-btn done cave-mail-act-pill" data-cave-mail-triage="upgrade" data-mail-uid="' + uid + '" data-mail-account-id="' + acctId + '" data-mail-sender="' + sEmail + '" data-mail-subject="' + subj + '" title="Promote to Prime">&#11014;</button>' +
+            '<button type="button" class="tw-btn cave-mail-act-pill spam-pill" data-cave-mail-triage="spam" data-mail-uid="' + uid + '" data-mail-account-id="' + acctId + '" data-mail-sender="' + sEmail + '" data-mail-subject="' + subj + '" title="Mark Spam">&#128683; Spam</button>' +
+          '</div>' +
         '</div>' +
+        '<div class="comms-item-title cave-mail-subj cave-mail-row-sub" data-cave-mail-open="' + uid + '">' + subj + '</div>' +
       '</div>'
     );
   }
@@ -4351,13 +4717,18 @@
     var frmClean = _escH((frmRaw.split('<')[0].replace(/^["'\s]+|["'\s]+$/g, '') || frmRaw).slice(0, 20));
     var sEmail = _escH(em.sender_email || frmRaw);
     var subj = _escH(em.subject || '(No Subject)');
+    var acctId = _escH(em.account_id || '');
     var acctB = _escH(em.account_badge || 'Inbox');
     var acctShort = _escH(_shortAcctBadge(em.account_badge || 'Inbox'));
     var badgeLbl = _escH(em.acted_status || em.acted_badge || '\u2713 Acted');
     var rsn = _escH(em.acted_reason || em.steward_reason || 'Resolved / Acted Upon');
     var dtShort = _escH(_shortMailDt(em.acted_at || em.date || ''));
+    var isSpamActed = /spam/i.test(String(em.acted_status || em.acted_badge || '')) || Boolean(em.is_spam);
+    var restoreAct = isSpamActed ? 'unspam' : 'unact';
+    var restoreLbl = isSpamActed ? '&#8617; Unspam' : '&#8617;';
+    var restoreTitle = isSpamActed ? 'Unspam and restore sender to Active Inbox' : 'Move back to Active Inbox';
     return (
-      '<div class="comms-item cave-mail-card cave-acted-card cave-mail-thin-row" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" data-mail-source="' + acctB + '" data-cave-mail-open="' + uid + '" style="border-left:3px solid #a78bfa;background:rgba(15,23,42,0.55)" title="' + rsn + ' — ' + subj + '">' +
+      '<div class="comms-item cave-mail-card cave-acted-card cave-mail-thin-row" data-mail-uid="' + uid + '" data-mail-account-id="' + acctId + '" data-mail-sender="' + sEmail + '" data-mail-source="' + acctB + '" data-cave-mail-open="' + uid + '" style="border-left:3px solid #a78bfa;background:rgba(15,23,42,0.55)" title="' + rsn + ' — ' + subj + '">' +
         '<div class="cave-mail-row-main">' +
           '<span class="comms-badge cave-mail-mini-badge" style="border-color:rgba(167,139,250,0.5);background:rgba(167,139,250,0.16);color:#c4b5fd;font-weight:700">' + badgeLbl + '</span>' +
           '<span class="comms-badge sky cave-mail-mini-badge">' + acctShort + '</span>' +
@@ -4367,7 +4738,7 @@
         '</div>' +
         '<div class="comms-acts cave-mail-row-acts">' +
           '<span class="comms-meta cave-mail-date">' + dtShort + '</span>' +
-          '<button type="button" class="tw-btn cave-mail-act-pill" data-cave-mail-triage="unact" data-mail-uid="' + uid + '" data-mail-sender="' + sEmail + '" title="Move back to Active Inbox">&#8617;</button>' +
+          '<button type="button" class="tw-btn cave-mail-act-pill" data-cave-mail-triage="' + restoreAct + '" data-mail-uid="' + uid + '" data-mail-account-id="' + acctId + '" data-mail-sender="' + sEmail + '" data-mail-subject="' + subj + '" title="' + restoreTitle + '">' + restoreLbl + '</button>' +
         '</div>' +
       '</div>'
     );
@@ -4402,6 +4773,47 @@
 
   window._caveSessionActedUids = window._caveSessionActedUids || new Map();
   window._caveEmailActionInFlight = window._caveEmailActionInFlight || 0;
+
+  function _mergePreloadedEmailBodies(prevData, nextData) {
+    if (!prevData || !nextData) return;
+    var byKey = {};
+    var bareUidCount = {};
+    var byBareUid = {};
+    ['important_emails', 'other_emails', 'acted_upon_emails', 'sent_emails'].forEach(function (k) {
+      var arr = prevData[k];
+      if (!Array.isArray(arr)) return;
+      arr.forEach(function (em) {
+        if (!em || !em.uid || !em.body_preloaded || _isPlaceholderEmailBody(em.body)) return;
+        var uidStr = String(em.uid);
+        var acctStr = String(em.account_id || '');
+        var key = acctStr + '::' + uidStr;
+        byKey[key] = em;
+        bareUidCount[uidStr] = (bareUidCount[uidStr] || 0) + 1;
+        byBareUid[uidStr] = em;
+      });
+    });
+    ['important_emails', 'other_emails', 'acted_upon_emails', 'sent_emails'].forEach(function (k) {
+      var arr = nextData[k];
+      if (!Array.isArray(arr)) return;
+      arr.forEach(function (em) {
+        if (!em || !em.uid) return;
+        var uidStr = String(em.uid);
+        var acctStr = String(em.account_id || '');
+        var prev = byKey[acctStr + '::' + uidStr] || (!acctStr && bareUidCount[uidStr] === 1 ? byBareUid[uidStr] : null);
+        if (!prev) return;
+        if (_isPlaceholderEmailBody(em.body)) {
+          em.body = prev.body;
+          em.body_preloaded = true;
+        }
+        if (!em.quoted_history && prev.quoted_history) em.quoted_history = prev.quoted_history;
+        if ((!Array.isArray(em.links) || !em.links.length) && Array.isArray(prev.links) && prev.links.length) em.links = prev.links;
+        if ((!Array.isArray(em.attachments) || !em.attachments.length) && Array.isArray(prev.attachments) && prev.attachments.length) em.attachments = prev.attachments;
+        if (Array.isArray(prev.thread_messages) && prev.thread_messages.length > ((Array.isArray(em.thread_messages) && em.thread_messages.length) || 0)) {
+          em.thread_messages = prev.thread_messages;
+        }
+      });
+    });
+  }
 
   function _hydrateMailCardsFromCommsData(d) {
     if (!d || !d.ok) return;
@@ -4455,9 +4867,16 @@
     if (actInbBadge && Array.isArray(d.important_emails)) {
       actInbBadge.textContent = String(d.important_emails.length);
     }
+    _syncRailEmailCount();
+    if (d.calendar_alarms && typeof window._syncCaveAlarmHeaderBtn === 'function') {
+      window._syncCaveAlarmHeaderBtn(d.calendar_alarms);
+    }
+    if (window.AnchorCalendarAlarm && typeof window.AnchorCalendarAlarm.ingestCommsData === 'function') {
+      try { window.AnchorCalendarAlarm.ingestCommsData(d); } catch (_alErr) {}
+    }
     var impBadge = document.getElementById('caveImpCountBadge');
     if (impBadge && Array.isArray(d.important_emails)) {
-      impBadge.innerHTML = '&#9889; ' + d.important_emails.length + ' Prime';
+      impBadge.innerHTML = _CAVE_PRIME_ICO + ' ' + d.important_emails.length + ' Prime';
     }
     var othBadge = document.getElementById('caveOthCountBadge');
     if (othBadge && Array.isArray(d.other_emails)) {
@@ -4465,7 +4884,7 @@
     }
     var hdrOthBadge = document.getElementById('caveHdrOthBadge');
     if (hdrOthBadge && Array.isArray(d.other_emails)) {
-      hdrOthBadge.innerHTML = '&#128229; ' + d.other_emails.length + ' Irrational';
+      hdrOthBadge.innerHTML = _CAVE_IRRATIONAL_ICO + ' ' + d.other_emails.length + ' Irrational';
     }
     var sentBox = document.getElementById('caveMailSentList');
     if (sentBox && Array.isArray(d.sent_emails)) {
@@ -4491,27 +4910,33 @@
           nextEm = targetList[clampIdx];
         }
         if (nextEm) {
-          _openEmailDialogueTile(nextEm.uid, nextEm.subject, nextEm.sender_email || nextEm.from, nextEm.account_badge || 'Inbox', true);
+          _openEmailDialogueTile(nextEm.uid, nextEm.subject, nextEm.sender_email || nextEm.from, nextEm.account_badge || 'Inbox', true, nextEm.account_id || '');
         }
       } else {
         _setEmailDialogueOpen(false, '\u2713 All emails in this list have been handled \u2014 Email dialogue closed.');
       }
+    } else if (_activeEmailDialogue && _activeEmailDialogue.uid && !window._emailDlgClosed) {
+      // Never hijack or close an email the user is actively viewing during background refreshes unless they triaged it away
+      var wasActedInSession = !!(window._caveSessionActedUids && window._caveSessionActedUids.has(String(_activeEmailDialogue.uid)));
+      if (wasActedInSession) {
+        if (curVisList.length) {
+          var nextAfterAct = curVisList[0];
+          _openEmailDialogueTile(nextAfterAct.uid, nextAfterAct.subject, nextAfterAct.sender_email || nextAfterAct.from, nextAfterAct.account_badge || 'Inbox', true, nextAfterAct.account_id || '');
+        } else {
+          _setEmailDialogueOpen(false);
+        }
+      } else {
+        var fullActiveEm = curVisList.find(function (x) { return x && String(x.uid || '') === String(_activeEmailDialogue.uid); });
+        if (fullActiveEm && _isPlaceholderEmailBody(_activeEmailDialogue.body) && (fullActiveEm.body || fullActiveEm.snippet)) {
+          _openEmailDialogueTile(fullActiveEm.uid, fullActiveEm.subject, fullActiveEm.sender_email || fullActiveEm.from, fullActiveEm.account_badge || 'Inbox', true, fullActiveEm.account_id || '');
+        } else {
+          _ensureActiveEmailPaneHydrated();
+        }
+      }
     } else if (curVisList.length) {
       if (!window._emailDlgClosed) {
-        var curActiveStillInCurrentList = _activeEmailDialogue && curVisList.some(function (x) { return x && x.uid === _activeEmailDialogue.uid; });
-        if (!curActiveStillInCurrentList) {
-          var firstEm = curVisList[0];
-          _openEmailDialogueTile(firstEm.uid, firstEm.subject, firstEm.sender_email || firstEm.from, firstEm.account_badge || 'Inbox', true);
-        } else {
-          var fullActiveEm = curVisList.find(function (x) { return x && x.uid === _activeEmailDialogue.uid; });
-          if (fullActiveEm && !_activeEmailDialogue.body && (fullActiveEm.body || fullActiveEm.snippet)) {
-            _openEmailDialogueTile(fullActiveEm.uid, fullActiveEm.subject, fullActiveEm.sender_email || fullActiveEm.from, fullActiveEm.account_badge || 'Inbox', true);
-          } else {
-            $$('#caveMailBucketsGrid .cave-mail-card').forEach(function (c) {
-              c.classList.toggle('is-selected', c.getAttribute('data-mail-uid') === String(_activeEmailDialogue.uid || ''));
-            });
-          }
-        }
+        var firstEm = curVisList[0];
+        _openEmailDialogueTile(firstEm.uid, firstEm.subject, firstEm.sender_email || firstEm.from, firstEm.account_badge || 'Inbox', true, firstEm.account_id || '');
       }
     } else {
       _setEmailDialogueOpen(false);
@@ -4590,10 +5015,11 @@
 
   function _ensureCaveCommsDataLoaded(force) {
     if (_caveCommsData && !force) return Promise.resolve(_caveCommsData);
-    return fetch('/api/steward/comms', { headers: headers(), cache: 'no-store' })
+    return fetch('/api/steward/comms?slim=1', { headers: headers(), cache: 'no-store' })
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (d && d.ok) {
+          _mergePreloadedEmailBodies(_caveCommsData, d);
           _caveCommsData = d;
           _hydrateMailCardsFromCommsData(d);
           _applySourceFilterToDOM();
@@ -4617,12 +5043,14 @@
       || document.querySelector('#caveMailImportantList .cave-mail-card');
     if (!selCard) return null;
     var cUid = selCard.getAttribute('data-mail-uid') || '';
+    var cAcctId = selCard.getAttribute('data-mail-account-id') || '';
     var cSender = selCard.getAttribute('data-mail-sender') || '';
     var cBadge = selCard.getAttribute('data-mail-source') || 'Institutional 365';
     var tEl = selCard.querySelector('.comms-item-title, .cave-mail-subj');
     var cSubj = (tEl && tEl.textContent) || ((document.getElementById('caveDlgMailSubject') || {}).textContent || '');
     return {
       uid: cUid,
+      account_id: cAcctId,
       sender_email: cSender,
       from: cSender,
       subject: cSubj,
@@ -4697,6 +5125,7 @@
           if (matchedSet[c.getAttribute('data-mail-uid') || '']) c.remove();
         });
       }
+      _syncRailEmailCount();
       if (_pendingNextEmailSelection && _pendingNextEmailSelection.nextUid) {
         var nxtC = document.querySelector('#caveMailBucketsGrid .cave-mail-card[data-mail-uid="' + _pendingNextEmailSelection.nextUid + '"]');
         _pendingNextEmailSelection = null;
@@ -4745,7 +5174,7 @@
       meta.forceAdvance ||
       (_activeEmailDialogue && (matchedSet[String(_activeEmailDialogue.uid || '')] || itemMatches(_activeEmailDialogue)))
     ) {
-      _activeEmailDialogue = null;
+      _setActiveEmailDialogue(null);
     }
     _hydrateMailCardsFromCommsData(_caveCommsData);
   }
@@ -4821,7 +5250,7 @@
         var tog = document.getElementById('calTog');
         if (tog) tog.textContent = 'Collapse';
       }
-      _openCalDialogueTile({ isNew: true, date: _caveCalDay || new Date().toISOString().slice(0, 10) });
+      _openCalDialogueTile({ isNew: true, date: _caveCalDay || _clientLocalClock().dateIso });
       return;
     }
     var openCalEl = e.target.closest && e.target.closest('[data-cave-cal-open]');
@@ -4945,7 +5374,7 @@
       }
       return;
     }
-    var stIntentBtn = e.target.closest && e.target.closest('[data-steward-draft-intent], #btnCaveStewardCustomDraft, [data-dlg-scribe-action], #btnCaveDlgScribeApply');
+    var stIntentBtn = e.target.closest && e.target.closest('[data-steward-draft-intent]:not(#btnCaveDlgSendDirectionsToSr), #btnCaveStewardCustomDraft, [data-dlg-scribe-action], #btnCaveDlgScribeApply');
     if (stIntentBtn) {
       e.preventDefault(); e.stopPropagation();
       var dlgScribeAct = stIntentBtn.getAttribute('data-dlg-scribe-action') || '';
@@ -4996,10 +5425,18 @@
             }
             if (noteEl) noteEl.textContent = '\ud83e\udeb6 ' + (d.steward_note || 'Scribe updated draft');
             if (stMsgS) stMsgS.innerHTML = '<span style="color:#c4b5fd">\ud83e\udeb6 ' + _escH(d.steward_note || 'Scribe updated draft') + '</span>';
+          } else {
+            var errSc = (d && (d.message || d.error)) || 'Scribe rewrite timed out or failed.';
+            if (noteEl) noteEl.textContent = '\u26a0 ' + errSc;
+            if (stMsgS) stMsgS.textContent = '\u26a0 ' + errSc;
+            receipt(errSc, true);
           }
         })
         .catch(function () {
           stIntentBtn.disabled = false;
+          if (noteEl) noteEl.textContent = '\u26a0 Scribe request could not reach Anchor.';
+          if (stMsgS) stMsgS.textContent = '\u26a0 Scribe request could not reach Anchor.';
+          receipt('Scribe request could not reach Anchor.', true);
         });
       return;
     }
@@ -5313,24 +5750,35 @@
     }
     var dlgSrBtn = e.target.closest && e.target.closest('#btnCaveDlgSendDirectionsToSr');
     if (dlgSrBtn) {
-      var curE = _resolveRightPaneEmailCtx();
-      if (!curE) return;
       e.preventDefault(); e.stopPropagation();
+      var curE = _resolveRightPaneEmailCtx() || _activeEmailDialogue;
+      if (!curE) {
+        receipt('Select an email first to send to Speed Racer.', true);
+        return;
+      }
       var dirInput = document.getElementById('caveDlgStewardDirectionsInput');
       var userDirs = dirInput ? dirInput.value.trim() : '';
       var replyBodyEl = document.getElementById('caveReplyBody');
       var curDraftBody = replyBodyEl ? replyBodyEl.value.trim() : '';
       var sdAtts = (curE.steward_draft && Array.isArray(curE.steward_draft.attachments)) ? curE.steward_draft.attachments : [];
       var srUid = curE.uid || '';
-      var srTo = ((document.getElementById('caveReplyTo') || {}).value || curE.sender_email || curE.from || '').trim();
-      var srCc = ((document.getElementById('caveReplyCc') || {}).value || curE.cc || '').trim();
+      var replyToInputEl = document.getElementById('caveReplyTo');
+      var replyCcInputEl = document.getElementById('caveReplyCc');
+      var activeModeBtnEl = document.querySelector('[data-dlg-reply-mode].active');
+      var activeReplyMode = activeModeBtnEl ? (activeModeBtnEl.getAttribute('data-dlg-reply-mode') || 'reply') : 'reply';
+      var srTo = (replyToInputEl ? replyToInputEl.value : (curE.reply_to || curE.sender_email || curE.from || '')).trim();
+      if (!srTo) {
+        srTo = String(curE.reply_to || curE.sender_email || curE.from || '').trim();
+      }
+      var srCc = (replyCcInputEl ? replyCcInputEl.value : (activeReplyMode === 'reply_all' ? (curE.reply_all_cc || curE.cc || '') : '')).trim();
       var srBcc = ((document.getElementById('caveReplyBcc') || {}).value || '').trim();
       var srSubj = ((document.getElementById('caveReplySubject') || {}).value || ('Re: ' + (curE.subject || ''))).trim();
       var srBody = curE.body || curE.snippet || '';
       var srAcctId = curE.account_id || '';
       var srAcctBadge = curE.account_badge || 'Institutional 365';
-      _optimisticallyRemoveEmailFromLists(srUid, '\ud83c\udfce\ufe0f Speed Racer', 'Queued in Speed Racer for review');
+      var origSrBtnHtml = dlgSrBtn.innerHTML;
       dlgSrBtn.disabled = true;
+      dlgSrBtn.innerHTML = '&#9203; Drafting&hellip;';
       fetch('/api/steward/comms', {
         method: 'POST',
         headers: headers(),
@@ -5339,6 +5787,7 @@
           uid: srUid,
           account_id: srAcctId,
           account: srAcctBadge,
+          reply_mode: activeReplyMode,
           to: srTo,
           cc: srCc,
           bcc: srBcc,
@@ -5353,8 +5802,10 @@
         .then(function (r) { return r.json().then(function (d) { return { status: r.status, data: d }; }); })
         .then(function (res) {
           dlgSrBtn.disabled = false;
+          dlgSrBtn.innerHTML = origSrBtnHtml;
           var d = res.data || {};
           if (res.status < 400 && d && d.ok) {
+            _optimisticallyRemoveEmailFromLists(srUid, '\ud83c\udfce\ufe0f Speed Racer', 'Queued in Speed Racer for review');
             _clearLocalDraft(_stewardDirDraftKey(srUid));
             if (dirInput) { dirInput.value = ''; _autoGrowTextarea(dirInput); }
             if (!_caveCommsData) _caveCommsData = { ok: true };
@@ -5365,41 +5816,67 @@
             _caveCommsData._interleavedOnce = true;
             _hydrateMailCardsFromCommsData(_caveCommsData);
             if (d.speed_racer) {
-              _srState = d.speed_racer;
+              _srState = _mergeSrStateKeepLocal(d.speed_racer, true);
               _srIdx = 0;
               window._srUserCollapsed = false;
               _setSpeedRacerExpanded(true);
-              _renderCaveSpeedRacerTile();
+              _renderCaveSpeedRacerTile(true, true);
               var srTile = document.getElementById('caveSpeedRacerTile');
               if (srTile && srTile.scrollIntoView) srTile.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }
             receipt('\ud83c\udfce\ufe0f Drafted in Speed Racer' + (userDirs ? ' with your Scribe directions' : '') + ' & moved email out of Prime to Acted Upon!');
           } else {
-            receipt((d && d.error) || 'Could not queue draft in Speed Racer.', true);
+            receipt((d && (d.message || d.error)) || 'Could not queue draft in Speed Racer.', true);
           }
         })
-        .catch(function () { dlgSrBtn.disabled = false; });
+        .catch(function () {
+          dlgSrBtn.disabled = false;
+          dlgSrBtn.innerHTML = origSrBtnHtml;
+          receipt('Speed Racer queue request could not reach Anchor.', true);
+        });
       return;
     }
-    var dlgTriageBtn = e.target.closest && e.target.closest('#btnCaveDlgSeen, #btnCaveDlgSeenImportant, #btnCaveDlgDone, #btnCaveDlgAlreadyReplied, #btnCaveDlgDowngrade, #btnCaveDlgUpgrade');
+    var dlgTriageBtn = e.target.closest && e.target.closest('#btnCaveDlgSeen, #btnCaveDlgSeenImportant, #btnCaveDlgDone, #btnCaveDlgAlreadyReplied, #btnCaveDlgDowngrade, #btnCaveDlgUpgrade, #btnCaveDlgSpam, #btnCaveDlgUnspam, #btnCaveUndoSpam, #btnCaveSrUnspam');
     if (dlgTriageBtn) {
-      var curTriageE = _resolveRightPaneEmailCtx();
-      if (!curTriageE) return;
-      e.preventDefault(); e.stopPropagation();
       var actMap = {
         btnCaveDlgSeen: 'seen',
         btnCaveDlgSeenImportant: 'seen_important',
         btnCaveDlgDone: 'done',
         btnCaveDlgAlreadyReplied: 'already_replied',
         btnCaveDlgDowngrade: 'downgrade',
-        btnCaveDlgUpgrade: 'upgrade'
+        btnCaveDlgUpgrade: 'upgrade',
+        btnCaveDlgSpam: 'spam',
+        btnCaveDlgUnspam: 'unspam',
+        btnCaveUndoSpam: 'unspam',
+        btnCaveSrUnspam: 'unspam'
       };
       var fb = actMap[dlgTriageBtn.id] || 'seen';
-      var curUid = curTriageE.uid || '';
-      var curSender = curTriageE.sender_email || curTriageE.from || '';
-      var curSubj = curTriageE.subject || '';
+      var curTriageE = (fb === 'unspam' && window._lastCaveSpamCtx)
+        ? window._lastCaveSpamCtx
+        : _resolveRightPaneEmailCtx();
+      var attrUid = dlgTriageBtn.getAttribute('data-mail-uid') || '';
+      var attrAcctId = dlgTriageBtn.getAttribute('data-mail-account-id') || '';
+      var attrSender = dlgTriageBtn.getAttribute('data-mail-sender') || '';
+      var attrSubj = dlgTriageBtn.getAttribute('data-mail-subject') || '';
+      if (!curTriageE && attrUid) {
+        curTriageE = { uid: attrUid, account_id: attrAcctId, sender_email: attrSender, from: attrSender, subject: attrSubj };
+      }
+      if (!curTriageE) return;
+      e.preventDefault(); e.stopPropagation();
+      var curUid = attrUid || curTriageE.uid || '';
+      var curAcctId = attrAcctId || curTriageE.account_id || '';
+      var curSender = attrSender || curTriageE.sender_email || curTriageE.from || '';
+      var curSubj = attrSubj || curTriageE.subject || '';
       var curBadge = curTriageE.account_badge || '';
-      if (fb === 'upgrade') {
+      var dlgRollback = (fb === 'spam') ? _snapshotSpamRollbackState(curUid) : null;
+      dlgTriageBtn.disabled = true;
+      if (fb === 'spam') {
+        window._lastCaveSpamCtx = { uid: curUid, account_id: curAcctId, sender_email: curSender, from: curSender, subject: curSubj, account_badge: curBadge, from_sr: false };
+        _syncCaveSpamUndoUi(window._lastCaveSpamCtx, false);
+        _optimisticallyRemoveEmailFromLists(curUid, '\ud83d\udeab Spam', 'Marked Spam');
+      } else if (fb === 'unspam') {
+        if (window._caveSessionActedUids) window._caveSessionActedUids.delete(String(curUid || ''));
+      } else if (fb === 'upgrade') {
         if (window._caveSessionActedUids) window._caveSessionActedUids.delete(String(curUid || ''));
       } else {
         _optimisticallyRemoveEmailFromLists(curUid, fb === 'already_replied' ? '\u2713 Answered' : (fb === 'done' ? '\u2713 Done' : '\u2713 Acted'), 'Marked ' + fb);
@@ -5410,6 +5887,8 @@
         body: JSON.stringify({
           action: 'email_triage_feedback',
           uid: curUid,
+          account_id: curAcctId,
+          sender: curSender,
           sender_email: curSender,
           subject: curSubj,
           account_badge: curBadge,
@@ -5417,17 +5896,44 @@
           was_opened: true
         })
       })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-          if (d && d.ok) {
+        .then(function (r) { return r.json().then(function (d) { return { okHttp: r.status < 400, data: d }; }); })
+        .then(function (res) {
+          dlgTriageBtn.disabled = false;
+          var d = res.data;
+          if (res.okHttp && d && d.ok) {
+            if (fb === 'unspam') {
+              if (window._lastCaveSpamCtx && window._lastCaveSpamCtx.sr_id) {
+                _unmarkSrDraftClosed(window._lastCaveSpamCtx.sr_id);
+              }
+              _unmarkSrDraftClosed(curUid);
+              window._lastCaveSpamCtx = null;
+              _syncCaveSpamUndoUi(null, false);
+            }
             if (!_caveCommsData) _caveCommsData = { ok: true };
             if (Array.isArray(d.important_emails)) _caveCommsData.important_emails = _mergeStableEmailOrder(_caveCommsData.important_emails, d.important_emails);
             if (Array.isArray(d.other_emails)) _caveCommsData.other_emails = d.other_emails;
             if (Array.isArray(d.acted_upon_emails)) _caveCommsData.acted_upon_emails = d.acted_upon_emails;
+            if (d.speed_racer) {
+              _caveCommsData.speed_racer = d.speed_racer;
+              _srState = _mergeSrStateKeepLocal(d.speed_racer, true);
+              _renderCaveSpeedRacerTile(true, true);
+            }
+            if (d.working_list) {
+              _wlState = d.working_list;
+              _renderWorkingListSpine();
+            }
             _caveCommsData._interleavedOnce = true;
             _hydrateMailCardsFromCommsData(_caveCommsData);
-            receipt(d.note || 'Email moved out of Prime Inbox to Acted Upon.');
+            receipt(d.note || (fb === 'unspam' ? 'Reversed Spam and restored email to Active Inbox.' : 'Email moved out of Prime Inbox to Acted Upon.'));
+          } else {
+            if (fb === 'spam') _restoreSpamRollbackState(dlgRollback, '');
+            receipt((d && (d.message || d.error)) || 'Could not update email triage.', true);
           }
+        })
+        .catch(function () {
+          dlgTriageBtn.disabled = false;
+          if (fb === 'spam') _restoreSpamRollbackState(dlgRollback, '');
+          receipt('Email triage request did not reach Anchor.', true);
         });
       return;
     }
@@ -5489,7 +5995,7 @@
       e.preventDefault(); e.stopPropagation();
       var dir = parseInt(calNavBtn.getAttribute('data-cave-cal-nav') || '0', 10);
       _ensureCaveCommsDataLoaded(false).then(function () {
-        var nowIso = new Date().toISOString().slice(0, 10);
+        var nowIso = _clientLocalClock().dateIso;
         if (dir === 0) {
           _caveCalDay = nowIso;
         } else if (_caveCalView === 'week') {
@@ -5520,37 +6026,49 @@
       var uid = openMailEl.getAttribute('data-cave-mail-open') || '';
       if (!uid) return;
       var card = openMailEl.closest('.cave-mail-card');
-      if (card && card.classList.contains('is-selected') && !window._emailDlgClosed) {
-        _setEmailDialogueOpen(false, 'Closed Email dialogue.');
-        return;
-      }
       var fSubj = '';
       var fSender = '';
       var fSrc = '';
+      var fAcctId = '';
       if (card) {
         card.setAttribute('data-mail-opened', '1');
         fSender = card.getAttribute('data-mail-sender') || '';
         fSrc = card.getAttribute('data-mail-source') || '';
+        fAcctId = card.getAttribute('data-mail-account-id') || '';
         var tEl = card.querySelector('.comms-item-title, .comms-item-sub');
         if (tEl) fSubj = tEl.textContent || '';
       }
-      _openEmailDialogueTile(uid, fSubj, fSender, fSrc);
+      _openEmailDialogueTile(uid, fSubj, fSender, fSrc, false, fAcctId);
       return;
     }
     var triageBtn = e.target.closest && e.target.closest('[data-cave-mail-triage]');
     if (triageBtn) {
       e.preventDefault(); e.stopPropagation();
-      var tUid = triageBtn.getAttribute('data-mail-uid') || '';
-      var tSender = triageBtn.getAttribute('data-mail-sender') || '';
       var tAct = triageBtn.getAttribute('data-cave-mail-triage') || '';
+      var fallbackSpamCtx = (tAct === 'unspam' && window._lastCaveSpamCtx) ? window._lastCaveSpamCtx : null;
       var mCard = triageBtn.closest('.cave-mail-card');
+      var tUid = triageBtn.getAttribute('data-mail-uid') || (fallbackSpamCtx && fallbackSpamCtx.uid) || '';
+      var tAcctId = triageBtn.getAttribute('data-mail-account-id')
+        || (mCard && mCard.getAttribute('data-mail-account-id'))
+        || (fallbackSpamCtx && fallbackSpamCtx.account_id)
+        || '';
+      var tSender = triageBtn.getAttribute('data-mail-sender') || (fallbackSpamCtx && fallbackSpamCtx.sender_email) || '';
       var wasOpened = mCard ? (mCard.getAttribute('data-mail-opened') === '1') : false;
       triageBtn.disabled = true;
-      var tSubj = triageBtn.getAttribute('data-mail-subject') || '';
-      if (tAct === 'unact' || tAct === 'upgrade') {
+      var tSubj = triageBtn.getAttribute('data-mail-subject') || (fallbackSpamCtx && fallbackSpamCtx.subject) || '';
+      var cardRollback = (tAct === 'spam') ? _snapshotSpamRollbackState(tUid) : null;
+      if (tAct === 'spam') {
+        window._lastCaveSpamCtx = { uid: tUid, account_id: tAcctId, sender_email: tSender, from: tSender, subject: tSubj, from_sr: false };
+        _syncCaveSpamUndoUi(window._lastCaveSpamCtx, false);
+        if (window._optimisticallyRemoveEmailFromLists) {
+          window._optimisticallyRemoveEmailFromLists(tUid, '\ud83d\udeab Spam', 'Marked Spam');
+        }
+      } else if (tAct === 'unspam') {
+        if (window._caveSessionActedUids) window._caveSessionActedUids.delete(String(tUid || ''));
+      } else if (tAct === 'unact' || tAct === 'upgrade') {
         if (window._caveSessionActedUids) window._caveSessionActedUids.delete(String(tUid || ''));
         _captureNextEmailInCurrentList(tUid);
-        if (_activeEmailDialogue && _activeEmailDialogue.uid === tUid) _activeEmailDialogue = null;
+        if (_activeEmailDialogue && _activeEmailDialogue.uid === tUid) _setActiveEmailDialogue(null);
       } else if (window._optimisticallyRemoveEmailFromLists) {
         window._optimisticallyRemoveEmailFromLists(tUid, '\u2713 Acted', 'Marked ' + tAct);
       }
@@ -5560,29 +6078,51 @@
         body: JSON.stringify({
           action: 'email_triage_feedback',
           uid: tUid,
+          account_id: tAcctId,
+          sender: tSender,
           sender_email: tSender,
           subject: tSubj,
           feedback: tAct,
           was_opened: wasOpened
         })
       })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
+        .then(function (r) { return r.json().then(function (d) { return { okHttp: r.status < 400, data: d }; }); })
+        .then(function (res) {
           triageBtn.disabled = false;
-          if (d && d.ok) {
+          var d = res.data;
+          if (res.okHttp && d && d.ok) {
+            if (tAct === 'unspam') {
+              if (window._lastCaveSpamCtx && window._lastCaveSpamCtx.sr_id) {
+                _unmarkSrDraftClosed(window._lastCaveSpamCtx.sr_id);
+              }
+              _unmarkSrDraftClosed(tUid);
+              window._lastCaveSpamCtx = null;
+              _syncCaveSpamUndoUi(null, false);
+            }
             if (!_caveCommsData) _caveCommsData = { ok: true };
             if (Array.isArray(d.important_emails)) _caveCommsData.important_emails = _mergeStableEmailOrder(_caveCommsData.important_emails, d.important_emails);
             if (Array.isArray(d.other_emails)) _caveCommsData.other_emails = d.other_emails;
             if (Array.isArray(d.acted_upon_emails)) _caveCommsData.acted_upon_emails = d.acted_upon_emails;
+            if (d.speed_racer) {
+              _caveCommsData.speed_racer = d.speed_racer;
+              _srState = _mergeSrStateKeepLocal(d.speed_racer, true);
+              _renderCaveSpeedRacerTile(true, true);
+            }
+            if (d.working_list) {
+              _wlState = d.working_list;
+              _renderWorkingListSpine();
+            }
             _caveCommsData._interleavedOnce = true;
             _hydrateMailCardsFromCommsData(_caveCommsData);
             receipt(d.note || 'Updated Steward email triage preference.');
           } else {
-            receipt((d && d.error) || 'Could not update email triage.', true);
+            if (tAct === 'spam') _restoreSpamRollbackState(cardRollback, '');
+            receipt((d && (d.message || d.error)) || 'Could not update email triage.', true);
           }
         })
         .catch(function () {
           triageBtn.disabled = false;
+          if (tAct === 'spam') _restoreSpamRollbackState(cardRollback, '');
           receipt('Email triage request did not reach Anchor.', true);
         });
       return;
@@ -6112,8 +6652,72 @@
         '<b style="font-size:11.5px;color:#6ee7b7">&#128220; Speed Racer Approved &amp; Sent Archive (' + arch.length + ')</b>' +
         '<button type="button" class="mini" data-sr-archive-toggle="1">&times; Hide Archive</button>' +
       '</div>' +
-      '<div id="caveSrArchiveAttachmentPreviewHost" hidden style="margin-bottom:8px"></div>' +
+      '<div id="caveSrArchiveAttachmentPreviewHost" data-sr-attachment-preview-host="archive" hidden style="margin-bottom:8px"></div>' +
       rows;
+  }
+
+  function _snapshotSpamRollbackState(uid) {
+    return {
+      uid: String(uid || ''),
+      hadComms: Boolean(_caveCommsData),
+      important: (_caveCommsData && Array.isArray(_caveCommsData.important_emails)) ? _caveCommsData.important_emails.slice() : null,
+      other: (_caveCommsData && Array.isArray(_caveCommsData.other_emails)) ? _caveCommsData.other_emails.slice() : null,
+      acted: (_caveCommsData && Array.isArray(_caveCommsData.acted_upon_emails)) ? _caveCommsData.acted_upon_emails.slice() : null,
+      srQueue: (_srState && Array.isArray(_srState.queue)) ? _srState.queue.slice() : null,
+      srIdx: _srIdx,
+      prevSpamCtx: window._lastCaveSpamCtx ? Object.assign({}, window._lastCaveSpamCtx) : null
+    };
+  }
+
+  function _restoreSpamRollbackState(snap, closedSrId) {
+    if (!snap) return;
+    if (snap.uid && window._caveSessionActedUids) {
+      window._caveSessionActedUids.delete(snap.uid);
+    }
+    if (closedSrId) _unmarkSrDraftClosed(closedSrId);
+    if (snap.uid) _unmarkSrDraftClosed(snap.uid);
+    window._lastCaveSpamCtx = snap.prevSpamCtx;
+    _syncCaveSpamUndoUi(snap.prevSpamCtx, Boolean(snap.prevSpamCtx && snap.prevSpamCtx.from_sr));
+    if (snap.srQueue && _srState) {
+      _srState.queue = snap.srQueue;
+      _srIdx = snap.srIdx;
+      _renderCaveSpeedRacerTile(true, true);
+    }
+    if (snap.hadComms && _caveCommsData) {
+      if (snap.important) _caveCommsData.important_emails = snap.important;
+      if (snap.other) _caveCommsData.other_emails = snap.other;
+      if (snap.acted) _caveCommsData.acted_upon_emails = snap.acted;
+      _hydrateMailCardsFromCommsData(_caveCommsData);
+    }
+  }
+
+  function _syncCaveSpamUndoUi(spamCtx, fromSpeedRacer) {
+    var mailBar = document.getElementById('caveMailSpamUndoBar');
+    var mailTxt = document.getElementById('caveMailSpamUndoText');
+    var mailBtn = document.getElementById('btnCaveUndoSpam');
+    var dlgBtn = document.getElementById('btnCaveDlgUnspam');
+    var srBar = document.getElementById('caveSrSpamUndoBar');
+    var srTxt = document.getElementById('caveSrSpamUndoText');
+    var srBtn = document.getElementById('btnCaveSrUnspam');
+    if (!spamCtx || !spamCtx.uid) {
+      if (mailBar) mailBar.hidden = true;
+      if (dlgBtn) dlgBtn.hidden = true;
+      if (srBar) srBar.hidden = true;
+      return;
+    }
+    var lbl = _escH(spamCtx.sender_email || spamCtx.from || spamCtx.subject || spamCtx.uid);
+    [mailBtn, dlgBtn, srBtn].forEach(function (b) {
+      if (!b) return;
+      b.setAttribute('data-mail-uid', spamCtx.uid || '');
+      b.setAttribute('data-mail-account-id', spamCtx.account_id || '');
+      b.setAttribute('data-mail-sender', spamCtx.sender_email || spamCtx.from || '');
+      b.setAttribute('data-mail-subject', spamCtx.subject || '');
+    });
+    if (mailTxt) mailTxt.innerHTML = '&#128683; Marked <b>' + lbl + '</b> as Spam (future syncs suppressed).';
+    if (mailBar) mailBar.hidden = false;
+    if (dlgBtn) dlgBtn.hidden = false;
+    if (srTxt) srTxt.innerHTML = '&#128683; Marked <b>' + lbl + '</b> as Spam &amp; removed draft from Speed Racer.';
+    if (srBar) srBar.hidden = !fromSpeedRacer;
   }
 
   function _renderCaveSpeedRacerTile(forceRebuild, skipCapture) {
@@ -6122,9 +6726,18 @@
     }
     _updateSrBadges();
     var host = document.getElementById('caveSpeedRacerDeckHost');
-    if (!host) return;
     var q = (_srState && Array.isArray(_srState.queue)) ? _srState.queue : [];
     var arch = (_srState && Array.isArray(_srState.archive)) ? _srState.archive : [];
+    var promptBar = document.getElementById('caveSrStewardPromptBar');
+    var promptIn = document.getElementById('caveSrStewardPromptInput');
+    if (promptBar) {
+      promptBar.hidden = false;
+      promptBar.style.display = 'flex';
+    }
+    if (promptIn) {
+      promptIn.hidden = false;
+    }
+    if (!host) return;
     if (!q.length) {
       host.innerHTML =
         '<div style="padding:12px;border-radius:8px;border:1px dashed rgba(16,185,129,0.5);background:rgba(16,185,129,0.08);color:#6ee7b7;font-size:12px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">' +
@@ -6155,7 +6768,7 @@
     }).join('');
 
     var ratingLbl = String(item.instruction_rating_label || '5/5 \u00b7 Read Full Email & Thread');
-    var srSavedFb = _loadLocalDraft(_srFeedbackDraftKey(item.id || item.uid || ''));
+    var srSavedFb = _loadLocalDraft(_srFeedbackDraftKey(item.id || item.uid || '')) || String(item.pending_scribe_feedback || '');
     var learnedNote = String(item.scribe_learned_note || '');
     var saveStatusInit = item._dirty
       ? '\u270e Editing \u2014 auto-saving\u2026'
@@ -6183,8 +6796,10 @@
             '<div style="display:flex;flex-direction:column;flex:1 1 auto">' +
               '<div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:#7dd3fc;margin-bottom:4px">&#128233; Full Incoming Email / Prompt (Scroll or Drag Corner to Resize)</div>' +
               '<div style="font-size:12px;font-weight:750;color:#f8fafc;margin-bottom:6px">' + _escH(item.subject || '(No Subject)') + '</div>' +
-              '<div id="caveSrIncomingBodyBox" style="font-size:12.5px;color:#e2e8f0;line-height:1.58;min-height:420px;max-height:calc(100vh - 180px);overflow-y:auto;resize:vertical;padding:8px 10px;border-radius:6px;background:#0b111e;border:1px solid #1e293b">' +
-                _renderCleanEmailBodyHtml(item.incoming_body || item.incoming_snippet || '', '') +
+              '<div id="caveSrIncomingBodyBox" style="font-size:12.5px;color:#e2e8f0;line-height:1.58;min-height:420px;max-height:calc(100vh - 180px);overflow-y:auto;resize:vertical;padding:8px 10px;border-radius:6px;background:#0b111e;border:1px solid #1e293b;display:flex;flex-direction:column;gap:8px">' +
+                ((Array.isArray(item.thread_messages) && item.thread_messages.length > 1)
+                  ? _renderThreadMessagesStackHtml(item.thread_messages, item.incoming_body || item.incoming_snippet || '', item.quoted_history || '')
+                  : _renderCleanEmailBodyHtml(item.incoming_body || item.incoming_snippet || '', item.quoted_history || '')) +
               '</div>' +
             '</div>' +
             '<div style="padding:7px 9px;border-radius:6px;background:rgba(56,189,248,0.1);border:1px solid rgba(56,189,248,0.3);font-size:11px;color:#7dd3fc">' +
@@ -6229,13 +6844,14 @@
             (Array.isArray(item.attachments) && item.attachments.length
               ? '<div style="padding:6px 8px;border-radius:6px;border:1px solid rgba(245,158,11,0.45);background:rgba(245,158,11,0.12);font-size:10.5px;color:#fde68a;display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
                   '<span>&#128206; <b>Attached (' + item.attachments.length + ' &mdash; click to view):</b></span> ' +
-                  _renderAttachmentButtonsHtml(item.attachments, item.uid || '', item.account_id || '', 'caveSrAttachmentPreviewHost') +
+                  _renderAttachmentButtonsHtml(item.attachments, item.uid || '', item.account_id || '', 'caveSrCardAttachmentPreviewHost') +
                 '</div>'
               : '') +
-            '<div id="caveSrAttachmentPreviewHost" hidden style="margin-top:4px"></div>' +
+            '<div id="caveSrCardAttachmentPreviewHost" hidden style="margin-top:4px"></div>' +
             '<div style="display:flex;gap:5px;align-items:flex-start">' +
-              '<textarea id="caveSrFeedbackInput" rows="1" class="cave-autogrow-ta" placeholder="Give Scribe instructions to redraft/refine this email (auto-saved per draft)..." style="flex:1">' + _escH(srSavedFb) + '</textarea>' +
+              '<textarea id="caveSrFeedbackInput" rows="1" class="cave-autogrow-ta" placeholder="Give Scribe or Steward instructions for this email (auto-saved per draft)..." style="flex:1">' + _escH(srSavedFb) + '</textarea>' +
               '<button type="button" class="tw-btn" id="btnCaveSrApplyFeedback" style="border-color:#a78bfa;background:rgba(167,139,250,0.18);color:#e9d5ff;font-weight:800;padding:5px 11px">&#10024; Refine with Scribe</button>' +
+              '<button type="button" class="tw-btn" id="btnCaveSrSendFeedbackSteward" style="border-color:rgba(56,189,248,0.55);background:rgba(56,189,248,0.14);color:#e0f2fe;font-weight:800;padding:5px 11px" title="Send this Speed Racer draft and your instructions to the Cave of Wonders Steward">&#129517; Send to Steward</button>' +
             '</div>' +
           '</div>' +
         '</div>' +
@@ -6247,6 +6863,7 @@
           '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
             '<button type="button" class="tw-btn" id="btnCaveSrSaveModified" style="border-color:rgba(56,189,248,0.55);color:#7dd3fc;font-weight:750" title="Save any modifications you made to To, Cc, Bcc, Subject, or Draft Body">&#128190; Save Modifications</button>' +
             '<button type="button" class="tw-btn" id="btnCaveSrSkip" title="Keep in queue and move to next draft">&#9197; Skip / Later</button>' +
+            '<button type="button" class="tw-btn" id="btnCaveSrSpam" data-sr-spam="1" style="border-color:rgba(244,63,94,0.55);background:rgba(244,63,94,0.12);color:#fda4af;font-weight:750" title="Mark sender as Spam and remove draft from Speed Racer">&#128683; Spam</button>' +
             '<button type="button" class="tw-btn" id="btnCaveSrDiscard" style="border-color:rgba(244,63,94,0.55);background:rgba(244,63,94,0.12);color:#fda4af;font-weight:750" title="Cancel and remove this draft from Speed Racer without sending">&#10005; Cancel / Discard</button>' +
             '<button type="button" class="tw-btn done" id="btnCaveSrApproveSend" style="border-color:#10b981;background:rgba(16,185,129,0.24);color:#ecfdf5;font-weight:800;padding:4px 12px">&#10003; Approve &amp; Send</button>' +
             '<button type="button" class="tw-btn" data-cave-close-speed-racer="1" style="border-color:rgba(244,63,94,0.55);background:rgba(244,63,94,0.14);color:#fda4af;font-weight:750" title="Close the Speed Racer dialogue">&#10005; Close Speed Racer</button>' +
@@ -6571,24 +7188,33 @@
       e.preventDefault(); e.stopPropagation();
       _flushSpeedRacerAutoSaveNow();
       var mUid = queueMailBtn.getAttribute('data-mail-uid') || '';
+      var mCardQ = queueMailBtn.closest('.cave-mail-card');
+      var mAcctIdQ = queueMailBtn.getAttribute('data-mail-account-id') || (mCardQ && mCardQ.getAttribute('data-mail-account-id')) || '';
       var mTo = queueMailBtn.getAttribute('data-mail-sender') || queueMailBtn.getAttribute('data-mail-from') || '';
       var mFrom = queueMailBtn.getAttribute('data-mail-from') || mTo;
       var mSubj = queueMailBtn.getAttribute('data-mail-subject') || '(No Subject)';
       var mAcct = queueMailBtn.getAttribute('data-mail-account') || 'Institutional 365';
       var mSnip = queueMailBtn.getAttribute('data-mail-snippet') || '';
-      if (window._optimisticallyRemoveEmailFromLists) {
-        window._optimisticallyRemoveEmailFromLists(mUid, '\ud83c\udfce\ufe0f Speed Racer', 'Queued in Speed Racer for review');
-      } else {
-        _captureNextEmailInCurrentList(mUid);
+      var formattedCardTo = mFrom;
+      if (mTo && mTo.indexOf('@') >= 0 && mFrom.indexOf('@') < 0) {
+        var cleanDispQ = String(mFrom || '').replace(/"/g, '').trim();
+        formattedCardTo = cleanDispQ
+          ? ((cleanDispQ.indexOf(',') >= 0 || cleanDispQ.indexOf(';') >= 0) ? ('"' + cleanDispQ + '" <' + mTo + '>') : (cleanDispQ + ' <' + mTo + '>'))
+          : mTo;
       }
+      var origQueueMailHtml = queueMailBtn.innerHTML;
       queueMailBtn.disabled = true;
+      queueMailBtn.innerHTML = '&#9203;';
       fetch('/api/steward/comms', {
         method: 'POST',
         headers: headers(),
         body: JSON.stringify({
           action: 'speed_racer_queue',
           uid: mUid,
-          to: mFrom + (mTo && mTo.indexOf('@') >= 0 && mFrom.indexOf('@') < 0 ? (' <' + mTo + '>') : ''),
+          account_id: mAcctIdQ,
+          from: mFrom,
+          sender_email: mTo,
+          to: formattedCardTo,
           subject: mSubj.indexOf('Re:') === 0 ? mSubj : ('Re: ' + mSubj),
           account: mAcct,
           incoming_snippet: mSnip,
@@ -6599,9 +7225,15 @@
         .then(function (res) {
           var d = res.data;
           queueMailBtn.disabled = false;
+          queueMailBtn.innerHTML = origQueueMailHtml;
           if (res.status >= 400 || !d || !d.ok) {
-            receipt((d && d.error) || 'Could not queue Speed Racer draft.', true);
+            receipt((d && (d.message || d.error)) || 'Could not queue Speed Racer draft.', true);
             return;
+          }
+          if (window._optimisticallyRemoveEmailFromLists) {
+            window._optimisticallyRemoveEmailFromLists(mUid, '\ud83c\udfce\ufe0f Speed Racer', 'Queued in Speed Racer for review');
+          } else {
+            _captureNextEmailInCurrentList(mUid);
           }
           if (d.speed_racer) {
             if (!_caveCommsData) _caveCommsData = { ok: true };
@@ -6622,7 +7254,11 @@
             receipt('\ud83c\udfce\ufe0f Queued "' + mSubj + '" into Speed Racer for your review & approval.');
           }
         })
-        .catch(function () { queueMailBtn.disabled = false; });
+        .catch(function () {
+          queueMailBtn.disabled = false;
+          queueMailBtn.innerHTML = origQueueMailHtml;
+          receipt('Speed Racer queue request could not reach Anchor.', true);
+        });
       return;
     }
     var srReplyModeBtn = e.target.closest && e.target.closest('[data-sr-reply-mode]');
@@ -6669,23 +7305,27 @@
       var pIn = document.getElementById('caveSrStewardPromptInput');
       var promptTxt = pIn ? pIn.value.trim() : '';
       if (!promptTxt) return;
-      var activeEmCtx = _resolveRightPaneEmailCtx() || _activeEmailDialogue || null;
-      var qSrCur = (_srState && Array.isArray(_srState.queue)) ? (_srState.queue[_srIdx] || _srState.queue[0] || null) : null;
-      var ctxItem = activeEmCtx || qSrCur || {};
+      var errEl = document.getElementById('caveSrStewardPromptError');
+      if (errEl) {
+        errEl.hidden = true;
+        errEl.textContent = '';
+      }
+      var origSrDraftHtml = srStewardBtn.innerHTML;
       srStewardBtn.disabled = true;
+      srStewardBtn.innerHTML = '&#9203; Drafting&hellip;';
       fetch('/api/steward/comms', {
         method: 'POST',
         headers: headers(),
         body: JSON.stringify({
           action: 'speed_racer_queue',
-          uid: ctxItem.uid || '',
-          account_id: ctxItem.account_id || '',
-          account: ctxItem.account_badge || ctxItem.account || 'Institutional 365',
-          to: ctxItem.sender_email || ctxItem.from || ctxItem.to || '',
-          cc: ctxItem.cc || '',
-          bcc: ctxItem.bcc || '',
-          subject: ctxItem.subject || '',
-          incoming_snippet: (ctxItem.body || ctxItem.incoming_body || ctxItem.incoming_snippet || ctxItem.snippet || '').slice(0, 12000),
+          uid: '',
+          account_id: '',
+          account: 'Institutional 365',
+          to: '',
+          cc: '',
+          bcc: '',
+          subject: '',
+          incoming_snippet: '',
           steward_directions: promptTxt,
           draft_body: '',
           queued_by: 'Speed Racer Steward Instruction'
@@ -6695,8 +7335,14 @@
         .then(function (res) {
           var d = res.data;
           srStewardBtn.disabled = false;
+          srStewardBtn.innerHTML = origSrDraftHtml;
           if (res.status >= 400 || !d || !d.ok) {
-            receipt((d && d.error) || 'Could not queue Speed Racer draft.', true);
+            var errMsg = (d && (d.message || d.error)) || 'Could not queue Speed Racer draft.';
+            if (errEl) {
+              errEl.textContent = '\u26a0 ' + errMsg;
+              errEl.hidden = false;
+            }
+            receipt(errMsg, true);
             return;
           }
           if (pIn) pIn.value = '';
@@ -6709,7 +7355,15 @@
             receipt('\ud83e\udeb6 Scribe read email, thread & AI Cockpit context and drafted response in Speed Racer!');
           }
         })
-        .catch(function () { srStewardBtn.disabled = false; });
+        .catch(function () {
+          srStewardBtn.disabled = false;
+          srStewardBtn.innerHTML = origSrDraftHtml;
+          if (errEl) {
+            errEl.textContent = '\u26a0 Speed Racer draft request could not reach Anchor.';
+            errEl.hidden = false;
+          }
+          receipt('Speed Racer draft request could not reach Anchor.', true);
+        });
       return;
     }
     var srNavBtn = e.target.closest && e.target.closest('[data-sr-nav]');
@@ -6821,6 +7475,7 @@
           _srAutoSaveTimer = 0;
         }
         var origRefineHtml = srRefineBtn.innerHTML;
+        var preRefineDraftVal = bIn.value || '';
         srRefineBtn.disabled = true;
         srRefineBtn.innerHTML = '&#9203; Rewriting&hellip;';
         _updateSrSaveStatusUi('\ud83e\udeb6 Scribe applying instructions\u2026', '');
@@ -6832,7 +7487,7 @@
             sr_action: 'redraft',
             id: curRef ? curRef.id : '',
             feedback: note,
-            current_draft: bIn.value || '',
+            current_draft: preRefineDraftVal,
             to: toIn ? toIn.value.trim() : (curRef ? curRef.to : ''),
             cc: ccIn ? ccIn.value.trim() : (curRef ? (curRef.cc || '') : ''),
             bcc: bccIn ? bccIn.value.trim() : (curRef ? (curRef.bcc || '') : ''),
@@ -6850,8 +7505,20 @@
               receipt(errRefMsg, true);
               return;
             }
+            if (d.already_archived) {
+              _clearLocalDraft(_srFeedbackDraftKey(curRef ? (curRef.id || curRef.uid || '') : ''));
+              fbIn.value = '';
+              _autoGrowTextarea(fbIn);
+              if (d.speed_racer) {
+                _srState = _mergeSrStateKeepLocal(d.speed_racer, false);
+                _renderCaveSpeedRacerTile(true, true);
+              }
+              receipt('Draft was already sent or archived.');
+              return;
+            }
+            var userTypedWhileWaiting = !!(bIn && (bIn.value || '') !== preRefineDraftVal);
             _clearLocalDraft(_srFeedbackDraftKey(curRef ? (curRef.id || curRef.uid || '') : ''));
-            if (curRef) {
+            if (curRef && !userTypedWhileWaiting) {
               curRef._dirty = false;
               curRef.user_edited = false;
               curRef.updated_at_ts = 0;
@@ -6859,16 +7526,20 @@
                 _clearSrLocalEdit(curRef.id || curRef.uid);
               }
             }
-            if (d.draft && typeof d.draft.draft_body === 'string' && bIn) {
+            if (!userTypedWhileWaiting && d.draft && typeof d.draft.draft_body === 'string' && bIn) {
               bIn.value = d.draft.draft_body;
             }
             fbIn.value = '';
             _autoGrowTextarea(fbIn);
             if (d.speed_racer) {
-              _srState = _mergeSrStateKeepLocal(d.speed_racer, true);
-              _renderCaveSpeedRacerTile(true, true);
+              _srState = _mergeSrStateKeepLocal(d.speed_racer, !userTypedWhileWaiting);
+              _renderCaveSpeedRacerTile(true, !userTypedWhileWaiting);
             }
-            receipt('\u2728 Steward redrafted the email in Speed Racer based on your instructions.');
+            receipt(
+              userTypedWhileWaiting
+                ? '\u26a0 You edited the draft while Scribe ran \u2014 kept your live edits intact.'
+                : '\u2728 Steward redrafted the email in Speed Racer based on your instructions.'
+            );
           })
           .catch(function () {
             srRefineBtn.disabled = false;
@@ -6877,6 +7548,68 @@
             receipt('Speed Racer rewrite request timed out or failed.', true);
           });
       }
+      return;
+    }
+    var srSendStewardBtn = e.target.closest && e.target.closest('#btnCaveSrSendFeedbackSteward');
+    if (srSendStewardBtn) {
+      e.preventDefault();
+      var fbStIn = document.getElementById('caveSrFeedbackInput');
+      var bStIn = document.getElementById('caveSrBodyInput');
+      var toStIn = document.getElementById('caveSrToInput');
+      var subjStIn = document.getElementById('caveSrSubjInput');
+      var qSt = (_srState && Array.isArray(_srState.queue)) ? _srState.queue : [];
+      var curSt = qSt[_srIdx] || qSt[0];
+      var noteSt = fbStIn ? fbStIn.value.trim() : '';
+      if (!curSt || !noteSt) {
+        receipt('Enter your instructions for the Cave Steward first.', true);
+        if (fbStIn) fbStIn.focus();
+        return;
+      }
+      var origStBtnHtml = srSendStewardBtn.innerHTML;
+      srSendStewardBtn.disabled = true;
+      srSendStewardBtn.innerHTML = '&#9203; Sending&hellip;';
+      fetch('/api/steward/comms', {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({
+          action: 'email_steward_action',
+          uid: curSt.uid || curSt.id || '',
+          account_id: curSt.account_id || '',
+          account_badge: curSt.account || 'Institutional 365',
+          from: toStIn ? toStIn.value.trim() : (curSt.to || ''),
+          sender_email: toStIn ? toStIn.value.trim() : (curSt.to || ''),
+          subject: subjStIn ? subjStIn.value.trim() : (curSt.subject || ''),
+          body: (curSt.incoming_body || curSt.incoming_snippet || '') + '\n\n[Current Speed Racer Draft]:\n' + (bStIn ? bStIn.value : (curSt.draft_body || '')),
+          snippet: (curSt.incoming_snippet || '').slice(0, 4000),
+          comment: noteSt,
+          also_queue_speed_racer: false
+        })
+      })
+        .then(function (r) { return r.json().then(function (d) { return { status: r.status, data: d }; }); })
+        .then(function (res) {
+          srSendStewardBtn.disabled = false;
+          srSendStewardBtn.innerHTML = origStBtnHtml;
+          var d = res.data || {};
+          if (res.status === 503 || (res.status < 400 && d && d.ok)) {
+            _clearLocalDraft(_srFeedbackDraftKey(curSt.id || curSt.uid || ''));
+            if (fbStIn) { fbStIn.value = ''; _autoGrowTextarea(fbStIn); }
+            if (d.speed_racer) {
+              _srState = _mergeSrStateKeepLocal(d.speed_racer, false);
+              _renderCaveSpeedRacerTile(true, true);
+            }
+            if (dlg && typeof dlg.resume === 'function') {
+              try { dlg.resume(); } catch (err) {}
+            }
+            receipt((res.status === 503) ? ((d && d.error) || 'Cave Steward engine unavailable \u2014 message queued safely') : (d.note || '\ud83e\udded Sent Speed Racer draft & instructions to Cave Steward.'), res.status === 503);
+          } else {
+            receipt((d && (d.message || d.error)) || 'Could not dispatch to Cave Steward.', true);
+          }
+        })
+        .catch(function () {
+          srSendStewardBtn.disabled = false;
+          srSendStewardBtn.innerHTML = origStBtnHtml;
+          receipt('Steward request did not reach Anchor.', true);
+        });
       return;
     }
     var srSkipBtn = e.target.closest && e.target.closest('#btnCaveSrSkip');
@@ -6907,6 +7640,79 @@
             _srState = _mergeSrStateKeepLocal(d.speed_racer, true);
             _renderCaveSpeedRacerTile(true, true);
           }
+        });
+      return;
+    }
+    var srSpamBtn = e.target.closest && e.target.closest('#btnCaveSrSpam, [data-sr-spam]');
+    if (srSpamBtn) {
+      e.preventDefault(); e.stopPropagation();
+      if (_srAutoSaveTimer) {
+        clearTimeout(_srAutoSaveTimer);
+        _srAutoSaveTimer = 0;
+      }
+      var qSp = (_srState && Array.isArray(_srState.queue)) ? _srState.queue : [];
+      var curSp = qSp[_srIdx] || qSp[0];
+      if (!curSp) return;
+      var spId = String(curSp.id || '');
+      var spUid = String(curSp.uid || curSp.id || '');
+      var spAcctId = String(curSp.account_id || '');
+      var spSender = String(curSp.sender_email || curSp.from || curSp.to || '');
+      var spSubj = String(curSp.subject || '');
+      var srRollback = _snapshotSpamRollbackState(spUid);
+      window._lastCaveSpamCtx = { uid: spUid, sr_id: spId, account_id: spAcctId, sender_email: spSender, from: spSender, subject: spSubj, account_badge: curSp.account || '', from_sr: true };
+      _syncCaveSpamUndoUi(window._lastCaveSpamCtx, true);
+      _markSrDraftClosed(spId);
+      if (window._optimisticallyRemoveEmailFromLists && curSp.uid) {
+        window._optimisticallyRemoveEmailFromLists(curSp.uid, '\ud83d\udeab Spam', 'Marked Spam from Speed Racer');
+      }
+      _srState.queue = qSp.filter(function (it) { return it && String(it.id || '') !== spId; });
+      _srIdx = Math.min(_srIdx, Math.max(0, _srState.queue.length - 1));
+      _renderCaveSpeedRacerTile(true, true);
+      fetch('/api/steward/comms', {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({
+          action: 'email_triage_feedback',
+          uid: spUid,
+          sender: spSender,
+          sender_email: spSender,
+          subject: spSubj,
+          account_id: spAcctId,
+          feedback: 'spam',
+          was_opened: true
+        })
+      })
+        .then(function (r) { return r.json().then(function (d) { return { okHttp: r.status < 400, data: d }; }); })
+        .then(function (res) {
+          var d = res.data;
+          if (res.okHttp && d && d.ok) {
+            _clearSrLocalEdit(spId || spUid);
+            if (curSp.uid) _clearSrLocalEdit(curSp.uid);
+            _clearLocalDraft(_srFeedbackDraftKey(spId || spUid));
+            if (!_caveCommsData) _caveCommsData = { ok: true };
+            if (Array.isArray(d.important_emails)) _caveCommsData.important_emails = _mergeStableEmailOrder(_caveCommsData.important_emails, d.important_emails);
+            if (Array.isArray(d.other_emails)) _caveCommsData.other_emails = d.other_emails;
+            if (Array.isArray(d.acted_upon_emails)) _caveCommsData.acted_upon_emails = d.acted_upon_emails;
+            if (d.speed_racer) {
+              _caveCommsData.speed_racer = d.speed_racer;
+              _srState = _mergeSrStateKeepLocal(d.speed_racer, true);
+              _renderCaveSpeedRacerTile(true, true);
+            }
+            if (d.working_list) {
+              _wlState = d.working_list;
+              _renderWorkingListSpine();
+            }
+            _caveCommsData._interleavedOnce = true;
+            _hydrateMailCardsFromCommsData(_caveCommsData);
+            receipt(d.note || 'Marked sender as Spam and removed draft from Speed Racer.');
+          } else {
+            _restoreSpamRollbackState(srRollback, spId);
+            receipt((d && (d.message || d.error)) || 'Could not mark Speed Racer draft as Spam.', true);
+          }
+        })
+        .catch(function () {
+          _restoreSpamRollbackState(srRollback, spId);
+          receipt('Speed Racer Spam request did not reach Anchor.', true);
         });
       return;
     }
@@ -7148,6 +7954,18 @@
     }
   });
 
+  document.addEventListener('keydown', function (e) {
+    if (!e || e.isComposing || e.key !== 'Enter' || !(e.ctrlKey || e.metaKey)) return;
+    var t = e.target;
+    if (t && t.id === 'caveSrFeedbackInput') {
+      var srBtn = document.getElementById('btnCaveSrApplyFeedback');
+      if (srBtn && !srBtn.disabled && (t.value || '').trim()) {
+        e.preventDefault();
+        srBtn.click();
+      }
+    }
+  });
+
   function _isSpeedRacerField(el) {
     if (!el || !el.id) return false;
     return (
@@ -7222,6 +8040,10 @@
       e.preventDefault();
       var srRefBtn = document.getElementById('btnCaveSrApplyFeedback');
       if (srRefBtn && !srRefBtn.disabled) srRefBtn.click();
+    } else if (t.id === 'caveSrStewardPromptInput') {
+      e.preventDefault();
+      var srDrBtn = document.getElementById('btnCaveSrStewardDraft');
+      if (srDrBtn && !srDrBtn.disabled && (t.value || '').trim()) srDrBtn.click();
     } else if (t.id === 'caveDlgScribeInstructionInput') {
       e.preventDefault();
       var scAppBtn = document.getElementById('btnCaveDlgScribeApply');
@@ -7529,6 +8351,14 @@
     }).join('');
   }
 
+  var _wlSpineIsOpen = true;
+  try {
+    var _savedWlSpineOpen = window.localStorage && window.localStorage.getItem('anchor.cave.theListOpen');
+    if (_savedWlSpineOpen === '0' || _savedWlSpineOpen === 'false') {
+      _wlSpineIsOpen = false;
+    }
+  } catch (_eWl) {}
+
   function _renderWorkingListSpine() {
     var container = document.getElementById('wlTilesContainer');
     if (!container) return;
@@ -7560,23 +8390,72 @@
 
     var acStrip = document.getElementById('wlAutoCheckedStrip');
     if (acStrip) {
+      var tilesByIdAc = {};
+      rawTiles.forEach(function (t) {
+        if (t && t.id) tilesByIdAc[String(t.id)] = t;
+      });
       var autoItems = ((_wlState && Array.isArray(_wlState.auto_checked)) ? _wlState.auto_checked : [])
-        .filter(function (a) { return a && !a.undone; });
+        .filter(function (a) {
+          if (!a || a.undone || a.confirmed || a.dismissed) return false;
+          var tOwner = tilesByIdAc[String(a.tile_id || '')];
+          if (!tOwner || tOwner.archived) return false;
+          var sOwner = Array.isArray(tOwner.steps)
+            ? tOwner.steps.find(function (s) { return s && String(s.id || '') === String(a.step_id || ''); })
+            : null;
+          if (!sOwner || !sOwner.done || sOwner.auto_check_confirmed) return false;
+          return true;
+        });
       if (autoItems.length) {
         acStrip.hidden = false;
-        acStrip.innerHTML = autoItems.slice(0, 5).map(function (ac) {
+        var rowsHtml = autoItems.slice(0, 15).map(function (ac) {
           var aid = _escH(ac.id || '');
-          var atitle = _escH(ac.tile_title || ac.step_text || 'Completed step');
-          var astep = _escH(ac.step_text || '');
-          var asrc = _escH(ac.reason || ac.source || 'Steward auto-check');
+          var atid = _escH(ac.tile_id || '');
+          var tOwner = tilesByIdAc[String(ac.tile_id || '')] || {};
+          var tSteps = Array.isArray(tOwner.steps) ? tOwner.steps : [];
+          var doneCnt = ac.done_steps_count !== undefined
+            ? Number(ac.done_steps_count)
+            : tSteps.filter(function (s) { return s && s.done; }).length;
+          var totCnt = ac.total_steps_count !== undefined
+            ? Number(ac.total_steps_count)
+            : Math.max(1, tSteps.length);
+          var allDoneAc = !!(ac.all_steps_done || (totCnt > 0 && doneCnt >= totCnt));
+          var atitleRaw = String(tOwner.title || ac.tile_title || ac.clean_step_text || ac.step_text || 'Completed step').trim();
+          var astepRaw = String(ac.clean_step_text || ac.step_text || '').replace(/\s*\((?:From\s+email|Email)\s*:[\s\S]*\)\s*$/i, '').trim();
+          var asrcRaw = String(ac.reason || ac.source || 'Steward auto-check').trim();
+          var atitle = _escH(atitleRaw.length > 68 ? (atitleRaw.slice(0, 68) + '\u2026') : atitleRaw);
+          var astep = _escH(astepRaw.length > 72 ? (astepRaw.slice(0, 72) + '\u2026') : astepRaw);
+          var asrc = _escH(asrcRaw.length > 52 ? (asrcRaw.slice(0, 52) + '\u2026') : asrcRaw);
+          var fullTip = _escH(atitleRaw + ' \u2014 ' + astepRaw + ' (' + asrcRaw + ')');
+          var badgeLbl = allDoneAc ? ('All ' + doneCnt + '/' + totCnt + ' done') : (doneCnt + '/' + totCnt + ' done');
+          var archBtn = allDoneAc
+            ? '<button type="button" class="tw-btn done" data-wl-confirm-archive-autocheck="' + aid + '" title="Confirm done and move this completed item to Things Done">&#10003; Done &amp; Archive</button>'
+            : '';
           return (
-            '<span class="wl-autocheck-pill" data-autocheck-id="' + aid + '">' +
-              '&#10003; Auto-checked <b>' + atitle + '</b>' + ((astep && astep !== atitle) ? (' &mdash; ' + astep) : '') +
-              ' <span style="opacity:0.8">(' + asrc + ')</span> ' +
-              '<button type="button" class="mini" data-wl-undo-autocheck="' + aid + '" title="Undo automatic check-off">&#8634; Undo</button>' +
-            '</span>'
+            '<div class="wl-autocheck-card wl-autocheck-pill" data-autocheck-id="' + aid + '" title="' + fullTip + '">' +
+              '<div class="wl-autocheck-main">' +
+                '<button type="button" class="wl-autocheck-title-btn" data-wl-focus-tile="' + atid + '" title="Click to view this item on The List">' + atitle + '</button>' +
+                '<span class="wl-pill emerald">' + badgeLbl + '</span>' +
+                ((astepRaw && astepRaw !== atitleRaw) ? ('<span class="wl-autocheck-step">' + astep + '</span>') : '') +
+                '<span class="wl-autocheck-why">(' + asrc + ')</span>' +
+              '</div>' +
+              '<div class="wl-autocheck-acts">' +
+                '<button type="button" class="tw-btn done" data-wl-confirm-autocheck="' + aid + '" title="Keep this step marked Done and clear this notice">&#10003; Confirm Done</button>' +
+                archBtn +
+                '<button type="button" class="tw-btn" data-wl-undo-autocheck="' + aid + '" title="Not done yet \u2014 uncheck this step on The List">&#8634; Undo</button>' +
+              '</div>' +
+            '</div>'
           );
         }).join('');
+        var moreAcHtml = autoItems.length > 15
+          ? ('<div class="wl-autocheck-sub" style="padding:2px 4px">+' + (autoItems.length - 15) + ' more auto-checked steps &mdash; click <b>&#10003; Confirm All &amp; Clear</b> above to clear all.</div>')
+          : '';
+        acStrip.innerHTML =
+          '<div class="wl-autocheck-head">' +
+            '<span>&#10003; <b>Steward Auto-Checked Steps (<span id="wlAutoCheckedCount">' + autoItems.length + '</span>)</b> ' +
+            '<span class="wl-autocheck-sub">&mdash; checked off from your sent replies or completed deliverables. Confirm to clear, click title to view, or Undo:</span></span>' +
+            '<button type="button" class="tw-btn done" id="btnWlConfirmAllAutochecks" data-wl-confirm-all-autochecks="1" title="Keep all auto-checked steps marked Done and clear this box">&#10003; Confirm All &amp; Clear</button>' +
+          '</div>' +
+          '<div class="wl-autocheck-cards-host">' + rowsHtml + moreAcHtml + '</div>';
       } else {
         acStrip.hidden = true;
         acStrip.innerHTML = '';
@@ -7586,9 +8465,13 @@
     var propTray = document.getElementById('wlProposalTray');
     var propCnt = document.getElementById('wlProposalCount');
     var propHost = document.getElementById('wlProposalCardsHost');
+    var hdrPropsBadge = document.getElementById('wlHeaderPropsBadge');
+    var hdrPropsCnt = document.getElementById('wlHeaderPropsCount');
     var pendingProps = ((_wlState && Array.isArray(_wlState.proposals)) ? _wlState.proposals : [])
       .filter(function (p) { return p && (!p.status || p.status === 'pending'); });
     if (propCnt) propCnt.textContent = String(pendingProps.length);
+    if (hdrPropsCnt) hdrPropsCnt.textContent = String(pendingProps.length);
+    if (hdrPropsBadge) hdrPropsBadge.hidden = !pendingProps.length;
     if (propTray && propHost) {
       if (pendingProps.length) {
         propTray.hidden = false;
@@ -7651,21 +8534,34 @@
     if (cRes) cRes.textContent = String(activeTiles.filter(function (t) { return t.category === 'Research'; }).length);
     if (cPer) cPer.textContent = String(activeTiles.filter(function (t) { return t.category === 'Personal'; }).length);
     if (cArc) cArc.textContent = String(archTiles.length);
-    if (hdrCnt) hdrCnt.textContent = activeTiles.length + (activeTiles.length === 1 ? ' Item on The List' : ' Items on The List');
+    if (hdrCnt) hdrCnt.textContent = activeTiles.length + ' Active';
+    var secInit = document.getElementById('caveWorkingListSpine');
     var hdrSub = document.getElementById('wlHeaderSubSummary');
     var bodyInit = document.getElementById('wlSpineBody');
     var colBtnInit = document.getElementById('wlSpineCollapseBtn');
-    if (hdrSub) {
-      hdrSub.textContent = (bodyInit && bodyInit.hidden)
-        ? ('Click to expand ' + activeTiles.length + ' single-line items · ' + archTiles.length + ' Things Done')
-        : (activeTiles.length + ' single-line items (click any item to expand details, Cockpit & Star Chart Goal dropdowns) · ' + archTiles.length + ' Things Done');
+    if (bodyInit) {
+      bodyInit.hidden = !_wlSpineIsOpen;
     }
-    if (colBtnInit && bodyInit) { colBtnInit.innerHTML = bodyInit.hidden ? ('&#9662; Expand (' + activeTiles.length + ')') : '&#9652; Collapse The List'; }
+    if (secInit) {
+      secInit.classList.toggle('is-collapsed', !_wlSpineIsOpen);
+      secInit.classList.toggle('is-open', _wlSpineIsOpen);
+      secInit.classList.toggle('open', _wlSpineIsOpen);
+      secInit.setAttribute('data-open', _wlSpineIsOpen ? '1' : '0');
+    }
+    if (hdrSub) {
+      hdrSub.textContent = !_wlSpineIsOpen
+        ? ('Click to expand ' + activeTiles.length + ' single-line items · ' + archTiles.length + ' Things Done')
+        : (activeTiles.length + ' single-line items · ' + archTiles.length + ' Things Done');
+    }
+    if (colBtnInit) {
+      colBtnInit.setAttribute('aria-expanded', _wlSpineIsOpen ? 'true' : 'false');
+      colBtnInit.innerHTML = _wlSpineIsOpen ? '&#9652; Collapse' : ('&#9662; Expand (' + activeTiles.length + ')');
+    }
 
-    // Update Compact Summary Row (#theListCompactRow) inside The List tile (top 2-3 items when collapsed)
+    // Keep #theListCompactRow updated in DOM while hidden so collapsing shrinks cleanly to the 1-line header bar
     var compactRow = document.getElementById('theListCompactRow');
     if (compactRow) {
-      compactRow.hidden = !!(bodyInit && !bodyInit.hidden);
+      compactRow.hidden = true;
       var pillsHtml = activeTiles.slice(0, 3).map(function (t) {
         var tid = _escH(t.id || '');
         var pNum = _normPrioNum(t.priority || t.prio);
@@ -7773,23 +8669,24 @@
             '</span>'
           );
         }
-        if (!chips.length) {
-          chips.push('<span style="font-size:10.5px;color:#64748b;font-style:italic">No Cockpit or Initiative linked yet</span>');
-        }
+        var connRowHtml = chips.length ? ('<div class="wl-substep-conn-row">' + chips.join('') + '</div>') : '';
 
         return (
           '<div class="wl-substep-card' + (s.done ? ' done' : '') + '" data-wl-step-idx="' + sIdx + '">' +
             '<div class="wl-substep-top">' +
-              '<label style="display:flex;align-items:center;gap:7px;cursor:pointer;flex:1;font-size:12px;color:' + (s.done ? '#94a3b8;text-decoration:line-through' : '#f1f5f9') + '">' +
+              '<label style="display:flex;align-items:center;gap:7px;cursor:pointer;flex:1;font-size:12.5px;color:' + (s.done ? '#8b8f9a;text-decoration:line-through' : '#f1f5f9') + '">' +
                 '<input type="checkbox" data-wl-step-check="' + tid + '" data-wl-step-idx="' + sIdx + '"' + (s.done ? ' checked' : '') + ' style="accent-color:#10b981;cursor:pointer">' +
                 '<span>' + _escH(s.text || '') + '</span>' +
               '</label>' +
               '<div style="display:inline-flex;align-items:center;gap:4px">' +
-                '<button type="button" class="tw-btn" data-wl-step-conn-toggle="' + tid + '" data-wl-step-idx="' + sIdx + '" style="font-size:10px;padding:1px 7px;border-color:rgba(56,189,248,0.45);color:#7dd3fc" title="Connect this step to an AI Cockpit item and/or an Initiative">&#128279; Connect Cockpit / Initiative &#9662;</button>' +
+                (s.done && s.auto_checked_at && !s.auto_check_confirmed
+                  ? '<button type="button" class="wl-pill emerald" data-wl-confirm-step-autocheck="' + tid + '" data-wl-step-id="' + _escH(s.id || '') + '" data-wl-step-idx="' + sIdx + '" style="font-size:9.5px;padding:1px 6px;cursor:pointer;border:1px solid rgba(16,185,129,0.5)" title="Auto-checked by Steward \u2014 click to confirm &amp; clear badge, or uncheck box on left to reopen">&#10003; Auto-checked &middot; Confirm</button>'
+                  : '') +
+                '<button type="button" class="tw-btn" data-wl-step-conn-toggle="' + tid + '" data-wl-step-idx="' + sIdx + '" style="font-size:10px;padding:1px 6px;color:#94a3b8" title="Link AI Cockpit or Initiative">&#128279; Link</button>' +
                 '<button type="button" class="mini" data-wl-step-del="' + tid + '" data-wl-step-idx="' + sIdx + '" title="Remove step" style="padding:0 5px;font-size:11px">&times;</button>' +
               '</div>' +
             '</div>' +
-            '<div class="wl-substep-conn-row">' + chips.join('') + '</div>' +
+            connRowHtml +
             '<div class="wl-connector-drawer"' + (isDrawerOpen ? '' : ' hidden') + ' id="wlConnDrawer-' + tid + '-' + sIdx + '">' +
               '<div style="font-size:10.5px;font-weight:750;color:#7dd3fc;margin-bottom:5px">&#128279; Connect Step #' + (sIdx + 1) + ' to an AI Cockpit Item AND/OR an Initiative (or both):</div>' +
               '<div style="display:grid;grid-template-columns:1fr 1fr auto;gap:6px;align-items:end">' +
@@ -7890,32 +8787,28 @@
       }
 
       var ckShortPill = t.cockpitName
-        ? ('<a class="wl-pill sky" href="' + _escH(t.cockpitHref || '/steward/v1') + '" target="_blank" rel="noopener" style="white-space:nowrap;flex-shrink:0;max-width:105px;overflow:hidden;text-overflow:ellipsis;text-decoration:none" title="Assigned AI Cockpit: ' + _escH(t.cockpitName) + ' (click to open)">&#128760; ' + _escH(String(t.cockpitName).replace(/\s*Cockpit$/i, '').slice(0, 14)) + '</a>')
+        ? ('<a class="wl-pill sky" href="' + _escH(t.cockpitHref || '/steward/v1') + '" target="_blank" rel="noopener" style="white-space:nowrap;flex-shrink:0;max-width:165px;overflow:hidden;text-overflow:ellipsis;text-decoration:none" title="Open AI Cockpit: ' + _escH(t.cockpitName) + '">&#127760; ' + _escH(String(t.cockpitName).replace(/\s*Cockpit$/i, '').slice(0, 22)) + ' &#8599;</a>')
         : '';
       var gLbl = t.goalName || t.goalTitle || '';
       var goalShortPill = gLbl
-        ? ('<span class="wl-pill purple" style="white-space:nowrap;flex-shrink:0;max-width:105px;overflow:hidden;text-overflow:ellipsis" title="Assigned Star Chart Goal/Initiative: ' + _escH(gLbl) + '">&#127775; ' + _escH(String(gLbl).slice(0, 14)) + '</span>')
+        ? ('<span class="wl-pill purple" style="white-space:nowrap;flex-shrink:0;max-width:165px;overflow:hidden;text-overflow:ellipsis" title="Assigned Star Chart Goal/Initiative: ' + _escH(gLbl) + '">&#127775; ' + _escH(String(gLbl).slice(0, 22)) + '</span>')
         : '';
+      var stepPillCls = (totalCount > 0 && doneCount === totalCount) ? 'emerald' : 'sky';
 
       return (
-        '<article class="wl-tile ' + pCls + (isExp ? ' is-expanded' : '') + (t.done ? ' is-done' : '') + '" data-wl-tile-id="' + tid + '" data-wl-priority="' + pNum + '" style="padding:4px 8px">' +
-          '<div class="wl-summary" data-wl-toggle-expand="' + tid + '" style="display:flex;align-items:center;gap:5px;flex-wrap:nowrap;min-height:26px;padding:3px 4px">' +
-            '<div class="wl-move-col" style="flex-direction:row;gap:2px;flex-shrink:0">' +
-              '<button type="button" class="wl-move-btn" data-wl-move="up" data-wl-id="' + tid + '" title="Move item up on The List">&#9650;</button>' +
-              '<button type="button" class="wl-move-btn" data-wl-move="down" data-wl-id="' + tid + '" title="Move item down on The List">&#9660;</button>' +
-            '</div>' +
-            '<input type="checkbox" data-wl-check-tile="' + tid + '"' + (t.done ? ' checked' : '') + ' title="Check off item on The List — removes from Active and moves to Things Done" style="width:13px;height:13px;accent-color:#10b981;cursor:pointer;flex-shrink:0">' +
-            _buildPrioritySelectHtml(tid, pNum) +
-            '<span class="wl-pill" style="flex-shrink:0;white-space:nowrap;border-color:rgba(245,158,11,0.55);background:rgba(245,158,11,0.16);color:#fde68a;font-weight:800;font-size:10px;padding:1px 6px" title="Category of sub-list">' + _escH(t.category || 'Business') + '</span>' +
-            '<div class="wl-main" style="display:flex;align-items:center;gap:5px;flex:1;min-width:0;overflow:hidden">' +
-              '<b class="wl-title" style="flex:1 1 180px;min-width:120px;color:#f8fafc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px" title="' + _escH(t.title || '') + '">' + _escH(t.title || 'List Item') + '</b>' +
-              ckShortPill +
-              goalShortPill +
-              '<span class="wl-pill" style="flex-shrink:0;white-space:nowrap;color:#94a3b8;font-size:10px;padding:1px 5px">&#10003; ' + doneCount + '/' + totalCount + '</span>' +
-            '</div>' +
-            '<div class="wl-acts" style="flex-shrink:0;gap:4px">' +
-              '<button type="button" class="mini" data-wl-archive="' + tid + '" style="' + (t.archived ? 'border-color:#f59e0b;color:#fde68a' : 'border-color:#10b981;color:#6ee7b7;font-weight:700') + ';font-size:10px;padding:2px 6px" title="' + (t.archived ? 'Restore back to active items on The List' : 'Mark done and move to Things Done') + '">' + (t.archived ? '&#8617; Restore' : '&#10003; Done') + '</button>' +
-              '<button type="button" class="mini" data-wl-toggle-expand="' + tid + '" style="border-color:#38bdf8;color:#7dd3fc;font-weight:700;font-size:10px;padding:2px 6px">' + (isExp ? '&#9652;' : '&#9662; Expand') + '</button>' +
+        '<article class="wl-tile ' + pCls + (isExp ? ' is-expanded' : '') + (t.done ? ' is-done' : '') + '" data-wl-tile-id="' + tid + '" data-wl-priority="' + pNum + '">' +
+          '<div class="wl-summary" data-wl-toggle-expand="' + tid + '">' +
+            '<span class="wl-prio-badge" data-wl-cycle-prio="' + tid + '" title="Priority #' + pNum + ' (click to cycle)">#' + pNum + '</span>' +
+            '<b class="wl-title" title="' + _escH(t.title || '') + '">' + _escH(t.title || 'List Item') + '</b>' +
+            '<span class="wl-pill cat" title="Category">' + _escH(t.category || 'Business') + '</span>' +
+            ckShortPill +
+            goalShortPill +
+            '<span class="wl-pill ' + stepPillCls + '" style="flex-shrink:0;white-space:nowrap">&#10003; ' + doneCount + '/' + totalCount + '</span>' +
+            '<div class="wl-acts" style="display:inline-flex;align-items:center;gap:4px;flex-shrink:0">' +
+              '<button type="button" class="wl-icon-btn" data-wl-move="up" data-wl-id="' + tid + '" title="Move item up">&uarr;</button>' +
+              '<button type="button" class="wl-icon-btn" data-wl-move="down" data-wl-id="' + tid + '" title="Move item down">&darr;</button>' +
+              '<button type="button" class="wl-icon-btn ' + (t.archived ? '' : 'done') + '" data-wl-archive="' + tid + '" title="' + (t.archived ? 'Restore to active items on The List' : 'Mark done &amp; move to Things Done') + '">' + (t.archived ? '&#8617;' : '&#10003;') + '</button>' +
+              '<span class="wl-chevron" data-wl-toggle-expand="' + tid + '">' + (isExp ? '&#9652;' : '&#9662;') + '</span>' +
             '</div>' +
           '</div>' +
           detailsHtml +
@@ -7924,20 +8817,30 @@
     }).join('');
   }
 
-  function _setTheListSpineOpen(wantOpen) {
+  function _setTheListSpineOpen(wantOpen, skipSave) {
     var sec = document.getElementById('caveWorkingListSpine');
     var body = document.getElementById('wlSpineBody');
     var colBtn = document.getElementById('wlSpineCollapseBtn');
     var compactRow = document.getElementById('theListCompactRow');
-    if (!body) return;
-    var openState = typeof wantOpen === 'boolean' ? wantOpen : body.hidden;
-    body.hidden = !openState;
+    var openState = typeof wantOpen === 'boolean' ? wantOpen : !_wlSpineIsOpen;
+    _wlSpineIsOpen = openState;
+    if (!skipSave) {
+      try {
+        if (window.localStorage) {
+          window.localStorage.setItem('anchor.cave.theListOpen', openState ? '1' : '0');
+        }
+      } catch (_eWlSave) {}
+    }
+    if (body) {
+      body.hidden = !openState;
+    }
     if (compactRow) {
-      compactRow.hidden = openState;
+      compactRow.hidden = true;
     }
     if (sec) {
       sec.classList.toggle('is-collapsed', !openState);
       sec.classList.toggle('is-open', openState);
+      sec.classList.toggle('open', openState);
       sec.setAttribute('data-open', openState ? '1' : '0');
       if (openState) sec.setAttribute('open', '');
       else sec.removeAttribute('open');
@@ -7946,13 +8849,13 @@
     var archCnt = ((_wlState && Array.isArray(_wlState.tiles)) ? _wlState.tiles.filter(function(x){return !!x.archived;}).length : 0);
     if (colBtn) {
       colBtn.setAttribute('aria-expanded', openState ? 'true' : 'false');
-      colBtn.innerHTML = openState ? '&#9652; Collapse The List' : ('&#9662; Expand (' + actCnt + ')');
+      colBtn.innerHTML = openState ? '&#9652; Collapse' : ('&#9662; Expand (' + actCnt + ')');
     }
     var hdrSub = document.getElementById('wlHeaderSubSummary');
     if (hdrSub) {
       hdrSub.textContent = openState
-        ? (actCnt + ' single-line items (click any item to expand details, Cockpit & Star Chart Goal dropdowns) · ' + archCnt + ' Things Done')
-        : ('Top ' + Math.min(3, actCnt) + ' of ' + actCnt + ' active shown below · Click to expand full list (' + archCnt + ' Things Done)');
+        ? (actCnt + ' single-line items · ' + archCnt + ' Things Done')
+        : ('Click to expand ' + actCnt + ' items · ' + archCnt + ' Things Done');
     }
   }
 
@@ -8015,6 +8918,43 @@
       if (_wlEditingProposalId === pIdDis) _wlEditingProposalId = '';
       _wlMutate('dismiss_proposal', { proposal_id: pIdDis }).then(function (d) {
         if (d && d.ok) receipt('Dismissed Steward proposal.');
+      });
+      return;
+    }
+    var confirmAllAcBtn = e.target.closest && e.target.closest('[data-wl-confirm-all-autochecks]');
+    if (confirmAllAcBtn) {
+      e.preventDefault(); e.stopPropagation();
+      _wlMutate('confirm_all_autochecks', {}).then(function (d) {
+        if (d && d.ok) receipt('\u2713 Confirmed all auto-checked steps and cleared notice.');
+      });
+      return;
+    }
+    var confirmArchAcBtn = e.target.closest && e.target.closest('[data-wl-confirm-archive-autocheck]');
+    if (confirmArchAcBtn) {
+      e.preventDefault(); e.stopPropagation();
+      var acArchId = confirmArchAcBtn.getAttribute('data-wl-confirm-archive-autocheck') || '';
+      _wlMutate('confirm_autocheck', { autocheck_id: acArchId, archive_tile: true }).then(function (d) {
+        if (d && d.ok) receipt('\u2713 Confirmed done and moved item to Things Done.');
+      });
+      return;
+    }
+    var confirmAcBtn = e.target.closest && e.target.closest('[data-wl-confirm-autocheck]');
+    if (confirmAcBtn) {
+      e.preventDefault(); e.stopPropagation();
+      var acConfId = confirmAcBtn.getAttribute('data-wl-confirm-autocheck') || '';
+      _wlMutate('confirm_autocheck', { autocheck_id: acConfId }).then(function (d) {
+        if (d && d.ok) receipt('\u2713 Confirmed step done and cleared auto-check notice.');
+      });
+      return;
+    }
+    var confirmStepAcBtn = e.target.closest && e.target.closest('[data-wl-confirm-step-autocheck]');
+    if (confirmStepAcBtn) {
+      e.preventDefault(); e.stopPropagation();
+      var sConfTid = confirmStepAcBtn.getAttribute('data-wl-confirm-step-autocheck') || '';
+      var sConfSid = confirmStepAcBtn.getAttribute('data-wl-step-id') || '';
+      var sConfIdx = parseInt(confirmStepAcBtn.getAttribute('data-wl-step-idx') || '0', 10);
+      _wlMutate('confirm_autocheck', { tile_id: sConfTid, step_id: sConfSid, step_idx: sConfIdx }).then(function (d) {
+        if (d && d.ok) receipt('\u2713 Confirmed auto-checked step.');
       });
       return;
     }
@@ -8125,7 +9065,8 @@
       if (focusTid) _wlExpandedIds.add(focusTid);
       _setTheListSpineOpen(true);
       _renderWorkingListSpine();
-      var elT = focusTid ? document.querySelector('[data-wl-tile-id="' + focusTid + '"]') : null;
+      var selTidEsc = (window.CSS && typeof window.CSS.escape === 'function') ? window.CSS.escape(focusTid) : focusTid.replace(/"/g, '\\"');
+      var elT = focusTid ? document.querySelector('[data-wl-tile-id="' + selTidEsc + '"]') : null;
       if (elT && elT.scrollIntoView) elT.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
@@ -8483,31 +9424,156 @@
   if (_srState && Array.isArray(_srState.queue) && _srState.queue.length > 0) {
     _setSpeedRacerExpanded(true);
   }
-  _setTheListSpineOpen(false);
+  _setTheListSpineOpen(_wlSpineIsOpen, true);
   _renderCaveSpeedRacerTile();
   _renderWorkingListSpine();
+
+  window._syncCaveAlarmHeaderBtn = function (alarmPrefs) {
+    if (!alarmPrefs || typeof alarmPrefs !== 'object') return;
+    var btn = document.getElementById('btnCaveCalAlarmPrefs');
+    var lbl = document.getElementById('caveCalAlarmLeadLbl');
+    var on = alarmPrefs.enabled !== false;
+    var mins = typeof alarmPrefs.lead_minutes === 'number' ? alarmPrefs.lead_minutes : 5;
+    if (btn) btn.classList.toggle('on', on);
+    if (lbl) lbl.textContent = on ? (mins + 'm') : 'Off';
+  };
+
+  window._focusCaveCalendarEvent = function (evObj) {
+    var ev = evObj || {};
+    var calSec = document.getElementById('cal');
+    if (calSec && !calSec.classList.contains('open')) {
+      calSec.classList.add('open');
+      var togBtn = document.getElementById('calTog');
+      if (togBtn) togBtn.textContent = 'Collapse';
+    }
+    var curGrid = document.getElementById('commsGrid');
+    if (curGrid && curGrid.getAttribute('data-layout') === 'mail') {
+      applyCommsLayout('split');
+    }
+    $$('#railNav button').forEach(function (b) {
+      b.classList.toggle('on', b.getAttribute('data-rail') === 'calendar');
+    });
+    var targetDate = String(ev.date || '').slice(0, 10) || _clientLocalClock().dateIso;
+    _caveCalDay = targetDate;
+    _ensureCaveCommsDataLoaded(false).then(function () {
+      _renderCaveCalendarViewport();
+      var uidStr = String(ev.uid || ev.id || '');
+      _openCalDialogueTile({
+        isNew: false,
+        uid: uidStr,
+        title: ev.title || '',
+        date: targetDate,
+        start: ev.start_time || ev.start || '',
+        end: ev.end_time || ev.end || '',
+        location: ev.location || '',
+        notes: ev.description || ev.notes || '',
+        source: ev.calendar_badge || ev.source || 'Institutional 365'
+      });
+      var dlgEl = document.getElementById('caveCommsDialogueTile') || calSec;
+      if (dlgEl) {
+        try { dlgEl.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_e) {}
+      }
+      if (uidStr || ev.title) {
+        $$('#caveCalViewport .cave-cal-card').forEach(function (c) {
+          var isMatch = (uidStr && c.getAttribute('data-cave-cal-open') === uidStr)
+            || (!uidStr && c.getAttribute('data-cal-title') === ev.title && c.getAttribute('data-cal-date') === targetDate);
+          if (isMatch) {
+            c.classList.add('cal-alarm-target-flash');
+            setTimeout(function () { c.classList.remove('cal-alarm-target-flash'); }, 6500);
+          }
+        });
+      }
+    });
+  };
+
+  document.addEventListener('click', function (e) {
+    var testAlarmBtn = e.target.closest && e.target.closest('[data-cal-alarm-test]');
+    if (testAlarmBtn) {
+      e.preventDefault(); e.stopPropagation();
+      var alarmApi = (window.top && window.top.AnchorCalendarAlarm) || window.AnchorCalendarAlarm;
+      if (alarmApi && typeof alarmApi.triggerTestAlarm === 'function') {
+        alarmApi.triggerTestAlarm(_caveCommsData);
+      } else {
+        receipt('Calendar Alarm module is initializing \u2014 try again in a moment.', true);
+      }
+      return;
+    }
+    var prefsAlarmBtn = e.target.closest && e.target.closest('[data-cal-alarm-prefs-open]');
+    if (prefsAlarmBtn) {
+      e.preventDefault(); e.stopPropagation();
+      var alarmApiP = (window.top && window.top.AnchorCalendarAlarm) || window.AnchorCalendarAlarm;
+      if (alarmApiP && typeof alarmApiP.openSettingsModal === 'function') {
+        alarmApiP.openSettingsModal();
+      }
+      return;
+    }
+  });
 
   // Initialize source filters & hydrate local preloaded email cache immediately (0ms) on startup
   if (_caveCommsData && _caveCommsData.ok) {
     _hydrateMailCardsFromCommsData(_caveCommsData);
   }
   _applySourceFilterToDOM();
+  try {
+    var _initQs = new URLSearchParams(location.search);
+    var _gotoUid = (_initQs.get('cal_goto_uid') || '').trim();
+    var _gotoTitle = (_initQs.get('cal_goto_title') || '').trim();
+    var _gotoDate = (_initQs.get('cal_goto_date') || '').trim();
+    if (_gotoUid || _gotoTitle) {
+      var _gotoStart = (_initQs.get('cal_goto_start') || '').trim();
+      setTimeout(function () {
+        window._focusCaveCalendarEvent({
+          uid: _gotoUid,
+          title: _gotoTitle,
+          date: _gotoDate,
+          start_time: _gotoStart
+        });
+      }, 220);
+      ['cal_goto_uid', 'cal_goto_title', 'cal_goto_date', 'cal_goto_start'].forEach(function (k) { _initQs.delete(k); });
+      var _cleanRest = _initQs.toString();
+      history.replaceState(null, '', location.pathname + (_cleanRest ? '?' + _cleanRest : '') + location.hash);
+    }
+  } catch (_gErr) {}
   setTimeout(function () { _ensureCaveCommsDataLoaded(true); }, 400);
 
-  // Auto-refresh Comms every 1 minute (60s) in background when idle without clobbering active focus/drafts
+  // Advance the Calendar's thin blue current-time line every 30s using the local client clock (Anchor.exe host)
+  function _tickCaveCalendarNowLine() {
+    if (document.hidden || !_caveCommsData) return;
+    var calDlg = document.getElementById('caveCalDialoguePane');
+    if (calDlg && !calDlg.hidden) return;
+    var clk = _clientLocalClock();
+    var key = clk.dateIso + ':' + clk.minsOfDay;
+    if (key !== _lastRenderedCalClockKey) {
+      _renderCaveCalendarViewport(true);
+    }
+  }
+  setInterval(_tickCaveCalendarNowLine, 30000);
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) _tickCaveCalendarNowLine();
+  });
+
+  // Auto-refresh Comms every 1 minute (60s) via lightweight GET (?slim=1); the single server daemon owns IMAP/Graph sync
+  function _typingInCommsUi() {
+    var a = document.activeElement;
+    if (a && a.closest && a.closest('#caveSpeedRacerTile, #caveCommsDialogueTile, #caveCommsConnectModal') && (a.tagName === 'TEXTAREA' || a.tagName === 'INPUT')) {
+      return true;
+    }
+    return !!(window._srLastEditTs && (Date.now() - window._srLastEditTs < 15000));
+  }
   setInterval(function () {
-    if (document.hidden || typingNow() || window._caveEmailActionInFlight > 0) return;
-    fetch('/api/steward/comms', {
-      method: 'POST',
+    if (document.hidden || _typingInCommsUi() || window._caveEmailActionInFlight > 0) return;
+    fetch('/api/steward/comms?slim=1', {
+      method: 'GET',
       headers: headers(),
-      body: JSON.stringify({ action: 'sync_now' })
+      cache: 'no-store'
     })
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (d && d.ok) {
+          _mergePreloadedEmailBodies(_caveCommsData, d);
           _caveCommsData = d;
           _hydrateMailCardsFromCommsData(d);
-          _renderCaveCalendarViewport();
+          _renderCaveCalendarViewport(true);
           if (d.speed_racer) _syncSpeedRacerFromServer(d.speed_racer);
           if (d.working_list) {
             _wlState = d.working_list;

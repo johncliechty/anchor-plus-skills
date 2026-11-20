@@ -44,6 +44,8 @@ code{font-family:ui-monospace,Consolas,"Cascadia Mono",monospace}
 .nav .n{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .nav .c{font-size:10.5px;color:var(--text-dim);font-variant-numeric:tabular-nums;flex:none}
 .nav button.on .n{color:var(--amber-t)}
+.nav button.has-unread:not(.on) .n{color:var(--amber-t);font-weight:650}
+.nav button.cal-alarm-rail-flash{border:1px solid #f59e0b;background:rgba(245,158,11,0.14);animation:caveCalAlarmBorderPulse 1.15s ease-in-out infinite}
 .nav .mark-wait{color:var(--amber-t)}
 .navk{font-size:9px;letter-spacing:.11em;text-transform:uppercase;color:var(--text-dim2);
   font-weight:700;padding:10px 18px 4px}
@@ -1205,8 +1207,14 @@ code{font-family:ui-monospace,Consolas,"Cascadia Mono",monospace}
 .cave-cal-viewport{max-height:580px;overflow-y:auto;overflow-x:hidden;padding-right:4px;display:flex;flex-direction:column;gap:5px;overscroll-behavior:contain}
 .cave-cal-viewport > *{flex-shrink:0}
 .cave-day-timegrid{flex-shrink:0 !important}
-.cave-now-anchor{display:flex;align-items:center;gap:8px;padding:5px 10px;border-radius:999px;background:rgba(244,63,94,.16);border:1px solid rgba(244,63,94,.5);color:#fda4af;font-size:11px;font-weight:800;margin:4px 0}
-.cave-now-dot{width:8px;height:8px;border-radius:50%;background:#f43f5e;box-shadow:0 0 8px #f43f5e}
+/* Single thin blue current-time line (local client clock where Anchor.exe runs) */
+.cave-cal-now-line{position:relative;display:flex;align-items:center;height:1px;background:#38bdf8;box-shadow:0 0 6px rgba(56,189,248,.55);pointer-events:none;z-index:6;margin:4px 0}
+.cave-cal-now-line::before{content:"";width:6px;height:6px;border-radius:50%;background:#38bdf8;box-shadow:0 0 6px #38bdf8;flex-shrink:0;margin-left:-1px}
+.cave-cal-now-lbl{position:absolute;right:2px;top:-12px;font-size:9px;font-weight:750;line-height:1;color:#38bdf8;background:rgba(9,13,22,.88);padding:1px 4px;border-radius:3px;letter-spacing:.01em;white-space:nowrap}
+.cave-cal-now-line.in-day-grid{position:absolute;left:66px;right:0;margin:0}
+.cave-cal-now-line.in-day-grid .cave-cal-now-lbl{right:auto;left:-64px;top:-6px;width:58px;text-align:right;background:rgba(9,13,22,.92)}
+.cave-cal-now-line.in-active-chip{position:absolute;left:0;right:0;margin:0}
+.cave-cal-now-line.in-empty-col{position:absolute;left:6px;right:6px;margin:0}
 .cave-day-grid{display:flex;flex-direction:column;gap:3px}
 .cave-hour-row{display:grid;grid-template-columns:62px 1fr;min-height:32px;border-top:1px dashed rgba(148,163,184,.14);align-items:stretch}
 .cave-hour-lbl{font-size:10.5px;font-weight:700;color:var(--text-dim);padding-top:4px}
@@ -1646,7 +1654,7 @@ code{font-family:ui-monospace,Consolas,"Cascadia Mono",monospace}
 }
 .cave-outlook-mail-split {
   display: grid;
-  grid-template-columns: minmax(0, 1.48fr) minmax(0, 0.84fr);
+  grid-template-columns: minmax(340px, 420px) minmax(0, 1fr);
   gap: 8px;
   align-items: start;
   margin-top: 6px;
@@ -1972,7 +1980,7 @@ code{font-family:ui-monospace,Consolas,"Cascadia Mono",monospace}
 @media (min-width: 1341px) {
   #caveOutlookMailSplit:not(.is-docked):not(.email-dlg-closed) {
     margin-right: -492px !important;
-    grid-template-columns: minmax(270px, 0.72fr) minmax(560px, 1.68fr) !important;
+    grid-template-columns: minmax(340px, 420px) minmax(0, 1fr) !important;
     position: relative;
     z-index: 28;
   }
@@ -1998,7 +2006,7 @@ code{font-family:ui-monospace,Consolas,"Cascadia Mono",monospace}
 @media (min-width: 1101px) and (max-width: 1340px) {
   #caveOutlookMailSplit:not(.is-docked):not(.email-dlg-closed) {
     margin-right: -352px !important;
-    grid-template-columns: minmax(250px, 0.76fr) minmax(460px, 1.54fr) !important;
+    grid-template-columns: minmax(340px, 420px) minmax(0, 1fr) !important;
     position: relative;
     z-index: 28;
   }
@@ -2121,10 +2129,14 @@ code{font-family:ui-monospace,Consolas,"Cascadia Mono",monospace}
   }
 }
 .wl-horizon-strip {
-  display: inline-flex;
+  display: none !important;
   align-items: center;
   gap: 5px;
   flex-wrap: wrap;
+}
+#caveWorkingListSpine .wl-horizon-strip,
+#wlHorizonCountsBar {
+  display: none !important;
 }
 .wl-hz-chip {
   font-size: 10.5px;
@@ -2168,22 +2180,84 @@ code{font-family:ui-monospace,Consolas,"Cascadia Mono",monospace}
 }
 .wl-autocheck-strip {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 6px;
-  flex-wrap: wrap;
   margin-bottom: 8px;
-  padding: 6px 9px;
-  border-radius: 7px;
+  padding: 8px 10px;
+  border-radius: 8px;
   border: 1px solid rgba(16, 185, 129, 0.45);
-  background: rgba(16, 185, 129, 0.09);
+  background: rgba(16, 185, 129, 0.08);
   font-size: 11px;
   color: #d1fae5;
 }
-.wl-autocheck-pill {
+.wl-autocheck-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+  color: #ecfdf5;
+}
+.wl-autocheck-sub {
+  font-size: 10.5px;
+  color: #a7f3d0;
+  font-weight: 500;
+}
+.wl-autocheck-cards-host {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.wl-autocheck-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: rgba(9, 13, 22, 0.68);
+  border: 1px solid rgba(16, 185, 129, 0.28);
+}
+.wl-autocheck-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+  flex: 1;
+}
+.wl-autocheck-title-btn {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  color: #f8fafc;
+  font: 750 11.5px/1.3 inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.wl-autocheck-title-btn:hover {
+  color: #6ee7b7;
+  text-decoration: underline;
+}
+.wl-autocheck-step {
+  color: #cbd5e1;
+  font-size: 11px;
+}
+.wl-autocheck-why {
+  color: #86efac;
+  font-size: 10.5px;
+  opacity: 0.9;
+}
+.wl-autocheck-acts {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   flex-wrap: wrap;
+  flex-shrink: 0;
 }
 .wl-proposal-tray {
   margin-bottom: 8px;
@@ -2240,5 +2314,743 @@ code{font-family:ui-monospace,Consolas,"Cascadia Mono",monospace}
   gap: 4px;
   flex-shrink: 0;
 }
+
+/* ==========================================================================
+   Elegance Pass (2026-11-16) — Mockup-Faithful Visual Clarity Across
+   1) Living "The List", 2) Prime / Irrational Icons & Email, 3) Pure Calendar & Watchlist
+   ========================================================================== */
+.cave-pi-ico {
+  display: inline-block;
+  vertical-align: -2px;
+  flex-shrink: 0;
+}
+.cave-pill-prime {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px !important;
+  font-size: 10.5px !important;
+  font-weight: 700 !important;
+  border: 1px solid rgba(251, 191, 36, 0.48) !important;
+  background: rgba(251, 191, 36, 0.14) !important;
+  color: #fef3c7 !important;
+}
+.cave-pill-irrational {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px !important;
+  font-size: 10.5px !important;
+  font-weight: 650 !important;
+  border: 1px solid rgba(167, 139, 250, 0.42) !important;
+  background: rgba(167, 139, 250, 0.11) !important;
+  color: #ddd6fe !important;
+}
+
+/* Mockup Email Bucket Tabs */
+.cave-elegance-col-h {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #242936;
+  margin-bottom: 6px;
+}
+.cave-col-title {
+  font-size: 13px;
+  font-weight: 750;
+  color: #f8fafc;
+}
+.cave-mail-folder-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.cave-btab {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px !important;
+  font-weight: 650 !important;
+  padding: 4px 10px !important;
+  border-radius: 6px !important;
+  border: 1px solid #2e3340 !important;
+  background: #141824 !important;
+  color: #94a3b8 !important;
+  transition: border-color 0.14s, background 0.14s, color 0.14s;
+}
+.cave-btab:hover {
+  border-color: #6c9cfc !important;
+  color: #e2e8f0 !important;
+}
+.cave-btab.on {
+  border-color: #6c9cfc !important;
+  background: rgba(108, 156, 252, 0.16) !important;
+  color: #ffffff !important;
+}
+.cave-btab-prime.on {
+  border-color: #fbbf24 !important;
+  background: rgba(251, 191, 36, 0.16) !important;
+  color: #fef3c7 !important;
+}
+.cave-btab-irrational.on {
+  border-color: #a78bfa !important;
+  background: rgba(167, 139, 250, 0.18) !important;
+  color: #ede9fe !important;
+}
+.cave-btab-sr {
+  border-color: rgba(245, 158, 11, 0.45) !important;
+  color: #fde68a !important;
+}
+.cave-btab-sr.on {
+  border-color: #f59e0b !important;
+  background: rgba(245, 158, 11, 0.2) !important;
+  color: #ffffff !important;
+}
+
+/* Mockup 2-Line Breathable Email Cards */
+.cave-mail-bucket-hdr {
+  font-size: 11px;
+  font-weight: 700;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.cave-mail-bucket-hdr.prime { color: #fbbf24; }
+.cave-mail-bucket-hdr.irrational { color: #c4b5fd; }
+.cave-mail-bucket-hdr.acted { color: #7dd3fc; }
+.cave-mail-bucket-hdr.sent { color: #6ee7b7; }
+
+#caveOutlookMailSplit .cave-mail-list {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 5px !important;
+}
+#caveOutlookMailSplit .cave-mail-card.cave-mail-2line-row {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  justify-content: flex-start !important;
+  gap: 3px !important;
+  padding: 7px 10px !important;
+  min-height: 0 !important;
+  border-radius: 7px !important;
+  border: 1px solid #242936 !important;
+  border-left: 2px solid rgba(251, 191, 36, 0.55) !important;
+  background: #131722 !important;
+  font-size: 12px !important;
+  line-height: 1.38 !important;
+  transition: border-color 0.12s, background 0.12s;
+}
+#caveOutlookMailSplit .cave-mail-card.cave-mail-2line-row.is-irrational {
+  border-left-color: rgba(167, 139, 250, 0.55) !important;
+}
+#caveOutlookMailSplit .cave-mail-card.cave-mail-2line-row:hover {
+  border-color: #3b4f6b !important;
+  background: #161c2a !important;
+}
+#caveOutlookMailSplit .cave-mail-card.cave-mail-2line-row.is-selected {
+  border-color: #6c9cfc !important;
+  border-left: 3px solid #6c9cfc !important;
+  background: #172033 !important;
+  box-shadow: none !important;
+}
+.cave-mail-row-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+}
+.cave-mail-acct-pill {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.cave-mail-acct-pill.prime {
+  color: #7dd3fc;
+  border: 1px solid rgba(56, 189, 248, 0.38);
+  background: rgba(56, 189, 248, 0.12);
+}
+.cave-mail-acct-pill.irrational {
+  color: #c4b5fd;
+  border: 1px solid rgba(167, 139, 250, 0.38);
+  background: rgba(167, 139, 250, 0.12);
+}
+#caveOutlookMailSplit .cave-mail-2line-row .cave-mail-from {
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  color: #f8fafc !important;
+  max-width: none !important;
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#caveOutlookMailSplit .cave-mail-2line-row .cave-mail-date {
+  font-size: 10.5px !important;
+  color: #8b8f9a !important;
+  flex-shrink: 0;
+}
+#caveOutlookMailSplit .cave-mail-2line-row .cave-mail-row-acts {
+  display: none !important;
+  gap: 3px !important;
+}
+#caveOutlookMailSplit .cave-mail-2line-row:hover .cave-mail-row-acts,
+#caveOutlookMailSplit .cave-mail-2line-row.is-selected .cave-mail-row-acts {
+  display: inline-flex !important;
+}
+#caveOutlookMailSplit .cave-mail-2line-row .cave-mail-row-sub {
+  font-size: 11.5px !important;
+  font-weight: 500 !important;
+  color: #c9ced8 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  flex: none !important;
+  width: 100%;
+}
+.cave-mail-att-ico {
+  font-size: 10.5px;
+  color: #fbbf24;
+  flex-shrink: 0;
+}
+
+/* Mockup Right Reading Pane, Triage Buttons, Scribe Bar & Stacked Reply */
+.cave-outlook-right-pane {
+  background: #1a1d27 !important;
+  border: 1px solid #2e3340 !important;
+  border-radius: 10px !important;
+  padding: 12px !important;
+}
+.cave-dlg-top-row {
+  padding-bottom: 8px;
+  border-bottom: 1px solid #242936;
+}
+.cave-dlg-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.cave-act-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 650;
+  padding: 4px 9px;
+  border-radius: 6px;
+  border: 1px solid #2e3340;
+  background: #232733;
+  color: #e2e4e9;
+  cursor: pointer;
+  transition: border-color 0.14s, background 0.14s;
+}
+.cave-act-btn:hover { border-color: #6c9cfc; }
+.cave-act-btn.mull { border-color: rgba(56, 189, 248, 0.55); background: rgba(56, 189, 248, 0.14); color: #bae6fd; }
+.cave-act-btn.imp { border-color: rgba(16, 185, 129, 0.55); background: rgba(16, 185, 129, 0.16); color: #a7f3d0; }
+.cave-act-btn.ign { border-color: #475569; background: rgba(100, 116, 139, 0.16); color: #cbd5e1; }
+.cave-act-btn.done { border-color: rgba(34, 197, 94, 0.55); background: rgba(34, 197, 94, 0.16); color: #bbf7d0; }
+.cave-act-btn.ans { border-color: rgba(129, 140, 248, 0.55); background: rgba(129, 140, 248, 0.14); color: #c7d2fe; }
+.cave-act-btn.spam { border-color: rgba(244, 63, 94, 0.55); background: rgba(244, 63, 94, 0.14); color: #fda4af; }
+.cave-act-btn.unspam { border-color: rgba(251, 191, 36, 0.55); background: rgba(251, 191, 36, 0.16); color: #fde68a; }
+.cave-act-btn.close { border-color: rgba(244, 63, 94, 0.45); background: rgba(244, 63, 94, 0.12); color: #fda4af; margin-left: auto; }
+.cave-act-btn[hidden],
+#caveSrStewardPromptBar[hidden],
+#caveSrStewardPromptInput[hidden],
+#caveSpeedRacerUndoBar[hidden],
+#caveSrSpamUndoBar[hidden],
+#caveMailSpamUndoBar[hidden] {
+  display: none !important;
+}
+.cave-mail-act-pill.spam-pill {
+  border-color: rgba(244, 63, 94, 0.5) !important;
+  background: rgba(244, 63, 94, 0.12) !important;
+  color: #fda4af !important;
+}
+
+#caveEmailDialoguePane .cave-dlg-header-1line {
+  padding: 7px 2px;
+  border-bottom: 1px solid #242936;
+  flex: none;
+  width: 100%;
+}
+#caveEmailDialoguePane .cave-dlg-subj-1line {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #ffffff;
+  max-width: 58%;
+}
+#caveEmailDialoguePane .cave-dlg-meta-1line {
+  font-size: 12px;
+  color: #8b8f9a;
+}
+.cave-scribe-bar,
+#caveDlgStewardDirectionsBar {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #111622;
+  border: 1px solid #2b3548;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: 100%;
+  box-sizing: border-box;
+}
+#caveDlgStewardDirectionsInput {
+  width: 100%;
+  min-width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  min-height: 58px;
+  display: block;
+}
+.cave-scribe-bar-lbl {
+  font-size: 10.5px;
+  color: #8b8f9a;
+  margin-bottom: 4px;
+}
+.cave-scribe-bar-btns {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  width: 100%;
+}
+.cave-btn-sr {
+  border-color: #f59e0b !important;
+  background: rgba(245, 158, 11, 0.2) !important;
+  color: #fde68a !important;
+  font-weight: 700 !important;
+  padding: 5px 10px !important;
+}
+.cave-btn-steward {
+  border-color: #10b981 !important;
+  background: rgba(16, 185, 129, 0.2) !important;
+  color: #d1fae5 !important;
+  font-weight: 700 !important;
+  padding: 5px 10px !important;
+}
+#caveDialogueThreadScrollBox.cave-email-body-box {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: #0b0e15;
+  border: 1px solid #242936;
+  border-radius: 8px;
+  padding: 11px 13px;
+  font-size: 13px;
+  color: #e2e8f0;
+}
+.cave-reply-drawer {
+  margin-top: 9px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: #111622;
+  border: 1px solid #2e3340;
+}
+.cave-reply-summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  color: #9ec0ff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  user-select: none;
+}
+.cave-recip-grid {
+  display: grid;
+  grid-template-columns: 46px 1fr;
+  gap: 6px 8px;
+  align-items: center;
+}
+.cave-recip-lbl {
+  font-size: 11px;
+  font-weight: 700;
+  color: #8b8f9a;
+  text-align: right;
+}
+.cave-recip-in {
+  width: 100%;
+  box-sizing: border-box;
+  background: #0b0e16;
+  border: 1px solid #334155;
+  border-radius: 5px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: #f8fafc;
+}
+#caveDlgDirectReplyDrawer #caveReplyBody {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 96px !important;
+  resize: vertical;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid #334155;
+  background: #0b0e16;
+  color: #f8fafc;
+  font-size: 13px;
+  line-height: 1.48;
+}
+
+/* Speed Racer Calm Header */
+.cave-sr-tile {
+  margin: 5px 0 8px;
+  border: 1px solid rgba(245, 158, 11, 0.42);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.08) 0%, #131722 100%);
+  overflow: hidden;
+}
+.cave-sr-head {
+  padding: 6px 10px;
+  background: #141824;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* Calendar & Steward Watchlist Clean Mockup Cards */
+.cave-elegance-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 5px 10px;
+  margin: 2px 0 8px;
+  border-radius: 8px;
+  border: 1px solid #242936;
+  background: #131722;
+}
+.cave-acct-healthy-pill {
+  font-size: 10.5px !important;
+  padding: 1px 7px !important;
+}
+.cave-src-chk {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  border: 1px solid #2e3340;
+  background: #1a1d27;
+  font-size: 11px;
+  font-weight: 650;
+  color: #cbd5e1;
+  cursor: pointer;
+}
+.cave-src-chk.gmail input { accent-color: #f59e0b; }
+.cave-src-chk.psu input { accent-color: #38bdf8; }
+.cave-src-chk.axmra input { accent-color: #10b981; }
+.cave-setup-popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 45;
+  min-width: 340px;
+  max-width: 520px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  border: 1px solid #2e3340;
+  background: #141824;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.65);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.cave-cal-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 0 0 6px;
+  font-size: 11px;
+  color: #8b8f9a;
+  flex-wrap: wrap;
+}
+.cave-cal-slot-row {
+  padding: 7px 10px !important;
+  border-radius: 7px !important;
+  background: #131722 !important;
+  border: 1px solid #242936 !important;
+}
+.cave-cal-slot-time {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: #93c5fd;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.cave-cal-slot-title {
+  font-size: 12.5px;
+  color: #f8fafc;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.cave-cal-slot-pills {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.cave-watchlist-card {
+  margin-top: 9px;
+  border: 1px solid #2e3340;
+  border-radius: 9px;
+  background: #131722;
+  padding: 8px 11px;
+}
+.cave-watchlist-head {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+  font-weight: 750;
+  color: #fde68a;
+  user-select: none;
+}
+.cave-watchlist-sub {
+  font-size: 11px;
+  font-weight: 500;
+  color: #8b8f9a;
+}
+.cave-watchlist-list {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+}
+.cave-wl-slot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 4px;
+  border-top: 1px solid #242936;
+  font-size: 12px;
+}
+.cave-wl-time {
+  width: 96px;
+  flex: none;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #93c5fd;
+}
+.cave-wl-main {
+  color: #f8fafc;
+  flex: 1;
+  min-width: 0;
+}
+.cave-wl-who {
+  color: #8b8f9a;
+  font-weight: 400;
+}
+
+/* Mockup Living "The List" Clean Rows & Proposal Tray */
+#caveWorkingListSpine {
+  background: #1a1d27 !important;
+  border: 1px solid #2e3340 !important;
+  border-radius: 10px !important;
+  padding: 10px 12px !important;
+}
+.wl-main-heading {
+  font-size: 14px;
+  font-weight: 800;
+  color: #ffffff;
+}
+.wl-proposal-tray {
+  margin-top: 8px;
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.10), rgba(18, 22, 33, 0.96)) !important;
+  border: 1px solid rgba(251, 191, 36, 0.48) !important;
+  border-radius: 9px !important;
+  padding: 9px 12px !important;
+}
+.wl-autocheck-strip {
+  margin-top: 8px;
+}
+.wl-oranges-drawer {
+  position: relative;
+}
+.wl-oranges-popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 40;
+  min-width: 360px;
+  max-width: 540px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  background: #141824;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.65);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+#caveWorkingListSpine .wl-tile {
+  background: #131722 !important;
+  border: 1px solid #2e3340 !important;
+  border-radius: 8px !important;
+  margin-bottom: 6px !important;
+  padding: 0 !important;
+  transition: border-color 0.14s, background 0.14s;
+}
+#caveWorkingListSpine .wl-tile:hover {
+  border-color: #3b4f6b !important;
+}
+#caveWorkingListSpine .wl-tile.is-expanded {
+  border-color: #6c9cfc !important;
+  background: #151b29 !important;
+}
+#caveWorkingListSpine .wl-summary {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 7px 11px !important;
+  cursor: pointer;
+}
+.wl-prio-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  background: rgba(251, 191, 36, 0.12);
+  flex-shrink: 0;
+}
+#caveWorkingListSpine .wl-title {
+  flex: 1 1 180px;
+  min-width: 0;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  color: #f8fafc !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wl-pill.cat {
+  color: #c9ced8;
+  border-color: #2e3340;
+  background: #1a1f2e;
+  font-size: 10.5px;
+  padding: 2px 8px;
+}
+.wl-pill.emerald {
+  color: #4ade80;
+  border-color: rgba(74, 222, 128, 0.4);
+  background: rgba(74, 222, 128, 0.12);
+}
+.wl-icon-btn {
+  padding: 2px 6px;
+  font-size: 11px;
+  border-radius: 5px;
+  border: 1px solid #2e3340;
+  background: #1d2230;
+  color: #cbd5e1;
+  cursor: pointer;
+}
+.wl-icon-btn:hover {
+  border-color: #6c9cfc;
+  color: #ffffff;
+}
+.wl-icon-btn.done {
+  border-color: rgba(34, 197, 94, 0.45);
+  background: rgba(34, 197, 94, 0.14);
+  color: #bbf7d0;
+}
+.wl-chevron {
+  font-size: 11px;
+  font-weight: 700;
+  color: #9ec0ff;
+  padding: 0 2px;
+}
+.cos-compact-summary-row[hidden],
+.wl-body[hidden],
+.wl-proposal-tray[hidden],
+.wl-autocheck-strip[hidden],
+.wl-unknown-banner[hidden] {
+  display: none !important;
+}
+#caveWorkingListSpine.is-collapsed #wlSpineBody,
+#caveWorkingListSpine.is-collapsed #theListCompactRow,
+#caveWorkingListSpine.is-collapsed #wlAutoCheckedStrip,
+#caveWorkingListSpine.is-collapsed #wlProposalTray {
+  display: none !important;
+}
+#caveWorkingListSpine.is-collapsed {
+  padding: 7px 12px !important;
+}
+#caveWorkingListSpine.is-collapsed .wl-head {
+  border-bottom: none !important;
+  padding: 0 !important;
+}
+
+/* ═════════ Calendar Event Alarm (Cave of Wonders) ═════════ */
+@keyframes caveCalAlarmBorderPulse {
+  0%, 100% {
+    border-color: #fbbf24;
+    background: linear-gradient(90deg, rgba(245, 158, 11, 0.22), rgba(239, 68, 68, 0.16));
+  }
+  50% {
+    border-color: #f87171;
+    background: linear-gradient(90deg, rgba(239, 68, 68, 0.28), rgba(245, 158, 11, 0.12));
+  }
+}
+.cave-cal-alarm-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 9px 14px;
+  margin-bottom: 12px;
+  border-radius: 9px;
+  border: 1px solid #fbbf24;
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.2), rgba(239, 68, 68, 0.14));
+  color: #fef3c7;
+  animation: caveCalAlarmBorderPulse 1.15s ease-in-out infinite;
+}
+.cave-cal-alarm-banner[hidden] {
+  display: none !important;
+}
+.cave-cal-card.cal-alarm-target-flash {
+  border-color: #fbbf24 !important;
+  animation: caveCalAlarmBorderPulse 1.1s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cave-cal-alarm-banner,
+  .nav button.cal-alarm-rail-flash,
+  .cave-cal-card.cal-alarm-target-flash {
+    animation: none !important;
+    border-color: #fbbf24 !important;
+  }
+}
+
+
 
 

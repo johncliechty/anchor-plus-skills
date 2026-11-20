@@ -191,6 +191,47 @@ export function parseGrokJsonOutput(stdout, { requested = null } = {}) {
   };
 }
 
+const GROK_PREFLIGHT_CACHE = new Map();
+const GROK_PREFLIGHT_TTL_MS = 5 * 60 * 1000;
+
+/** Deterministic `grok models` subscription auth preflight. */
+export function preflightGrokSubscription({
+  cmd = process.platform === 'win32' ? 'grok.exe' : 'grok',
+  env = process.env,
+  spawnSyncImpl = spawnSync,
+  cache = GROK_PREFLIGHT_CACHE,
+  now = Date.now,
+} = {}) {
+  const key = `${cmd}\0${env.USERPROFILE || env.HOME || ''}`;
+  const nowMs = Number(now());
+  const cached = cache?.get(key);
+  if (cached && Number.isFinite(nowMs) && nowMs - cached.checked_at_ms < GROK_PREFLIGHT_TTL_MS) {
+    return cached.result;
+  }
+  if (cached) cache.delete(key);
+  const probe = spawnSyncImpl(cmd, ['models'], {
+    env: { ...policyEnvironment(env), NO_COLOR: '1', CI: '1' },
+    shell: false, windowsHide: true, encoding: 'utf8', timeout: 15_000,
+  });
+  const detail = `${probe?.error?.message || ''}\n${probe?.stdout || ''}\n${probe?.stderr || ''}`.trim();
+  if (probe?.error?.code === 'ETIMEDOUT') {
+    return { ok: false, status: 'preflight_timeout', subscription_auth: null, replay_safe: true, error: detail.slice(0, 300) };
+  }
+  if (probe?.error || probe?.status == null) {
+    return { ok: false, status: 'spawn_error', subscription_auth: null, replay_safe: true, error: detail.slice(0, 300) };
+  }
+  if (probe.status !== 0 || /not logged in|login required|authentication|please (?:log|sign) in|session.*expired|unauthorized/i.test(detail)) {
+    return {
+      ok: false, status: 'auth_expired', login_required: true,
+      subscription_auth: false, replay_safe: true,
+      error: detail.slice(0, 300) || 'Grok Build login required (run `grok login`)',
+    };
+  }
+  const result = { ok: true, status: 'ready', subscription_auth: true };
+  cache?.set(key, { checked_at_ms: nowMs, result });
+  return result;
+}
+
 /**
  * Spawn headless `grok -p` (subscription login). Returns { text, rec }.
  * @param {string} fullPrompt
@@ -203,12 +244,14 @@ export function defaultRunGrokCli(fullPrompt, label, {
   model = null,
   role = null,
   sandbox = null,
+  repairOnly = false,
   timeoutMs = (Number(env.GROK_CLI_TIMEOUT_MS) || DEFAULT_GROK_CLI_TIMEOUT_MS),
   maxTurns = (Number(env.GROK_CLI_MAX_TURNS) || DEFAULT_GROK_CLI_MAX_TURNS),
   signal = null,
   log = () => {},
   processRunner = runCloseBoundProcess,
-  policyResolver = resolveModelPolicy,
+  preflightImpl = undefined,
+  policyResolver = undefined,
   spawnImpl,
   spawnSyncImpl,
   platform = process.platform,
@@ -222,26 +265,57 @@ export function defaultRunGrokCli(fullPrompt, label, {
     );
   }
   const cmdName = platform === 'win32' ? 'grok.exe' : 'grok';
-  // (2026-09-04, foreman journal 0109) JSON output carries `modelUsage`, which names the
-  // SERVED model — the attestation a verification seat needs. Plain output never did, so
-  // every Grok review ran to completion and was then rejected as unattested.
-  const selection = policyResolver('grok', { env });
+  let selection;
+  if (typeof policyResolver === 'function') {
+    selection = policyResolver('grok', { env });
+  } else if (processRunner === runCloseBoundProcess) {
+    selection = resolveModelPolicy('grok', { env });
+  } else {
+    selection = {
+      family: 'grok',
+      model: resolveGrokCliModel({ model, role, env }),
+      effort: null,
+    };
+  }
   const mdl = selection.model;
-  const args = ['--output-format', 'json', ...modelLaunchArgs(selection)];
-  const perm = sandbox === 'read-only' || isVerificationRole({ role, label })
+  const modelArgs = selection.effort
+    ? modelLaunchArgs(selection)
+    : (mdl ? ['--model', mdl] : []);
+  const args = ['--output-format', 'json', ...modelArgs];
+  const perm = repairOnly || sandbox === 'read-only' || isVerificationRole({ role, label })
     ? 'plan'
     : (env.GROK_CLI_PERMISSION_MODE || 'acceptEdits');
   if (perm) args.push('--permission-mode', perm);
-  if (Number.isFinite(maxTurns) && maxTurns > 0) args.push('--max-turns', String(maxTurns));
-  // NOT grok's `--json-schema`: under it the model answers on its FIRST turn without touching
-  // its tools (live smoke 2026-09-05 — a reviewer said "not answerable" in 8 s, 0 tool calls).
-  // The schema stays the prompt-suffix + parse contract (cli-schema.mjs); the cap is the fix.
+  const effectiveMaxTurns = repairOnly ? 1 : maxTurns;
+  if (Number.isFinite(effectiveMaxTurns) && effectiveMaxTurns > 0) {
+    args.push('--max-turns', String(effectiveMaxTurns));
+  }
   if (signal?.aborted) {
     return Promise.resolve({ text: '', rec: {
       label, cli_status: null, ok: false, status: 'aborted', aborted: true,
       requested_model: mdl, model_served: null, model_family: null,
       family_attested: false, model_attested: false, degraded: true,
     } });
+  }
+  if (typeof preflightImpl === 'function' || processRunner === runCloseBoundProcess) {
+    const preflightFn = typeof preflightImpl === 'function' ? preflightImpl : preflightGrokSubscription;
+    const preflight = preflightFn({
+      cmd: cmdName, env, ...(spawnSyncImpl ? { spawnSyncImpl } : {}),
+    });
+    if (!preflight.ok) {
+      return Promise.resolve({ text: '', rec: {
+        label, cli_status: null, ok: false,
+        status: preflight.status || 'auth_expired',
+        login_required: preflight.login_required === true,
+        error: preflight.error || 'Grok subscription authentication required',
+        requested_model: mdl, requested_effort: selection.effort ?? null,
+        model_served: null, model_family: null,
+        family_attested: false, model_attested: false, degraded: true,
+        subscription_cli: true, subscription_auth: preflight.subscription_auth ?? false,
+        timed_out: false, replay_safe: true,
+        replay_evidence: 'subscription_preflight_rejected_before_prompt_spawn',
+      } });
+    }
   }
   if (isVerificationRole({ role, label })) fullPrompt = GROK_HEADLESS_READONLY_NOTE + String.fromCharCode(10, 10) + fullPrompt;
   const useFile = Buffer.byteLength(fullPrompt, 'utf8') > 24000;
@@ -309,10 +383,14 @@ export function defaultRunGrokCli(fullPrompt, label, {
     const parsed = parseGrokJsonOutput(result.stdout, { requested: mdl });
     const outcome = classifySubscriptionOutcome({family: 'grok', ...result});
     const text = parsed ? parsed.text : String(result.stdout || '').trim();
+    const grokLimitBanner = (parsed?.numTurns ?? 0) <= 1
+      && /^(?:error:\s*)?(?:you(?:['’]ve| have) reached your (?:free )?Grok Build usage limit|(?:Grok Build )?usage limit reached)\b/i.test(text);
     const status = result.terminal !== 'closed'
       ? result.terminal
       : parsed?.isError || ['error', 'cancelled', 'max_turns', 'max_turns_reached'].includes(parsed?.stopReason)
         ? outcome.failure_status || (parsed?.stopReason === 'cancelled' ? 'aborted' : 'cli_error')
+      : grokLimitBanner
+        ? 'usage_limit'
       : result.code === 0
         ? (text ? 'success' : 'no_reply')
         : outcome.failure_status || 'cli_error';
@@ -325,7 +403,7 @@ export function defaultRunGrokCli(fullPrompt, label, {
       status,
       replay_safe: !ok && outcome.replay_safe,
       replay_evidence: outcome.replay_evidence,
-      error: ok ? undefined : (result.error || result.stderr.slice(0, 500)),
+      error: ok ? undefined : (result.error || result.stderr.slice(0, 500) || (grokLimitBanner ? text.slice(0, 300) : '')),
       requested_model: mdl,
       requested_effort: selection.effort,
       model_policy: selection,

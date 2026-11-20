@@ -13,10 +13,11 @@
 - The ask is a one-line task or a tiny fix that doesn’t need a multi-stage plan
 
 ## What you get
-- Stage 0: a North Star you lock (success criteria, non-goals, risks — always shown in full on screen)
-- Stage 1: a Master Plan you approve — including **Multi-Level Adversarial Matrix Mode (`--matrix-fast-track`)**, which decomposes complex systems into parallel dimension studies (`researchPrime` + `Gandalf`) and an explicit **6-Layer Adversarial Review Matrix (`L0–L5`: Failure Mode, Severity, Concrete Mitigation)** that converges in 1 bounded pass instead of stalling in 20–30 sequential CLI subprocess spawns
-- Stage 2: a wave-by-wave (and orthogonal sub-wave `W.1`..`W.k`) implementation plan validated deterministically by `locate-plan.mjs` and ready for Foreman
-- Adversarial “Shark Tank” or `L0–L5` Matrix review so weak ideas die before build time (with delta-only `120s` re-review if $\ge 2$ reviewers prove an unmitigated `BLOCKER`)
+- Stage 0: automatic right-sized depth triage (`LITE` for localized 1–3 file brownfield/greenfield work, `MATRIX-FAST-TRACK` for medium multi-file/architectural work, `SPIKE-FIRST` when genuinely novel/uncertain, `FULL` reserved for explicit `--depth FULL` or high-stakes irreversible changes), zero-LLM **Anvil** brownfield AST facts intake when a repo exists, and a North Star always shown in full on screen before lock.
+- Stage 1:
+  - **Enforced `LITE` Fast Path (`<= 4` model calls via `bin/slim.mjs` / `runLiteFastPath`):** compact unified draft + 1 cross-family review + `<= 1` delta patch + `locate-plan.mjs`.
+  - **Lean 2-Stage `--matrix-fast-track` (`6–9` bounded model calls via `bin/matrix-fast-track.mjs` / `bin/crucible.mjs`):** conditional **Superjump** architectural option pass, unified Plan+Waves draft, 1 cross-family heterogeneous **`L0–L5` 6-Layer Adversarial Matrix** (`L0` North Star & plain-English scope cuts, `L1` Anvil Pure-Core / Deep-Module, `L2` Aegis CWE boundaries, `L3` Chrome UI mockup / `Figure-Designer`, `L4` testability + Wave-1 pilot slice + `O(N)` call budget, `L5` Gandalf simplicity cut), stopping immediately on `0` blockers (`ELEGANCE.md` Rule 5) or running `1` `120s` delta-only verify pass on patched blockers.
+- Stage 2: deterministic wave serialization (`## Wave 1 .. ## Wave N` plus disjoint-write-set `### Wave W.k` sub-waves), mechanical **Chekhov Plan-Quality Guards** (Wave-1 usable end-to-end pilot slice, `O(N)` serial LLM call estimator, `<= 200`-word approval block naming deferred/cut scope in plain English, automatic Interactive Chrome Mockup / `Figure-Designer` + `Ramanujan` / `Financial-Analyst` / `Legal-Beagle` / `Literature-Review` certifier gates), validated by `locate-plan.mjs` without a redundant second Stage-2 Shark-Tank loop.
 
 ## What it is not
 - Not a code builder (that’s Foreman)

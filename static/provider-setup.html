@@ -18,7 +18,7 @@
     <div class="setup-winctl" aria-label="Window controls">
       <button type="button" data-winctl="minimize" title="Minimize window">&#8212;</button>
       <button type="button" data-winctl="maximize" title="Maximize or restore window">&#9744;</button>
-      <button type="button" class="close" data-winctl="close" title="Close window">&#10005;</button>
+      <button type="button" id="setup-close-x" class="close anchor-overlay-close-x" data-overlay-close="1" aria-label="Close Setup and return" title="Close Setup and return to Cave of Wonders or AI Cockpit (Esc)">&#10005;</button>
     </div>
   </header>
   <div class="setup-app-frame">
@@ -262,6 +262,17 @@
           <button type="button" id="provider-sync-live-models" class="btn-amber">🔄 Sync Live CLI &amp; Nightly 02:00 Models</button>
           <span id="refresh-message" role="status"></span>
         </div>
+
+        <!-- Logged-In Services & Active Model Routing Overview -->
+        <article class="logged-in-services-card" id="logged-in-services-card" aria-label="Logged-in services and active model routing">
+          <div class="wave2-matrix-top">
+            <h2 style="margin:0">🔐 Logged-In Services &amp; Active Model Levels</h2>
+            <span class="w3-badge w3-badge-emerald" id="lis-summary-badge">Checking live sign-ins…</span>
+          </div>
+          <div class="lis-role-grid" id="lis-role-grid"></div>
+          <div id="lis-ai-pills" class="lis-pills-wrap"></div>
+          <div id="lis-comms-pills" class="lis-pills-wrap"></div>
+        </article>
 
         <!-- Wave 2 Overview Matrix across all 4 families -->
         <div id="wave2-provider-matrix" class="wave2-provider-matrix" aria-label="Provider overview matrix"></div>

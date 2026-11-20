@@ -24,6 +24,7 @@ import { fileURLToPath } from 'node:url';
 import { resolve, relative, join, dirname } from 'node:path';
 
 import { applySeamPass, SeamPassInputError } from './seam-pass.mjs';
+import { writeExecutiveReportBundle } from './render-report.mjs';
 import { assertIncrement1Conformant } from '../test/harness.mjs';
 import { getGitignorePatterns, isIgnored } from './context-sizer.mjs';
 import { runMapReduce } from './map-reduce.mjs';
@@ -38,9 +39,9 @@ import { makeGeminiCliSeam, resolveGeminiModel } from 'fil<path>';
 import { loadModelFamilies, familyToDriverName, runAgent } from 'fil<path>';
 
 const USAGE =
-  'usage: node runtime/gandalf-run.mjs --live [--budget N] [--input <file>] [--output <file>] [--project <dir>]\n' +
-  '       node runtime/gandalf-run.mjs [--input <file>] [--output <file>] [--cross-model] [--project <dir>]\n' +
-  '       node runtime/gandalf-run.mjs --analyze --project <dir> --objective "<question>" [--depth LITE|FULL|SPIKE-FIRST] [--output <file>]\n' +
+  'usage: node runtime/gandalf-run.mjs --live [--budget N] [--input <file>] [--output <file>] [--report-html <file>] [--report-md <file>] [--title "<str>"] [--project <dir>]\n' +
+  '       node runtime/gandalf-run.mjs [--input <file>] [--output <file>] [--report-html <file>] [--report-md <file>] [--title "<str>"] [--cross-model] [--project <dir>]\n' +
+  '       node runtime/gandalf-run.mjs --analyze --project <dir> --objective "<question>" [--depth LITE|FULL|SPIKE-FIRST] [--output <file>] [--report-html <file>] [--report-md <file>]\n' +
   '       (--live: THE DEFAULT REAL PATH — dispatch cross-family refuters on the dashboard\'s non-drafter seat\n' +
   '        (review_family first; agy only when that family is gemini), mint claim-bound commissions, grade against\n' +
   '        the shared ledger; GROUNDED becomes reachable.)\n' +
@@ -48,9 +49,10 @@ const USAGE =
   '        offline/seat-down runs, honestly stamped cross_model:false)\n' +
   '       (--analyze mode: Scaled-Gandalf context-size router → single frontier pass for a SMALL target,\n' +
   '        or shard→scout→map→reduce for a LARGE one; --depth locks @foundry/triage band knobs)\n' +
+  '       (--report-html / --report-md: deterministic executive report from the graded JSON — zero extra LLM calls)\n' +
   '       (grade/live: with no --input, the raw draft is read from stdin; no --output → stdout)';
 
-/** Parse argv into { input, output, cross_model, project }. `--cross-model` is an INTENT flag only
+/** Parse argv into { input, output, cross_model, project, ... }. `--cross-model` is an INTENT flag only
  *  (W2b): it records that a cross-family attempt was REQUESTED; it does NOT force the output
  *  `cross_model` stamp or lift any tier ceiling — that stamp is DERIVED from genuine ledger-bound
  *  refutations inside applySeamPass. Throws on an unknown / malformed flag. */
@@ -59,6 +61,10 @@ export function parseArgs(argv) {
   const opts = {
     input: null,
     output: null,
+    report_html: null,
+    report_md: null,
+    title: null,
+    subject: null,
     cross_model: false,
     project: null,
     analyze: false,
@@ -76,6 +82,18 @@ export function parseArgs(argv) {
     } else if (a === '--output' || a === '-o') {
       opts.output = argv[++i];
       if (opts.output === undefined) throw new Error('--output requires a file path');
+    } else if (a === '--report-html') {
+      opts.report_html = argv[++i];
+      if (opts.report_html === undefined) throw new Error('--report-html requires a file path');
+    } else if (a === '--report-md') {
+      opts.report_md = argv[++i];
+      if (opts.report_md === undefined) throw new Error('--report-md requires a file path');
+    } else if (a === '--title') {
+      opts.title = argv[++i];
+      if (opts.title === undefined) throw new Error('--title requires a text argument');
+    } else if (a === '--subject') {
+      opts.subject = argv[++i];
+      if (opts.subject === undefined) throw new Error('--subject requires a text argument');
     } else if (a === '--project' || a === '-p') {
       opts.project = argv[++i];
       if (opts.project === undefined) throw new Error('--project requires a directory path');
@@ -570,6 +588,16 @@ export function gradeScaledReport(report) {
   return output;
 }
 
+function writeExecutiveReports(gradedOutput, opts) {
+  if (!opts.report_html && !opts.report_md) return;
+  writeExecutiveReportBundle(gradedOutput, {
+    htmlPath: opts.report_html,
+    mdPath: opts.report_md,
+    title: opts.title,
+    subject: opts.subject,
+  });
+}
+
 /** The `--analyze` CLI path: build the codebase payload, run the Scaled-Gandalf pipeline (context-size
  *  routed, clever two-model), grade the result through the seam pass (C2), and write the STAMPED
  *  envelope to --output or stdout. Throws on failure so the caller emits an honest stderr reason and
@@ -592,6 +620,7 @@ async function runAnalyzeMode(opts) {
   const serialized = `${JSON.stringify(graded, null, 2)}\n`;
   if (opts.output) writeFileSync(opts.output, serialized, 'utf8');
   else process.stdout.write(serialized);
+  writeExecutiveReports(graded, opts);
 }
 
 async function main() {
@@ -686,6 +715,16 @@ async function main() {
     }
   } else {
     process.stdout.write(serialized);
+  }
+
+  if (opts.report_html || opts.report_md) {
+    try {
+      writeExecutiveReports(output, opts);
+    } catch (err) {
+      process.stderr.write(`gandalf-run: could not write executive report: ${err.message}\n`);
+      process.exitCode = 2;
+      return;
+    }
   }
 
   writeRunRecord({

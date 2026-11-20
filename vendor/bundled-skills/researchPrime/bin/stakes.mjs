@@ -61,6 +61,77 @@ export const STAKES_AXES = Object.freeze(Object.keys(AXIS_TIER_MAPS));
 // Irreversibility forces the governor tier to AT LEAST this (I6; IMPLEMENTATION-PLAN Wave 4).
 export const IRREVERSIBLE_FLOOR = 'medium';
 
+// High-stakes regulated / safety domains force the governor tier to AT LEAST 'high'.
+export const REGULATED_DOMAIN_FLOOR = 'high';
+
+const REGULATED_DOMAIN_PATTERNS = Object.freeze([
+  {
+    category: 'medical',
+    re: /\b(?:medical|clinical(?:\s+trial|\s+guideline|\s+safety|\s+outcome|\s+protocol|\s+dosing)?|drug[- ]interaction|contraindicat(?:ion|ed)|dosage|pharmacology|patient[- ]safety|adverse[- ]event|anticoagulant|warfarin|pediatric\s+dose|oncology\s+regimen|toxicology)\b/i,
+  },
+  {
+    category: 'legal',
+    re: /\b(?:legal\s+liability|malpractice|fiduciary\s+(?:duty|breach|obligation|liability)|indemnif(?:y|ication)|statutory\s+(?:liability|compliance|violation)|litigation\s+risk|regulatory\s+(?:penalty|enforcement|violation|compliance)|tort\s+liability|hipaa\s+compliance|gdpr\s+compliance|contract(?:ual)?\s+liability)\b/i,
+  },
+  {
+    category: 'financial',
+    re: /\b(?:fiduciary|solvency|bankruptcy\s+risk|tax\s+liability|sec\s+(?:filing|enforcement|compliance)|securities\s+(?:law|fraud|regulation)|cap[- ]table\s+dilution|liquidation\s+preference|equity\s+waterfall|capital\s+adequacy|margin\s+call|pension\s+liability)\b/i,
+  },
+]);
+
+const EXPLICIT_REGULATED_DOMAINS = Object.freeze({
+  medical: 'medical',
+  clinical: 'medical',
+  healthcare: 'medical',
+  pharmacology: 'medical',
+  legal: 'legal',
+  compliance: 'legal',
+  regulatory: 'legal',
+  financial: 'financial',
+  fiduciary: 'financial',
+});
+
+/**
+ * Detect whether a query / intake / stakes object touches a high-stakes safety or
+ * regulated domain (medical/clinical/drug-interaction, legal liability, financial/fiduciary).
+ * Pure, deterministic function of its input.
+ *
+ * @param {string|object} input
+ * @returns {{ matched: boolean, category: ?string, trigger: ?string }}
+ */
+export function detectRegulatedDomain(input) {
+  if (typeof input === 'string') {
+    for (const { category, re } of REGULATED_DOMAIN_PATTERNS) {
+      const m = re.exec(input);
+      if (m) return { matched: true, category, trigger: m[0] };
+    }
+    return { matched: false, category: null, trigger: null };
+  }
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return { matched: false, category: null, trigger: null };
+  }
+  const explicitDom = typeof input.domain === 'string' ? input.domain.trim().toLowerCase() : '';
+  if (explicitDom && EXPLICIT_REGULATED_DOMAINS[explicitDom]) {
+    return { matched: true, category: EXPLICIT_REGULATED_DOMAINS[explicitDom], trigger: `domain:${explicitDom}` };
+  }
+  const haystacks = [
+    input.query,
+    input.objective,
+    input.intent,
+    input.axis,
+    input.topic,
+    input.northStar,
+    input.domain,
+  ].filter((v) => typeof v === 'string' && v.trim().length > 0);
+  for (const text of haystacks) {
+    for (const { category, re } of REGULATED_DOMAIN_PATTERNS) {
+      const m = re.exec(text);
+      if (m) return { matched: true, category, trigger: m[0] };
+    }
+  }
+  return { matched: false, category: null, trigger: null };
+}
+
 /**
  * Map one axis value to the tier it justifies. An unrecognized value for a known axis contributes
  * nothing (`low`) — it can never silently RAISE the tier, only the recognized scale words can — so
@@ -111,6 +182,14 @@ export function adjudicateStakes(input) {
   // axis map (so the floor survives even if the reversibility scale is ever re-tuned).
   if (input.reversibility === 'irreversible') tier = maxTier(tier, IRREVERSIBLE_FLOOR);
 
+  // Regulated / safety-critical auto-escalation: medical/clinical/drug-interaction, legal
+  // liability, and financial/fiduciary queries escalate to at least 'high' so safety-critical
+  // runs never slip through at stakesTier='low'.
+  const regulated = detectRegulatedDomain(input);
+  if (regulated.matched) {
+    tier = maxTier(tier, REGULATED_DOMAIN_FLOOR);
+  }
+
   // Record every axis (other than the author's own declaration) that pushed the governor tier ABOVE
   // the author's declared tier, so a reviewer sees exactly WHY the governor over-rode the author.
   // The canonical case is the irreversibility floor beating a `low` declaration (the under-call
@@ -125,6 +204,15 @@ export function adjudicateStakes(input) {
         ? `reversibility='irreversible' forces tier ≥ ${IRREVERSIBLE_FLOOR} (I6 under-call guard)`
         : `${axis}='${input[axis]}' justifies tier ${at}, above the declared ${declared_tier}`;
     overrides.push({ axis, from: declared_tier, to: at, reason });
+  }
+  if (regulated.matched && tierRank(REGULATED_DOMAIN_FLOOR) > tierRank(declared_tier)) {
+    overrides.push({
+      axis: 'regulated_domain',
+      from: declared_tier,
+      to: REGULATED_DOMAIN_FLOOR,
+      category: regulated.category,
+      reason: `regulated/safety domain (${regulated.category}: "${regulated.trigger}") auto-escalates stakesTier to '${REGULATED_DOMAIN_FLOOR}'`,
+    });
   }
 
   const rationale =

@@ -103,17 +103,27 @@ export function selectJudgeModel({ authorFamily = 'claude', probe = defaultProbe
  * @param {string}  [o.authorFamily='claude']
  * @returns {{model:string,family:string,mode:string,reachable:boolean}}
  */
+/** Normalize a driver or family identifier to its canonical model family. */
+export function normalizeJudgeDriverFamily(raw) {
+  const drv = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+  if (!drv) return null;
+  if (drv.includes('gemini')) return 'gemini';
+  if (drv.includes('grok')) return 'grok';
+  if (drv.includes('chatgpt') || drv.includes('codex') || drv.includes('openai') || drv.startsWith('gpt') || /^o[134](?:-|$)/.test(drv)) {
+    return 'chatgpt';
+  }
+  if (drv.includes('claude')) return 'claude';
+  return drv.split(/[-\s]/)[0] || null;
+}
+
 export function selectJudgeFromRoutes({ routes = null, authorFamily = 'claude' } = {}) {
   const r = routes && (routes.judge ?? routes.default);
-  const drv = r && r.driver ? String(r.driver).trim().toLowerCase() : null;
-  const family = !drv ? null
-    : drv.startsWith('gemini') ? 'gemini'
-    : drv.startsWith('claude') ? 'claude'
-    : drv.split(/[-\s]/)[0] || null;
+  const family = normalizeJudgeDriverFamily(r?.family ?? r?.driver);
   if (family && family !== authorFamily) {
-    return { model: (r.model || r.driver), family, mode: 'enhanced', reachable: true };
+    return { model: (r.model || r.driver || family), family, mode: 'enhanced', reachable: true };
   }
-  return { model: authorFamily, family: authorFamily, mode: 'default', reachable: false };
+  const actualFamily = family || authorFamily;
+  return { model: (r?.model || r?.driver || actualFamily), family: actualFamily, mode: 'default', reachable: Boolean(family) };
 }
 
 // ---------------------------------------------------------------------------
@@ -200,10 +210,13 @@ export function makeJudge({ agent, authorFamily = 'claude', probeCrossModel = de
     ? selectJudgeFromRoutes({ routes, authorFamily })
     : selectJudgeModel({ authorFamily, probe: probeCrossModel });
   const stamp = stampRole({ role: JUDGE_ROLE, model: selection.model, family: selection.family, mode: selection.mode, reachable: selection.reachable });
+  let lastStamp = stamp;
 
   return {
     selection,
-    stamp,
+    get stamp() {
+      return lastStamp;
+    },
 
     /**
      * DECIDE convergence from the injected evidence (and nothing else). Returns a
@@ -219,7 +232,30 @@ export function makeJudge({ agent, authorFamily = 'claude', probeCrossModel = de
      */
     async decide({ northStar, findings = [], acceptanceCriteria = [], freshEyes = null, round = 0 } = {}) {
       const prompt = judgePrompt({ northStar, findings, acceptanceCriteria, freshEyes });
-      const out = await reliableAgent(prompt, { label: `judge:r${round}:${selection.model}`, schema: JUDGE_SCHEMA, role: 'judge', round });
+      let servedReceipt = null;
+      const out = await reliableAgent(prompt, {
+        label: `judge:r${round}:${selection.model}`,
+        schema: JUDGE_SCHEMA,
+        role: 'judge',
+        round,
+        onReceipt: (r) => { servedReceipt = r; },
+      });
+
+      const servedBlock = servedReceipt && typeof servedReceipt === 'object'
+        ? (servedReceipt.served && typeof servedReceipt.served === 'object' ? servedReceipt.served : servedReceipt)
+        : null;
+      const servedFamily = normalizeJudgeDriverFamily(servedBlock?.family ?? servedBlock?.driver ?? servedBlock?.model);
+      const servedModel = servedBlock?.model || servedBlock?.driver || null;
+      const effectiveStamp = servedFamily
+        ? stampRole({
+            role: JUDGE_ROLE,
+            model: servedModel || servedFamily,
+            family: servedFamily,
+            mode: servedFamily !== authorFamily ? 'enhanced' : 'default',
+            reachable: true,
+          })
+        : stamp;
+      lastStamp = effectiveStamp;
 
       // The Judge MUST decide. An abstain (answerable:no) or a reply without a
       // decision cannot be read as a silent pass — escalate to the human.
@@ -232,7 +268,8 @@ export function makeJudge({ agent, authorFamily = 'claude', probeCrossModel = de
           halted: true,
           reasons: ['judge sub-agent could not produce a decision after retry — HALT for human review'],
           blocking: [],
-          stamp,
+          stamp: effectiveStamp,
+          receipt: servedReceipt,
           promptSent: prompt,
         };
       }
@@ -242,10 +279,11 @@ export function makeJudge({ agent, authorFamily = 'claude', probeCrossModel = de
         lockable: decision === 'CONVERGED',
         reasons: Array.isArray(out.reasons) ? out.reasons : [],
         blocking: Array.isArray(out.blocking) ? out.blocking : [],
-        stamp,
+        stamp: effectiveStamp,
+        receipt: servedReceipt,
         promptSent: prompt,
       };
-      log(`judge r${round}: ${decision} (${stamp.cross_model ? `cross-model: ${stamp.model}` : `same-model persona: ${stamp.model}`})`);
+      log(`judge r${round}: ${decision} (${effectiveStamp.cross_model ? `cross-model: ${effectiveStamp.model}` : `same-model persona: ${effectiveStamp.model}`})`);
       return verdict;
     },
   };

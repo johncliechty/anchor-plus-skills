@@ -417,7 +417,12 @@ export function writeSlimRunRecord(record, { runsDir = null } = {}) {
 // node crucible/bin/slim.mjs <outDir> --task "<the work>" [--context-file <path>] [--project <dir>]
 //      [--depth LITE|FULL] [--tier standard|heavy] [--require-independent] [--journal-ref NNNN-slug] [--title "<name>"]
 function isMain() {
-  try { return path.resolve(fileURLToPath(import.meta.url)) === path.resolve(process.argv[1] || ''); } catch { return false; }
+  try {
+    if (!process.argv[1]) return false;
+    return fs.realpathSync(fileURLToPath(import.meta.url)) === fs.realpathSync(path.resolve(process.argv[1]));
+  } catch {
+    return false;
+  }
 }
 
 if (isMain()) {

@@ -30,6 +30,10 @@
     if (!allowance.windows.length) return account.auth.replaceAll('_',' ')+' · allowance '+allowance.state+' · Not reported';
     return allowance.state+' · '+allowance.windows.map(w=>w.label+': '+Math.round(w.remaining_percent*10)/10+'% remaining'+(w.resets_at ? ' · resets '+new Date(w.resets_at*1000).toLocaleString() : ' · reset Not reported')).join(' · ');
   }
+  function displayModelLabel(family, modelId) {
+    if (family === 'claude' && modelId === 'best') return 'claude-fable-5-1 (best · Fable 5.1)';
+    return modelId;
+  }
   function frontierName(account) {
     const sel = account && account.catalog && account.catalog.selection;
     if (!sel || !sel.model) return null;
@@ -40,9 +44,10 @@
     const model=selects.model, effort=selects.effort;
     model.disabled=effort.disabled=!account || !account.execution.ready;
     const fName=frontierName(account);
+    const fam = account ? account.family : '';
     model.replaceChildren(); option(model,'latest_supported', fName ? 'Current frontier ('+fName+')' : 'Current frontier');
-    (account && account.catalog.state==='fresh' ? account.catalog.rows : []).forEach(row=>option(model,row.model,row.model));
-    if(choice && !Array.from(model.options).some(o=>o.value===choice.model))option(model,choice.model,choice.model+' · unavailable',true);
+    (account && account.catalog.state==='fresh' ? account.catalog.rows : []).forEach(row=>option(model,row.model,displayModelLabel(fam,row.model)));
+    if(choice && !Array.from(model.options).some(o=>o.value===choice.model))option(model,choice.model,displayModelLabel(fam,choice.model)+' · unavailable',true);
     model.value=choice && choice.model || 'latest_supported'; if(!model.value)model.value='latest_supported';
     effort.replaceChildren();
     function efforts() {
@@ -135,38 +140,48 @@
     const hdr=document.createElement('div');
     hdr.className='engine-rail-header';
     hdr.innerHTML='<span class="engine-rail-title">Subscriptions &amp; Frontier</span><span class="engine-rail-gear">Setup →</span>';
-    hdr.onclick=e=>open(e.currentTarget);
+    hdr.onclick=e=>open(e.currentTarget,{section:'providers'});
     summaries.append(hdr);
     const us = data.usage_summary && data.usage_summary.windows;
     const w7 = us && us['7d'], w30 = us && us['30d'];
     const monRoot = (data.usage_summary && data.usage_summary.allowance_monitor) || {};
     const monFamilies = monRoot.families || {};
+    const svcInfo = data.logged_in_services || {};
+    const svcByFamily = {};
+    (svcInfo.ai_providers || []).forEach(p => { if (p && p.family) svcByFamily[p.family] = p; });
+    const codingFam = data.coding_family || data.default_family || 'gemini';
+    const reviewFam = data.review_family || (codingFam !== 'claude' ? 'claude' : 'gemini');
     const autoSched = (monRoot.auto_refresh && monRoot.auto_refresh.schedule) || 'Allowance: every 15m · Models: Nightly (02:00 local)';
-    hdr.title = 'Verified CLI frontier models & subscription allowances · ' + autoSched;
+    hdr.title = 'Click to view logged-in services & active model tiers · ' + autoSched;
     if (w7 && w30) {
       const banner = document.createElement('div');
       banner.className = 'cave-usage-banner';
       banner.title = 'Allowance auto-refreshes every 15m during the workday (plus live on every CLI turn); Model frontier verified Nightly at 02:00 local (' + (monRoot.as_of || monRoot.updated_at || 'current') + ')';
       banner.innerHTML = '<strong>⚡ 7d: ~' + fmtUsd(w7.hypothetical_usd) + ' (' + fmtTokens(w7.total_tokens) + ')</strong><span>30d: ~' + fmtUsd(w30.hypothetical_usd) + ' · ↻ 15m / Nightly</span>';
-      banner.onclick = e => open(e.currentTarget);
+      banner.onclick = e => open(e.currentTarget,{section:'providers'});
       summaries.append(banner);
     }
     data.connections.forEach(connection=>{
       const row=document.createElement('div');
       const isSelected=connection.id===(data.preferences.accounts[connection.family] || connection.family+'-default');
       const mon = monFamilies[connection.family] || {};
+      const svc = svcByFamily[connection.family] || {};
       const isDefaultSub = Boolean(connection.native_default && connection.mode==='subscription');
-      const isReady=Boolean((connection.execution && connection.execution.ready) || (isDefaultSub && mon.connected));
-      row.className='cave-account-summary'+(isSelected?' is-selected':'')+(isReady?' is-ready':'');
+      const isFallback = Boolean(svc.fallback_active);
+      const isSignedOut = connection.auth === 'signed_out' && !isFallback;
+      const isReady = !isSignedOut && Boolean((connection.execution && connection.execution.ready) || svc.signed_in_or_ready || (isDefaultSub && mon.connected));
+      row.className='cave-account-summary'+(isSelected?' is-selected':'')+(isReady?' is-ready':'')+(isFallback?' is-fallback':'');
       row.dataset.accountId=connection.id;
-      const fModel=frontierName(connection) || (isDefaultSub && mon.frontier_model) || null;
+      row.dataset.providerFamily=connection.family;
+      const defaultFrontierMap = {claude:'claude-fable-5-1 · max',chatgpt:'gpt-6-luna · ultra',gemini:'gemini-4-neon · high',grok:'grok-4.7 · xhigh'};
+      const fModel=frontierName(connection) || svc.active_model || (isDefaultSub && mon.frontier_model) || defaultFrontierMap[connection.family] || null;
       const qChoice=data.preferences.quality[connection.family];
       const prefModel=qChoice && qChoice.model;
       const fam7 = w7 && w7.by_family && w7.by_family[connection.family];
       const fam30 = w30 && w30.by_family && w30.by_family[connection.family];
       const spend7Text = fam7 ? '~' + fmtUsd(fam7.hypothetical_usd) : '';
       const spend30Text = (fam7 || fam30) ? ' · 30d: ~' + fmtUsd(fam30 && fam30.hypothetical_usd) + ' (' + fmtTokens(fam30 ? fam30.total_tokens : 0) + ' tok)' : '';
-      const modeBadge = connection.mode==='api' ? 'API' : 'Sub';
+      const modeBadge = connection.mode==='api' ? 'API' : (isFallback ? 'via agy' : (connection.auth === 'signed_in' ? 'Signed in' : (connection.auth === 'signed_out' ? 'Sign in' : 'Sub')));
 
       let pctVal = null;
       if(connection.allowance && connection.allowance.windows && connection.allowance.windows.length){
@@ -178,15 +193,28 @@
       const topRow=document.createElement('div');
       topRow.className='ec-top';
       const dot=document.createElement('span');
-      dot.className='ec-dot '+(isReady?'active':'idle');
+      dot.className='ec-dot '+(isFallback ? 'warn' : (isReady ? 'active' : 'idle'));
       const heading=document.createElement('strong');
       heading.className='ec-name';
       const customNick = connection.name && connection.name !== 'Primary' && connection.name !== 'Existing native sign-in' && !connection.native_default;
       heading.textContent=labels[connection.family]+(customNick ? ' · '+connection.name : '')+(isSelected?' ★':'');
+      topRow.append(dot,heading);
+      if (connection.family === codingFam) {
+        const roleTag = document.createElement('span');
+        roleTag.className = 'ec-role is-coding';
+        roleTag.textContent = 'Coder';
+        topRow.append(roleTag);
+      }
+      if (connection.family === reviewFam) {
+        const roleTag = document.createElement('span');
+        roleTag.className = 'ec-role is-review';
+        roleTag.textContent = 'Review';
+        topRow.append(roleTag);
+      }
       const badge=document.createElement('span');
-      badge.className='ec-mode';
+      badge.className='ec-mode'+(isFallback ? ' is-warn' : '');
       badge.textContent=modeBadge;
-      topRow.append(dot,heading,badge);
+      topRow.append(badge);
 
       const rightTag = (isDefaultSub && mon.short_allowance) ? mon.short_allowance : (pctVal !== null ? (pctVal + '% left') : spend7Text);
       if(rightTag){
@@ -202,13 +230,16 @@
         : (isDefaultSub && mon.primary_reset_text)
           ? (' · resets ' + shortDate(mon.primary_reset_text))
           : (spend7Text ? (' · 7d ' + spend7Text) : '');
-      const modelTxt = (!prefModel || prefModel==='latest_supported')
-        ? (fModel || 'unverified')
-        : (prefModel + (fModel ? ' ('+fModel+')' : ''));
+      const cleanPref = prefModel === 'best' ? 'claude-fable-5-1' : prefModel;
+      const modelTxt = isFallback
+        ? 'Opus 5.5 · high (sign in CLI → Fable 5.1)'
+        : ((!cleanPref || cleanPref==='latest_supported')
+            ? (fModel || 'Current frontier')
+            : (cleanPref + (qChoice && qChoice.effort && qChoice.effort !== 'highest_supported' ? ' · ' + qChoice.effort : '') + (fModel && fModel.indexOf(cleanPref) === -1 ? ' ('+fModel+')' : '')));
       const frontierLine=document.createElement('div');
       frontierLine.className='ec-frontier';
       frontierLine.textContent=modelTxt + resetSuffix;
-      frontierLine.title='Frontier: ' + modelTxt + (isDefaultSub && mon.summary_line ? ' · ' + mon.summary_line : '');
+      frontierLine.title=(svc.fallback_note ? svc.fallback_note + ' · ' : '') + 'Active model: ' + modelTxt + (isDefaultSub && mon.summary_line ? ' · ' + mon.summary_line : '');
 
       row.append(topRow,frontierLine);
 
@@ -231,27 +262,90 @@
       details.textContent=capacityText(connection)+monBasis+' · '+(connection.anchor_observed.tokens===null?'observed usage unknown':connection.anchor_observed.tokens.toLocaleString()+' observed tokens · '+connection.anchor_observed.state)+spend30Text+(connection.mode==='api'?' · API cost '+connection.api_spend.state:'');
       row.append(details);
 
-      row.onclick=e=>open(e.currentTarget);
+      row.onclick=e=>open(e.currentTarget,{section:'providers',family:connection.family});
       summaries.append(row);
     });
+    const commsList = Array.isArray(svcInfo.comms_accounts) ? svcInfo.comms_accounts : [];
+    if (commsList.length) {
+      const commsRow = document.createElement('div');
+      commsRow.className = 'cave-account-summary is-ready cave-comms-summary';
+      commsRow.title = 'Connected Email & Calendar accounts — click to view or manage in Setup';
+      const labelsTxt = commsList.map(a => a.label || a.family).slice(0, 4).join(' · ');
+      commsRow.innerHTML = '<div class="ec-top"><span class="ec-dot active"></span><strong class="ec-name">Email &amp; Calendar (' + commsList.length + ')</strong><span class="ec-mode">Synced</span></div>'
+        + '<div class="ec-frontier">' + labelsTxt.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</div>';
+      commsRow.onclick = e => open(e.currentTarget,{section:'comms'});
+      summaries.append(commsRow);
+    }
     try { localStorage.setItem('anchor_cave_summaries_cache', summaries.innerHTML); } catch (_) {}
   }
-  async function load(){try{paint(await request('/api/provider-setup'));message.textContent='Apply affects new work; conversations keep their source.';}catch(error){message.textContent=error.message;}}
-  function close(){if(dialog && dialog.open){dialog.close();if(opening)opening.focus();load();}}
-  function open(from){
-    opening=from;
-    const b=(window.ANCHOR_BOOT && window.ANCHOR_BOOT.build_id) || Date.now();
-    if(!dialog){dialog=document.createElement('dialog');dialog.className='provider-dialog';dialog.setAttribute('aria-label','Setup settings');const iframe=document.createElement('iframe');iframe.title='Anchor Setup settings';iframe.src='/setup?embed=1&v='+encodeURIComponent(b);dialog.append(iframe);document.body.append(dialog);dialog.addEventListener('cancel',()=>{if(opening)opening.focus();load();});}
-    else dialog.querySelector('iframe').contentWindow.postMessage({type:'anchor-setup-open'},location.origin);
-    dialog.showModal();
+  let autoRefreshedCold = false;
+  async function load(){
+    try{
+      const snap = await request('/api/provider-setup');
+      paint(snap);
+      message.textContent='Apply affects new work; conversations keep their source.';
+      if (!autoRefreshedCold && Array.isArray(snap.connections) && snap.connections.length && snap.connections.every(c => !c.observed_at && c.auth === 'unknown')) {
+        autoRefreshedCold = true;
+        request('/api/provider-setup?refresh=1').then(paint).catch(() => {});
+      }
+    }catch(error){message.textContent=error.message;}
   }
-  document.getElementById('setup-gear').addEventListener('click',e=>open(e.currentTarget));
-  document.getElementById('cave-provider-capacity').addEventListener('click',e=>open(e.currentTarget));
-  document.getElementById('cave-provider-settings').addEventListener('click',e=>open(e.currentTarget));
+  function close(){if(dialog && dialog.open){dialog.close();if(opening)opening.focus();load();}}
+  function buildSetupUrl(opts){
+    const b=(window.ANCHOR_BOOT && window.ANCHOR_BOOT.build_id) || Date.now();
+    const p=new URLSearchParams();
+    p.set('embed','1');
+    if(opts && opts.section)p.set('section',opts.section);
+    if(opts && opts.family)p.set('family',opts.family);
+    p.set('v',String(b));
+    return '/setup?'+p.toString();
+  }
+  function open(from, opts){
+    opening=from;
+    const targetOpts = opts || {section:'providers'};
+    if(!dialog){
+      dialog=document.createElement('dialog');
+      dialog.className='provider-dialog';
+      dialog.setAttribute('aria-label','Setup settings');
+      const closeBtn=document.createElement('button');
+      closeBtn.type='button';
+      closeBtn.className='provider-dialog-close-x';
+      closeBtn.setAttribute('aria-label','Close window and return');
+      closeBtn.title='Close and return to Cave of Wonders or AI Cockpit (Esc)';
+      closeBtn.innerHTML='&#10005;';
+      closeBtn.addEventListener('click',ev=>{ev.preventDefault();ev.stopPropagation();close();});
+      const iframe=document.createElement('iframe');
+      iframe.title='Anchor Setup settings';
+      iframe.src=buildSetupUrl(targetOpts);
+      dialog.append(closeBtn,iframe);
+      dialog.addEventListener('click',ev=>{if(ev.target===dialog)close();});
+      document.body.append(dialog);
+      dialog.addEventListener('cancel',()=>{if(opening)opening.focus();load();});
+    } else {
+      const iframe=dialog.querySelector('iframe');
+      let onSetupPage=false;
+      try{onSetupPage=Boolean(iframe.contentWindow && iframe.contentWindow.location && iframe.contentWindow.location.pathname==='/setup');}catch(_){}
+      if(!onSetupPage){
+        iframe.src=buildSetupUrl(targetOpts);
+      }else{
+        iframe.contentWindow.postMessage({type:'anchor-setup-open',section:targetOpts.section||'',family:targetOpts.family||''},location.origin);
+      }
+    }
+    if(!dialog.open)dialog.showModal();
+  }
+  document.getElementById('setup-gear').addEventListener('click',e=>open(e.currentTarget,{section:'providers'}));
+  document.getElementById('cave-provider-capacity').addEventListener('click',e=>open(e.currentTarget,{section:'providers'}));
+  document.getElementById('cave-provider-settings').addEventListener('click',e=>open(e.currentTarget,{section:'providers'}));
   document.getElementById('cave-provider-apply').addEventListener('click',async()=>{
     if(!controller)return;try{paint(await request('/api/provider-setup/apply',{preferences:controller.get(),expected_revision:data.settings_revision}));message.textContent='Saved for new work. Existing conversations retain their source.';}catch(error){message.textContent=error.message;}
   });
-  window.addEventListener('message',event=>{if(event.origin!==location.origin || !dialog || event.source!==dialog.querySelector('iframe').contentWindow)return;if(event.data && event.data.type==='anchor-setup-close')close();if(event.data && event.data.type==='anchor-setup-saved')load();});
+  window.addEventListener('message',event=>{
+    if(event.origin!==location.origin || !dialog)return;
+    const iframe=dialog.querySelector('iframe');
+    if(!iframe || event.source!==iframe.contentWindow)return;
+    if(event.data && (event.data.type==='anchor-setup-close' || event.data.type==='anchor-overlay-close'))close();
+    if(event.data && event.data.type==='anchor-setup-saved')load();
+  });
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)load();});
   setInterval(()=>{if(!document.hidden)load();},60000);load();
 })();

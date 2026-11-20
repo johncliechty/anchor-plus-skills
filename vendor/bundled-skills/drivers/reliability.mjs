@@ -62,6 +62,22 @@ import { makePerProviderBreaker, runWithIdleWatchdog } from './reliability-break
  * @param {*} err
  * @returns {{ class:string, recoverable:boolean }}
  */
+const RECOVERABLE_TIMEOUT_STATUSES = new Set([
+  'timeout', 'timed_out', 'idle_timeout', 'preflight_timeout',
+]);
+const RECOVERABLE_TRANSIENT_STATUSES = new Set([
+  'rate_limit', 'rate_limited', 'rate_limit_error', 'rate_limit_exceeded',
+  'too_many_requests', 'cli_error', 'protocol_error', 'no_reply',
+]);
+const NON_RECOVERABLE_SEAT_STATUSES = new Set([
+  'aborted', 'cancelled', 'auth_error', 'auth_expired',
+  'subscription_auth_required', 'login_required', 'unauthenticated',
+  'usage_limit', 'quota_exhausted', 'quota_exceeded', 'credits_required',
+  'model_requires_usage_credits', 'schema_exhausted', 'schema_nonconforming',
+  'verification_fail_closed', 'cli_unavailable', 'capability_unavailable',
+  'model_substituted', 'unattested_model', 'wrote_files',
+]);
+
 export function classifyFault(err) {
   if (err && typeof err === 'object') {
     const pre = err.classification;
@@ -72,6 +88,27 @@ export function classifyFault(err) {
     if (input) {
       const c = classifyExit(input);
       return { class: c.class, recoverable: c.recoverable };
+    }
+    const rawStatus = err.provider_status
+      || err.receipt?.attempts?.at(-1)?.transport_attempts?.at(-1)?.provider_status
+      || err.receipt?.error?.code
+      || err.seat_status
+      || err.receipt?.seat_status
+      || err.receipt?.status
+      || null;
+    const status = typeof rawStatus === 'string' ? rawStatus.trim().toLowerCase() : '';
+    if (status) {
+      if (NON_RECOVERABLE_SEAT_STATUSES.has(status)) {
+        return { class: EXIT_CLASSES.UNKNOWN, recoverable: false };
+      }
+      if (RECOVERABLE_TIMEOUT_STATUSES.has(status)) {
+        const c = classifyExit({ timedOut: true });
+        return { class: c.class, recoverable: c.recoverable };
+      }
+      if (RECOVERABLE_TRANSIENT_STATUSES.has(status)) {
+        const c = classifyExit({ code: 1 });
+        return { class: c.class, recoverable: c.recoverable };
+      }
     }
   }
   const c = classifyExit({}); // totality backstop -> unknown / non-recoverable

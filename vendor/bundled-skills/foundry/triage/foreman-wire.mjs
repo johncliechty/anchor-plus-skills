@@ -39,6 +39,10 @@ export const MIN_REVIEWERS = 1;
 export const REVIEWERS_BY_DEPTH = Object.freeze({
   [DEPTH_BANDS.LITE]: Math.max(MIN_REVIEWERS, foremanKnobs(DEPTH_BANDS.LITE).reviewers),
   [DEPTH_BANDS.FULL]: Math.max(MIN_REVIEWERS, foremanKnobs(DEPTH_BANDS.FULL).reviewers),
+  [DEPTH_BANDS.MATRIX_FAST_TRACK]: Math.max(
+    MIN_REVIEWERS,
+    foremanKnobs(DEPTH_BANDS.MATRIX_FAST_TRACK).reviewers,
+  ),
   [DEPTH_BANDS.SPIKE_FIRST]: Math.max(
     MIN_REVIEWERS,
     foremanKnobs(DEPTH_BANDS.SPIKE_FIRST).reviewers,

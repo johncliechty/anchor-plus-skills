@@ -425,8 +425,9 @@ def recovery_error(job, worker=None):
 
 
 def snapshot_matches(job, current_snap, saved_snap):
-    """True when current_snap equals saved_snap, or when HEAD moved solely because _commit_manifest committed the
-    job's own candidate commit on top of saved_snap['head'] with identical file hashes (plus Anchor reading copies)."""
+    """True when current_snap equals saved_snap, or when HEAD advanced from saved_snap['head'] while keeping every
+    non-runtime file's SHA-256 and mode identical to saved_snap['files'] (e.g. candidate commit(s) or a legacy
+    runtime-only checkpoint commit, with zero symlinks, gitlinks, or unattested path/mode mutations)."""
     if not isinstance(current_snap, dict) or not isinstance(saved_snap, dict):
         return False
     if current_snap == saved_snap:
@@ -439,13 +440,53 @@ def snapshot_matches(job, current_snap, saved_snap):
     if cur_files != sav_files:
         if {k: v for k, v in cur_files.items() if k not in copies} != {k: v for k, v in sav_files.items() if k not in copies}:
             return False
-    if current_snap.get("head") == saved_snap.get("head"):
+    cur_head = str(current_snap.get("head") or "").strip()
+    sav_head = str(saved_snap.get("head") or "").strip()
+    if cur_head == sav_head:
         return True
+    if not cur_head or not sav_head:
+        return False
     wt = job.get("worktree") or ""
-    c1, parent, _ = cj._git(wt, "rev-parse", str(current_snap.get("head") or "") + "^")
-    c2, subj, _ = cj._git(wt, "log", "-1", "--format=%s", str(current_snap.get("head") or ""))
-    return (c1 == 0 and c2 == 0 and parent.strip() == saved_snap.get("head")
-            and subj.strip().startswith("Code job " + str(job.get("id") or "")))
+    c_anc, _, _ = cj._git(wt, "merge-base", "--is-ancestor", sav_head, cur_head)
+    if c_anc != 0:
+        return False
+    import git_safety as _gs
+    c_raw, raw_bytes = _gs._git_bytes(
+        wt, "diff", "--raw", "--no-abbrev", "--no-renames", "--no-ext-diff", "-z", f"{sav_head}..{cur_head}"
+    )
+    if c_raw != 0:
+        return False
+    tokens = [tok.decode("utf-8", "surrogateescape") for tok in raw_bytes.split(b"\x00") if tok]
+    if len(tokens) % 2 != 0:
+        return False
+    for idx in range(0, len(tokens), 2):
+        meta = tokens[idx]
+        rel_path = tokens[idx + 1]
+        if any(0xDC80 <= ord(ch) <= 0xDCFF for ch in rel_path) or "\x00" in rel_path:
+            return False
+        parts = meta.lstrip(":").split()
+        if len(parts) < 5:
+            return False
+        old_mode, new_mode, _old_blob, new_blob = parts[0], parts[1], parts[2], parts[3]
+        if old_mode in ("120000", "160000") or new_mode in ("120000", "160000"):
+            return False
+        norm_rel = rel_path.replace("\\", "/")
+        if cj._runtime(norm_rel) or norm_rel in copies:
+            continue
+        if norm_rel not in sav_files:
+            return False
+        sav_entry = sav_files.get(norm_rel)
+        if sav_entry is None:
+            if new_mode != "000000":
+                return False
+        elif not isinstance(sav_entry, dict) or new_mode == "000000":
+            return False
+        else:
+            disk_path = cj._output_path(wt, norm_rel)
+            c_ho, disk_blob, _ = cj._git(wt, "hash-object", f"--path={norm_rel}", "--", str(disk_path))
+            if c_ho != 0 or disk_blob.strip() != new_blob.strip():
+                return False
+    return True
 
 
 def orphaned_finalizer(job):

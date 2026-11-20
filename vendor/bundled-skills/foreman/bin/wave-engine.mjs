@@ -39,7 +39,19 @@ import crypto from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 
 import { HaltError, newCheckpoint, writeCheckpointAtomic, renderDashboard, parseWaves, discoverTestCommand, locateDocs, isNonCodeWave, parseWaveOracles } from './foreman-lib.mjs';
-import { checkDeltaCoverage, tokensFor as deltaTokensFor } from './delta-coverage-gate.mjs';
+import { checkDeltaCoverage, tokensFor as deltaTokensFor, extractIdentifierMentions, prioritizeTestFiles } from './delta-coverage-gate.mjs';
+import {
+  isGitWorktreeOrRepoRoot,
+  makeGitDiffBaseline,
+  measuredGitDiffChanges,
+  buildAnvilSlice,
+  buildBoundedGitDiff,
+  runFastHygieneGate,
+  captureAegisBaseline,
+  runFastAegisGate,
+  runFastAnvilAstGate,
+  checkHunkScopedTestEdits,
+} from './fast-gates.mjs';
 
 // ---------------------------------------------------------------------------
 // Agent-wait heartbeat (0082 P0.3 / 2026-07-24 thrash cleanup)
@@ -353,16 +365,17 @@ export function vacuousExecute(changed) {
   return real.length === 0;
 }
 
-/** The plan's section for wave N (from its heading to the next wave heading), or ''. */
+/** The plan's section for wave N (from its heading to the next distinct parent wave heading), or ''. */
 export function waveSectionOf(planText, waveN) {
   const lines = String(planText || '').split(/\r?\n/);
-  const head = /^#{1,6}\s*(?:wave|sprint|section)\s*(\d+)\b/i;
+  const head = /^#{1,6}\s*(?:wave|sprint|section)\s*(\d+)(?:\.(\d+))?\b/i;
   let start = -1;
   for (let i = 0; i < lines.length; i++) {
     const m = lines[i].match(head);
     if (!m) continue;
-    if (start >= 0) return lines.slice(start, i).join('\n');
-    if (Number(m[1]) === Number(waveN)) start = i;
+    const parentN = Number(m[1]);
+    if (start >= 0 && parentN !== Number(waveN)) return lines.slice(start, i).join('\n');
+    if (start < 0 && parentN === Number(waveN)) start = i;
   }
   return start >= 0 ? lines.slice(start).join('\n') : '';
 }
@@ -464,9 +477,36 @@ export function missingRequiredWaveTests(projectDir, planText, waveN) {
   });
 }
 
-function measuredChanges(root, foremanDir, startSnap, git, includeDeliverables) {
-  const measured = () => changedSince(root, foremanDir, startSnap, includeDeliverables);
-  if (!git) return measured();
+function makeGitSkipFilter(root, foremanDir, includeDeliverables = false) {
+  const absRoot = path.resolve(root);
+  const absForeman = path.resolve(foremanDir);
+  return (rawRel) => {
+    const rel = String(rawRel || '').replace(/\\/g, '/').replace(/^\.\//, '');
+    if (!rel) return true;
+    const abs = path.resolve(absRoot, rel);
+    if (abs === absForeman || abs.startsWith(absForeman + path.sep)) return true;
+    const parts = rel.split('/');
+    const base = parts[parts.length - 1] || '';
+    if (base.endsWith('.tmp') || base === 'foreman-checkpoint.json') return true;
+    for (let i = 0; i < parts.length - 1; i++) {
+      const seg = parts[i];
+      if (IGNORE_DIRS.has(seg) && !(includeDeliverables && DELIVERABLE_DIRS.has(seg))) return true;
+    }
+    if (isRuntimeNoisePath(rel)) return true;
+    return false;
+  };
+}
+
+function measuredChanges(root, foremanDir, startSnap, git, includeDeliverables, gitDiffBaseline = null) {
+  const measured = () => (startSnap ? changedSince(root, foremanDir, startSnap, includeDeliverables) : []);
+  if (!git) {
+    if (gitDiffBaseline && !includeDeliverables) {
+      const skipRel = makeGitSkipFilter(root, foremanDir, false);
+      const gd = measuredGitDiffChanges(root, gitDiffBaseline, skipRel);
+      if (gd !== null) return gd;
+    }
+    return measured();
+  }
   const changed = git.changedVsHead();
   return includeDeliverables ? [...new Set([...changed, ...measured()])] : changed;
 }
@@ -810,7 +850,7 @@ function checkVacuousGreen(root, foremanDir, changedFiles, extra = {}) {
   // NO-OP wave converged twice. Only CODE changes can prove a wave; a wave whose
   // diff is doc/data-only conservatively HALTs for human confirmation (same
   // doctrine as the test-only case in the F2-9 note above).
-  const DOC_DATA_RE = /\.(md|json|txt|ya?ml|csv|toml|ini|cfg)$/i;
+  const DOC_DATA_RE = /\.(md|json|txt|ya?ml|csv|toml|ini|cfg)(?:\.bak[-.\w]*)?$/i;
   const code = sources.filter((f) => !DOC_DATA_RE.test(f));
   const reach = reachableFromTests(root, foremanDir);
   let testText = null;
@@ -1510,7 +1550,9 @@ export async function runWave(o) {
   // Plan text for execute contract injection (0076 package 1). Best-effort read.
   let planText = '';
   try { planText = fs.readFileSync(planPath, 'utf8'); } catch { /* missing plan is a higher-level HALT */ }
-  const ctx = { projectDir, wave, foremanDir, testCommand, log, planPath, planText, eleganceInReview: slim };
+  const sliceTargets = [...new Set([...(wave.writes || []), ...namedWavePaths(planText, wave.n)])];
+  const anvilSlice = sliceTargets.length ? buildAnvilSlice(projectDir, sliceTargets) : '';
+  const ctx = { projectDir, wave, foremanDir, testCommand, log, planPath, planText, profile, eleganceInReview: slim, anvilSlice };
 
   // §5 anti-test-weakening: snapshot inventory + file hashes BEFORE any change.
   // P2 2026-07-25 (0035 monorepo half): when the plan declares a wave-scoped gate,
@@ -1520,8 +1562,81 @@ export async function runWave(o) {
     const scopePaths = gateScopePaths(cmd, projectDir);
     return scopePaths.length ? { scopePaths } : undefined;
   };
-  const invBefore = inventory(projectDir, foremanDir, invScopeFor(resolveWaveGateCommand(wave, testCommand)));
-  const hashStart = snapshotHashes(projectDir, foremanDir, declaredNonCode);
+  let invBeforeScope = invScopeFor(resolveWaveGateCommand(wave, testCommand));
+  let invBefore = inventory(projectDir, foremanDir, invBeforeScope);
+  const invWholeRepoBefore = invBeforeScope ? null : invBefore;
+  const resumeStep = resumeFrom?.intraStep ? String(resumeFrom.intraStep) : '';
+  const priorLedger = readWaveProvenLedger(foremanDir, wave.n, planPath);
+  const hasProvenSources = !!(priorLedger && Array.isArray(priorLedger.changed)
+    && priorLedger.changed.some((f) => isProvenDeliverablePath(String(f))));
+  // S3: a declared non-code wave always re-executes on resume - its outputs must be produced in the invocation that
+  // gates them (there is no proven ledger of code to re-prove; with git, changedVsHead still sees earlier work).
+  const skipExecute = !declaredNonCode && (resumeStep === 'review'
+    || (resumeStep === 'gate' && hasProvenSources));
+
+  const gitSkipFilter = makeGitSkipFilter(projectDir, foremanDir, declaredNonCode);
+  const useGitDiff = o.gitDiff !== undefined ? Boolean(o.gitDiff) : isGitWorktreeOrRepoRoot(projectDir);
+  const gitBaselinePath = path.join(foremanDir, `wave-${wave.n}-git-baseline.json`);
+  let gitDiffBaseline = null;
+  if (!git && !declaredNonCode && useGitDiff) {
+    if (skipExecute) {
+      try {
+        const saved = JSON.parse(fs.readFileSync(gitBaselinePath, 'utf8'));
+        const samePlan = !saved?.plan_path || !planPath || path.resolve(saved.plan_path) === path.resolve(planPath);
+        if (saved && samePlan && saved.dirtyHashes && typeof saved.dirtyHashes === 'object') {
+          gitDiffBaseline = { dirtyHashes: saved.dirtyHashes };
+        }
+      } catch { /* fall back below */ }
+      if (!gitDiffBaseline) {
+        const fresh = makeGitDiffBaseline(projectDir, gitSkipFilter);
+        if (fresh && fresh.dirtyHashes) {
+          const waveOwned = new Set(
+            [
+              ...(priorLedger?.changed || []),
+              ...(wave.writes || []),
+              ...namedWavePaths(planText, wave.n),
+              ...requiredWaveTestPaths(planText, wave.n),
+            ]
+              .map((p) => String(p || '').replace(/\\/g, '/').replace(/^\.\//, ''))
+              .filter(Boolean),
+          );
+          for (const rel of waveOwned) delete fresh.dirtyHashes[rel];
+          gitDiffBaseline = fresh;
+        }
+      }
+    } else {
+      gitDiffBaseline = makeGitDiffBaseline(projectDir, gitSkipFilter);
+      if (gitDiffBaseline && gitDiffBaseline.dirtyHashes) {
+        try {
+          fs.mkdirSync(foremanDir, { recursive: true });
+          fs.writeFileSync(
+            gitBaselinePath,
+            JSON.stringify({
+              version: 1,
+              wave: wave.n,
+              plan_path: planPath || null,
+              at: new Date().toISOString(),
+              dirtyHashes: gitDiffBaseline.dirtyHashes,
+            }, null, 2) + '\n',
+            'utf8',
+          );
+        } catch { /* best-effort */ }
+      }
+    }
+  }
+  const hashStart = (!declaredNonCode && (git || gitDiffBaseline)) ? null : snapshotHashes(projectDir, foremanDir, declaredNonCode);
+  // Pre-capture pre-wave content of existing Python slice targets for non-git Aegis baseline accuracy
+  const preWavePyContents = new Map();
+  for (const rel of sliceTargets) {
+    if (String(rel).toLowerCase().endsWith('.py')) {
+      try {
+        const abs = path.join(projectDir, rel);
+        if (fs.statSync(abs).isFile()) preWavePyContents.set(rel, fs.readFileSync(abs, 'utf8'));
+      } catch { /* ignore */ }
+    }
+  }
+  const rawAegisBaseline = captureAegisBaseline(projectDir);
+  const getAegisBaseline = (rel) => rawAegisBaseline(rel, preWavePyContents.get(rel) ?? null);
   // S3: the declared outputs' own wave-start snapshot - "created or changed by this wave" is measured on them
   const outputsStart = declaredNonCode ? snapshotPaths(projectDir, wave.outputs) : null;
 
@@ -1542,19 +1657,6 @@ export async function runWave(o) {
 
   // EXECUTE (single-threaded; model-driven). May be a no-op if the wave's code
   // is already in place; it must never weaken tests.
-  // F-H sleep fix (0072): skip long execute when resume stamped **review** after
-  // a prior GREEN gate. 0082 P1.9: also skip execute on resume at **gate** when a
-  // source-rich proven ledger already exists for this wave (re-prove at gate only;
-  // no re-spend execute). Vacuous-fix path with NO ledger still runs execute so
-  // new deliverables can land.
-  const resumeStep = resumeFrom?.intraStep ? String(resumeFrom.intraStep) : '';
-  const priorLedger = readWaveProvenLedger(foremanDir, wave.n);
-  const hasProvenSources = !!(priorLedger && Array.isArray(priorLedger.changed)
-    && priorLedger.changed.some((f) => isProvenDeliverablePath(String(f))));
-  // S3: a declared non-code wave always re-executes on resume - its outputs must be produced in the invocation that
-  // gates them (there is no proven ledger of code to re-prove; with git, changedVsHead still sees earlier work).
-  const skipExecute = !declaredNonCode && (resumeStep === 'review'
-    || (resumeStep === 'gate' && hasProvenSources));
   // Declared BEFORE the execute step: the 0102 agent-died halt calls finishHalt,
   // which closes over iteration/findings/lastGate — post-execute declarations TDZ.
   let iteration = seededIteration;
@@ -1584,7 +1686,15 @@ export async function runWave(o) {
   } else {
     // (declared before the execute step: the 0102 agent-died halt below runs
     // finishHalt, which reads `iteration` — a post-execute declaration would TDZ.)
-    exec = await agentWait('execute', () => driver.execute(ctx));
+    exec = await agentWait('execute', () => (
+      typeof o.executeRunner === 'function' ? o.executeRunner(ctx) : driver.execute(ctx)
+    ));
+    if (exec?.halt) {
+      const h = exec.halt;
+      steps.push(`✗ ${h.reason}`);
+      log(`execute: ${h.reason}`);
+      return finishHalt({ reason: h.reason, recommend: h.recommend || h.reason, subType: h.subType || null });
+    }
     // 0102: an agent that DIED must abort the wave as a loud, named HALT — never
     // advance to a gate that re-proves the PREVIOUS wave's tree and blesses an
     // empty wave GREEN. The discriminating field is the transport's ok:false
@@ -1644,6 +1754,415 @@ export async function runWave(o) {
     }
   };
 
+  let prevFailureSignature = null;
+
+  function captureTreeState() {
+    if (isGitWorktreeOrRepoRoot(projectDir) && !declaredNonCode) {
+      const base = makeGitDiffBaseline(projectDir, gitSkipFilter);
+      if (base) return { kind: 'git', baseline: base };
+    }
+    return { kind: 'hash', snap: snapshotHashes(projectDir, foremanDir, declaredNonCode) };
+  }
+
+  function diffTreeState(beforeState) {
+    if (!beforeState) return [];
+    if (beforeState.kind === 'git') {
+      const gd = measuredGitDiffChanges(projectDir, beforeState.baseline, gitSkipFilter);
+      if (gd !== null) return gd;
+    }
+    return changedSince(projectDir, foremanDir, beforeState.snap || {}, declaredNonCode);
+  }
+
+  function recordProvenLedger(curChanged) {
+    try {
+      let provenChanged = (curChanged || []).filter((f) => !f.endsWith(' (deleted)') && !isTestFile(f));
+      if (!provenChanged.some((f) => isProvenDeliverablePath(String(f)))) {
+        const reach = reachableFromTests(projectDir, foremanDir);
+        const auto = [...reach].filter((f) => isProvenDeliverablePath(f));
+        if (auto.length) {
+          provenChanged = auto;
+          log(`proven-ledger: auto-filled ${auto.length} reachable source(s) after GREEN (empty hash-diff)`);
+        }
+      }
+      writeWaveProvenLedger(foremanDir, wave.n, {
+        plan_path: planPath || null,
+        changed: provenChanged,
+        tests: lastGate?.tap?.tests ?? null,
+        pass: lastGate?.tap?.pass ?? null,
+        at: new Date().toISOString(),
+        note: provenChanged === curChanged ? undefined : 'auto-reachability-fill',
+      });
+    } catch { /* best-effort */ }
+  }
+
+  async function runGreenDeterministicGates(curChanged, curOracleTrace, { allowFastGateFix = true } = {}) {
+    const requiredTestHalt = guardRequiredTests();
+    if (requiredTestHalt) return { action: 'halt', res: requiredTestHalt };
+
+    // S3: a declared non-code wave that fell back to the code gates (it changed executable files) must STILL have
+    // produced its declared outputs - its contract is both; checked here, after the code gate it took instead
+    if (declaredNonCode && !nonCode) {
+      const og = outputsGate({ projectDir, foremanDir, wave, iteration, changed: curChanged, before: outputsStart, artifact: 'outputs' });
+      if (!og.green) {
+        const bad = og.outputs.filter((r) => r.state !== 'present').map((r) => `${r.output} (${r.state})`);
+        const reason = `[taxonomy:outputs-missing] HALT: wave ${wave.n} passed its code gate but its declared outputs were not all produced by this wave: ${bad.slice(0, 4).join(', ')}`;
+        steps.push(`✗ ${reason}`);
+        return {
+          action: 'halt',
+          res: finishHalt({
+            reason,
+            recommend: `[taxonomy:outputs-missing] produce the declared outputs (each a non-empty file inside the project, created or changed by this wave), then re-invoke wave ${wave.n}`,
+          }),
+        };
+      }
+      steps.push(`▸ declared outputs: ${og.tap.pass}/${og.tap.tests} produced by this wave (the code gate applied as well)`);
+    }
+
+    // ----- vacuous-GREEN guard BEFORE calling LLM reviewers (§5) -----
+    const vac = nonCode ? null : checkVacuousGreen(projectDir, foremanDir, curChanged, {
+      invBefore,
+      invNow: inventory(projectDir, foremanDir, invScopeFor(waveTestCommand)),
+      gateTap: lastGate.tap,
+      waveTitle: wave.title || '',
+      waveN: wave.n,
+      gateScoped: waveTestCommand !== testCommand,
+    });
+    if (vac) {
+      const reason = `vacuous-GREEN HALT: ${vac}`;
+      steps.push(`✗ ${reason}`);
+      const vacuousRecommend =
+        /vacuous-GREEN/i.test(reason)
+          ? `vacuous-GREEN: do NOT --clear-halt alone — that re-enters the same empty execute ` +
+            `(journals 0076/0078/0079). Land import-tested source for this wave (or a valid ` +
+            `source-only wave-${wave.n}-proven.json), then --resume. ` +
+            `add/keep a test that exercises the changed code, then re-invoke wave ${wave.n}`
+          : `add/keep a test that exercises the changed code, then re-invoke wave ${wave.n}`;
+      return { action: 'halt', res: finishHalt({ reason, recommend: vacuousRecommend }) };
+    }
+
+    // ----- Delta-coverage gate BEFORE calling LLM reviewers (journal 0091) -----
+    try {
+      const rawChangedList = (curChanged || []).filter(Boolean);
+      let testMentions = '';
+      for (const f of rawChangedList) {
+        if (String(f).endsWith(' (deleted)')) continue;
+        if (!isTestFile(f)) continue;
+        try {
+          const full = path.isAbsolute(f) ? f : path.join(projectDir, f);
+          if (fs.existsSync(full)) testMentions += fs.readFileSync(full, 'utf8') + '\n';
+        } catch { /* best-effort */ }
+      }
+      const delta = checkDeltaCoverage({
+        changedFiles: rawChangedList,
+        testMentions,
+        repoTestConvention: ['test/wNN-<subject>.test.mjs'],
+      });
+      // F2-9 contract rescue: scan pre-existing repo test files (prioritizing tests/ & test/) with identifier-boundary matching
+      if (!delta.pass && Array.isArray(delta.uncovered) && delta.uncovered.length) {
+        try {
+          const candidateRels = [];
+          const walk = (dir, depth) => {
+            if (depth > 4 || candidateRels.length >= 250) return;
+            for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+              if (candidateRels.length >= 250) return;
+              const full = path.join(dir, e.name);
+              if (e.isDirectory()) {
+                if (/^(node_modules|\.git|\.foreman|\.anchor|dist|build|bundle|bundle_staging|__pycache__|\.pytest_cache)$/i.test(e.name)) continue;
+                walk(full, depth + 1);
+              } else {
+                const rel = path.relative(projectDir, full).split(path.sep).join('/');
+                if (isTestFile(rel)) candidateRels.push(rel);
+              }
+            }
+          };
+          walk(projectDir, 0);
+          const orderedRels = prioritizeTestFiles(candidateRels).slice(0, 200);
+          const corpus = orderedRels.map((rel) => {
+            const full = path.join(projectDir, rel);
+            let text = '';
+            try { text = fs.readFileSync(full, 'utf8').slice(0, 65536).toLowerCase(); } catch { /* skip */ }
+            return { file: full, rel, stemTokens: deltaTokensFor(rel), idents: extractIdentifierMentions(text), textLower: text };
+          });
+          const rescued = [];
+          const stillUncovered = [];
+          const tokenInText = (c, t) => (
+            c.idents.has(t) ||
+            (t.length >= 4 && c.textLower.includes(t)) ||
+            new RegExp(`(^|[^a-z0-9])${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z0-9]|$)`, 'i').test(c.textLower)
+          );
+          for (const u of delta.uncovered) {
+            const toks = deltaTokensFor(u.file);
+            const hit = corpus.find((c) => toks.some((t) => c.stemTokens.includes(t) || tokenInText(c, t)));
+            if (hit) rescued.push({ ...u, coveredBy: path.relative(projectDir, hit.file) });
+            else stillUncovered.push(u);
+          }
+          if (rescued.length) {
+            delta.rescuedByExistingTests = rescued;
+            delta.uncovered = stillUncovered;
+            const rescueNote = `pre-existing tests cover: ${rescued.map((r) => `${r.file}→${r.coveredBy}`).join(', ')}`;
+            if (!stillUncovered.length) {
+              delta.pass = true;
+              delta.severity = 'OK';
+              delta.detail = `${rescued.length} surface change(s) covered by PRE-EXISTING tests (${rescueNote}) — in-wave scan alone had missed them (F2-9 contract)`;
+            } else {
+              delta.detail += ` RESCUED: ${rescueNote}.`;
+            }
+          }
+        } catch { /* rescue is best-effort */ }
+      }
+      try {
+        fs.mkdirSync(foremanDir, { recursive: true });
+        fs.writeFileSync(
+          path.join(foremanDir, `wave-${wave.n}-delta-coverage.json`),
+          JSON.stringify({ ...delta, oracle_map: curOracleTrace, wave: wave.n, at: new Date().toISOString() }, null, 2) + '\n',
+          'utf8',
+        );
+      } catch { /* best-effort */ }
+      if (curOracleTrace.oracles.length || curOracleTrace.tests_beyond_oracles.length) {
+        const named = curOracleTrace.oracles.filter((o) => o.tests.length).length;
+        const beyond = curOracleTrace.tests_beyond_oracles;
+        steps.push(`▸ oracles: ${named}/${curOracleTrace.oracles.length} acceptance item(s) name a test file${named ? ' (all present)' : ''} · ` +
+          `${beyond.length} changed test(s) beyond any oracle${beyond.length ? ` (${beyond.slice(0, 3).join(', ')})` : ''}`);
+      }
+      if (!delta.pass && (slim || nonCode)) {
+        steps.push(`▸ delta-coverage (advisory${nonCode ? ', non-code wave' : ', slim: required oracle tests enforced, extra coverage is the reviewer\'s call'}): ${delta.detail}`);
+        log(`delta-coverage: advisory wave ${wave.n} — ${delta.detail}`);
+      } else if (!delta.pass) {
+        const reason = `delta-coverage HALT (journal 0091): ${delta.detail}`;
+        steps.push(`✗ ${reason}`);
+        log(`delta-coverage: FAIL wave ${wave.n} — ${delta.detail}`);
+        return {
+          action: 'halt',
+          res: finishHalt({
+            reason,
+            recommend:
+              `add a test that NAMES each new surface (route/handler/CLI/persist path) ` +
+              `before wave ${wave.n} can GO — file name tokens or body mentions count; ` +
+              `convention: test/wNN-<subject>.test.mjs`,
+          }),
+        };
+      }
+      if (delta.detail && !/not applicable/i.test(delta.detail)) {
+        log(`delta-coverage: PASS wave ${wave.n} — ${delta.detail}`);
+      }
+    } catch (deltaErr) {
+      log(`delta-coverage: skip (non-fatal) — ${deltaErr?.message || deltaErr}`);
+    }
+
+    // ----- Deterministic Pre-Review Fast-Gates (Tidy-Idy Hygiene + Aegis CWE + Anvil AST) -----
+    const hygiene = runFastHygieneGate(curChanged, [...(wave.outputs || []), ...(wave.writes || [])]);
+    const aegis = nonCode ? { pass: true, findings: [] } : runFastAegisGate(projectDir, curChanged, getAegisBaseline);
+    const anvilAst = nonCode ? { pass: true, findings: [] } : runFastAnvilAstGate(projectDir, curChanged);
+    const fastFindings = [...hygiene.findings, ...aegis.findings, ...anvilAst.findings];
+    try {
+      fs.mkdirSync(foremanDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(foremanDir, `wave-${wave.n}-fast-gates.json`),
+        JSON.stringify({
+          wave: wave.n,
+          iteration,
+          pass: fastFindings.length === 0,
+          hygiene: hygiene.findings,
+          aegis: aegis.findings,
+          anvil_ast: anvilAst.findings,
+          at: new Date().toISOString(),
+        }, null, 2) + '\n',
+        'utf8',
+      );
+    } catch { /* best-effort */ }
+
+    if (fastFindings.length > 0) {
+      const rules = [...new Set(fastFindings.map((f) => f.rule))].join(', ');
+      steps.push(`▸ fast-gates BLOCKED before review (${fastFindings.length} deterministic finding(s): ${rules})`);
+      log(`fast-gates: BLOCKED before review — ${fastFindings.map((f) => f.message).join(' · ')}`);
+      findings = fastFindings;
+      if (!allowFastGateFix) {
+        return { action: 'continue' };
+      }
+      if (iteration >= fixIterCap) {
+        const reason = `fast-gate HALT: hit MAX_ITERS=${fixIterCap} with deterministic fast-gate blocker(s): ${fastFindings[0].message}`;
+        steps.push(`✗ ${reason}`);
+        return {
+          action: 'halt',
+          res: finishHalt({
+            stash: true,
+            reason,
+            recommend: `remediate deterministic fast-gate blocker(s) (${rules}) in wave ${wave.n}: ${fastFindings[0].message}`,
+          }),
+        };
+      }
+      if (budget) {
+        const pf = budget.canStartFixIter();
+        if (!pf.ok) {
+          const reason = `budget stop: ${pf.reason}`;
+          steps.push(`⏸ ${reason}`);
+          log(reason);
+          return { action: 'halt', res: finishBudgetStop({ reason, dimension: pf.dimension }) };
+        }
+      }
+      const curSig = `fast:${fastFindings.map((f) => f.id).sort().join('|')}`;
+      const repeatedFailureHint = (iteration + 1 >= 2 && prevFailureSignature && curSig === prevFailureSignature)
+        ? `Iteration ${iteration + 1} repeated the exact same deterministic fast-gate blocker(s) (${curSig.slice(0, 240)}) as iteration ${iteration}.`
+        : null;
+      prevFailureSignature = curSig;
+      iteration++;
+      const ffix = await agentWait(`fix-${iteration}`, () => driver.fix({ ...ctx, iteration, repeatedFailureHint }, lastGate, fastFindings));
+      if (ffix?.agent_failed) {
+        const af = ffix.agent_failed;
+        const reason = `[taxonomy:agent-died] HALT: the fix agent died (${af.detail}) — iteration ${iteration} applied nothing`;
+        steps.push(`✗ ${reason}`);
+        return {
+          action: 'halt',
+          res: finishHalt({
+            reason,
+            recommend: `[taxonomy:agent-died] fix iteration ${iteration} for wave ${wave.n} died (${af.exit_class}); check the seat, then resume at the gate.`,
+          }),
+        };
+      }
+      lastCitation = ffix?.citation || lastCitation;
+      steps.push(`▸ fast-gate fix iter ${iteration}… ${ffix?.note || 'applied'} (0 LLM review calls wasted)`);
+      log(`fast-gate fix iter ${iteration}: ${ffix?.note || 'applied'}`);
+      return { action: 'continue' };
+    }
+
+    return { action: 'ok' };
+  }
+
+  async function applyEleganceCutsAndFastClose({ stepLabel, cutFindings, releasedTests, allowedPaths }) {
+    const beforeTestContents = {};
+    for (const rel of releasedTests) {
+      const abs = path.join(projectDir, rel);
+      try {
+        if (fs.existsSync(abs)) beforeTestContents[rel] = fs.readFileSync(abs, 'utf8');
+      } catch { /* ignore */ }
+    }
+    const beforeTree = captureTreeState();
+    iteration++;
+    const efix = await agentWait(`fix-${iteration}`, () => driver.fix({ ...ctx, iteration }, lastGate, cutFindings));
+    if (efix?.agent_failed) {
+      const af = efix.agent_failed;
+      const reason = `[taxonomy:agent-died] HALT: the elegance fix agent died (${af.detail}) — iteration ${iteration} applied nothing`;
+      steps.push(`✗ ${reason}`);
+      return {
+        action: 'halt',
+        res: finishHalt({ reason, recommend: `[taxonomy:agent-died] check the fix seat, then re-invoke wave ${wave.n}` }),
+      };
+    }
+    lastCitation = efix?.citation || lastCitation;
+    for (const rel of releasedTests) {
+      const abs = path.join(projectDir, rel);
+      if (fs.existsSync(abs)) {
+        try { testBaseline[rel] = hashFile(abs); } catch { /* unreadable: leave absent */ }
+      }
+    }
+    if (releasedTests.length) {
+      invBefore = inventory(projectDir, foremanDir, invBeforeScope);
+    }
+
+    const touched = diffTreeState(beforeTree);
+    if (touched.length === 0) {
+      steps.push(`▸ ${stepLabel(efix)} · 0 file edits (fast-close GO)`);
+      log(`${stepLabel(efix)} — 0 file edits; fast-close GO without extra gate or review`);
+      return { action: 'go', res: finishGo() };
+    }
+
+    steps.push(`▸ ${stepLabel(efix)}`);
+    log(`${stepLabel(efix)} — verifying via deterministic fast-gates (fast-close without re-review if green)`);
+
+    // 1. Unreleased tests remain frozen
+    const imm = checkTestImmutability(testBaseline, projectDir, foremanDir, lastCitation, { fixRan: true });
+    if (imm) {
+      const reason = `test-immutability HALT: ${imm}`;
+      steps.push(`✗ ${reason}`);
+      return {
+        action: 'halt',
+        res: finishHalt({
+          reason,
+          recommend: `elegance trim edited an unreleased test file — revert or cite the plan line, then re-invoke wave ${wave.n}`,
+        }),
+      };
+    }
+
+    // 2. Hunk-scoped check on releasedTests (only newly changed diff hunks inspected; untouched pre-existing assertions preserved)
+    const hunkErr = checkHunkScopedTestEdits(beforeTestContents, projectDir, releasedTests);
+    if (hunkErr) {
+      const reason = `test-integrity HALT: ${hunkErr}`;
+      steps.push(`✗ ${reason}`);
+      return {
+        action: 'halt',
+        res: finishHalt({
+          reason,
+          recommend: `remove the skip/xfail marker introduced in the released test hunk, then re-invoke wave ${wave.n}`,
+        }),
+      };
+    }
+
+    // 3. Touch-scope validation: trims must stay within wave's changed files or named elegance targets
+    const allowedSet = new Set(
+      [...lastChanged, ...(allowedPaths || [])]
+        .map((p) => String(p || '').replace(/\\/g, '/').replace(/\s*\(deleted\)\s*$/, '').replace(/^\.\//, ''))
+        .filter(Boolean),
+    );
+    const outOfScope = touched
+      .map((p) => String(p || '').replace(/\\/g, '/').replace(/\s*\(deleted\)\s*$/, '').replace(/^\.\//, ''))
+      .filter((p) => p && !allowedSet.has(p) && !isRuntimeNoisePath(p) && !p.startsWith('.foreman/'));
+    if (outOfScope.length > 0) {
+      log(`elegance touch-scope: modified out-of-scope file(s) (${outOfScope.join(', ')}) — re-entering full review loop`);
+      return { action: 'continue' };
+    }
+
+    // 4. Re-measure & re-run orchestrator gate + deterministic fast-gates; fast-close GO if all green!
+    const reboundCmd = rebindGate();
+    if (reboundCmd !== waveTestCommand) waveTestCommand = reboundCmd;
+    lastChanged = measuredChanges(projectDir, foremanDir, hashStart, git, declaredNonCode, gitDiffBaseline);
+    codeBearing = declaredNonCode ? executableChanges([...new Set([...lastChanged, ...(wave.outputs ?? [])])]) : [];
+    nonCode = declaredNonCode && codeBearing.length === 0;
+
+    const smoke = preGateSyntaxSmoke(projectDir, lastChanged);
+    if (smoke) {
+      log(`elegance trim syntax smoke failed (${smoke}) — re-entering fix/review loop`);
+      return { action: 'continue' };
+    }
+
+    lastGate = await agentWait('gate', async () => (nonCode
+      ? outputsGate({ projectDir, foremanDir, wave, iteration, changed: lastChanged, before: outputsStart })
+      : runGate({
+        projectDir, testCommand: waveTestCommand, foremanDir, wave, iteration,
+        heartbeat: ({ elapsedMs, lastLine }) =>
+          log(`gate running · t+${Math.max(1, Math.round(elapsedMs / 60000))}m · last: ${lastLine || '(no output yet)'}`),
+      })));
+
+    if (lastGate.timed_out || lastGate.vacuous_reason || !lastGate.green) {
+      log(`elegance trim gate not green (exit ${lastGate.exit_code}) — re-entering loop for substantive fix`);
+      return { action: 'continue' };
+    }
+
+    lastChanged = measuredChanges(projectDir, foremanDir, hashStart, git, declaredNonCode, gitDiffBaseline);
+    const curScope = invScopeFor(waveTestCommand);
+    const invNow = inventory(projectDir, foremanDir, curScope);
+    const weak = checkTestWeakening(invBefore, invNow, lastCitation, (lastGate.tap && lastGate.tap.skipped) || 0);
+    if (weak) {
+      const reason = `test-integrity HALT: ${weak}`;
+      steps.push(`✗ ${reason}`);
+      return {
+        action: 'halt',
+        res: finishHalt({
+          reason,
+          recommend: `restore the removed/weakened tests, or cite the plan line that authorizes the change, then re-invoke wave ${wave.n}`,
+        }),
+      };
+    }
+
+    const postTrace = traceOracles(planText, wave.n, lastChanged, projectDir);
+    const det = await runGreenDeterministicGates(lastChanged, postTrace, { allowFastGateFix: false });
+    if (det.action !== 'ok') return det;
+
+    recordProvenLedger(lastChanged);
+    steps.push(`✓ wave ${wave.n} elegance fast-close GO (gate ${lastGate.tap.pass}/${lastGate.tap.tests} + deterministic fast-gates green; 0 extra review rounds)`);
+    log(`elegance fast-close GO: gate + deterministic fast-gates + touch-scope all green (0 second review round)`);
+    return { action: 'go', res: finishGo() };
+  }
+
   // eslint-disable-next-line no-constant-condition
   while (true) {
     const reboundCmd = rebindGate();
@@ -1652,7 +2171,7 @@ export async function runWave(o) {
       waveTestCommand = reboundCmd;
     }
     // §8: measure changed set before gate so syntax smoke can target it.
-  const changedPre = measuredChanges(projectDir, foremanDir, hashStart, git, declaredNonCode);
+    const changedPre = measuredChanges(projectDir, foremanDir, hashStart, git, declaredNonCode, gitDiffBaseline);
     lastChanged = changedPre;
 
     // ----- S3: the measured changes, not the label, decide whether the outputs gate applies -----
@@ -1783,13 +2302,33 @@ export async function runWave(o) {
     // measured vs git HEAD (so a crash-before-commit RESUME still sees the prior
     // run's uncommitted deliverable, which the per-invocation hash snapshot would
     // miss). Without git, fall back to the hash-diff since this invocation started.
-    const changed = measuredChanges(projectDir, foremanDir, hashStart, git, declaredNonCode);
+    const changed = measuredChanges(projectDir, foremanDir, hashStart, git, declaredNonCode, gitDiffBaseline);
     lastChanged = changed;
 
     // ----- §5 test-integrity guard (any iteration) -----
     // Scoped consistently with invBefore (P2 2026-07-25): a scoped baseline compared
     // to a whole-repo count would read as a phantom rise/mask a real reduction.
-    const invNow = inventory(projectDir, foremanDir, invScopeFor(waveTestCommand));
+    // Journal 0141: when the wave's scoped test target is newly created by execute
+    // (invBeforeScope was undefined pre-execute, curScope resolves post-execute),
+    // verify whole-repo non-weakening first, then re-anchor invBefore to curScope.
+    const curScope = invScopeFor(waveTestCommand);
+    const invNow = inventory(projectDir, foremanDir, curScope);
+    if (!invBeforeScope && curScope && invWholeRepoBefore) {
+      const wholeRepoWeak = checkTestWeakening(
+        invWholeRepoBefore,
+        inventory(projectDir, foremanDir),
+        lastCitation,
+        (lastGate.tap && lastGate.tap.skipped) || 0,
+      );
+      if (wholeRepoWeak) {
+        const reason = `test-integrity HALT: ${wholeRepoWeak}`;
+        steps.push(`✗ ${reason}`);
+        return finishHalt({ reason, recommend:
+          `restore the removed/weakened tests, or cite the plan line that authorizes the change, then re-invoke wave ${wave.n}` });
+      }
+      invBeforeScope = curScope;
+      invBefore = invNow;
+    }
     const weak = checkTestWeakening(invBefore, invNow, lastCitation, (lastGate.tap && lastGate.tap.skipped) || 0);
     if (weak) {
       const reason = `test-integrity HALT: ${weak}`;
@@ -1808,11 +2347,22 @@ export async function runWave(o) {
         `Revert the test change, or cite the plan line that authorizes it, then re-invoke wave ${wave.n}` });
     }
 
-    // F-H sleep fix (0072): after GREEN gate, stamp checkpoint at review BEFORE the
-    // long review agent call(s). If the process dies mid-review (empty stderr deaths
-    // observed live), --resume re-enters with intraStep=review, skips execute, re-proves
-    // gate, then retries review — never re-spends a full execute agent turn.
+    // S5: the test-to-oracle trace of this wave rides into deterministic fast-gates, review, and the record
+    const oracleTrace = traceOracles(planText, wave.n, changed, projectDir);
+
+    // ----- POST-GATE DETERMINISTIC FAST-GATES (BEFORE spawning any LLM reviewer!) -----
+    // Vacuous-GREEN, delta-coverage, Tidy-Idy scratch hygiene, Aegis CWE security scan,
+    // and Anvil AST syntax/duplicate-def check all run BEFORE driver.review so zero LLM
+    // review budget is burned on vacuous, uncovered, unhygienic, unsafe, or syntax-broken waves.
     if (lastGate.green) {
+      const detPre = await runGreenDeterministicGates(changed, oracleTrace, { allowFastGateFix: true });
+      if (detPre.action === 'halt') return detPre.res;
+      if (detPre.action === 'continue') continue;
+
+      recordProvenLedger(changed);
+
+      // F-H sleep fix (0072): after GREEN gate + green deterministic fast-gates, stamp
+      // checkpoint at review BEFORE the long review agent call(s).
       try {
         const midCp = buildCheckpoint({
           planPath, totalWaves, wave, iteration, verdict: null,
@@ -1821,51 +2371,28 @@ export async function runWave(o) {
           reviewerCount,
           intraWaveStep: 'review',
           pendingAction:
-            `wave ${wave.n}/${totalWaves} gate GREEN — entering review ` +
+            `wave ${wave.n}/${totalWaves} gate + deterministic fast-gates GREEN — entering review ` +
             `(if interrupted, --resume re-proves gate then review; never auto-GO)`,
           budgetRemaining: budget ? budget.snapshotForCheckpoint() : undefined,
         });
         writeCheckpointAtomic(checkpointPath, midCp);
-        log(`checkpoint: stamped intra_wave_step=review after GREEN gate (crash-resilience)`);
+        log(`checkpoint: stamped intra_wave_step=review after GREEN gate + fast-gates (crash-resilience)`);
       } catch (e) {
         log(`!! checkpoint stamp after GREEN failed (non-fatal): ${e?.message || e}`);
       }
     }
 
     // ----- REVIEW: REVIEWER_COUNT independent reviewers (§3) -----
-    // Default CONCURRENT (FOREMAN_CONCURRENT_REVIEW=0 restores the serial path). The
-    // read-only reviewers run via Promise.allSettled — order-independent
-    // (collectFindings keys by stable id). A rejected or malformed response is
-    // recorded as a transport failure under the existing degradation policy;
-    // surviving findings remain available. Both concurrency modes persist seats.
-    // ----- red-gate review skip (2026-07 efficiency; rigor-preserving) -----
-    // On a RED gate the verdict is already determined: judge() can never return
-    // GO (anti-forgery, above), and reviewer blocking power exists only against
-    // a GREEN gate (§5: blocking GREEN requires a failing repro). So reviewers
-    // on a red intermediate iteration decide nothing — the failing tests in the
-    // gate artifact ARE the fix guidance. Skip the fan-out EXCEPT on the last
-    // budgeted iteration (iteration >= fixIterCap ⇒ the next stop is a
-    // non-convergence HALT): that final pass keeps the §4.7 ambiguity gate and
-    // the §6/F3 PLAN-AMENDMENT channel attached to the halt the human is about
-    // to read. Every GO still passes gate + full ≥2-agree adversarial review +
-    // all §5 guards — unchanged. FOREMAN_REVIEW_ON_RED=1 restores the old
-    // review-every-iteration behavior (A/B + non-regression seam).
-    // T10b (2026-07-11): the reviewer fan-out is STAKES-GATED. Exact-string ≥2-agree
-    // has never fired in a sampled live log ("0 agreed" every wave), so on an
-    // ordinary clean wave the second reviewer bought ~2-5 min + 1 call for near-zero
-    // verdict changes. Full panel where stakes are real: the TERMINAL wave, any wave
-    // that needed fix iterations, or FOREMAN_FULL_REVIEW=1 (restores always-full).
-    // S4: the terminal-wave panel is for multi-wave projects (a one-wave job always got it - W6 found 14 of 15 such
-    // reviews had no agreed blocker); the slim profile never fans out.
     const fullPanel = !slim && (process.env.FOREMAN_FULL_REVIEW === '1' ||
       (wave?.n != null && totalWaves != null && totalWaves > 1 && wave.n === totalWaves) || iteration > 0);
     const effectiveReviewers = fullPanel ? reviewerCount : Math.min(reviewerCount, 1);
 
-    // S5: the test-to-oracle trace of this wave rides into the review (the slim elegance question 3) and the record
-    const oracleTrace = traceOracles(planText, wave.n, changed, projectDir);
-    // S3: the review sees the declared outputs this wave produced (the generic diff skips docs/ and other ignored dirs)
-    const reviewChanged = nonCode ? [...new Set([...changed, ...changedOutputsSince(projectDir, outputsStart)])] : changed;
+    // S3: the review sees the declared outputs this wave produced (the generic diff skips docs/ and other ignored dirs).
+    // On a git=false skipExecute resume, fall back to priorLedger.changed so reviewers still see this wave's proven files.
+    const baseReviewChanged = changed.length ? changed : (Array.isArray(priorLedger?.changed) ? priorLedger.changed : []);
+    const reviewChanged = nonCode ? [...new Set([...baseReviewChanged, ...changedOutputsSince(projectDir, outputsStart)])] : baseReviewChanged;
     const skipReview = !lastGate.green && process.env.FOREMAN_REVIEW_ON_RED !== '1' && iteration < fixIterCap;
+    const diffPatch = skipReview ? '' : buildBoundedGitDiff(projectDir, reviewChanged);
     reviewEvidence = {
       version: 1, written_by: 'orchestrator', wave: wave.n, iteration, round_id: crypto.randomUUID(),
       phase: skipReview ? 'skipped' : 'pending', review_status: skipReview ? 'skipped-red-gate' : 'pending',
@@ -1877,7 +2404,7 @@ export async function runWave(o) {
     const receiveReview = async (r) => {
       const seat = `reviewer-${r}`;
       let raw;
-      try { raw = await driver.review({ ...ctx, reviewerIndex: r, changed: reviewChanged, oracles: oracleTrace }, lastGate); }
+      try { raw = await driver.review({ ...ctx, reviewerIndex: r, changed: reviewChanged, oracles: oracleTrace, diffPatch }, lastGate); }
       catch (error) { raw = { transport_failed: true, note: `reviewer call rejected (${error?.message || error})` }; }
       const valid = validReview(raw);
       const rv = valid ? { ...raw, reviewer: raw.reviewer ?? seat } : {
@@ -2028,230 +2555,61 @@ export async function runWave(o) {
       });
     }
     findings = collectFindings(reviews);
-    const openBlockers = findings.filter((f) =>
-      (f.severity === 'BLOCKER' || f.severity === 'MAJOR') && f.status === 'open' && f.agreement >= 2);
+    const judgeFindings = (slim && !eleganceDone)
+      ? findings.filter((f) => !(f && /^elegance$/i.test(String(f.rule || ''))))
+      : findings;
+    const minAgree = effectiveReviewers <= 1 ? 1 : 2;
+    const openBlockers = judgeFindings.filter((f) =>
+      (f.severity === 'BLOCKER' || f.severity === 'MAJOR') && f.status === 'open' && f.agreement >= minAgree);
     if (reviews.length) log(`review: ${reviews.length} reviewers · ${openBlockers.length} agreed BLOCKER/MAJOR`);
 
     // ----- JUDGE (reads only the gate artifact for pass/fail of record) -----
     // Failed seats never reduce a configured two-vote requirement to one vote.
-    const verdict = judge(lastGate, findings, { panelSize: effectiveReviewers });
+    // In slim profile before eleganceDone, rule:"elegance" findings are routed to the
+    // dedicated folded elegance fast-close block below (which releases reviewer-named
+    // test files from testBaseline) rather than blocking judge() into frozen-test fix().
+    const verdict = judge(lastGate, judgeFindings, { panelSize: effectiveReviewers });
     reviewEvidence.phase = skipReview ? 'skipped' : 'complete';
     persistReview(verdict);
 
     if (verdict.go) {
-      const requiredTestHalt = guardRequiredTests();
-      if (requiredTestHalt) return requiredTestHalt;
-      // S3: a declared non-code wave that fell back to the code gates (it changed executable files) must STILL have
-      // produced its declared outputs - its contract is both; checked here, after the code gate it took instead
-      if (declaredNonCode && !nonCode) {
-        const og = outputsGate({ projectDir, foremanDir, wave, iteration, changed, before: outputsStart, artifact: 'outputs' });
-        if (!og.green) {
-          const bad = og.outputs.filter((r) => r.state !== 'present').map((r) => `${r.output} (${r.state})`);
-          const reason = `[taxonomy:outputs-missing] HALT: wave ${wave.n} passed its code gate but its declared outputs were not all produced by this wave: ${bad.slice(0, 4).join(', ')}`;
-          steps.push(`✗ ${reason}`);
-          return finishHalt({ reason, recommend:
-            `[taxonomy:outputs-missing] produce the declared outputs (each a non-empty file inside the project, created or changed by this wave), then re-invoke wave ${wave.n}` });
-        }
-        steps.push(`▸ declared outputs: ${og.tap.pass}/${og.tap.tests} produced by this wave (the code gate applied as well)`);
-      }
-      // ----- vacuous-GREEN guard before declaring convergence (§5) -----
-      // T4: hand the guard the test-only evidence it needs (wave-start inventory
-      // snapshot, fresh inventory, the gate's executed counts, the wave title).
-      // S3: a non-code wave's outputs are its proof - there is no code for a test to exercise.
-      const vac = nonCode ? null : checkVacuousGreen(projectDir, foremanDir, changed, {
-        invBefore,
-        invNow: inventory(projectDir, foremanDir, invScopeFor(waveTestCommand)),
-        gateTap: lastGate.tap,
-        waveTitle: wave.title || '',
-        waveN: wave.n,
-        // P1 2026-07-25: true iff the PLAN declared a wave-scoped gate — the authority
-        // under which the test-only bar may accept a scoped executed count (0035/0041).
-        gateScoped: waveTestCommand !== testCommand,
-      });
-      if (vac) {
-        const reason = `vacuous-GREEN HALT: ${vac}`;
-        steps.push(`✗ ${reason}`);
-        const vacuousRecommend =
-          /vacuous-GREEN/i.test(reason)
-            ? `vacuous-GREEN: do NOT --clear-halt alone — that re-enters the same empty execute ` +
-              `(journals 0076/0078/0079). Land import-tested source for this wave (or a valid ` +
-              `source-only wave-${wave.n}-proven.json), then --resume. ` +
-              `add/keep a test that exercises the changed code, then re-invoke wave ${wave.n}`
-            : `add/keep a test that exercises the changed code, then re-invoke wave ${wave.n}`;
-        return finishHalt({ reason, recommend: vacuousRecommend });
-      }
-      // ----- Delta-coverage gate (journal 0091, 2026-07-27 dogfood) -----
-      // A wave that adds a surface (route/handler/cli/persistence/frontend) and no
-      // test naming it must BLOCK, not go GREEN. Suite-green is not evidence when
-      // the new code is simply untested.
-      try {
-        const changedFiles = (changed || [])
-          .map((f) => String(f).replace(/ \(deleted\)$/, ''))
-          .filter(Boolean);
-        let testMentions = '';
-        for (const f of changedFiles) {
-          if (!isTestFile(f)) continue;
-          try {
-            const full = path.isAbsolute(f) ? f : path.join(projectDir, f);
-            if (fs.existsSync(full)) testMentions += fs.readFileSync(full, 'utf8') + '\n';
-          } catch { /* best-effort */ }
-        }
-        const delta = checkDeltaCoverage({
-          changedFiles,
-          testMentions,
-          repoTestConvention: ['test/wNN-<subject>.test.mjs'],
-        });
-        // F2-9 contract rescue (2026-08-25, journal 0105 — found via the 0104 red-suite
-        // investigation): a wave that CHANGES a source file covered by a PRE-EXISTING,
-        // unchanged test must not block — 0091's law targets surfaces with no test
-        // ANYWHERE, but only in-wave tests were ever read. Bounded repo-test scan; every
-        // rescue is RECORDED in the persisted verdict (never silent).
-        if (!delta.pass && Array.isArray(delta.uncovered) && delta.uncovered.length) {
-          try {
-            const corpus = [];
-            const walk = (dir, depth) => {
-              if (depth > 4 || corpus.length >= 200) return;
-              for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-                if (corpus.length >= 200) return;
-                const full = path.join(dir, e.name);
-                if (e.isDirectory()) {
-                  if (/^(node_modules|\.git|\.foreman|dist|build|__pycache__)$/i.test(e.name)) continue;
-                  walk(full, depth + 1);
-                } else if (isTestFile(path.relative(projectDir, full).split(path.sep).join('/'))) {
-                  // (Review fix: raw path.relative gives backslashes on Windows — the
-                  // dir-pattern half of isTestFile never matched, silently shrinking the
-                  // rescue corpus to filename-suffix matches only.)
-                  let text = '';
-                  try { text = fs.readFileSync(full, 'utf8').slice(0, 65536).toLowerCase(); } catch { /* skip */ }
-                  corpus.push({ file: full, stemTokens: deltaTokensFor(full), textLower: text });
-                }
-              }
-            };
-            walk(projectDir, 0);
-            const rescued = [];
-            const stillUncovered = [];
-            // Review fix: SHORT fallback tokens ('db', 'f1') must match on WORD BOUNDARIES —
-            // substring matching let any test containing the letters 'db' rescue db.py,
-            // flipping the gate from never-passes to always-passes for short names.
-            const tokenInText = (text, t) =>
-              t.length >= 4 ? text.includes(t)
-                : new RegExp(`(^|[^a-z0-9])${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z0-9]|$)`, 'i').test(text);
-            for (const u of delta.uncovered) {
-              const toks = deltaTokensFor(u.file);
-              const hit = corpus.find((c) => toks.some((t) => c.stemTokens.includes(t) || tokenInText(c.textLower, t)));
-              if (hit) rescued.push({ ...u, coveredBy: path.relative(projectDir, hit.file) });
-              else stillUncovered.push(u);
-            }
-            if (rescued.length) {
-              delta.rescuedByExistingTests = rescued;
-              delta.uncovered = stillUncovered;
-              const rescueNote = `pre-existing tests cover: ${rescued.map((r) => `${r.file}→${r.coveredBy}`).join(', ')}`;
-              if (!stillUncovered.length) {
-                delta.pass = true;
-                delta.severity = 'OK';
-                delta.detail = `${rescued.length} surface change(s) covered by PRE-EXISTING tests (${rescueNote}) — in-wave scan alone had missed them (F2-9 contract)`;
-              } else {
-                delta.detail += ` RESCUED: ${rescueNote}.`;
-              }
-            }
-          } catch { /* rescue is best-effort; the gate's own verdict stands */ }
-        }
-        try {
-          fs.writeFileSync(
-            path.join(foremanDir, `wave-${wave.n}-delta-coverage.json`),
-            JSON.stringify({ ...delta, oracle_map: oracleTrace, wave: wave.n, at: new Date().toISOString() }, null, 2) + '\n',
-            'utf8',
-          );
-        } catch { /* best-effort */ }
-        // S5: the trace, said aloud - which acceptance items name a test, which changed tests answer to no oracle
-        if (oracleTrace.oracles.length || oracleTrace.tests_beyond_oracles.length) {
-          const named = oracleTrace.oracles.filter((o) => o.tests.length).length;
-          const beyond = oracleTrace.tests_beyond_oracles;
-          steps.push(`▸ oracles: ${named}/${oracleTrace.oracles.length} acceptance item(s) name a test file${named ? ' (all present)' : ''} · ` +
-            `${beyond.length} changed test(s) beyond any oracle${beyond.length ? ` (${beyond.slice(0, 3).join(', ')})` : ''}`);
-        }
-        if (!delta.pass && (slim || nonCode)) {
-          // S5 (2026-10-10, John's Q3 "so many tests"; final review 10-10 finding 2): the tests the plan REQUIRES were
-          // enforced above - guardRequiredTests halted on any missing `(oracle: test/...)` or `Test file` declaration -
-          // and vacuity still holds; what is left is coverage BEYOND the plan's oracles. In the slim profile that is
-          // advisory (the one reviewer's elegance questions judge whether a test is proportionate), and a non-code
-          // wave has no code surface to judge. Said aloud and kept in the wave's record, never a halt.
-          steps.push(`▸ delta-coverage (advisory${nonCode ? ', non-code wave' : ', slim: required oracle tests enforced, extra coverage is the reviewer\'s call'}): ${delta.detail}`);
-          log(`delta-coverage: advisory wave ${wave.n} — ${delta.detail}`);
-        } else if (!delta.pass) {
-          const reason = `delta-coverage HALT (journal 0091): ${delta.detail}`;
-          steps.push(`✗ ${reason}`);
-          log(`delta-coverage: FAIL wave ${wave.n} — ${delta.detail}`);
-          return finishHalt({
-            reason,
-            recommend:
-              `add a test that NAMES each new surface (route/handler/CLI/persist path) ` +
-              `before wave ${wave.n} can GO — file name tokens or body mentions count; ` +
-              `convention: test/wNN-<subject>.test.mjs`,
-          });
-        }
-        if (delta.detail && !/not applicable/i.test(delta.detail)) {
-          log(`delta-coverage: PASS wave ${wave.n} — ${delta.detail}`);
-        }
-      } catch (deltaErr) {
-        log(`delta-coverage: skip (non-fatal) — ${deltaErr?.message || deltaErr}`);
-      }
-      // Record proven deliverable for resume/clear-halt credit (Phase A).
-      // Filter via writeWaveProvenLedger (never logs — 0078/0079 package 6).
-      // 0082 P0.5: if hash-diff is empty after GO, auto-fill from code reachable
-      // from tests that isProvenDeliverable (import graph) so resume credit works
-      // when parallel-land / skip-execute left no per-invocation diff.
-      try {
-        let provenChanged = lastChanged.filter((f) => !f.endsWith(' (deleted)') && !isTestFile(f));
-        if (!provenChanged.some((f) => isProvenDeliverablePath(String(f)))) {
-          const reach = reachableFromTests(projectDir, foremanDir);
-          const auto = [...reach].filter((f) => isProvenDeliverablePath(f));
-          if (auto.length) {
-            provenChanged = auto;
-            log(`proven-ledger: auto-filled ${auto.length} reachable source(s) after GREEN (empty hash-diff)`);
-          }
-        }
-        writeWaveProvenLedger(foremanDir, wave.n, {
-          changed: provenChanged,
-          tests: lastGate.tap?.tests ?? null,
-          pass: lastGate.tap?.pass ?? null,
-          at: new Date().toISOString(),
-          note: provenChanged === lastChanged ? undefined : 'auto-reachability-fill',
-        });
-      } catch { /* best-effort */ }
+      recordProvenLedger(lastChanged);
       steps.push(`✓ wave ${wave.n} converged (${iteration} fix iter${iteration === 1 ? '' : 's'}) · ` +
         `gate ${lastGate.tap.pass}/${lastGate.tap.tests} (orchestrator-run)`);
       log(`CONVERGED: ${verdict.reason}`);
-      // (2026-09-05, John) THE ELEGANCE / RABBIT-CATCHER REVIEW after the gate is GREEN and the
-      // reviewers converged: a CUT confirmed by the second seat is a fix-loop item — the element
-      // is removed and the wave re-proves GREEN before GO; HOLDs become one line in the
-      // execution log. One pass per wave, never twice; a driver without the seat is unchanged.
+      // (2026-09-05, John) THE ELEGANCE / RABBIT-CATCHER REVIEW with deterministic fast-close:
+      // 0 file edits => GO immediately; localized trims => re-run gate + deterministic fast-gates +
+      // touch-scope validation and GO immediately without burning a second LLM review round!
       if (slim && !eleganceDone) {
         eleganceDone = true;
-        // final review 10-10: the folded elegance check has TEETH - the one reviewer's rule:"elegance" findings
-        // (MAJOR, no failing repro needed: they name what to remove) take one fix iteration, as the separate
-        // elegance phase's confirmed CUTs did; the wave then re-proves GREEN. Tests stay frozen (no release here).
         const eleg = (findings || []).filter((f) => f && f.status === 'open' && /^elegance$/i.test(String(f.rule || '')));
         if (eleg.length && iteration < fixIterCap) {
-          // final review r2: exactly the test files the reviewer names for removal are released from the frozen
-          // baseline, as a confirmed CUT is in the standard elegance phase; every other test stays frozen
+          const releasedFoldedTests = [];
+          const allowedPaths = [];
           for (const f of eleg) {
             const rel = String(f.file || '').replace(/\\/g, '/').replace(/^\.\//, '');
-            if (rel && rel in testBaseline) { delete testBaseline[rel]; log(`elegance (folded): ${rel} released from the test-immutability baseline (reviewer-named)`); }
+            if (rel) allowedPaths.push(rel);
+            if (rel && rel in testBaseline) {
+              delete testBaseline[rel];
+              releasedFoldedTests.push(rel);
+              log(`elegance (folded): ${rel} released from the test-immutability baseline (reviewer-named)`);
+            }
           }
-          iteration++;
-          const cutFindings = eleg.map((f) => ({ ...f, id: `rabbit-hole:${f.id || f.file || 'elegance'}`, agreement: 2,
+          const cutFindings = eleg.map((f) => ({
+            ...f,
+            id: `rabbit-hole:${f.id || f.file || 'elegance'}`,
+            agreement: 2,
             message: `[taxonomy:rabbit-hole] ${f.message || f.title || 'remove what the plan does not need'}` +
-              `${isTestFile(String(f.file || '').replace(/\\/g, '/')) ? ' (removing this test file is allowed)' : ''}; keep the gate green` }));
-          const efix = await agentWait(`fix-${iteration}`, () => driver.fix({ ...ctx, iteration }, lastGate, cutFindings));
-          if (efix?.agent_failed) {
-            const reason = `[taxonomy:agent-died] HALT: the elegance fix agent died (${efix.agent_failed.detail}) — iteration ${iteration} applied nothing`;
-            steps.push(`✗ ${reason}`);
-            return finishHalt({ reason, recommend: `[taxonomy:agent-died] check the fix seat, then re-invoke wave ${wave.n}` });
-          }
-          steps.push(`▸ elegance (folded) fix iter ${iteration}: ${efix?.note || 'applied'} (${eleg.length} finding(s))`);
-          log(`elegance (folded) fix iter ${iteration}: re-proving GREEN`);
-          continue;
+              `${isTestFile(String(f.file || '').replace(/\\/g, '/')) ? ' (removing this test file is allowed)' : ''}; keep the gate green`,
+          }));
+          const ef = await applyEleganceCutsAndFastClose({
+            stepLabel: (efix) => `elegance (folded) fix iter ${iteration}: ${efix?.note || 'applied'} (${eleg.length} finding(s))`,
+            cutFindings,
+            releasedTests: releasedFoldedTests,
+            allowedPaths,
+          });
+          if (ef.action === 'go' || ef.action === 'halt') return ef.res;
+          if (ef.action === 'continue') continue;
         }
         steps.push(`▸ elegance: folded into the review (slim profile)${eleg.length ? ` · ${eleg.length} finding(s) left for the record (fix cap reached)` : ' · nothing to remove'}`);
       }
@@ -2276,24 +2634,25 @@ export async function runWave(o) {
               id: `rabbit-hole:${v.id}`, severity: 'MAJOR', file: v.text, line: null, rule: 'RC-1', status: 'open', agreement: 2,
               message: `[taxonomy:rabbit-hole] REMOVE ${v.text} — ${v.rc2 || v.need || 'no independent need'}; keep the gate green`,
             }));
-            // A confirmed CUT over a test file is the second seat's judged verdict (the RC-2 malleability
-            // carve-out applied, then disputed and upheld), not the fix seat weakening a gate: release
-            // exactly those files from the immutability baseline. Any OTHER test change still HALTs.
+            const releasedEleganceTests = [];
+            const allowedPaths = [];
             for (const v of cuts) {
               const rel = String(v.text || '').replace(/\\/g, '/').replace(/^\.\//, '');
-              if (rel in testBaseline) { delete testBaseline[rel]; log(`elegance: ${rel} released from the test-immutability baseline (confirmed cut)`); }
+              if (rel) allowedPaths.push(rel);
+              if (rel && rel in testBaseline) {
+                delete testBaseline[rel];
+                releasedEleganceTests.push(rel);
+                log(`elegance: ${rel} released from the test-immutability baseline (confirmed cut)`);
+              }
             }
-            iteration++;
-            const efix = await agentWait(`fix-${iteration}`, () => driver.fix({ ...ctx, iteration }, lastGate, cutFindings));
-            if (efix?.agent_failed) {
-              const af = efix.agent_failed;
-              const reason = `[taxonomy:agent-died] HALT: the elegance fix agent died (${af.detail}) — iteration ${iteration} applied nothing`;
-              steps.push(`✗ ${reason}`);
-              return finishHalt({ reason, recommend: `[taxonomy:agent-died] the fix seat died removing ${cuts.length} confirmed cut(s) in wave ${wave.n}; check the seat, then re-invoke wave ${wave.n}` });
-            }
-            steps.push(`▸ elegance fix iter ${iteration}… ${efix?.note || 'applied'} (removing ${cuts.length} confirmed cut(s): ${cuts.map((v) => v.id).join(', ')})`);
-            log(`elegance fix iter ${iteration}: ${efix?.note || 'applied'} — re-proving GREEN`);
-            continue;
+            const ef = await applyEleganceCutsAndFastClose({
+              stepLabel: (efix) => `elegance fix iter ${iteration}… ${efix?.note || 'applied'} (removing ${cuts.length} confirmed cut(s): ${cuts.map((v) => v.id).join(', ')})`,
+              cutFindings,
+              releasedTests: releasedEleganceTests,
+              allowedPaths,
+            });
+            if (ef.action === 'go' || ef.action === 'halt') return ef.res;
+            if (ef.action === 'continue') continue;
           }
         }
       }
@@ -2311,11 +2670,6 @@ export async function runWave(o) {
     }
 
     // ----- §6.1 BUDGET PRE-FLIGHT (HARD GATE, not advisory) -----
-    // Before STARTING the next fix iteration (an affordable unit, §4.6), check the
-    // budget. If the unit cannot be afforded, do NOT start it: write a clean,
-    // resumable budget-stop checkpoint and stop — the engine never overruns by
-    // beginning work it cannot finish. (Telemetry may be best-effort, but an
-    // unreadable clock HALTs inside the budget rather than running unbounded.)
     if (budget) {
       const pf = budget.canStartFixIter();
       if (!pf.ok) {
@@ -2326,10 +2680,33 @@ export async function runWave(o) {
       }
     }
 
-    // ----- FIX (single-threaded; model-driven) -----
+    // ----- FIX (single-threaded; model-driven, with Gandalf root-cause stallbreaker on repeated iter>=2 failures) -----
+    const curFailureSig = !lastGate.green
+      ? `red:${failingTests(lastGate).join('|') || `exit:${lastGate.exit_code}:fail:${lastGate.tap?.fail ?? '?'}`}`
+      : `blockers:${openBlockers.map((f) => f.id).sort().join('|')}`;
+    const repeatedFailureHint = (iteration + 1 >= 2 && prevFailureSignature && curFailureSig === prevFailureSignature)
+      ? `Iteration ${iteration + 1} repeated the exact same failure signature (${curFailureSig.slice(0, 240)}) as iteration ${iteration}. Stop patching symptoms and fix the root-cause contract mismatch.`
+      : null;
+    prevFailureSignature = curFailureSig;
     iteration++;
+    const fixFindings = (slim && !eleganceDone)
+      ? findings.filter((f) => !(f && /^elegance$/i.test(String(f.rule || ''))))
+      : findings;
+    const waveOwnedTests = new Set(
+      [...(wave.writes || []), ...namedWavePaths(planText, wave.n), ...requiredWaveTestPaths(planText, wave.n)]
+        .map((p) => String(p || '').replace(/\\/g, '/').replace(/^\.\//, ''))
+        .filter((p) => p && isTestFile(p)),
+    );
+    const reviewerNamedWaveTests = [...waveOwnedTests].filter((rel) => rel && rel in testBaseline);
+    const beforeReviewerTestContents = {};
+    for (const rel of reviewerNamedWaveTests) {
+      try {
+        const abs = path.join(projectDir, rel);
+        if (fs.existsSync(abs)) beforeReviewerTestContents[rel] = fs.readFileSync(abs, 'utf8');
+      } catch { /* ignore */ }
+    }
     const fix = await agentWait(`fix-${iteration}`,
-      () => driver.fix({ ...ctx, iteration }, lastGate, findings));
+      () => driver.fix({ ...ctx, iteration, repeatedFailureHint }, lastGate, fixFindings));
     if (fix?.agent_failed) {
       const af = fix.agent_failed;
       const timedOut = /TIMEOUT/i.test(String(af.exit_class || ''));
@@ -2342,6 +2719,24 @@ export async function runWave(o) {
                   : `Check the engine CLI/auth (0082 launch-failure class), then resume at the gate.`) });
     }
     lastCitation = fix?.citation || lastCitation;
+    if (reviewerNamedWaveTests.length) {
+      const hunkErr = checkHunkScopedTestEdits(beforeReviewerTestContents, projectDir, reviewerNamedWaveTests);
+      const nonWeak = checkTestWeakening(invBefore, inventory(projectDir, foremanDir, invBeforeScope), lastCitation, 0);
+      if (!hunkErr && !nonWeak) {
+        for (const rel of reviewerNamedWaveTests) {
+          const abs = path.join(projectDir, rel);
+          if (fs.existsSync(abs)) {
+            try {
+              const nextH = hashFile(abs);
+              if (testBaseline[rel] !== nextH) {
+                testBaseline[rel] = nextH;
+                log(`test-immutability: ${rel} baseline advanced for reviewer-requested wave-test strengthening (hunk + non-weakening verified)`);
+              }
+            } catch { /* ignore */ }
+          }
+        }
+      }
+    }
     steps.push(`▸ fix iter ${iteration}… ${fix?.note || 'applied'}`);
     log(`fix iter ${iteration}: ${fix?.note || 'applied'}`);
     // loop -> re-gate -> re-review
@@ -2451,8 +2846,25 @@ export async function runWave(o) {
     }
     const dash = dashboard();
     log(dash);
-    return { status: 'GO', verdict: 'GO', iterations: iteration, gate: lastGate,
-      findings, checkpoint: cp, checkpointPath, dashboard: dash, lastCommit: lastCommit ?? null };
+    return {
+      status: 'GO',
+      verdict: 'GO',
+      iterations: iteration,
+      gate: lastGate,
+      findings,
+      changedFiles: lastChanged,
+      reviewSummary: {
+        skipped: Boolean(reviewEvidence?.phase === 'skipped'),
+        degraded: reviewEvidence?.review_status === 'degraded',
+        completedReviewers: reviewEvidence?.completed_reviewers?.length ?? 0,
+        failedReviewers: reviewEvidence?.failed_reviewers?.length ?? 0,
+        blockingFindings: findings.filter((f) => (f.severity === 'BLOCKER' || f.severity === 'MAJOR') && f.status === 'open' && Boolean(f.repro && f.repro.failing)).length,
+      },
+      checkpoint: cp,
+      checkpointPath,
+      dashboard: dash,
+      lastCommit: lastCommit ?? null,
+    };
   }
 
   function finishHalt({ reason, recommend, stash = false, subType = null, amendment = null }) {
@@ -2556,9 +2968,13 @@ export function writeWaveProvenLedger(foremanDir, waveN, payload = {}) {
   return p;
 }
 
-export function readWaveProvenLedger(foremanDir, waveN) {
+export function readWaveProvenLedger(foremanDir, waveN, planPath = null) {
   try {
-    return JSON.parse(fs.readFileSync(waveProvenPath(foremanDir, waveN), 'utf8'));
+    const led = JSON.parse(fs.readFileSync(waveProvenPath(foremanDir, waveN), 'utf8'));
+    if (planPath && led?.plan_path && path.resolve(led.plan_path) !== path.resolve(planPath)) {
+      return null;
+    }
+    return led;
   } catch {
     return null;
   }

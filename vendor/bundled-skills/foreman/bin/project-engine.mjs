@@ -42,14 +42,21 @@
 // wave-level budget pre-flight.
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 
 import {
   HaltError, locateDocs, parseWaves, discoverGateCommand, preflightTestCommand,
   readCheckpoint, projectDoneDefinition, newCheckpoint, writeCheckpointAtomic, makeBudget,
+  pathsOverlap, computeSubwaveBatches,
 } from './foreman-lib.mjs';
 import { runWave, runGate } from './wave-engine.mjs';
 import { makeGitContext } from './git-hygiene.mjs';
+import {
+  isGitWorktreeOrRepoRoot, makeGitDiffBaseline, measuredGitDiffChanges, buildAnvilSlice,
+} from './fast-gates.mjs';
 
 /**
  * Resolve the §4 invocation contract for a project, reusing the Phase-0 parsers
@@ -178,6 +185,7 @@ export function planResume(checkpointPath, totalWaves) {
  */
 export async function attestWaveProven(checkpointPath, {
   projectDir,
+  foremanDir: explicitForemanDir,
   testCommand,
   log = () => {},
 } = {}) {
@@ -186,7 +194,8 @@ export async function attestWaveProven(checkpointPath, {
     return { attested: false, reason: `checkpoint status is '${cp.status}' — attest applies to a halted wave` };
   }
   const wave = cp.current_wave;
-  const foremanDir = path.join(projectDir, '.foreman');
+  const candidateForemanDir = explicitForemanDir || path.join(path.dirname(checkpointPath), '.foreman');
+  const foremanDir = fs.existsSync(candidateForemanDir) ? candidateForemanDir : path.join(projectDir, '.foreman');
   const ledgerPath = path.join(foremanDir, `wave-${wave}-proven.json`);
   if (!fs.existsSync(ledgerPath)) {
     return { attested: false, reason:
@@ -196,7 +205,7 @@ export async function attestWaveProven(checkpointPath, {
   let ledger;
   try { ledger = JSON.parse(fs.readFileSync(ledgerPath, 'utf8')); }
   catch (e) { return { attested: false, reason: `proven ledger unreadable: ${e.message}` }; }
-  const files = Array.isArray(ledger.files) ? ledger.files : Array.isArray(ledger) ? ledger : [];
+  const files = Array.isArray(ledger.files) ? ledger.files : Array.isArray(ledger.changed) ? ledger.changed : Array.isArray(ledger) ? ledger : [];
   const missing = files.filter((f) => !fs.existsSync(path.join(projectDir, String(f).replace(/ \(deleted\)$/, ''))));
   if (!files.length || missing.length) {
     return { attested: false, reason: !files.length
@@ -237,6 +246,315 @@ export async function attestWaveProven(checkpointPath, {
   log(`attest: wave ${wave} GO by attestation → ${attestPath}; checkpoint ${cp.status}` +
     (terminal ? '' : ` @ wave ${cp.current_wave}`));
   return { attested: true, wave, attestPath, terminal, gate: record.gate };
+}
+
+function runGitSync(cwd, args) {
+  return spawnSync('git', args, {
+    cwd,
+    encoding: 'utf8',
+    windowsHide: true,
+    shell: false,
+    timeout: 30000,
+  });
+}
+
+function isInternalSubwavePath(relPath) {
+  const norm = String(relPath || '').replace(/\\/g, '/').replace(/^\/+/, '');
+  if (!norm) return true;
+  if (
+    norm === 'foreman-checkpoint.json'
+    || norm === 'foreman.config.json'
+    || /^_foreman-status/.test(norm)
+    || /^_out-\d+/.test(norm)
+  ) {
+    return true;
+  }
+  const first = norm.split('/')[0];
+  return ['.git', '.foreman', '.anchor', 'node_modules', '__pycache__', '.pytest_cache', '.venv', 'venv'].includes(first);
+}
+
+function copyTreeFiltered(srcDir, dstDir) {
+  fs.mkdirSync(dstDir, { recursive: true });
+  const stack = [''];
+  while (stack.length > 0) {
+    const relDir = stack.pop();
+    const absDir = relDir ? path.join(srcDir, relDir) : srcDir;
+    let entries;
+    try { entries = fs.readdirSync(absDir, { withFileTypes: true }); }
+    catch { continue; }
+    for (const ent of entries) {
+      const rel = relDir ? `${relDir}/${ent.name}` : ent.name;
+      if (isInternalSubwavePath(rel)) continue;
+      const srcAbs = path.join(srcDir, rel);
+      const dstAbs = path.join(dstDir, rel);
+      if (ent.isDirectory()) {
+        fs.mkdirSync(dstAbs, { recursive: true });
+        stack.push(rel);
+      } else if (ent.isFile()) {
+        fs.mkdirSync(path.dirname(dstAbs), { recursive: true });
+        fs.copyFileSync(srcAbs, dstAbs);
+      }
+    }
+  }
+}
+
+function snapshotTreeSha(dir) {
+  const map = new Map();
+  const stack = [''];
+  while (stack.length > 0) {
+    const relDir = stack.pop();
+    const absDir = relDir ? path.join(dir, relDir) : dir;
+    let entries;
+    try { entries = fs.readdirSync(absDir, { withFileTypes: true }); }
+    catch { continue; }
+    for (const ent of entries) {
+      const rel = relDir ? `${relDir}/${ent.name}` : ent.name;
+      if (isInternalSubwavePath(rel)) continue;
+      const abs = path.join(dir, rel);
+      if (ent.isDirectory()) stack.push(rel);
+      else if (ent.isFile()) {
+        const digest = crypto.createHash('sha256').update(fs.readFileSync(abs)).digest('hex');
+        map.set(rel, digest);
+      }
+    }
+  }
+  return map;
+}
+
+function diffTreeSha(dir, beforeMap) {
+  const afterMap = snapshotTreeSha(dir);
+  const changed = [];
+  for (const [rel, sha] of afterMap.entries()) {
+    if (beforeMap.get(rel) !== sha) changed.push(rel);
+  }
+  for (const rel of beforeMap.keys()) {
+    if (!afterMap.has(rel)) changed.push(`${rel} (deleted)`);
+  }
+  return changed.sort();
+}
+
+function syncDirtyWorkspaceToWorktree(projectDir, _foremanDir, swDir) {
+  const dirtyEntries = measuredGitDiffChanges(
+    projectDir,
+    { dirtyHashes: {} },
+    isInternalSubwavePath,
+  ) || [];
+  for (const raw of dirtyEntries) {
+    const deleted = raw.endsWith(' (deleted)');
+    const rel = (deleted ? raw.slice(0, -' (deleted)'.length) : raw).replace(/\\/g, '/');
+    if (isInternalSubwavePath(rel)) continue;
+    const srcAbs = path.join(projectDir, rel);
+    const dstAbs = path.join(swDir, rel);
+    if (deleted || !fs.existsSync(srcAbs)) {
+      fs.rmSync(dstAbs, { recursive: true, force: true });
+    } else if (fs.statSync(srcAbs).isFile()) {
+      fs.mkdirSync(path.dirname(dstAbs), { recursive: true });
+      fs.copyFileSync(srcAbs, dstAbs);
+    }
+  }
+}
+
+async function runPoolAllSettled(items, concurrency, fn) {
+  const results = new Array(items.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (cursor < items.length) {
+      const i = cursor++;
+      try {
+        results[i] = { status: 'fulfilled', value: await fn(items[i], i) };
+      } catch (reason) {
+        results[i] = { status: 'rejected', reason };
+      }
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+/**
+ * Execute a parent wave's W.1..W.k sub-waves as a topological DAG of disjoint-write-set
+ * batches in isolated temporary git worktrees branched from parent HEAD, merging their
+ * non-overlapping changes back onto `projectDir` so the parent wave runs ONE combined
+ * ground-truth gate + deterministic fast-gates + diff-scoped review.
+ */
+export async function executeSubwaveDag({
+  projectDir,
+  foremanDir,
+  wave,
+  planPath,
+  planText,
+  testCommand,
+  driver,
+  driverFor,
+  log = () => {},
+  subwaveConcurrency,
+}) {
+  const subwaves = Array.isArray(wave?.subwaves) ? wave.subwaves : [];
+  if (subwaves.length === 0) return driver.execute({ projectDir, foremanDir, wave, planPath, planText, testCommand, log });
+
+  const batches = Array.isArray(wave.subwaveBatches) && wave.subwaveBatches.length > 0
+    ? wave.subwaveBatches
+    : computeSubwaveBatches(subwaves, wave.n);
+  const byId = new Map(subwaves.map((sw) => [sw.id, sw]));
+  const maxConc = Math.max(
+    1,
+    Number(subwaveConcurrency ?? process.env.FOREMAN_SUBWAVE_CONCURRENCY ?? 3) || 3,
+  );
+  const hasGitHead = isGitWorktreeOrRepoRoot(projectDir)
+    && runGitSync(projectDir, ['rev-parse', '--verify', 'HEAD']).status === 0;
+  const wtRoot = fs.mkdtempSync(path.join(os.tmpdir(), `foreman-subwaves-w${wave.n}-`));
+  const mergedFiles = new Set();
+  const completedIds = [];
+
+  try {
+    for (let bIdx = 0; bIdx < batches.length; bIdx++) {
+      const batchIds = batches[bIdx];
+      const batchSubwaves = batchIds.map((id) => byId.get(id)).filter(Boolean);
+      if (batchSubwaves.length === 0) continue;
+      log(`execute: sub-wave batch ${bIdx + 1}/${batches.length} [${batchSubwaves.map((s) => s.id).join(', ')}] (concurrency=${Math.min(maxConc, batchSubwaves.length)}, worktree=${hasGitHead ? 'git' : 'copy'})`);
+
+      const batchWorktrees = [];
+      try {
+        const settled = await runPoolAllSettled(batchSubwaves, maxConc, async (sw) => {
+          const swSlug = sw.id.replace(/[^a-zA-Z0-9._-]+/g, '_');
+          const swDir = path.join(wtRoot, `sw-${swSlug}`);
+          batchWorktrees.push(swDir);
+          let swUsedGitWt = false;
+          if (hasGitHead) {
+            const addRes = runGitSync(projectDir, ['worktree', 'add', '--detach', swDir, 'HEAD']);
+            if (addRes.status === 0) {
+              swUsedGitWt = true;
+              syncDirtyWorkspaceToWorktree(projectDir, foremanDir, swDir);
+            } else {
+              copyTreeFiltered(projectDir, swDir);
+            }
+          } else {
+            copyTreeFiltered(projectDir, swDir);
+          }
+
+          const swForemanDir = path.join(swDir, '.foreman');
+          const gitBase = swUsedGitWt ? makeGitDiffBaseline(swDir, isInternalSubwavePath) : null;
+          const shaBase = gitBase ? null : snapshotTreeSha(swDir);
+          const anvilSlice = Array.isArray(sw.writes) && sw.writes.length > 0
+            ? buildAnvilSlice(swDir, sw.writes)
+            : '';
+          const swDriver = driverFor ? driverFor(wave, sw) : driver;
+          const execRes = await swDriver.execute({
+            projectDir: swDir,
+            foremanDir: swForemanDir,
+            wave,
+            subwave: sw,
+            testCommand,
+            log: (s) => log(`[w${sw.id}] ${s}`),
+            planPath,
+            planText: planText ?? (planPath && fs.existsSync(planPath) ? fs.readFileSync(planPath, 'utf8') : ''),
+            anvilSlice,
+          });
+          if (execRes?.agent_failed) {
+            return { sw, swDir, swUsedGitWt, execRes, changed: [] };
+          }
+          const rawChanged = gitBase
+            ? (measuredGitDiffChanges(swDir, gitBase, isInternalSubwavePath) || [])
+            : diffTreeSha(swDir, shaBase);
+          const changed = rawChanged.filter((entry) => {
+            const clean = entry.replace(/ \(deleted\)$/, '').replace(/\\/g, '/');
+            return !isInternalSubwavePath(clean);
+          });
+          if (Array.isArray(sw.writes) && sw.writes.length > 0) {
+            for (const entry of changed) {
+              const cleanRel = entry.replace(/ \(deleted\)$/, '').replace(/\\/g, '/');
+              const inScope = sw.writes.some((pattern) => pathsOverlap(cleanRel, pattern));
+              if (!inScope) {
+                return {
+                  sw,
+                  swDir,
+                  swUsedGitWt,
+                  execRes,
+                  changed,
+                  halt: {
+                    subType: 'subwave-scope-breach',
+                    reason:
+                      `[taxonomy:subwave-scope-breach] HALT: sub-wave ${sw.id} modified "${cleanRel}" outside its declared Writes scope (${sw.writes.join(', ')})`,
+                    recommend:
+                      `Restrict sub-wave ${sw.id} edits to [${sw.writes.join(', ')}] or update its Writes list in ${planPath || 'the implementation plan'} before re-running.`,
+                  },
+                };
+              }
+            }
+          }
+          return { sw, swDir, swUsedGitWt, execRes, changed };
+        });
+
+        const rejected = settled.find((s) => s.status === 'rejected');
+        if (rejected) throw rejected.reason;
+
+        const outcomes = settled.map((s) => s.value);
+        const failedSeat = outcomes.find((o) => o.execRes?.agent_failed);
+        if (failedSeat) return failedSeat.execRes;
+
+        const halted = outcomes.find((o) => o.halt);
+        if (halted) return { halt: halted.halt };
+
+        // Defense-in-depth runtime collision check before merging onto parent workspace
+        const touchedOwner = new Map();
+        for (const out of outcomes) {
+          for (const entry of out.changed) {
+            const cleanRel = entry.replace(/ \(deleted\)$/, '').replace(/\\/g, '/');
+            const prev = touchedOwner.get(cleanRel);
+            if (prev && prev !== out.sw.id) {
+              return {
+                halt: {
+                  subType: 'overlapping-subwave-writes',
+                  reason:
+                    `[taxonomy:overlapping-subwave-writes] HALT: concurrent sub-waves ${prev} and ${out.sw.id} both modified "${cleanRel}"`,
+                  recommend:
+                    `Add Depends-On between ${prev} and ${out.sw.id} or make their Writes disjoint.`,
+                },
+              };
+            }
+            touchedOwner.set(cleanRel, out.sw.id);
+          }
+        }
+
+        // Merge non-overlapping file mutations onto projectDir
+        for (const out of outcomes) {
+          for (const entry of out.changed) {
+            const deleted = entry.endsWith(' (deleted)');
+            const cleanRel = (deleted ? entry.slice(0, -' (deleted)'.length) : entry).replace(/\\/g, '/');
+            const srcAbs = path.join(out.swDir, cleanRel);
+            const dstAbs = path.join(projectDir, cleanRel);
+            if (deleted || !fs.existsSync(srcAbs)) {
+              fs.rmSync(dstAbs, { recursive: true, force: true });
+            } else {
+              fs.mkdirSync(path.dirname(dstAbs), { recursive: true });
+              fs.copyFileSync(srcAbs, dstAbs);
+            }
+            mergedFiles.add(entry);
+          }
+          completedIds.push(out.sw.id);
+        }
+      } finally {
+        for (const swDir of batchWorktrees) {
+          if (hasGitHead) {
+            try { runGitSync(projectDir, ['worktree', 'remove', '--force', swDir]); } catch { /* best-effort */ }
+          }
+          try { fs.rmSync(swDir, { recursive: true, force: true }); } catch { /* best-effort */ }
+        }
+        if (hasGitHead) {
+          try { runGitSync(projectDir, ['worktree', 'prune']); } catch { /* best-effort */ }
+        }
+      }
+    }
+  } finally {
+    try { fs.rmSync(wtRoot, { recursive: true, force: true }); } catch { /* best-effort */ }
+  }
+
+  return {
+    note: `sub-waves [${completedIds.join(', ')}] merged (${mergedFiles.size} path(s))`,
+    citation: null,
+    subwaves: completedIds,
+    mergedFiles: [...mergedFiles],
+  };
 }
 
 export function clearHaltedCheckpoint(checkpointPath, { log = () => {}, force = false } = {}) {
@@ -513,11 +831,23 @@ export async function runProject(o) {
     writeWaveStartCheckpoint(k);
 
     log(`── wave ${k}/${totalWaves} "${wave.title || '(untitled)'}" ───────────────`);
+    const hasSubwaves = Array.isArray(wave.subwaves) && wave.subwaves.length > 0;
     const result = await runWave({
       projectDir, testCommand: testCmd.command, wave, totalWaves,
       planPath: docs.plan, driver: drv, reviewerCount, fixIterCap, budget,
       resumeFrom: (k === resumeWave ? resumeFrom : null),
       git: gitCtx, // Phase 3c: commit-on-GO + §6.3 stash live in runWave (null = no git)
+      gitDiff: o.gitDiff,
+      profile: o.profile,
+      executeRunner: hasSubwaves
+        ? (ctx) => executeSubwaveDag({
+            ...ctx,
+            wave,
+            driver: drv,
+            driverFor,
+            subwaveConcurrency: o.subwaveConcurrency,
+          })
+        : undefined,
       foremanDir, checkpointPath, log,
     });
 
@@ -530,6 +860,8 @@ export async function runProject(o) {
       green: result.gate ? result.gate.green : null,
       haltReason: result.haltReason || null,
       dashboard: result.dashboard,
+      changedFiles: result.changedFiles || [],
+      reviewSummary: result.reviewSummary || null,
     });
 
     // ---- intra-wave BUDGET STOP (runWave already wrote the resumable checkpoint) ----
@@ -576,4 +908,4 @@ export async function runProject(o) {
   };
 }
 
-export const _internals = { resolveContract, planResume };
+export const _internals = { resolveContract, planResume, executeSubwaveDag };

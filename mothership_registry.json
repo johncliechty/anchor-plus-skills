@@ -1,9 +1,9 @@
 {
   "schema": "anchor.mothership.registry.v1",
-  "latest_version": "1.5.2",
+  "latest_version": "1.5.3",
   "canonical_github_repo": "https://github.com/johncliechty/ghostworldlabs-anchor.git",
   "fallback_github_repo": "https://github.com/johncliechty/anchor-plus-skills.git",
-  "updated_at": "2026-11-15T20:40:00Z",
+  "updated_at": "2026-11-20T18:30:00Z",
   "motherships": [
     {
       "id": "gwl-server-lead",
@@ -11,13 +11,13 @@
       "pseudonym": "Samwise Gamgee",
       "role": "lead",
       "hostname": "gwl-server",
-      "tailscale_url": "http://gwl-server:8777",
+      "tailscale_url": "https://gwl-server.tailb49f65.ts.net",
       "github_repo": "https://github.com/johncliechty/ghostworldlabs-anchor.git",
       "platform": "windows",
       "install_dir": "C:/dev/Anchor",
-      "installed_version": "1.5.2",
-      "last_seen_at": "2026-11-15T20:40:00Z",
-      "last_push_at": "2026-11-15T20:40:00Z",
+      "installed_version": "1.5.3",
+      "last_seen_at": "2026-11-20T18:30:00Z",
+      "last_push_at": "2026-11-20T18:30:00Z",
       "pending_update": null
     },
     {
@@ -32,12 +32,12 @@
       "install_dir": "C:/dev/Anchor",
       "installed_version": "1.5.1",
       "last_seen_at": "2026-11-15T06:05:00Z",
-      "last_push_at": "2026-11-15T20:40:00Z",
+      "last_push_at": "2026-11-20T18:30:00Z",
       "pending_update": {
-        "target_version": "1.5.2",
+        "target_version": "1.5.3",
         "pushed_by": "gwl-server-lead",
-        "pushed_at": "2026-11-15T20:40:00Z",
-        "notes": "v1.5.2: E1 turn preservation, non-project skill/Anchor folder exclusion, in-place installer & 20-skill sync, Mother Ship Push/Pull updater, and macOS/Linux turnkey launcher."
+        "pushed_at": "2026-11-20T18:30:00Z",
+        "notes": "v1.5.3: Fast deliverable streaming (HTTP Range + ETag/304 + gzip), cached /api/skills (<10ms), standard Setup Homebase Registration for push updates, and automatic sanitized journal/error sync to Anchor Homebase."
       }
     }
   ]

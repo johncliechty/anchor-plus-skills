@@ -8,7 +8,7 @@
 // does NOT weaken ≥2-agree when multi-Shark runs. LITE may run 0–1 Shark rounds
 // with honest stamp; FULL keeps concurrent multi-Shark.
 
-/** @typedef {'LITE'|'FULL'|'SPIKE-FIRST'} ProcessDepth */
+/** @typedef {'LITE'|'MATRIX-FAST-TRACK'|'FULL'|'SPIKE-FIRST'} ProcessDepth */
 
 /**
  * Normalize depth pin (aliases accepted on input).
@@ -18,6 +18,15 @@
 export function normalizeBandDepth(depth) {
   const d = String(depth || '').trim().toUpperCase().replace(/_/g, '-');
   if (d === 'LITE' || d === 'LIGHT') return 'LITE';
+  if (
+    d === 'MATRIX-FAST-TRACK' ||
+    d === 'MATRIX' ||
+    d === 'FAST-TRACK' ||
+    d === 'MATRIX-FAST' ||
+    d === 'MFT'
+  ) {
+    return 'MATRIX-FAST-TRACK';
+  }
   // MID / STANDARD → SPIKE-FIRST (mid-scale), NOT silent LITE collapse (Shark MAJOR)
   if (d === 'SPIKE-FIRST' || d === 'SPIKE' || d === 'SPIKEFIRST' || d === 'MID' || d === 'STANDARD') {
     return 'SPIKE-FIRST';
@@ -41,6 +50,15 @@ export function normalizeBandDepth(depth) {
  *   requireSpikeProbe: boolean,
  *   researchUpfront: boolean,
  *   maxModelCallsHint: number,
+ *   maxModelCalls: number,
+ *   minModelCallsHint?: number,
+ *   fastPath?: string,
+ *   matrixFastTrack?: boolean,
+ *   matrixLayers?: readonly string[],
+ *   deltaVerifyTimeoutMs?: number,
+ *   skipStage2SharkLoop: boolean,
+ *   skipStage2ElegancePass: boolean,
+ *   enableSuperjumpOptions: boolean,
  *   foremanReviewersDefault: number,
  *   foremanLeanMidWave: boolean,
  *   notes: string,
@@ -48,23 +66,54 @@ export function normalizeBandDepth(depth) {
  */
 export function resolveBandProfile(depth, overrides = {}) {
   const d = normalizeBandDepth(depth);
-  /** @type {ReturnType<typeof resolveBandProfile>} */
+  /** @type {any} */
   let profile;
   if (d === 'LITE') {
     profile = {
       depth: 'LITE',
-      label: 'LITE — nimble small/clear work',
+      label: 'LITE — nimble small/clear work (<=4 model calls)',
       roundCap: 1,
       sharkRoles: 2, // concurrent pair; ≥2-agree still meaningful with 2
       skipFullOrangesBrainstorm: true, // single-pass constraints+approach (journal 0022/0026)
       requireSpikeProbe: false,
       researchUpfront: false,
-      maxModelCallsHint: 8,
+      maxModelCallsHint: 4,
+      maxModelCalls: 4,
+      fastPath: 'slim',
+      matrixFastTrack: false,
+      skipStage2SharkLoop: true,
+      skipStage2ElegancePass: true,
+      enableSuperjumpOptions: false,
       foremanReviewersDefault: 1,
       foremanLeanMidWave: true,
       notes:
-        'Short frame → single-pass plan seed → ≤1 Shark round (2 concurrent) → approve. ' +
-        'No full assumption-map→premortem→wide ideation by default.',
+        'Enforced LITE fast path (<=4 model calls): Stage-0 intake + doctor preflight -> ' +
+        'unified Plan+Waves draft -> 1 cross-family review -> <=1 delta patch -> locate-plan.mjs.',
+    };
+  } else if (d === 'MATRIX-FAST-TRACK') {
+    profile = {
+      depth: 'MATRIX-FAST-TRACK',
+      label: 'MATRIX-FAST-TRACK — lean 2-stage L0-L5 adversarial matrix (6-9 model calls)',
+      roundCap: 1,
+      sharkRoles: 3,
+      skipFullOrangesBrainstorm: true,
+      requireSpikeProbe: false,
+      researchUpfront: false,
+      minModelCallsHint: 6,
+      maxModelCallsHint: 9,
+      maxModelCalls: 9,
+      fastPath: 'matrix-fast-track',
+      matrixFastTrack: true,
+      matrixLayers: Object.freeze(['L0', 'L1', 'L2', 'L3', 'L4', 'L5']),
+      deltaVerifyTimeoutMs: 120_000,
+      skipStage2SharkLoop: true,
+      skipStage2ElegancePass: true,
+      enableSuperjumpOptions: false,
+      foremanReviewersDefault: 2,
+      foremanLeanMidWave: true,
+      notes:
+        'Anvil Stage-0 AST intake (0 LLM calls) -> Plan+Waves draft -> 1 cross-family L0-L5 ' +
+        'adversarial matrix -> <=1 120s delta verification pass -> deterministic Stage-2 wave serialization.',
     };
   } else if (d === 'SPIKE-FIRST') {
     profile = {
@@ -76,10 +125,15 @@ export function resolveBandProfile(depth, overrides = {}) {
       requireSpikeProbe: true,
       researchUpfront: true,
       maxModelCallsHint: 18,
+      maxModelCalls: 18,
+      matrixFastTrack: false,
+      skipStage2SharkLoop: false,
+      skipStage2ElegancePass: false,
+      enableSuperjumpOptions: true,
       foremanReviewersDefault: 2,
       foremanLeanMidWave: true,
       notes:
-        'Bounded probe artifact required before full plan ceremony; then re-band LITE or FULL.',
+        'Bounded probe artifact + Superjump architectural option pass required before full plan ceremony.',
     };
   } else {
     profile = {
@@ -91,6 +145,11 @@ export function resolveBandProfile(depth, overrides = {}) {
       requireSpikeProbe: false,
       researchUpfront: true,
       maxModelCallsHint: 40,
+      maxModelCalls: 62,
+      matrixFastTrack: false,
+      skipStage2SharkLoop: false,
+      skipStage2ElegancePass: false,
+      enableSuperjumpOptions: false,
       foremanReviewersDefault: 2,
       foremanLeanMidWave: true, // mid-wave still lean; terminal/full-panel stays stakes-gated
       notes:
@@ -115,7 +174,11 @@ export function bandProfileStamp(profile) {
     band_profile: p.label,
     roundCap: p.roundCap,
     sharkRoles: p.sharkRoles,
+    maxModelCalls: p.maxModelCalls,
+    matrixFastTrack: !!p.matrixFastTrack,
     skipFullOrangesBrainstorm: p.skipFullOrangesBrainstorm,
+    skipStage2SharkLoop: !!p.skipStage2SharkLoop,
+    skipStage2ElegancePass: !!p.skipStage2ElegancePass,
     requireSpikeProbe: p.requireSpikeProbe,
   });
 }

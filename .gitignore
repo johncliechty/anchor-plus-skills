@@ -196,3 +196,7 @@ test_tmp*/
 /.anchor/project_batons.json
 /.anchor/distilled_lessons.json
 static/downloads/*.zip
+
+# Bundled-skill runtime machine journal dumps
+vendor/bundled-skills/*/journal/machine/
+vendor/bundled-skills/**/.anvil/

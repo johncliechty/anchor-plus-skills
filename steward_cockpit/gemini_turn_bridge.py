@@ -82,7 +82,7 @@ def stdin_message(encoded_prompt: bytes) -> bytes:
     return (json.dumps({"event": "user", "message": {"role": "user", "content": text}}) + "\n").encode("utf-8")
 
 
-_WRITE_TOOLS = ("write_to_file", "replace_file_content", "multi_replace_file_content", "Write", "Edit", "NotebookEdit")
+_WRITE_TOOLS = ("write_file", "edit_file", "write_to_file", "replace_file_content", "multi_replace_file_content", "Write", "Edit", "NotebookEdit")
 
 
 class GeminiNormalizer(EventNormalizer):

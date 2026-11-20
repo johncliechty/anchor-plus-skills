@@ -13,10 +13,14 @@
 - You need claim verification research as the main product (use researchPrime)
 
 ## What you get
-- A structured diagnosis ranked by consequence (and “this is sound” when it is)
-- Situating against better-known solutions when warranted
-- Forward-looking “coming problems” with honest risk labels
-- Confidence tiers earned by independent checks — not self-awarded gold stars
+- An editorial executive report (HTML & Markdown via `--report-html` / `--report-md` or `runtime/render-report.mjs`) leading with a plain-English Bottom-Line Verdict and Ranked Diagnosis (or “this is sound” when it is)
+- Situating against better-known reference solutions when warranted
+- Forward-looking “coming problems” (premortem) and Recommended Elevations paired with explicit plain-English Falsification Tests
+- Transparent **Ideas Tested & Rejected by Adversarial Review**, showing candidate proposals that were falsified and why
+- Earned verification labels (*Cross-Family Verified*, *Single-Family Checked*, *Unverified Hypothesis*) with internal IDs and cryptographic audit digests tucked into a collapsed Provenance Appendix (`[1..N]`)
+
+## Executive Human-Facing Report Standard
+Human-facing Gandalf deliverables always lead with clear, jargon-free prose rendered deterministically from the graded `read.json` (zero post-grade model rewriting). Uncertainty caveats and single-family/degraded scope qualifications are stated plainly up front, rejected ideas remain visible with their concrete defeaters, and machine IDs (`d-1`, `e-2`), JSON keys, and commission hashes stay inside `read.json` and the collapsed **Verification & Machine Provenance Appendix**.
 
 ## What it is not
 - Not a brainstorm generator

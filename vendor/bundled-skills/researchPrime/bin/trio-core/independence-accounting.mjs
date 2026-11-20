@@ -41,6 +41,30 @@
 export const STATIC_QUORUM_FLOOR = 2;
 
 /**
+ * Canonicalize a raw lineage or model-family token so `trio/drivers`' `"chatgpt"`
+ * and legacy `"gpt"` / `"openai"` / `"codex"` / `"o1|o3|o4"` resolve to the same
+ * canonical OpenAI/ChatGPT lineage (`"chatgpt"`).
+ * @param {?string} raw
+ * @returns {?string}
+ */
+export function canonicalizeLineage(raw) {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim().toLowerCase();
+  if (trimmed.length === 0) return null;
+  if (
+    trimmed === 'chatgpt' ||
+    trimmed === 'gpt' ||
+    trimmed === 'openai' ||
+    trimmed === 'codex' ||
+    trimmed.startsWith('gpt-') ||
+    /^o[134](?:-|$)/.test(trimmed)
+  ) {
+    return 'chatgpt';
+  }
+  return trimmed;
+}
+
+/**
  * The attested lineage of one reviewer: prefer an explicit `lineage`, else fall back to the
  * `family` field of a `stampRole(...)`-shaped object (judge.mjs), else null (unattested). A
  * blank string is treated as unattested, not as a distinct lineage named "".
@@ -50,9 +74,7 @@ export const STATIC_QUORUM_FLOOR = 2;
 export function lineageOf(reviewer) {
   if (!reviewer || typeof reviewer !== 'object') return null;
   const raw = reviewer.lineage ?? reviewer.family ?? null;
-  if (typeof raw !== 'string') return null;
-  const trimmed = raw.trim();
-  return trimmed.length > 0 ? trimmed : null;
+  return canonicalizeLineage(raw);
 }
 
 /**
@@ -83,7 +105,9 @@ export function countIndependentOrigins(reviewers, opts = {}) {
   if (!Array.isArray(reviewers)) {
     throw new TypeError('countIndependentOrigins(reviewers): reviewers must be an array');
   }
-  const enum_ = opts.attestedLineages != null ? new Set(opts.attestedLineages) : null;
+  const enum_ = opts.attestedLineages != null
+    ? new Set([...opts.attestedLineages].map((x) => canonicalizeLineage(String(x))).filter(Boolean))
+    : null;
 
   const distinctAttested = new Set();
   let sawUnattested = false;

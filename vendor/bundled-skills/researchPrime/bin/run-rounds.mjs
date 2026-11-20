@@ -49,7 +49,7 @@ import {
   DEFAULT_DEAD_IDLE_MS,
 } from './round.mjs';
 import { runGovernedRound } from './governor.mjs';
-import { deriveGovernorContract } from './formal-governor.mjs';
+import { deriveGovernorContract, reconcileLockedGovernorContract } from './formal-governor.mjs';
 import { assembleDeliverable, checkOutputConformance } from './deliverable.mjs';
 import { calibrationVerdict } from './rho-ledger.mjs';
 import { loadGate } from './gate-loader.mjs';
@@ -58,6 +58,8 @@ import {
   makeReachedFamilyTracker,
   instrumentRoundAgent,
   buildLiveRoundAgent,
+  resolveG3PanelRouting,
+  buildPanelSeatAgentFactory,
   DEFAULT_ROUND_ROUTES,
   SINGLE_FAMILY_ROUTES,
 } from './live-round-agent.mjs';
@@ -82,7 +84,15 @@ function writeHaltRecord(runDir, reason, extra = {}) {
   } catch { /* record is best-effort; the halt itself is the law */ }
 }
 
-export async function runRounds(runDir, { maxRounds = null, env = process.env, log = console.log, agent: injectedAgent = null, spawnPanel = false } = {}) {
+export async function runRounds(runDir, {
+  maxRounds = null,
+  env = process.env,
+  log = console.log,
+  agent: injectedAgent = null,
+  spawnPanel = false,
+  live = false,
+  probeAvailableFamilies = null,
+} = {}) {
   const started = new Date().toISOString();
   const t0 = Date.now();
 
@@ -170,7 +180,9 @@ export async function runRounds(runDir, { maxRounds = null, env = process.env, l
   if (locked && !lockedUsable) {
     log('!! governance lockedGovernorOutput carries no governor contract (legacy placeholder record) — deriving the contract from round-1 input');
   }
-  const contract = lockedUsable ? locked : deriveGovernorContract(allInputs[0]);
+  const contract = lockedUsable
+    ? reconcileLockedGovernorContract(locked, allInputs[0])
+    : deriveGovernorContract(allInputs[0]);
   const thresholds = contract.thresholds;
   const tier = contract.tier;
 
@@ -229,8 +241,9 @@ export async function runRounds(runDir, { maxRounds = null, env = process.env, l
   let roundsToDry = null;
 
   const reached = makeReachedFamilyTracker();
-  const LIVE_ROUND = env.RESEARCHPRIME_LIVE_ROUND === '1';
+  const LIVE_ROUND = live === true || env.RESEARCHPRIME_LIVE_ROUND === '1';
   const spawn = spawnPanel === true || LIVE_ROUND || env.RESEARCHPRIME_SPAWN_PANEL === '1';
+  const isReplayMode = !LIVE_ROUND && !spawn;
   let liveAgent = injectedAgent;
   if (!liveAgent && LIVE_ROUND) {
     liveAgent = await buildLiveRoundAgent({ tracker: reached, env }); // prefs-aware (CODING/REVIEW_FAMILY)
@@ -242,13 +255,19 @@ export async function runRounds(runDir, { maxRounds = null, env = process.env, l
     log('PANEL SPAWN on: vacant reviews[] will be filled by the G3 swarm (not pasted).');
   }
 
+  let anyDegradedQuorum = false;
+
   for (const inp of inputs) {
     const agent = liveAgent
       ? liveAgent
-      : instrumentRoundAgent({ agent: replayAgent(inp.adjudications ?? {}), routes: SINGLE_FAMILY_ROUTES, tracker: reached });
+      : (isReplayMode
+        ? replayAgent(inp.adjudications ?? {})
+        : instrumentRoundAgent({ agent: replayAgent(inp.adjudications ?? {}), routes: SINGLE_FAMILY_ROUTES, tracker: reached }));
     let reviews = inp.reviews;
     let panelSpawned = false;
     let panelSource = null;
+    let roundDegradedQuorum = false;
+    let panelSeatLineages = null;
     if (spawn && isVacantReviews(reviews)) {
       const sidecar = path.join(runDir, `round-${inp.round}-spawned-reviews.json`);
       if (fs.existsSync(sidecar)) {
@@ -275,6 +294,11 @@ export async function runRounds(runDir, { maxRounds = null, env = process.env, l
           writeHaltRecord(runDir, msg);
           throw new HaltError(msg);
         }
+        if (saved.degraded_quorum === true) {
+          roundDegradedQuorum = true;
+          anyDegradedQuorum = true;
+        }
+        panelSeatLineages = Array.isArray(saved.seat_lineages) ? saved.seat_lineages : null;
         panelSpawned = true;
         panelSource = 'sidecar';
         log(`round ${inp.round}: panel loaded from sidecar (no re-spend)`);
@@ -286,28 +310,48 @@ export async function runRounds(runDir, { maxRounds = null, env = process.env, l
           throw new HaltError(msg);
         }
         try {
-          // Stamp REVIEW_FAMILY, never reached.families()[0] (sorted — would
-          // label grok reviewers as claude and kill G9 / GATE-1). Claude
-          // adversarial 2026-08-27.
+          // Route G3 panel seats across >= 2 distinct non-drafter families when stakes require
+          // minOrigins >= 2; stamp degraded_quorum honestly when <= 1 family is available.
+          const routing = await resolveG3PanelRouting({
+            tier,
+            env,
+            live: LIVE_ROUND,
+            hasInjectedAgent: Boolean(injectedAgent),
+            probeAvailableFamilies,
+          });
+          roundDegradedQuorum = routing.degradedQuorum === true;
+          if (roundDegradedQuorum) anyDegradedQuorum = true;
+          panelSeatLineages = routing.seatLineages;
           const reviewFam = String(env.REVIEW_FAMILY || env.ANCHOR_REVIEW_FAMILY || '')
             .trim().toLowerCase() || null;
           const checkInMs = Number(env.RESEARCHPRIME_PANEL_CHECKIN_MS);
           const deadIdleMs = Number(env.RESEARCHPRIME_PANEL_DEAD_MS);
           const silentKillMs = Number(env.RESEARCHPRIME_PANEL_SILENT_KILL_MS);
           const panelAgent = makeReliableAgent({ agent, maxAttempts: 2 });
+          const seatAgentFor = await buildPanelSeatAgentFactory({
+            baseAgent: panelAgent,
+            seatLineages: routing.seatLineages,
+            live: LIVE_ROUND,
+            hasInjectedAgent: Boolean(injectedAgent),
+            tracker: reached,
+            env,
+            log,
+          });
           reviews = await runPanelRound({
             agent: panelAgent,
+            seatAgentFor,
             round: inp.round,
             focus: inp.focus ?? null,
             artifact,
             northStar: inp.northStar ?? null,
-            lineage: reviewFam,
+            lineages: routing.seatLineages,
+            lineage: routing.seatLineages[0] ?? reviewFam,
             heartbeatDir: runDir,
             checkInMs: Number.isFinite(checkInMs) && checkInMs > 0 ? checkInMs : DEFAULT_CHECKIN_MS,
             silentKillMs: Number.isFinite(silentKillMs) && silentKillMs > 0 ? silentKillMs : undefined,
             deadIdleMs: Number.isFinite(deadIdleMs) && deadIdleMs > 0 ? deadIdleMs : DEFAULT_DEAD_IDLE_MS,
           });
-          if (!reviewFam) {
+          if (!reviewFam && (!Array.isArray(routing.seatLineages) || !routing.seatLineages.some(Boolean))) {
             const fams = reached.families();
             if (fams.length === 1) {
               for (const r of reviews) if (!r.lineage) r.lineage = fams[0];
@@ -328,10 +372,12 @@ export async function runRounds(runDir, { maxRounds = null, env = process.env, l
         fs.writeFileSync(sidecar, JSON.stringify({
           spawned: true,
           artifact,
+          degraded_quorum: roundDegradedQuorum,
+          seat_lineages: panelSeatLineages,
           reviews,
           timestamp: new Date().toISOString(),
         }, null, 2));
-        log(`round ${inp.round}: spawned G3 panel (${reviews.length} reviewers) → ${path.basename(sidecar)}`);
+        log(`round ${inp.round}: spawned G3 panel (${reviews.length} reviewers, lineages=${JSON.stringify(panelSeatLineages)}, degraded_quorum=${roundDegradedQuorum}) → ${path.basename(sidecar)}`);
       }
     }
     // P0 2026-07-25 (T9): route through the GOVERNED round, not bare orchestrateRound.
@@ -384,6 +430,8 @@ export async function runRounds(runDir, { maxRounds = null, env = process.env, l
       panelSize: panelSpawned ? (reviews?.length ?? 0) : null,
       panelSurviving: panelSpawned ? countSurvivingPanel(reviews) : null,
       panelDegraded: panelSpawned ? countSurvivingPanel(reviews) < (reviews?.length ?? 0) : false,
+      panelSeatLineages: panelSpawned ? panelSeatLineages : null,
+      degraded_quorum: roundDegradedQuorum || Boolean(result.quorum && result.quorum.met === false),
       governor: {
         tier: result.tier,
         skipped: result.skipped === true,
@@ -423,8 +471,11 @@ export async function runRounds(runDir, { maxRounds = null, env = process.env, l
     roundBudgetHit: capped && !finalState.converged,
   };
 
-  const substrateFamilies = reached.families().length ? reached.families() : ['claude'];
+  // Never fabricate ['claude'] on unexecuted replay runs: reached.families() is [] on replay.
+  const substrateFamilies = isReplayMode ? [] : reached.families();
+  const deliverableMode = isReplayMode ? 'replay' : 'engine';
   const finalRound = roundResults[roundResults.length - 1];
+  const degradedQuorum = anyDegradedQuorum || Boolean(!isReplayMode && finalRound?.quorum && finalRound.quorum.met === false);
   const unresolvedHigh = countUnresolvedHighSeverity(finalRound.tally.findings);
   const honesty = assessConvergenceHonesty({
     stakesTier: tier,
@@ -434,7 +485,7 @@ export async function runRounds(runDir, { maxRounds = null, env = process.env, l
     thresholds,
   });
 
-  log(`\nTIER=${tier} | convergence=${JSON.stringify(convergence)} | unresolvedHigh=${unresolvedHigh} | substrateFamilies=${JSON.stringify(substrateFamilies)}`);
+  log(`\nTIER=${tier} | mode=${deliverableMode} | convergence=${JSON.stringify(convergence)} | degraded_quorum=${degradedQuorum} | unresolvedHigh=${unresolvedHigh} | substrateFamilies=${JSON.stringify(substrateFamilies)}`);
   log(`HONESTY GUARD: ${JSON.stringify(honesty)}`);
 
   let deliverable = null;
@@ -447,12 +498,13 @@ export async function runRounds(runDir, { maxRounds = null, env = process.env, l
       useLedger: false,
     });
     deliverable = assembleDeliverable({
-      mode: 'engine',
+      mode: deliverableMode,
       rounds: roundResults,
       convergence,
       calibration,
       substrateFamilies,
       northStar: inputs[0].northStar,
+      degradedQuorum,
     });
     // P0 2026-07-25: the engine's OWN output-conformance gate, actually called — the
     // canonical path used to write `verified:true` deliverables that this very check
@@ -472,35 +524,64 @@ export async function runRounds(runDir, { maxRounds = null, env = process.env, l
         'the engine deliverable failed its own output contract — fix the assembly, never ship an unconformant deliverable',
       );
     }
-    const out = { deliverable, convergence, honesty, tier, thresholds, unresolvedHigh };
+    const out = {
+      mode: deliverableMode,
+      verified: Boolean(deliverable.verified),
+      degraded_quorum: degradedQuorum,
+      deliverable,
+      convergence,
+      honesty,
+      tier,
+      thresholds,
+      unresolvedHigh,
+    };
     fs.writeFileSync(path.join(runDir, 'DELIVERABLE-ENGINE.json'), JSON.stringify(out, null, 2));
-    log(`\nCONVERGED (${convergence.mode}). cross_model=${deliverable.cross_model} verified=${deliverable.verified} rho_mode=${calibration.mode}. Wrote DELIVERABLE-ENGINE.json (output-conformance OK)`);
+    log(`\nCONVERGED (${convergence.mode}). mode=${deliverable.mode} cross_model=${deliverable.cross_model} verified=${deliverable.verified} degraded_quorum=${degradedQuorum} rho_mode=${calibration.mode}. Wrote DELIVERABLE-ENGINE.json (output-conformance OK)`);
   } else {
     log(capped
       ? `\nROUND BUDGET HIT (${cap}) without convergence — honest stop; open blockers are in RUN-STATE.json (nothing discarded).`
-      : `\nNOT converged yet — need dryStreak ${thresholds.N} (or ${thresholds.N + 1} consecutive clean rounds); add the next round-input after fixing blockers and re-run.`);
+      : `\nNOT converged yet — need dryStreak ${thresholds.N} (or 1 quorum-verified clean round); add the next round-input after fixing blockers and re-run.`);
   }
+
+  const verified = Boolean(deliverable?.verified);
 
   // RUN-STATE.json: the durable state — this file IS the resume mechanism (SKILL.md's
   // honest durability story: round inputs/results on disk, re-run to continue).
   const runState = {
+    mode: deliverableMode,
+    verified,
+    degraded_quorum: degradedQuorum,
     convergence, honesty, tier, thresholds, unresolvedHigh, substrateFamilies,
     openBlockers: [...priorBlockerIds],
     processedRounds: roundResults.map((r) => r.round),
   };
   fs.writeFileSync(path.join(runDir, 'RUN-STATE.json'), JSON.stringify(runState, null, 2));
 
+  const returnPayload = {
+    mode: deliverableMode,
+    verified,
+    degraded_quorum: degradedQuorum,
+    convergence,
+    honesty,
+    tier,
+    deliverable,
+    runState,
+  };
+
   // Run capture for training (Skill Foundry AGENTS.md "Run capture") — best-effort.
   // Skipped under the test runner (P2 2026-07-25): fixture runs must never pollute
   // the training feed (same rule as gandalf/tidy-idy).
   try {
-    if (env.NODE_TEST_CONTEXT || process.env.NODE_TEST_CONTEXT) return { convergence, honesty, tier, deliverable, runState };
+    if (env.NODE_TEST_CONTEXT || process.env.NODE_TEST_CONTEXT) return returnPayload;
     const skillDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
     const dir = path.join(skillDir, 'journal', 'runs');
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, `${started.replace(/[:.]/g, '-')}-${Math.abs(Date.now() % 100000)}.json`),
       JSON.stringify({
         skill: 'researchPrime', tier: LIVE_ROUND ? 'live-cross-family' : 'replay',
+        mode: deliverableMode,
+        verified,
+        degraded_quorum: degradedQuorum,
         started, ended: new Date().toISOString(),
         input: runDir, params: { maxRounds: cap, live: LIVE_ROUND, spawnPanel: spawn, stakesTier: tier },
         output: finalState.converged ? path.join(runDir, 'DELIVERABLE-ENGINE.json') : path.join(runDir, 'RUN-STATE.json'),
@@ -512,22 +593,25 @@ export async function runRounds(runDir, { maxRounds = null, env = process.env, l
       }, null, 2) + '\n');
   } catch { /* capture is best-effort */ }
 
-  return { convergence, honesty, tier, deliverable, runState };
+  return returnPayload;
 }
 
 // ---- CLI ----
 function invokedDirectly() {
   const entry = process.argv[1];
   if (!entry) return false;
-  try { return path.resolve(fileURLToPath(import.meta.url)) === path.resolve(entry); } catch { return false; }
+  try { return fs.realpathSync(fileURLToPath(import.meta.url)) === fs.realpathSync(entry); } catch {
+    try { return path.resolve(fileURLToPath(import.meta.url)) === path.resolve(entry); } catch { return false; }
+  }
 }
 if (invokedDirectly()) {
   const argv = process.argv.slice(2);
   const runDir = argv.find((a) => !a.startsWith('--'));
   const mrIdx = argv.indexOf('--max-rounds');
   const maxRounds = mrIdx >= 0 ? Number(argv[mrIdx + 1]) : null;
-  if (!runDir) { console.error('usage: node bin/run-rounds.mjs <runDir> [--max-rounds N]'); process.exit(2); }
-  runRounds(runDir, { maxRounds }).catch((err) => {
+  const live = argv.includes('--live');
+  if (!runDir) { console.error('usage: node bin/run-rounds.mjs <runDir> [--live] [--max-rounds N]'); process.exit(2); }
+  runRounds(runDir, { maxRounds, live }).catch((err) => {
     console.error(`run-rounds: ${err?.message ?? err}`);
     process.exit(1);
   });

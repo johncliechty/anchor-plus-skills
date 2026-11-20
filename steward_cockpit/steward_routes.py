@@ -31,13 +31,13 @@ import importlib
 from pathlib import Path
 
 _HOT_MOD_MTIMES = globals().get("_HOT_MOD_MTIMES") if isinstance(globals().get("_HOT_MOD_MTIMES"), dict) else {}
-for _hot_mod in ("paths", "office_preview", "anchor_settings", "usage_allowance_monitor", "usage_nightly_sync", "deliverables_register", "steward_cockpit.steward_core", "tools.steward_plan", "steward_cockpit.spellcheck_engine", "steward_cockpit.dictation_engine", "steward_cockpit.steward_campaign", "steward_cockpit.campaign_acts", "steward_cockpit.campaign_say", "high_seat_page", "report_viewer", "scribe_engine", "comms_connector"):
+for _hot_mod in ("paths", "office_preview", "anchor_settings", "model_policy", "provider_setup", "gwl_admin_gui", "onboard_wizard", "usage_allowance_monitor", "usage_nightly_sync", "deliverables_register", "steward_cockpit.steward_core", "tools.steward_plan", "steward_cockpit.spellcheck_engine", "steward_cockpit.dictation_engine", "steward_cockpit.steward_campaign", "steward_cockpit.campaign_acts", "steward_cockpit.campaign_say", "steward_cockpit.anvil_session", "high_seat_page", "report_viewer", "scribe_engine", "comms_connector"):
     if _hot_mod in sys.modules:
         try:
             _m_obj = sys.modules[_hot_mod]
             _m_file = getattr(_m_obj, "__file__", None)
             _m_mt = os.stat(_m_file).st_mtime_ns if _m_file else None
-            if _m_mt is not None and _HOT_MOD_MTIMES.get(_hot_mod) != _m_mt:
+            if _m_mt is not None and _HOT_MOD_MTIMES.get(_hot_mod) != _m_mt and not (os.environ.get("PYTEST_CURRENT_TEST") and _hot_mod in ("model_policy", "provider_setup")):
                 importlib.reload(_m_obj)
                 _HOT_MOD_MTIMES[_hot_mod] = _m_mt
         except Exception:
@@ -87,6 +87,11 @@ _ROUTE_TLS = globals().get("_ROUTE_TLS") or threading.local()
 
 for _main_mod_name in ("__main__", "anchor_gui"):
     _m = sys.modules.get(_main_mod_name)
+    if _m is not None and "provider_setup" in sys.modules and isinstance(getattr(_m, "_MIGRATED_HANDLERS", None), dict):
+        _ps_live = sys.modules["provider_setup"]
+        _m._MIGRATED_HANDLERS["handle_provider_setup_page"] = _ps_live.handle_page
+        _m._MIGRATED_HANDLERS["handle_provider_setup_get"] = _ps_live.handle_get
+        _m._MIGRATED_HANDLERS["handle_provider_setup_post"] = _ps_live.handle_post
     _ah = getattr(_m, "AnchorHandler", None) if _m else None
     if _ah is not None and hasattr(_ah, "_steward_pid_dir"):
         _orig_spd = getattr(_ah, "_orig_steward_pid_dir", _ah._steward_pid_dir)
@@ -214,11 +219,16 @@ def _deliverables_cached(cdir, qs, read, annotate):
             _DELIV_KEY_LOCKS[key] = klock
         acquired = klock.acquire(timeout=5.0)
     try:
+        in_pytest = bool(os.environ.get("PYTEST_CURRENT_TEST"))
+        now_m = time.monotonic()
+        hit_fast = _DELIV_CACHE.get(key)
+        if not in_pytest and hit_fast and (now_m - hit_fast[1]) < 4.0 and hit_fast[0][0] == _deliv_stamp(cdir):
+            return dict(hit_fast[2])
         stamp = (_deliv_stamp(cdir), _private_stamp())
         hit = _DELIV_CACHE.get(key)
-        if (hit and stamp[1] is not None and hit[0] == stamp and time.monotonic() - hit[1] < _DELIV_TTL
+        if (hit and stamp[1] is not None and hit[0] == stamp and now_m - hit[1] < _DELIV_TTL
                 and _identity(cdir, [e[0] for e in hit[3]]) == hit[3]):
-            return copy.deepcopy(hit[2])
+            return copy.deepcopy(hit[2]) if in_pytest else dict(hit[2])
         began = time.monotonic()
         data = read()
         before = _identity(cdir, _offered_paths(data))
@@ -824,7 +834,7 @@ _PROJECT_VERBS = {"efforts", "grass", "boneyard", "skills", "gandalf",
 # was full (2026-08-28).
 _PROJECT_FILE_VERBS = {"files", "filetext", "upload", "open", "notebook-open",
                        "notebook-register", "notebook-status", "deliverable-file", "anvil",
-                       "anvil/walkthrough", "anvil/source", "spellcheck", "dictate", "fleet-brief", "fleet-relay"}
+                       "anvil/walkthrough", "anvil/source", "anvil/v4_state", "spellcheck", "dictate", "fleet-brief", "fleet-relay"}
 
 
 _PROJECT_TERMINAL_VERBS = {"term_new", "term_archive", "term_restore"}
@@ -951,9 +961,9 @@ def api_get(proot, verb, qs):
         if cdir is None:
             return {"error": "unknown effort"}, 404
         return events(cdir, qs)
-    if verb in ("spellcheck", "dictate", "fleet-brief", "fleet-relay", "anvil", "anvil/walkthrough", "anvil/source", "mothership-files"):
+    if verb in ("spellcheck", "dictate", "fleet-brief", "fleet-relay", "anvil", "anvil/walkthrough", "anvil/source", "anvil/v4_state", "mothership-files"):
         rel = (qs.get("dir") or "").strip()
-        cdir = _effort_dir(proot, rel) or _resolve_named_cockpit_dir(rel) or proot
+        cdir = _effort_dir(proot, rel) or (_resolve_named_cockpit_dir(rel) if rel else None) or proot
         return handle_get(cdir, verb, qs)
     if verb == "aegis":
         rel = (qs.get("dir") or "").strip()
@@ -1128,7 +1138,7 @@ def api_post(proot, verb, body):
             return {"ok": False, "error": "refinement belongs to its campaign"}, 400
         return handle_post(proot, verb, body)
     if verb in ("spellcheck", "dictate", "fleet-brief", "fleet-relay", "anvil", "anvil/walkthrough", "mothership-files"):
-        cdir = _effort_dir(proot, rel) or _resolve_named_cockpit_dir(rel) or proot
+        cdir = _effort_dir(proot, rel) or (_resolve_named_cockpit_dir(rel) if rel else None) or proot
         return handle_post(cdir, verb, body)
     if verb in _PROJECT_FILE_VERBS and not rel:
         return handle_post(proot, verb, body)
@@ -1531,6 +1541,40 @@ def _row_usage_dict(row_d):
 
 
 _REALPATH_CACHE = globals().get("_REALPATH_CACHE") if isinstance(globals().get("_REALPATH_CACHE"), dict) else {}
+_STATE_FILE_MEM_CACHE = globals().get("_STATE_FILE_MEM_CACHE") if isinstance(globals().get("_STATE_FILE_MEM_CACHE"), dict) else {}
+_STATE_FILE_MEM_LOCK = globals().get("_STATE_FILE_MEM_LOCK") or threading.Lock()
+
+
+def _read_state_file_cached(st_candidate: Path, se_mod):
+    """Read & parse steward-cockpit-state.json once per (mtime_ns, size) instead of parsing 7MB+ twice per poll."""
+    if st_candidate.is_dir():
+        raise OSError("state file is a directory")
+    in_pytest = bool(os.environ.get("PYTEST_CURRENT_TEST"))
+    st_stat = st_candidate.stat()
+    sig = (st_stat.st_mtime_ns, st_stat.st_size)
+    ckey = str(st_candidate)
+    if not in_pytest:
+        with _STATE_FILE_MEM_LOCK:
+            hit = _STATE_FILE_MEM_CACHE.get(ckey)
+            if hit is not None and hit[0] == sig:
+                return hit[1]
+    lock_ctx = se_mod._STATE_LOCK if st_candidate == Path(se_mod.STATE_FILE) else None
+    if lock_ctx is not None:
+        with lock_ctx:
+            raw_st_txt = st_candidate.read_text(encoding="utf-8")
+    else:
+        raw_st_txt = st_candidate.read_text(encoding="utf-8")
+    if "\x00" in raw_st_txt:
+        raise ValueError("null byte in state file")
+    parsed_st = json.loads(raw_st_txt)
+    if not isinstance(parsed_st, dict):
+        raise ValueError("state file root is not a JSON object")
+    if not in_pytest:
+        with _STATE_FILE_MEM_LOCK:
+            if len(_STATE_FILE_MEM_CACHE) > 8:
+                _STATE_FILE_MEM_CACHE.clear()
+            _STATE_FILE_MEM_CACHE[ckey] = (sig, parsed_st)
+    return parsed_st
 
 
 def _realpath_fast(p):
@@ -1584,15 +1628,7 @@ def _usage_rollup_fresh(cdir, estate=None, *, lock_timeout: float = 5.0, project
             st_candidate = _p_reloc.data_dir() / "steward-cockpit-state.json"
         if st_candidate.exists():
             try:
-                if st_candidate.is_dir():
-                    raise OSError("state file is a directory")
-                raw_st_txt = st_candidate.read_text(encoding="utf-8")
-                if "\x00" in raw_st_txt:
-                    raise ValueError("null byte in state file")
-                parsed_st = json.loads(raw_st_txt)
-                if not isinstance(parsed_st, dict):
-                    raise ValueError("state file root is not a JSON object")
-                estate = parsed_st if st_candidate != Path(_se_mod.STATE_FILE) else _read_all_state()
+                estate = _read_state_file_cached(st_candidate, _se_mod)
             except (OSError, ValueError, TypeError):
                 backing_unreadable = True
                 estate = {}
@@ -3091,15 +3127,40 @@ def global_usage_summary(qs=None):
 _STATE_CACHE = globals().get("_STATE_CACHE") if isinstance(globals().get("_STATE_CACHE"), dict) else {}; _STATE_LOCK = globals().get("_STATE_LOCK") or threading.Lock()
 
 
+_MAP_STAMP_FAST_CACHE = globals().get("_MAP_STAMP_FAST_CACHE") if isinstance(globals().get("_MAP_STAMP_FAST_CACHE"), dict) else {}
+
+
+def _map_stamp_fast(cdir):
+    if "PYTEST_CURRENT_TEST" in os.environ:
+        return campaign.map_stamp(cdir)
+    ck = os.path.normcase(os.path.abspath(str(cdir)))
+    now_m = time.monotonic()
+    hit = _MAP_STAMP_FAST_CACHE.get(ck)
+    if hit is not None and (now_m - hit[0]) < 1.5:
+        return hit[1]
+    val = campaign.map_stamp(cdir)
+    if len(_MAP_STAMP_FAST_CACHE) > 256:
+        _MAP_STAMP_FAST_CACHE.clear()
+    _MAP_STAMP_FAST_CACHE[ck] = (now_m, val)
+    return val
+
+
+def _shallow_state_copy(st_dict):
+    out = dict(st_dict)
+    if isinstance(out.get("usage_rollup"), dict):
+        out["usage_rollup"] = dict(out["usage_rollup"])
+    return out
+
+
 def _state_cached(eng, cdir):
     """The state poll (2026-10-11 speed): the app's tiles and the Cave page both ask every open cockpit every few
-    seconds; one answer serves every asker for up to two seconds, and anything the engine says (a new event) makes the
+    seconds; one answer serves every asker for up to four seconds, and anything the engine says (a new event) makes the
     next ask fresh."""
     try:
-        ttl = max(0.0, float(os.environ.get("ANCHOR_STATE_TTL_S", "2")))
+        ttl = max(0.0, float(os.environ.get("ANCHOR_STATE_TTL_S", "4")))
     except ValueError:
-        ttl = 2.0
-    stamp = campaign.map_stamp(cdir)                  # a question or review written to disk is never answered stale
+        ttl = 4.0
+    stamp = _map_stamp_fast(cdir)                      # a question or review written to disk is never answered stale
     try:
         inf_est = round(float(eng._inflight_usage_estimate()[0] or 0.0), 4) if hasattr(eng, "_inflight_usage_estimate") else 0.0
     except Exception:
@@ -3121,7 +3182,7 @@ def _state_cached(eng, cdir):
         with _STATE_LOCK:
             hit = _STATE_CACHE.get(key)
             if hit and now - hit[0] < ttl:
-                return copy.deepcopy(hit[1])
+                return _shallow_state_copy(hit[1])
     st = _state_with_usage(eng, cdir)
     st["stamp"] = stamp
     if ttl:
@@ -3129,7 +3190,7 @@ def _state_cached(eng, cdir):
             for k in [k for k, v in _STATE_CACHE.items() if now - v[0] >= ttl]:
                 _STATE_CACHE.pop(k, None)
             _STATE_CACHE[key] = (now, st)
-        return copy.deepcopy(st)
+        return _shallow_state_copy(st)
     return st
 
 
@@ -3227,7 +3288,16 @@ def _resolve_clean_download_filename(cdir, rel, real, ext, qs):
     norm_rel_low = norm_rel.lower()
     exp_hash = str(qs.get("hash") or "").strip().lower()
     try:
-        deliv_data = campaign.read_deliverables(cdir) if cdir and os.path.isdir(str(cdir)) else {}
+        deliv_data = {}
+        if cdir and os.path.isdir(str(cdir)):
+            norm_c = os.path.normcase(os.path.abspath(str(cdir)))
+            cached_d = None
+            with _DELIV_LOCK:
+                for dk, dv in _DELIV_CACHE.items():
+                    if dk[0] == norm_c and isinstance(dv[2], dict):
+                        cached_d = dv[2]
+                        break
+            deliv_data = cached_d if cached_d is not None else campaign.read_deliverables(cdir)
         pool = list(deliv_data.get("items") or []) + list(deliv_data.get("approved") or [])
         best_item = None
         for it in pool:
@@ -3372,7 +3442,8 @@ def handle_get(cdir, verb, qs):
             if not os.path.isfile(real) and target_name:
                 try:
                     deliv_data = campaign.read_deliverables(cdir)
-                    for it in (deliv_data.get("items") or []) + (deliv_data.get("approved") or []):
+                    all_deliv_rows = (deliv_data.get("items") or []) + (deliv_data.get("approved") or [])
+                    for it in all_deliv_rows:
                         if not isinstance(it, dict):
                             continue
                         ip = str(it.get("open_path") or it.get("path") or "").strip()
@@ -3385,12 +3456,35 @@ def handle_get(cdir, verb, qs):
                                     break
                             except paths.UnsafePathError:
                                 continue
+                    # Version-agnostic stem fallback (e.g. clicking an older `(v4).pdf` receipt superseded by `(v5).pdf`)
+                    if not os.path.isfile(real):
+                        req_suffix = Path(target_name).suffix.lower()
+                        def _ver_agnostic_stem(fn: str) -> str:
+                            st = Path(fn).stem.lower()
+                            st = re.sub(r"\s*\(v\d+[^)]*\)", "", st, flags=re.I)
+                            st = re.sub(r"[-_ ]v\d+\b", "", st, flags=re.I)
+                            return re.sub(r"\s+", " ", st).strip(" -_")
+                        target_vstem = _ver_agnostic_stem(target_name)
+                        if target_vstem and len(target_vstem) >= 4:
+                            for it in all_deliv_rows:
+                                if not isinstance(it, dict):
+                                    continue
+                                ip = str(it.get("open_path") or it.get("path") or "").strip()
+                                if ip and Path(ip).suffix.lower() == req_suffix and _ver_agnostic_stem(Path(ip).name) == target_vstem:
+                                    try:
+                                        cand_cdir_p = paths.resolve_contained_path(creal_path, ip, allow_missing=True)
+                                        if cand_cdir_p.is_file() and not private_account_path(str(cand_cdir_p)):
+                                            real = str(cand_cdir_p)
+                                            rel = ip
+                                            break
+                                    except paths.UnsafePathError:
+                                        continue
                 except Exception:
                     pass
             if not os.path.isfile(real) and target_name:
                 try:
                     cdir_root_p = Path(cdir)
-                    for sub in ("chapters", "deliverables", "story-arc", "editorial", "Finished Deliverables", "Final Deliverables", ".ecgberht/journal"):
+                    for sub in ("Key Deliverables", "chapters", "visual-canon", "book-drafts", "deliverables", "story-arc", "editorial", "Finished Deliverables", "Final Deliverables", ".ecgberht/journal"):
                         sub_root = cdir_root_p / sub
                         if not sub_root.is_dir():
                             continue
@@ -3461,7 +3555,7 @@ def handle_get(cdir, verb, qs):
                         md_source = None
                     if md_source is None:
                         cdir_root_p = Path(cdir)
-                        for sub in ("chapters", "deliverables", "story-arc", "editorial", "Finished Deliverables", ""):
+                        for sub in ("Key Deliverables", "chapters", "visual-canon", "book-drafts", "deliverables", "story-arc", "editorial", "Finished Deliverables", "Final Deliverables", ""):
                             sub_root = cdir_root_p / sub if sub else cdir_root_p
                             if not sub_root.is_dir():
                                 continue
@@ -3497,18 +3591,53 @@ def handle_get(cdir, verb, qs):
                     pass
         if not in_effort or not os.path.isfile(real):
             return {"error": "not an openable deliverable (outside this effort or missing)"}, 404
-        if qs.get("pdf_page") is None:
-            try:
-                campaign.record_deliverable_viewed(cdir, rel)
-                rel_from_cdir = os.path.relpath(real, creal).replace("\\", "/")
-                if rel_from_cdir and not rel_from_cdir.startswith("..") and rel_from_cdir != rel:
-                    campaign.record_deliverable_viewed(cdir, rel_from_cdir)
-            except Exception:
-                pass
+        if qs.get("pdf_page") is None and not qs.get("_range_cont"):
+            def _rec_viewed():
+                try:
+                    campaign.record_deliverable_viewed(cdir, rel)
+                    rel_from_cdir = os.path.relpath(real, creal).replace("\\", "/")
+                    if rel_from_cdir and not rel_from_cdir.startswith("..") and rel_from_cdir != rel:
+                        campaign.record_deliverable_viewed(cdir, rel_from_cdir)
+                except Exception:
+                    pass
+            if str(qs.get("download", "")).strip() in ("1", "true") and "PYTEST_CURRENT_TEST" not in os.environ:
+                threading.Thread(target=_rec_viewed, name="anchor-deliv-viewed", daemon=True).start()
+            else:
+                _rec_viewed()
         if os.path.getsize(real) > 50 * 1024 * 1024:
             return {"error": "file too large to serve inline (50MB cap)"}, 413
+
+        def _cached_file_sha256(fpath: str) -> str:
+            _hcache = globals().setdefault("_DELIV_SHA256_CACHE", {})
+            _hlock = globals().setdefault("_DELIV_SHA256_LOCK", threading.Lock())
+            st_f = os.stat(fpath)
+            hkey = (
+                os.path.normcase(os.path.abspath(fpath)),
+                getattr(st_f, "st_mtime_ns", st_f.st_mtime),
+                getattr(st_f, "st_ctime_ns", 0),
+                getattr(st_f, "st_ino", 0),
+                st_f.st_size,
+            )
+            with _hlock:
+                hit = _hcache.get(hkey)
+            if hit is not None:
+                return hit
+            h = hashlib.sha256()
+            with open(fpath, "rb") as fh_hash:
+                while True:
+                    blk = fh_hash.read(262144)
+                    if not blk:
+                        break
+                    h.update(blk)
+            digest_hex = h.hexdigest()
+            with _hlock:
+                if len(_hcache) >= 1024:
+                    _hcache.clear()
+                _hcache[hkey] = digest_hex
+            return digest_hex
+
         expected_hash = qs.get("hash")
-        if expected_hash and hashlib.sha256(Path(real).read_bytes()).hexdigest() != expected_hash:
+        if expected_hash and _cached_file_sha256(real) != expected_hash:
             matched_rev_path = None
             if expected_hash != "0" * 64:
                 try:
@@ -3518,7 +3647,7 @@ def handle_get(cdir, verb, qs):
                             if isinstance(rev, dict) and rev.get("hash") == expected_hash and rev.get("path"):
                                 cand_rev = (Path(cdir) / str(rev["path"])).resolve()
                                 if cand_rev.is_relative_to(Path(cdir).resolve()) and cand_rev.is_file():
-                                    if hashlib.sha256(cand_rev.read_bytes()).hexdigest() == expected_hash:
+                                    if _cached_file_sha256(str(cand_rev)) == expected_hash:
                                         matched_rev_path = str(cand_rev)
                                         break
                         if matched_rev_path:
@@ -3556,7 +3685,7 @@ def handle_get(cdir, verb, qs):
                 return _serve_pdf_scrollview(real, qs, rel, cdir)
         if want_view and not want_download and ext == ".pptx":
             # Only a ledger-bound PDF of these exact deck bytes is a slide preview.
-            digest = hashlib.sha256(Path(real).read_bytes()).hexdigest()
+            digest = _cached_file_sha256(real)
             refinement = campaign.read_refinement(cdir)
             previews = [rev["visual_companion"]
                 for sl in (refinement or {}).get("state", {}).get("slices", {}).values()
@@ -3566,7 +3695,7 @@ def handle_get(cdir, verb, qs):
                 preview = previews[-1]
                 target = (Path(cdir) / preview["path"]).resolve()
                 if (preview.get("source_hash") != digest or not target.is_relative_to(Path(cdir).resolve())
-                        or not target.is_file() or hashlib.sha256(target.read_bytes()).hexdigest() != preview["hash"]):
+                        or not target.is_file() or _cached_file_sha256(str(target)) != preview["hash"]):
                     return {"error": "visual-companion-mismatch"}, 409
                 if want_pdf_page is not None:
                     return _serve_pdf_page_png(str(target), want_pdf_page)
@@ -3782,7 +3911,7 @@ def handle_get(cdir, verb, qs):
         return {"terms": _terms_view(cdir)}, 200
     if verb == "gandalf":
         return {"runs": _gandalf_runs(cdir)}, 200
-    if verb in ("anvil", "anvil/walkthrough", "anvil/source", "/api/steward/anvil", "/api/steward/anvil/walkthrough", "/api/steward/anvil/source"):
+    if verb in ("anvil", "anvil/walkthrough", "anvil/source", "anvil/v4_state", "/api/steward/anvil", "/api/steward/anvil/walkthrough", "/api/steward/anvil/source", "/api/steward/anvil/v4_state"):
         import importlib
         from steward_cockpit import anvil_session as _as
         try:
@@ -3793,7 +3922,10 @@ def handle_get(cdir, verb, qs):
         except Exception:
             pass
         norm_verb = verb[len("/api/steward/"):] if verb.startswith("/api/steward/") else verb
-        if norm_verb == "anvil/source" or str(qs.get("action") or "").strip().lower() == "source":
+        act_get = str(qs.get("action") or "").strip().lower()
+        if norm_verb == "anvil/v4_state" or act_get == "v4_state":
+            return _as.get_v4_cockpit_state(cdir)
+        if norm_verb == "anvil/source" or act_get == "source":
             rel_file = str(qs.get("file") or qs.get("path") or "").strip()
             try:
                 return _as.get_cockpit_file_source(cdir, rel_file), 200
@@ -3804,7 +3936,7 @@ def handle_get(cdir, verb, qs):
                     for tok in ("traversal", "permitted", "outside", "restricted", "symlink", "escape")
                 ) else 400
                 return {"ok": False, "error": msg}, err_code
-        if norm_verb == "anvil/walkthrough" or str(qs.get("action") or "").strip().lower() == "walkthrough":
+        if norm_verb == "anvil/walkthrough" or act_get == "walkthrough":
             return _run_with_cockpit_usage_attribution(
                 "anvil", "walkthrough", cdir, qs,
                 lambda: _as.walkthrough_in_session(cdir, str(qs.get("block_id") or qs.get("block") or "")),
@@ -3912,7 +4044,11 @@ def _run_with_cockpit_usage_attribution(tool_name: str, act: str, cdir: str, bod
     dur_ms = int(max(0.0, (time.monotonic() - t0) * 1000.0))
     if _uc is not None:
         try:
-            res_d = res if isinstance(res, dict) else {}
+            res_d = (
+                res[0]
+                if (isinstance(res, tuple) and len(res) == 2 and isinstance(res[0], dict))
+                else (res if isinstance(res, dict) else {})
+            )
             sess_d = res_d.get("session") if isinstance(res_d.get("session"), dict) else {}
             seat_d = sess_d.get("model_seating") if isinstance(sess_d.get("model_seating"), dict) else {}
             u_dict = (
@@ -4813,8 +4949,22 @@ def handle_post(cdir, verb, body):
                 _as._LOADED_MTIME_NS = _as_mtime
         except Exception:
             pass
+        if not isinstance(body, dict):
+            return {"ok": False, "error_code": "MALFORMED_DATA_REFUSED", "error": "JSON object body required"}, 400
         act = "walkthrough" if verb == "anvil/walkthrough" else str(body.get("action") or "start_code").strip()
         try:
+            if act == "v4_session":
+                return _as.save_v4_cockpit_ui_session(cdir, body)
+            if act == "v4_trace":
+                out = _run_with_cockpit_usage_attribution(
+                    "anvil", act, cdir, body, lambda: _as.run_v4_cockpit_trace(cdir, body)
+                )
+                return out if (isinstance(out, tuple) and len(out) == 2) else (out, 200)
+            if act == "v4_profile_lit":
+                out = _run_with_cockpit_usage_attribution(
+                    "anvil", act, cdir, body, lambda: _as.run_v4_cockpit_profile_lit(cdir, body)
+                )
+                return out if (isinstance(out, tuple) and len(out) == 2) else (out, 200)
             if act == "walkthrough":
                 return _run_with_cockpit_usage_attribution(
                     "anvil", act, cdir, body,

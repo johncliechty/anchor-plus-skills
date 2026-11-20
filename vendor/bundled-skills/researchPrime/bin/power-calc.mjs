@@ -19,6 +19,7 @@
 // A run against a non-GREEN pre-registration throws (you cannot size a fixture to numbers a
 // human has not yet committed — that would defeat the I6 pre-registration order).
 
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadPreregistration, validatePreregistration } from './preregistration.mjs';
@@ -86,7 +87,17 @@ export function powerCalc(prereg = loadPreregistration()) {
   };
 }
 
+function isMain() {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return fs.realpathSync(fileURLToPath(import.meta.url)) === fs.realpathSync(path.resolve(entry));
+  } catch {
+    try { return path.resolve(entry) === fileURLToPath(import.meta.url); } catch { return false; }
+  }
+}
+
 // Convenience for human inspection / CLI: `node bin/power-calc.mjs`.
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isMain()) {
   console.log(JSON.stringify(powerCalc(), null, 2));
 }

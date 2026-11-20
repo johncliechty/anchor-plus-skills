@@ -9,7 +9,7 @@
 Open every run with the **shared two-dimension triage** from `@foundry/triage`:
 
 - **Model tier:** `Heavy` | `Standard`
-- **Process depth:** `FULL` | `LITE` | `SPIKE`
+- **Process depth:** `FULL` | `LITE` | `SPIKE` | `MATRIX-FAST-TRACK`
 - Plus a written **rationale** for both.
 
 **Runtime enforcement:** `runtime_enforced: false` (honest) — pure prose host; the model must still emit both axes + rationale first and treat lock confirmation as mandatory ceremony. CI contracts this block; there is no hard Node gate on this skill until its NS engine ships.
@@ -48,7 +48,8 @@ Do **not** invent a second Heavy/Standard × FULL/LITE/SPIKE rubric — recommen
     "depth": [
       "FULL",
       "LITE",
-      "SPIKE"
+      "SPIKE",
+      "MATRIX-FAST-TRACK"
     ]
   },
   "triageSurface": "generated prose block (NS-03 engine out of scope)",

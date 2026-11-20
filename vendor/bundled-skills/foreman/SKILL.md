@@ -153,9 +153,11 @@ Independence comes from separate sub-agent calls, never multi-persona-in-one-gen
 
 When a Stage-2 plan (such as Crucible's `--matrix-fast-track` output) decomposes a build into orthogonal sub-waves (`W.1`..`W.k`) with explicit file write-sets and deterministic test gates, Foreman avoids sequential multi-round reviewer swarm bottlenecks via three rules:
 
-1. **DAG / Parallel Sub-Wave Dispatch:** Independent sub-waves (`W.1`, `W.2`, ...) with disjoint file write-sets ($\text{writes}(W.i) \cap \text{writes}(W.j) = \emptyset$) execute in parallel rather than strictly serially. Overlapping write-sets or explicit DAG edges serialize automatically.
-2. **Orchestrator-Owned Ground-Truth Fast-Gate First:** Immediately after `EXECUTE`, the orchestrator runs the deterministic test suite (`pytest` / `node --test`) + `delta-coverage-gate.mjs` + `Aegis` deterministic AST taint/sink scan + `Anvil` structural check before invoking any LLM reviewer. If RED, the deterministic failure output goes straight to `FIX`.
-3. **Single-Pass Cross-Family Diff Review on Green Gate:** When the deterministic test gate and `Aegis`/`Anvil` checks pass with `0` issues, Foreman runs **1 bounded cross-family diff review** (`120s` timeout ceiling, scoped to the `git diff` and wave acceptance criteria) instead of a multi-round reviewer swarm, and auto-advances immediately when `BLOCKER == 0`.
+1. **DAG / Parallel Sub-Wave Dispatch (`W.1..W.k`):** Independent sub-waves (`### Wave 1.1` / `## Wave 1.1`, `### Wave 1.2`, ... with `Writes:` / `Files:` and optional `Depends-On:`) whose declared file write-sets are pairwise disjoint ($\text{writes}(W.i) \cap \text{writes}(W.j) = \emptyset$) execute concurrently (`Promise.all` capped by concurrency `3`) inside isolated temporary git worktrees branched from parent `HEAD`, merge their non-overlapping mutations cleanly back onto the parent workspace, and run **one** combined parent-wave gate + fast-gates + diff-scoped review. Overlapping concurrent sibling write-sets halt deterministically at contract parse time (`[taxonomy:overlapping-subwave-writes]`).
+2. **Pre-`EXECUTE` `Anvil` Slice & Decoupled `gitDiff`:** Before `driver.execute`, `bin/fast-gates.mjs` injects a compact `<15 KB` AST symbol/signature/line-span context pack (`anvil_engine.py slice` with built-in parser fallback) for declared `Writes:`/`Files:`, and `gitDiff: true` (`git status --porcelain=v1 -z`) auto-activates in git repos/worktrees even when `gitCommit: false` (eliminating whole-repo SHA-256 walks).
+3. **Orchestrator-Owned Post-`GATE` Deterministic Fast-Gates (BEFORE `driver.review`):** Immediately on a GREEN test gate, Foreman runs `guardRequiredTests`, `outputsGate`, `checkVacuousGreen`, `checkDeltaCoverage` (ignoring deletions, dotfiles, and non-code artifacts), `Tidy-Idy` scratch/byproduct hygiene (`.bak`, `.provider-schema-*`, `.sqlite-wal`, `_scratch*`), `Aegis` CWE security scan on changed `.py` files, and `Anvil` AST syntax/duplicate-definition check **before** invoking any LLM reviewer.
+4. **Diff-Scoped Review & Post-Elegance Fast-Close:** `reviewPrompt` embeds the wave's acceptance criteria + bounded `git diff` hunks (`<= 60 KB` inline) with zero `.foreman/seat-heartbeat.json` write mandate on read-only reviewers. When `verdict.go === true` (`0` repro-backed blockers), `elegance` fast-closes immediately on `0` edits or after localized trims pass `runGate` + deterministic fast-gates + hunk-scoped test checks (`0` redundant `review-1` rounds).
+5. **4-CLI Auth Preflight, Unified `onReceipt` Telemetry & Attested Review Manifest:** `bin/preflight.mjs` (`preflightCliAuth`) probes `claude auth status`, `codex login status`, `agy`, and `grok` before Wave 1 (`[taxonomy:auth-expired]` or 3rd-family verification failover). `bin/run-live.mjs` routes every role (`claude`, `gemini-cli`, `chatgpt-cli`, `grok-cli`, `host-ipc`) through `drivers/index.mjs` (`onReceipt` + `PHYSICAL_RECEIPT_HOOK`) and writes `changed_files` (SHA-256 map) + `attested_review` into `.foreman/run-record.json` so Anchor `code_jobs.py` fast-paths verified cross-family builds.
 
 ---
 
@@ -411,7 +413,7 @@ the test command and write a gate artifact sub-agents cannot forge. So the
 orchestrator + gate + state live in this Node engine; the Workflow tool / sub-agents
 drive only the model steps via the `agent()` seam.
 
-**Tests & fixtures:** `test/*.test.mjs` (106 passing), `fixtures/canonical-project/`
+**Tests & fixtures:** `npm test` / `node scripts/run-all-tests.mjs` (runs `test/*.test.mjs` and `test/adv-sleep-0076-outside-harness.mjs` while excluding intentionally-red `fixtures/**` and `test/fixture/**`), `fixtures/canonical-project/`
 (Node, ships red), `fixtures/py-canonical/` (pytest, ships red), and the
 `test/neg-*` HALT cases.
 

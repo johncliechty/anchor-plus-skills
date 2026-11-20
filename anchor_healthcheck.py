@@ -7376,6 +7376,307 @@ def check_supervisor_live_probes(report: Report):
                 pass
 
 
+def check_mothership_slowdown_and_polling_health(report: Report) -> None:
+    """Mother Ship anti-slowdown, polling-storm, wire-compression & store-bloat gate (2026-11-19).
+
+    Follows the locked 2026-07-07 Severity Rule:
+      - HARD CORRECTNESS (`report.check`): structural anti-slowdown invariants that
+        must never regress (60s Cave interval uses lightweight `GET ?slim=1` instead
+        of a multi-window `POST sync_now` storm; `slim=1` strips multi-MB archived
+        bodies while keeping active unread snippets/Prime bodies; HTTP `_send_json`
+        negotiates lossless `gzip` compression; `.docx` `download=1` preserves the
+        resolved clean human filename in `Content-Disposition`; `anvil?summary=1`
+        skips full AST bucket migration; `steward-cockpit-state.json` uses mtime
+        caching; and `sync_comms_now` holds a single-flight lock).
+      - LOAD-SENSITIVE PERFORMANCE / BLOAT (`report.warn` on breach, `report.check(True)`
+        when clean): best-of-3 loopback latency budgets, recent `nssm-stdout.log`
+        request-rate / `SLOW` Cave stall telemetry, and `.anchor/usage_ledger` /
+        `rnd_jobs` file-count hygiene.
+    """
+    import gzip as _gzip
+    import tempfile as _tf
+    import threading as _th
+    import warnings as _warnings
+    from collections import Counter as _Counter
+
+    hard_name = "Mother Ship anti-slowdown & polling guards"
+    perf_name = "Mother Ship latency, polling rate & store hygiene"
+
+    prev_data = os.environ.get("ANCHOR_DATA_DIR")
+    prev_tok = os.environ.get("ANCHOR_TOKEN")
+    tmp_root = None
+    srv = None
+    try:
+        # 1. Static JS guard: Cave's 60s background refresh must use GET ?slim=1, never POST sync_now
+        hs_js_path = ANCHOR_DIR / "static" / "high-seat-page.js"
+        hs_js = hs_js_path.read_text(encoding="utf-8", errors="replace") if hs_js_path.is_file() else ""
+        tail_js = hs_js[-2200:]
+        no_bg_sync_post = (
+            "/api/steward/comms?slim=1" in tail_js
+            and "action: 'sync_now'" not in tail_js
+            and 'action: "sync_now"' not in tail_js
+        )
+
+        # 2. Hermetic loopback verification of slim=1 comms, gzip wire compression,
+        #    clean .docx download filename header, Anvil summary=1 fast-path & caches
+        tmp_root = Path(_tf.mkdtemp(prefix="anchor-hc-perf-"))
+        h_data = tmp_root / "data"
+        (h_data / ".anchor").mkdir(parents=True, exist_ok=True)
+        os.environ["ANCHOR_DATA_DIR"] = str(h_data)
+        ephem_tok = os.urandom(12).hex()
+        os.environ["ANCHOR_TOKEN"] = ephem_tok
+        _paths.ensure_data_dirs()
+
+        import anchor_gui as _ag
+        import comms_connector as _cc
+        import rnd_registry as _rnd
+        from steward_cockpit import anvil_session as _as
+        from steward_cockpit import steward_routes as _sr
+
+        # Seed synthetic comms-sync.json with a 24 KB archived body + 1 unread Prime email
+        big_body = "Archived paragraph content. " * 900
+        (h_data / ".anchor" / "comms-config.json").write_text(
+            json.dumps({"version": 1, "accounts": [], "preferences": {"sync_interval_minutes": 1}}),
+            encoding="utf-8",
+        )
+        (h_data / ".anchor" / "comms-sync.json").write_text(
+            json.dumps({
+                "synced_at": "2026-11-19 12:00",
+                "calendar_events": [],
+                "email_headers": [
+                    {
+                        "uid": "u-unread-1",
+                        "subject": "Urgent Term Sheet Question",
+                        "from": "Partner <partner@example.org>",
+                        "sender_email": "partner@example.org",
+                        "date": f"{TODAY} 11:45",
+                        "body": "Active unread body kept for instant open.",
+                        "snippet": "Active unread body kept for instant open.",
+                        "is_read": False,
+                        "account_id": "acc-1",
+                        "account_badge": "Work",
+                    },
+                    {
+                        "uid": "u-read-heavy",
+                        "subject": "Resolved Thread",
+                        "from": "Archive <archive@example.org>",
+                        "sender_email": "archive@example.org",
+                        "date": f"{TODAY} 09:15",
+                        "body": big_body,
+                        "quoted_history": big_body,
+                        "snippet": "Short snippet kept.",
+                        "is_read": True,
+                        "account_id": "acc-1",
+                        "account_badge": "Work",
+                    },
+                ],
+                "sent_email_headers": [],
+                "notes": [],
+                "provider_states": {},
+            }),
+            encoding="utf-8",
+        )
+
+        slim_res, slim_code = _cc.handle_comms_get({"slim": "1"})
+        read_rows = [r for r in (slim_res.get("all_emails") or []) if r.get("uid") == "u-read-heavy"]
+        slim_contract_ok = bool(
+            slim_code == 200
+            and slim_res.get("slim") is True
+            and read_rows
+            and "body" not in read_rows[0]
+            and read_rows[0].get("snippet")
+            and hasattr(_cc, "_SYNC_NOW_LOCK")
+        )
+
+        # Register a synthetic effort with a .docx deliverable + synthetic Anvil session
+        proj_dir = tmp_root / "proj"
+        eff_dir = proj_dir / "Book 1"
+        eff_dir.mkdir(parents=True, exist_ok=True)
+        docx_file = eff_dir / "internal_rev_01.docx"
+        docx_file.write_bytes(b"PK\x03\x04synthetic-docx-payload" * 80)
+        # Add a .py file containing `\m` in a string literal to verify summary_only=True does NOT AST-compile it
+        (eff_dir / "noisy_escape.py").write_text('x = "\\m"\n', encoding="utf-8")
+        anvil_dir = eff_dir / ".anvil"
+        anvil_dir.mkdir(parents=True, exist_ok=True)
+        (anvil_dir / "session.json").write_text(
+            json.dumps({
+                "active": True,
+                "updated_at": "2026-11-19T12:00:00Z",
+                "software": {"path": str(eff_dir)},
+                "code_map": {"conceptual_buckets": [{"id": f"b{i}", "title": f"B{i}"} for i in range(12)]},
+            }),
+            encoding="utf-8",
+        )
+        with _warnings.catch_warnings(record=True) as caught_w:
+            _warnings.simplefilter("always", SyntaxWarning)
+            t_av0 = time.perf_counter()
+            av_sum = _as.get_session_status(eff_dir, summary_only=True)
+            av_ms = (time.perf_counter() - t_av0) * 1000.0
+        syntax_warns = [w for w in caught_w if issubclass(w.category, SyntaxWarning)]
+        anvil_fast_ok = bool(
+            av_sum.get("ok") is True
+            and av_sum.get("summary_only") is True
+            and isinstance(av_sum.get("v4_stamp"), dict)
+            and av_sum["v4_stamp"].get("updated_at") == "2026-11-19T12:00:00Z"
+            and len(syntax_warns) == 0
+        )
+
+        state_cache_helper_ok = callable(getattr(_sr, "_read_state_file_cached", None))
+
+        proj_rec = _rnd.add_project("HC Perf Proj", str(proj_dir))
+        pid_hc = proj_rec["id"]
+
+        srv = _ag.make_server("127.0.0.1", 0)
+        t_srv = _th.Thread(target=srv.serve_forever, daemon=True)
+        t_srv.start()
+        base_u = f"http://127.0.0.1:{srv.server_address[1]}"
+        req_hdrs = {
+            "Authorization": f"Bearer {ephem_tok}",
+            "Accept-Encoding": "gzip",
+        }
+
+        # Best-of-3 gzipped slim comms fetch
+        best_comms_ms = 999999.0
+        gz_ok = False
+        for _ in range(3):
+            t0 = time.perf_counter()
+            req = urllib.request.Request(f"{base_u}/api/steward/comms?slim=1", headers=req_hdrs)
+            with _paths.safe_urlopen(req, timeout=15) as resp:
+                raw_wire = resp.read()
+                ce = (resp.headers.get("Content-Encoding") or "").lower()
+            dt_ms = (time.perf_counter() - t0) * 1000.0
+            if dt_ms < best_comms_ms:
+                best_comms_ms = dt_ms
+            if ce == "gzip":
+                decoded = json.loads(_gzip.decompress(raw_wire).decode("utf-8"))
+                gz_ok = bool(decoded.get("ok") and decoded.get("slim") is True)
+
+        # Clean .docx download=1 Content-Disposition filename check
+        dl_url = (
+            f"{base_u}/api/steward/deliverable-file?pid={pid_hc}&dir=Book+1"
+            f"&path=internal_rev_01.docx&download=1&filename=Chapters_7_8_Clean.docx"
+        )
+        dl_req = urllib.request.Request(dl_url, headers={"Authorization": f"Bearer {ephem_tok}"})
+        with _paths.safe_urlopen(dl_req, timeout=15) as dl_resp:
+            dl_bytes = dl_resp.read()
+            cd_val = dl_resp.headers.get("Content-Disposition") or ""
+        docx_dl_ok = bool(
+            len(dl_bytes) > 100
+            and "attachment" in cd_val.lower()
+            and "Chapters_7_8_Clean.docx" in cd_val
+        )
+
+        import provider_setup as _ps
+        provider_setup_fast_ok = bool(
+            hasattr(_ps, "_COMMS_ACCOUNTS_SUMMARY_CACHE")
+            and hasattr(_ps.AccountUsageReader, "_load_disk_cache")
+        )
+
+        all_hard_ok = bool(
+            no_bg_sync_post
+            and slim_contract_ok
+            and gz_ok
+            and docx_dl_ok
+            and anvil_fast_ok
+            and state_cache_helper_ok
+            and provider_setup_fast_ok
+        )
+        report.check(
+            hard_name,
+            all_hard_ok,
+            f"no-bg-sync-storm={no_bg_sync_post} slim-comms={slim_contract_ok} "
+            f"gzip-json={gz_ok} docx-clean-dl={docx_dl_ok} "
+            f"anvil-summary-no-ast={anvil_fast_ok} state-mtime-cache={state_cache_helper_ok} "
+            f"provider-setup-cache={provider_setup_fast_ok}",
+        )
+
+        # 3. Load-sensitive Mother Ship telemetry (Severity Rule: warn on threshold breach, never false-red)
+        perf_notes: list[str] = []
+        if best_comms_ms > 500.0:
+            perf_notes.append(f"slim comms best-of-3={best_comms_ms:.0f}ms (>500ms budget)")
+        if av_ms > 200.0:
+            perf_notes.append(f"anvil summary={av_ms:.0f}ms (>200ms budget)")
+
+        # Inspect real DATA_DIR log & store counts (read-only)
+        live_log = DATA_DIR / "logs" / "nssm-stdout.log"
+        avg_rps = 0.0
+        max_cave_slow_s = 0.0
+        if live_log.is_file():
+            try:
+                with open(live_log, "rb") as lfh:
+                    lfh.seek(0, os.SEEK_END)
+                    end_pos = lfh.tell()
+                    lfh.seek(max(0, end_pos - 180_000))
+                    tail_lines = lfh.read().decode("utf-8", errors="replace").splitlines()[-1500:]
+                sec_counts: _Counter = _Counter()
+                for ln in tail_lines:
+                    if ln.startswith("  [") and "] " in ln:
+                        ts_s = ln[3:11]
+                        sec_counts[ts_s] += 1
+                        if "SLOW the Cave of Wonders took " in ln:
+                            m_sl = re.search(r"took\s+([0-9.]+)s", ln)
+                            if m_sl:
+                                max_cave_slow_s = max(max_cave_slow_s, float(m_sl.group(1)))
+                recent_secs = sorted(sec_counts.keys())[-30:]
+                if recent_secs:
+                    avg_rps = sum(sec_counts[s] for s in recent_secs) / float(len(recent_secs))
+                if avg_rps > 18.0:
+                    perf_notes.append(f"elevated live request rate avg={avg_rps:.1f} req/s (>18 req/s)")
+                    report.recommend("Close duplicate open Anchor/Chrome tabs across remote machines to reduce background polling.")
+                if max_cave_slow_s >= 10.0:
+                    perf_notes.append(f"recent Cave render stall={max_cave_slow_s:.1f}s (>=10s in nssm-stdout.log)")
+            except Exception:
+                pass
+
+        ledger_count = 0
+        jobs_count = 0
+        for label_cnt, dir_p in (("usage_ledger", DATA_DIR / ".anchor" / "usage_ledger"), ("rnd_jobs", DATA_DIR / "rnd_jobs")):
+            if dir_p.is_dir():
+                try:
+                    with os.scandir(dir_p) as it:
+                        cnt = sum(1 for _ in it)
+                    if label_cnt == "usage_ledger":
+                        ledger_count = cnt
+                    else:
+                        jobs_count = cnt
+                except OSError:
+                    pass
+        if ledger_count > 30_000 or jobs_count > 40_000:
+            perf_notes.append(f"high store file count (usage_ledger={ledger_count:,}, rnd_jobs={jobs_count:,})")
+            report.recommend("Archive older .anchor/usage_ledger or rnd_jobs records to keep directory scans fast.")
+
+        detail_str = (
+            f"slim_comms={best_comms_ms:.1f}ms anvil_summary={av_ms:.1f}ms "
+            f"live_rps={avg_rps:.1f}/s usage_ledger={ledger_count:,} rnd_jobs={jobs_count:,}"
+        )
+        if perf_notes:
+            report.warn(perf_name, f"{'; '.join(perf_notes)} ({detail_str})")
+        else:
+            report.check(perf_name, True, detail_str)
+    except Exception as exc:
+        report.check(hard_name, False, f"{type(exc).__name__}: {exc}\n{traceback.format_exc()}")
+    finally:
+        if srv is not None:
+            try:
+                srv.shutdown()
+                srv.server_close()
+            except Exception:
+                pass
+        if prev_data is None:
+            os.environ.pop("ANCHOR_DATA_DIR", None)
+        else:
+            os.environ["ANCHOR_DATA_DIR"] = prev_data
+        if prev_tok is None:
+            os.environ.pop("ANCHOR_TOKEN", None)
+        else:
+            os.environ["ANCHOR_TOKEN"] = prev_tok
+        if tmp_root is not None:
+            try:
+                shutil.rmtree(tmp_root, ignore_errors=True)
+            except Exception:
+                pass
+
+
 # â”€â”€ Main â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def main():
     global RUN_REVISION, RUN_ID
@@ -7489,6 +7790,7 @@ def main():
         # claude --version resolves under the account, and a breakaway child is
         # spawnable.
         check_supervisor_live_probes(report)
+        check_mothership_slowdown_and_polling_health(report)
 
         # rearch W18 (C7): the soak-gated join. The two walks still earning
         # their 20× green nightly soak (cookie/auth · relocated-data-dir) join

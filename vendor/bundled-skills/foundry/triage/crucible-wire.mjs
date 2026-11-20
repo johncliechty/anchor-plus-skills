@@ -45,6 +45,7 @@ export const COMPLEXITY_BANDS = Object.freeze({
   LITE: 'lite',
   FULL: 'full',
   SPIKE_FIRST: 'spike-first',
+  MATRIX_FAST_TRACK: 'matrix-fast-track',
 });
 
 /**
@@ -55,6 +56,7 @@ export const COMPLEXITY_BANDS = Object.freeze({
 export function depthToLegacyBand(depth) {
   const d = canonicalizeDepth(depth) ?? (isProcessDepth(depth) ? depth : normalizeDepth(depth));
   if (d === DEPTH_BANDS.LITE) return COMPLEXITY_BANDS.LITE;
+  if (d === DEPTH_BANDS.MATRIX_FAST_TRACK) return COMPLEXITY_BANDS.MATRIX_FAST_TRACK;
   if (d === DEPTH_BANDS.SPIKE || d === DEPTH_BANDS.SPIKE_FIRST || d === 'SPIKE-FIRST') {
     return COMPLEXITY_BANDS.SPIKE_FIRST;
   }
@@ -75,6 +77,9 @@ export function legacyBandToDepth(value) {
   if (typeof value !== 'string') return null;
   const key = value.trim().toLowerCase();
   if (key === 'lite' || key === 'light') return DEPTH_BANDS.LITE;
+  if (key === 'matrix-fast-track' || key === 'matrix' || key === 'fast-track') {
+    return DEPTH_BANDS.MATRIX_FAST_TRACK;
+  }
   if (key === 'spike-first' || key === 'spikefirst' || key === 'spike') return DEPTH_BANDS.SPIKE;
   if (key === 'full' || key === 'heavy') return DEPTH_BANDS.FULL;
   return null;
@@ -331,6 +336,9 @@ export function isForemanTriageTrack(track) {
     t === 'FULL' ||
     t === 'LITE' ||
     t === 'LIGHT' ||
+    t === 'MATRIX-FAST-TRACK' ||
+    t === 'MATRIX' ||
+    t === 'FAST-TRACK' ||
     t === 'SPIKE' || // B3 operator pin (first-class)
     t === 'SPIKE-FIRST' ||
     t === 'SPIKEFIRST' ||

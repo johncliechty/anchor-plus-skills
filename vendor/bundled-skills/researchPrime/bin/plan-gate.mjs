@@ -21,6 +21,9 @@ import { fileURLToPath } from 'node:url';
 import { runTwoGateMachine } from './two-gate.mjs';
 import { runPhase1 } from './phase1.mjs';
 import { deriveGovernorContract } from './formal-governor.mjs';
+import { detectRegulatedDomain } from './stakes.mjs';
+import { parseHumanGateAnswer } from './intake.mjs';
+import { ApprovalProvider } from './approval-provider.mjs';
 import { HaltError } from './trio-core/contract-core.mjs';
 
 export const RESEARCH_PLAN_VERSION = 'researchPrime-phase1/1';
@@ -41,7 +44,12 @@ export function buildResearchPlan({ inputs } = {}) {
   }
   const branches = Array.isArray(src.branches) ? src.branches : [];
   const baselines = Array.isArray(src.baselines) ? src.baselines : [];
-  const receipt = runPhase1({ stakes: src.stakes ?? {}, plan: { branches } });
+  const regulated = detectRegulatedDomain(src);
+  const rawStakes = src.stakes && typeof src.stakes === 'object' ? src.stakes : {};
+  const stakesForPhase1 = regulated.matched && !rawStakes.domain
+    ? { ...rawStakes, domain: regulated.category }
+    : rawStakes;
+  const receipt = runPhase1({ stakes: stakesForPhase1, plan: { branches } });
   return {
     planVersion: RESEARCH_PLAN_VERSION,
     objective,
@@ -75,7 +83,23 @@ export async function runPlanReviewGate(inputs, opts = {}) {
     const contract = deriveGovernorContract(inputs);
     lockedGovernorOutput = { ...contract, hash: contract.provenance.inputsHash };
   }
-  return runTwoGateMachine(inputs, { ...opts, lockedGovernorOutput, buildPlan: buildResearchPlan });
+  const forwarded = { ...opts, lockedGovernorOutput, buildPlan: buildResearchPlan };
+  if (opts.autoApprove === true) {
+    forwarded.approvalProvider = opts.approvalProvider
+      ?? new ApprovalProvider({ policyGrant: { identity: 'auto-approve' }, runDir: opts.runDir });
+    forwarded.promptGate1 = async () => 'APPROVE';
+    forwarded.promptGate2 = async () => 'APPROVE';
+  } else {
+    if (typeof forwarded.promptGate1 === 'function') {
+      const orig1 = forwarded.promptGate1;
+      forwarded.promptGate1 = async (...a) => parseHumanGateAnswer(await orig1(...a));
+    }
+    if (typeof forwarded.promptGate2 === 'function') {
+      const orig2 = forwarded.promptGate2;
+      forwarded.promptGate2 = async (...a) => parseHumanGateAnswer(await orig2(...a));
+    }
+  }
+  return runTwoGateMachine(inputs, forwarded);
 }
 
 // ---------------------------------------------------------------------------
@@ -103,49 +127,120 @@ function renderPlan(plan) {
 }
 
 async function askDecision(rl, label) {
-  const answer = (await rl.question(`${label} — APPROVE / EDIT / ABORT? `)).trim().toUpperCase();
-  return ['APPROVE', 'EDIT', 'ABORT'].includes(answer) ? answer : 'ABORT';
+  const answer = await rl.question(`${label} — APPROVE [y/yes] / EDIT [e] / ABORT [n]? `);
+  return parseHumanGateAnswer(answer);
 }
 
 function invokedDirectly() {
   const entry = process.argv[1];
   if (!entry) return false;
-  try { return path.resolve(fileURLToPath(import.meta.url)) === path.resolve(entry); } catch { return false; }
+  try {
+    return fs.realpathSync(fileURLToPath(import.meta.url)) === fs.realpathSync(path.resolve(entry));
+  } catch {
+    try { return path.resolve(fileURLToPath(import.meta.url)) === path.resolve(entry); } catch { return false; }
+  }
 }
 
 if (invokedDirectly()) {
-  const [planFile, runDirArg] = process.argv.slice(2);
+  const argv = process.argv.slice(2);
+  const autoApprove = argv.includes('--auto-approve') || argv.includes('--yes') || argv.includes('-y');
+  const positional = argv.filter((a) => !a.startsWith('-'));
+  const [planFile, runDirArg] = positional;
   if (!planFile) {
-    console.error('usage: node bin/plan-gate.mjs <planInputs.json> [runDir]');
+    console.error('usage: node bin/plan-gate.mjs <planInputs.json> [runDir] [--auto-approve]');
     process.exit(2);
   }
   const inputs = JSON.parse(fs.readFileSync(planFile, 'utf8'));
   const runDir = runDirArg || path.join(path.dirname(path.resolve(planFile)), 'plan-gate-run');
   fs.mkdirSync(runDir, { recursive: true });
 
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  runPlanReviewGate(inputs, {
-    runDir,
-    // Gate 1 = confirm scope/intake; Gate 2 = approve the rendered Phase-1 plan (the one-shot report).
-    promptGate1: async () => askDecision(rl, `\nScope: ${inputs.objective || inputs.query}`),
-    promptGate2: async ({ plan }) => {
-      console.log('\n' + renderPlan(plan));
-      return askDecision(rl, 'Plan');
-    },
-  })
-    .then((res) => {
-      rl.close();
-      console.log(`\n✔ Plan APPROVED. planHash=${res.planHash}`);
-      console.log(`  governance record → ${path.join(runDir, 'governance.json')}`);
-      process.exit(0);
-    })
-    .catch((err) => {
-      rl.close();
-      if (err instanceof HaltError || err.name === 'HaltError') {
-        console.error(`\n✖ HALTED: ${err.message}`);
-        process.exit(1);
-      }
-      console.error(err);
+  if (autoApprove) {
+    runPlanReviewGate(inputs, { runDir, autoApprove: true })
+      .then((res) => {
+        console.log(`\n✔ Plan AUTO-APPROVED. planHash=${res.planHash}`);
+        console.log(`  governance record → ${path.join(runDir, 'governance.json')}`);
+        process.exit(0);
+      })
+      .catch((err) => {
+        if (err instanceof HaltError || err.name === 'HaltError') {
+          console.error(`\n✖ HALTED: ${err.message}`);
+          process.exit(1);
+        }
+        console.error(err);
+        process.exit(2);
+      });
+  } else if (!process.stdin.isTTY) {
+    // Non-TTY without --auto-approve: read piped lines if supplied; if empty/EOF, emit structured status cleanly without hanging/crashing.
+    let piped = '';
+    try {
+      piped = fs.readFileSync(0, 'utf8');
+    } catch {
+      piped = '';
+    }
+    const lines = piped.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+    if (lines.length === 0) {
+      const plan = buildResearchPlan({ inputs });
+      const status = {
+        status: 'AWAITING_APPROVAL_NON_TTY',
+        gate: 'plan-gate',
+        runDir,
+        objective: plan.objective,
+        tier: plan.tier,
+        remedy: 'Re-run in an interactive TTY or pass --auto-approve / call runPlanReviewGate() programmatically.',
+      };
+      fs.writeFileSync(path.join(runDir, 'non-tty-gate-status.json'), JSON.stringify(status, null, 2), 'utf8');
+      console.log(JSON.stringify(status, null, 2));
       process.exit(2);
-    });
+    }
+    let idx = 0;
+    const nextLine = () => parseHumanGateAnswer(lines[idx++] ?? 'ABORT');
+    runPlanReviewGate(inputs, {
+      runDir,
+      approvalProvider: new ApprovalProvider({ policyGrant: { identity: 'piped-stdin' }, runDir }),
+      promptGate1: async () => nextLine(),
+      promptGate2: async ({ plan }) => {
+        console.log('\n' + renderPlan(plan));
+        return nextLine();
+      },
+    })
+      .then((res) => {
+        console.log(`\n✔ Plan APPROVED. planHash=${res.planHash}`);
+        console.log(`  governance record → ${path.join(runDir, 'governance.json')}`);
+        process.exit(0);
+      })
+      .catch((err) => {
+        if (err instanceof HaltError || err.name === 'HaltError') {
+          console.error(`\n✖ HALTED: ${err.message}`);
+          process.exit(1);
+        }
+        console.error(err);
+        process.exit(2);
+      });
+  } else {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    runPlanReviewGate(inputs, {
+      runDir,
+      // Gate 1 = confirm scope/intake; Gate 2 = approve the rendered Phase-1 plan (the one-shot report).
+      promptGate1: async () => askDecision(rl, `\nScope: ${inputs.objective || inputs.query}`),
+      promptGate2: async ({ plan }) => {
+        console.log('\n' + renderPlan(plan));
+        return askDecision(rl, 'Plan');
+      },
+    })
+      .then((res) => {
+        rl.close();
+        console.log(`\n✔ Plan APPROVED. planHash=${res.planHash}`);
+        console.log(`  governance record → ${path.join(runDir, 'governance.json')}`);
+        process.exit(0);
+      })
+      .catch((err) => {
+        rl.close();
+        if (err instanceof HaltError || err.name === 'HaltError') {
+          console.error(`\n✖ HALTED: ${err.message}`);
+          process.exit(1);
+        }
+        console.error(err);
+        process.exit(2);
+      });
+  }
 }

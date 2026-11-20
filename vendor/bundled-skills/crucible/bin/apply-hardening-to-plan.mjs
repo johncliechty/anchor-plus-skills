@@ -16,15 +16,23 @@ import {
   REQUIRED_FAILURE_STATES,
 } from './hardening-gate.mjs';
 
+const INJECTED_HARDENING_RE = /\n*## (?:Property gates \(hardening law|Hardening-gate obligations \(mechanical)[\s\S]*$/i;
+
+function stripInjectedHardeningSections(planText) {
+  return String(planText || '').replace(INJECTED_HARDENING_RE, '');
+}
+
 /**
- * Split plan markdown into wave sections for the gate's acceptance haystack.
+ * Split plan markdown into REAL wave sections for the gate's acceptance haystack.
+ * Trailing injected hardening-law checklists/obligations are stripped first so they
+ * never masquerade as a wave's concrete done-when criteria.
  * @param {string} planText
  * @returns {{doneWhen:string,n:number}[]}
  */
 export function wavesFromPlanMarkdown(planText) {
-  const body = String(planText || '');
+  const body = stripInjectedHardeningSections(planText);
   const parts = body.split(/^## Wave /m);
-  if (parts.length <= 1) return [{ doneWhen: body, n: 0 }];
+  if (parts.length <= 1) return [];
   return parts.slice(1).map((section, i) => ({
     n: i + 1,
     doneWhen: `## Wave ${section}`,
@@ -81,28 +89,28 @@ export function renderHardeningObligationsBlock(claims = []) {
  * @param {boolean} [o.addsSurface=true]
  * @returns {{ plan:string, gate:ReturnType<typeof checkPropertyGates>, claims:object[], injected:boolean }}
  */
-export function applyHardeningToPlan({ plan, addsSurface = true } = {}) {
-  let text = String(plan || '').trimEnd() + '\n';
-  const claims = detectPropertyClaims(text);
+export function applyHardeningToPlan({ plan, addsSurface = false, propertyGates = {} } = {}) {
+  const raw = String(plan || '').trimEnd() + '\n';
+  const cleanText = stripInjectedHardeningSections(raw).trimEnd() + '\n';
+  const claims = detectPropertyClaims(cleanText);
+  let text = raw;
   let injected = false;
 
   if (claims.length && !/## Property gates \(hardening law/i.test(text)) {
     text += '\n' + renderPropertyGateChecklist(claims) + '\n';
     injected = true;
   }
-  if (!/## Hardening-gate obligations \(mechanical/i.test(text)) {
+  if ((claims.length || addsSurface) && !/## Hardening-gate obligations \(mechanical/i.test(text)) {
     text += '\n' + renderHardeningObligationsBlock(claims) + '\n';
     injected = true;
   }
 
-  const waves = wavesFromPlanMarkdown(text);
-  // Synthetic acceptance blob so obligations count even if waves are sparse
-  const synth = {
-    doneWhen: text.slice(Math.max(0, text.indexOf('## Hardening-gate obligations'))),
-  };
+  // Evaluate ONLY the real waves (never a fake trailing `synth` wave!).
+  const waves = wavesFromPlanMarkdown(cleanText);
   const gate = checkPropertyGates({
-    plan: text,
-    waves: [...waves, synth],
+    plan: cleanText,
+    waves,
+    propertyGates,
     addsSurface,
   });
 
@@ -110,10 +118,11 @@ export function applyHardeningToPlan({ plan, addsSurface = true } = {}) {
 }
 
 /**
- * Fail-closed: apply hardening; if still not pass, return fail (caller HALTs).
+ * Fail-closed: check real waves against hardening obligations (injecting checklist
+ * guidance when claims exist, without rubber-stamping via a fake synth wave).
  */
-export function enforceHardeningGate({ plan, addsSurface = true, log = () => {} } = {}) {
-  const applied = applyHardeningToPlan({ plan, addsSurface });
+export function enforceHardeningGate({ plan, addsSurface = false, propertyGates = {}, log = () => {} } = {}) {
+  const applied = applyHardeningToPlan({ plan, addsSurface, propertyGates });
   if (applied.injected) {
     log(`stage2 hardening: injected property-gate checklist / obligations (${applied.claims.length} claim(s))`);
   }

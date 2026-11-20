@@ -222,12 +222,20 @@
     <div data-other-usage-rows></div>
   </details>
 
-  <button type="button" class="wptile" data-wptile
-          style="width:100%;margin-bottom:16px;text-align:left"
-          title="Open the work-product map">
-    <span class="wplab">Work product</span>
-    <span class="wpsum" data-wpsum>open the map of each key deliverable</span>
-  </button>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-bottom:16px">
+    <button type="button" class="wptile" data-wptile
+            style="width:100%;margin:0;text-align:left"
+            title="Open the work-product map">
+      <span class="wplab">Work product</span>
+      <span class="wpsum" data-wpsum>open the map of each key deliverable</span>
+    </button>
+    <button type="button" class="wptile" data-poincare-project-tile
+            style="width:100%;margin:0;text-align:left;border-color:rgba(56,189,248,0.45)"
+            title="Explore the interactive 2D Möbius-Zoomable Poincaré History & Deep-Memory Map for this project">
+      <span class="wplab" style="color:#7dd3fc">🧭 Poincaré History Map</span>
+      <span class="wpsum">click to explore conversation history, decisions, plan &amp; deliverables on the hyperbolic disk</span>
+    </button>
+  </div>
 
   <div class="ctile" data-tile-seal>
     <div class="thead"><img data-sealicon alt="" style="display:none">
@@ -516,6 +524,18 @@ async function refresh() {
         : e.light === "green" ? "running"
         : e.light === "red" ? "stuck" : "quiet";
       r.appendChild(el("span", "badge " + bcls, btxt));
+      const pmBtn = el("button", "mini", "🧭 Map");
+      pmBtn.type = "button";
+      pmBtn.title = "Open interactive Poincaré History Map for " + e.name;
+      pmBtn.onclick = (ev) => {
+        ev.stopPropagation();
+        const p = new URLSearchParams();
+        if (window.STEWARD_PID) p.set("pid", window.STEWARD_PID);
+        if (e.rel) p.set("dir", e.rel);
+        if (window.STEWARD_TOKEN) p.set("token", window.STEWARD_TOKEN);
+        window.open("/steward-static/poincare.html?" + p.toString(), "_blank", "noopener");
+      };
+      r.appendChild(pmBtn);
       // rename: effort names are the user's to set (2026-08-25 — a pasted
       // token became a live effort name; the server also guards the shape)
       if (e.rel) {
@@ -597,6 +617,15 @@ document.querySelector("[data-tile-seal]").classList.add("open");
     if (ov) ov.hidden = false;
   }
   if (tile) tile.onclick = () => show(cur);
+  const pmProjTile = document.querySelector("[data-poincare-project-tile]");
+  if (pmProjTile) {
+    pmProjTile.onclick = () => {
+      const p = new URLSearchParams();
+      if (window.STEWARD_PID) p.set("pid", window.STEWARD_PID);
+      if (window.STEWARD_TOKEN) p.set("token", window.STEWARD_TOKEN);
+      window.open("/steward-static/poincare.html?" + p.toString(), "_blank", "noopener");
+    };
+  }
   if (close) close.onclick = () => { if (ov) ov.hidden = true; };
   if (ov) ov.addEventListener("click", (ev) => {
     if (ev.target === ov) ov.hidden = true;

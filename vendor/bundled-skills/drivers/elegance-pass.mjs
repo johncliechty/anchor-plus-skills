@@ -303,14 +303,19 @@ export async function runRabbitCatcherAdversary({ catcher, elements, northStar, 
  * The whole pass: catcher, then adversary. `cuts` are CONFIRMED cuts (the adversary did not
  * refute them); the engines apply those. Never throws on an empty element list.
  */
-export async function runElegancePass({ elements, northStar, criteria, provenance, agent, context, log = () => {}, adversary = true } = {}) {
+export async function runElegancePass({
+  elements, northStar, criteria, provenance, agent, context,
+  log = () => {}, adversary = true, profile = null,
+} = {}) {
   const catcher = await runRabbitCatcher({ elements, northStar, criteria, provenance, agent, context, log });
   if (!catcher.verdicts.length) {
     return { ...catcher, cuts: [], holds: [], keeps: [], disputes: [], markdown: renderElegancePass({ verdicts: [], disputes: [], context }) };
   }
   let verdicts = catcher.verdicts;
   let disputes = [];
-  if (adversary) {
+  const isStandardProfile = String(profile || '').trim().toLowerCase() === 'standard';
+  const shouldRunAdversary = Boolean(adversary) && catcher.cut.length > 0 && !isStandardProfile;
+  if (shouldRunAdversary) {
     const adv = await runRabbitCatcherAdversary({ catcher, elements, northStar, agent, log });
     verdicts = adv.verdicts;
     disputes = adv.disputes;

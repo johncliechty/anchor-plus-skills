@@ -49,10 +49,12 @@ MAX_FILES = 5000
 MAX_BINARY_BYTES = 64 * 1024 * 1024
 
 #: Directory names never descended into.
+#: NOTE: ``"build"`` must NOT be listed here — ``<project>/build/<run>/`` is
+#: the R&D build lane's own directory (see ``LANE_BUILD`` and healthcheck v5).
 SKIP_DIRS = frozenset({".git", "node_modules", "_archive", ".anchor",
                        "__pycache__", ".venv", "venv", ".mypy_cache",
                        ".pytest_cache", "skills", "bundled-skills",
-                       "bundle_staging", "dist", "build", ".claude",
+                       "bundle_staging", "dist", ".claude",
                        ".agents", ".gemini"})
 
 

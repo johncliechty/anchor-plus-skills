@@ -389,8 +389,17 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
   return checklist.allPass ? 0 : 1;
 }
 
+function isMain() {
+  try {
+    if (!process.argv[1]) return false;
+    return fs.realpathSync(fileURLToPath(import.meta.url)) === fs.realpathSync(path.resolve(process.argv[1]));
+  } catch {
+    return false;
+  }
+}
+
 // Run only when invoked directly (never on import — tests import the orchestration).
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMain()) {
   main().then((code) => process.exit(code)).catch((e) => {
     process.stderr.write(`HALT: ${e.message}${e.pending_action ? ` (pending: ${e.pending_action})` : ''}\n`);
     process.exit(e instanceof HaltError ? 3 : 2);

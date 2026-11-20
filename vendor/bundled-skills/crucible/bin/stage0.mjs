@@ -36,6 +36,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { HaltError, haltForHuman, HALT_GATES } from './crucible-lib.mjs';
 
@@ -530,23 +531,18 @@ export async function runStage0({
   intakeDir = null,
   salvageAnswer = null,
   approved = false,
+  matrixFastTrack = false,
   log = () => {},
 } = {}) {
-  // NS-01 completion (2026-08-25, John-ratified card; journal 0087): Stage-0 SIZES THE
-  // JOB ITSELF, first line of the run — the band AUTO-APPLIES and ANNOUNCES itself,
-  // never asks (a confirm question would be a fourth gate; Elegance rule 3 — the wire's
-  // confirm-halt is deliberately not thrown). An unsizable intake defaults FULL LOUDLY,
-  // so 0087's silent-FULL tax on small work cannot recur unseen.
-  const triage = assessComplexity({ intent, ...(input || {}) });
+  const effectiveInput = matrixFastTrack
+    ? { ...(input || {}), depth: 'MATRIX-FAST-TRACK' }
+    : (input || {});
+  const triage = assessComplexity({ intent, ...effectiveInput });
   if (triage.defaultedToFull) {
     log(`stage0 band: FULL (DEFAULTED — triage could not size this intake: ${triage.rationale || 'no sizing signals'}) — auto-applied, announced not asked`);
   } else {
     log(`stage0 band: ${triage.band} (auto — ${triage.rationale || 'triage recommendation'}; tier=${triage.nsTier}) — auto-applied, announced not asked`);
   }
-  // 2026-08-25 hardening (review finding): the auto-band must also CREATE THE LOCK
-  // RECORD — Stage-2's handoff emit fail-closes on a missing lock, so an auto-banded
-  // run would poison the Foreman handoff downstream. The lock records the auto-apply
-  // honestly (decision=confirm of the shared recommendation; rationale carries AUTO).
   try {
     const locked = resolveStage0TriageLock({
       complexity: triage,
@@ -560,7 +556,15 @@ export async function runStage0({
     log(`stage0 band: lock record NOT created (${e?.message || e}) — handoff emit will refuse until a lock exists (fail-closed, loud)`);
   }
 
-  const sel = selectTier(input);
+  let anvil = null;
+  if (effectiveInput.repoDir && fs.existsSync(effectiveInput.repoDir)) {
+    try {
+      const { runAnvilBrownfieldIntake } = await import('./matrix-fast-track.mjs');
+      anvil = runAnvilBrownfieldIntake({ repoDir: effectiveInput.repoDir, log });
+    } catch { /* non-fatal */ }
+  }
+
+  const sel = selectTier(effectiveInput);
   const greenfield = sel.tier === TIERS.GREENFIELD;
   log(`stage0: ${sel.tier} — ${sel.reason}`);
 
@@ -569,7 +573,8 @@ export async function runStage0({
   let salvage = null;
   let asIs = null;
   if (!greenfield) {
-    ingest = await runIngest({ tier: sel.tier, input, agent, research, intakeDir, log });
+    ingest = await runIngest({ tier: sel.tier, input: effectiveInput, agent, research, intakeDir, log });
+    if (anvil?.ok && anvil.facts) ingest.anvil = anvil;
     asIs = ingest;
     ingestGate = evaluateIngestGate({ items: ingest.items, brownfield: true });
     salvage = salvageVsRewriteQuestion({ asIs: ingest }); // a USER question, never scored
@@ -583,5 +588,53 @@ export async function runStage0({
 
   // `triage` rides the result so launchers route stage1/stage2 depth from the engine's
   // own sizing (triage.depth) instead of a hand-set value — never a second rubric.
-  return { tier: sel.tier, greenfield, framing, ingest, ingestGate, salvage, lock, triage };
+  return { tier: sel.tier, greenfield, framing, ingest, ingestGate, salvage, lock, triage, anvil };
+}
+
+function isMain() {
+  try {
+    if (!process.argv[1]) return false;
+    return fs.realpathSync(fileURLToPath(import.meta.url)) === fs.realpathSync(path.resolve(process.argv[1]));
+  } catch {
+    return false;
+  }
+}
+
+if (isMain()) {
+  const argv = process.argv.slice(2);
+  const flag = (n) => {
+    const i = argv.indexOf(n);
+    return i >= 0 && i + 1 < argv.length ? argv[i + 1] : null;
+  };
+  const intent = flag('--intent') || flag('--task') || argv.find((a) => !a.startsWith('--'));
+  const repoDir = flag('--repo') || flag('--project');
+  const matrixFastTrack = argv.includes('--matrix-fast-track');
+  const depth = matrixFastTrack ? 'MATRIX-FAST-TRACK' : flag('--depth');
+  const approved = argv.includes('--approve') || argv.includes('--approved');
+  if (!intent) {
+    process.stderr.write('usage: node crucible/bin/stage0.mjs --intent "<goal>" [--repo <dir>] [--matrix-fast-track|--depth <band>] [--approve]\n');
+    process.exit(2);
+  }
+  const { buildLiveCrucibleAgent } = await import('./enhanced.mjs');
+  const built = await buildLiveCrucibleAgent({ env: process.env, target: repoDir || process.cwd(), log: (s) => console.log(s) });
+  try {
+    const res = await runStage0({
+      intent,
+      input: { ...(repoDir ? { repoDir } : {}), ...(depth ? { depth } : {}) },
+      agent: built.agent,
+      salvageAnswer: flag('--salvage') || (repoDir ? 'salvage' : null),
+      approved,
+      matrixFastTrack,
+      log: (s) => console.log(s),
+    });
+    console.log(JSON.stringify({ band: res.triage.band, northStar: res.lock.northStar }, null, 2));
+    process.exit(0);
+  } catch (e) {
+    if (e?.halt_for_human) {
+      console.log(`GATE ${e.message}`);
+      process.exit(3);
+    }
+    console.error(`stage0 failed: ${e?.message || e}`);
+    process.exit(2);
+  }
 }

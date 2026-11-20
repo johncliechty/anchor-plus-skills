@@ -14,6 +14,7 @@
 // NOT a license to fork. This module is the single source of truth for the crossed-symbol
 // list (recorded in human-readable form in CONTRACT-SURFACE.md).
 
+import fs from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 
@@ -164,8 +165,18 @@ export async function runImportSpike() {
   return { go: ok, modules: Object.keys(TRIO_MODULES), crossedCount, missing };
 }
 
+function isMain() {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return fs.realpathSync(fileURLToPath(import.meta.url)) === fs.realpathSync(path.resolve(entry));
+  } catch {
+    try { return path.resolve(entry) === fileURLToPath(import.meta.url); } catch { return false; }
+  }
+}
+
 // Convenience for human inspection / CLI: `node bin/contract.mjs`.
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isMain()) {
   const verdict = await runImportSpike();
   console.log(JSON.stringify(verdict, null, 2));
   process.exit(verdict.go ? 0 : 1);

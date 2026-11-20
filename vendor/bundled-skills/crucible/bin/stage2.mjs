@@ -48,6 +48,13 @@ import { runMasterPlanLoop } from './stage1.mjs';
 import { resolveBandProfile, bandProfileStamp } from './band-profile.mjs';
 import { runWellFormednessGate } from './gates.mjs';
 import { enforceHardeningGate } from './apply-hardening-to-plan.mjs';
+import { fileURLToPath } from 'node:url';
+import {
+  attachPortfolioSkillGates,
+  detectPortfolioSkillGates,
+  partitionDisjointSubWaves,
+  runChekhovPlanQualityLint,
+} from './plan-quality-gates.mjs';
 import {
   installProcessLifetimeGuards,
   withPhaseProgress,
@@ -456,6 +463,18 @@ export function renderImplementationPlan({ title = 'Crucible-planned project', n
       lines.push(`- **Given** ${s.given}, **when** ${s.when}, **then** ${s.then}`);
     }
     if (w.gwt.length) lines.push('');
+    if (Array.isArray(w.subWaves) && w.subWaves.length >= 2) {
+      for (const sub of w.subWaves) {
+        lines.push(`### Wave ${sub.id} — ${sub.title}`);
+        if (Array.isArray(sub.writeSet) && sub.writeSet.length) {
+          lines.push(`- **Writes**: ${sub.writeSet.join(', ')}`);
+        }
+        if (sub.doneWhen) {
+          lines.push(`- **Sub-wave done-when:** ${sub.doneWhen}`);
+        }
+        lines.push('');
+      }
+    }
   }
   return lines.join('\n').replace(/\n+$/, '\n');
 }
@@ -514,7 +533,8 @@ export function writeDocTrio({
   log = () => {},
   /** When true (default), assert+inject journal-0080 property gates before write. */
   enforceHardening = true,
-  addsSurface = true,
+  addsSurface = false,
+  propertyGates = {},
 } = {}) {
   if (!outputDir) throw new HaltError('writeDocTrio requires an outputDir', 'pass the handoff output directory');
   const dir = path.resolve(outputDir);
@@ -525,14 +545,10 @@ export function writeDocTrio({
     plan: path.join(dir, fileNames.plan),
     execution_log: path.join(dir, fileNames.execution_log),
   };
-  // P1 2026-07-25 (0063 P0): the handoff PLAN goes through the canonical serializer +
-  // corrupt/short refusal — the engine never writes `[object Object]` or a stub plan.
-  // Journal 0080 / 2026-07-27 dogfood: a plan that ASSERTS a property must EMIT a
-  // mechanical gate — inject checklist + fail-closed before the plan hits disk.
   let planText = assertPlanText(plan, { label: 'implementation plan' });
   let hardeningResult = null;
   if (enforceHardening) {
-    const applied = enforceHardeningGate({ plan: planText, addsSurface, log });
+    const applied = enforceHardeningGate({ plan: planText, addsSurface, propertyGates, log });
     planText = applied.plan;
     hardeningResult = applied.gate;
     try {
@@ -733,21 +749,27 @@ export async function runStage2({
   approved = false,
   roundCap = undefined,
   depth = null,
+  matrixFastTrack = false,
   tier = null,
   triageLock = null,
   handoffTriage = null,
   artifactsDir = null,
   statusLog = null,
   routes = null,
+  addsSurface = false,
+  propertyGates = {},
+  enforceChekhovQuality = false,
+  pilotOverrideReason = null,
+  intent = '',
+  deferredScope = [],
   log = () => {},
 } = {}) {
   requireAgent(agent, 'runStage2');
-  // cf-slick: band profile from locked depth (same as Stage 1). Explicit roundCap wins.
-  const band = resolveBandProfile(depth);
+  const effectiveDepth = matrixFastTrack ? 'MATRIX-FAST-TRACK' : depth;
+  const band = resolveBandProfile(effectiveDepth);
   if (roundCap === undefined) roundCap = band.roundCap;
-  if (depth) log(`stage2: depth=${band.depth} → roundCap=${roundCap} · sharks=${band.sharkRoles}`);
+  if (effectiveDepth) log(`stage2: depth=${band.depth} → roundCap=${roundCap} · sharks=${band.sharkRoles}`);
   log(`stage2: band stamp ${JSON.stringify(bandProfileStamp(band))}`);
-  // 0075 LITE honest ETA banner
   log(`stage2: planning typically 20-60m; if silent >15m check stage2-progress.json / heartbeat / process`);
   if (!northStar) throw new HaltError('runStage2 requires a locked North Star', 'Stage 2 starts from the Stage-0 North-Star lock');
   if (!masterPlan) throw new HaltError('runStage2 requires the approved Master Plan', 'Stage 2 starts from the Stage-1 Master-Plan approval');
@@ -765,7 +787,6 @@ export async function runStage2({
     heartbeatPath: path.join(stateDir, 'heartbeat.json'),
     label: 'crucible-stage2',
     onFatal: (payload) => {
-      // Process death must never be silent (0075): HALT.json + force-emit if decomp exists.
       try {
         writeStage2HaltJson(stateDir, {
           reason: `process death (${payload?.kind || 'fatal'}): ${String(payload?.message || '').slice(0, 400)}`,
@@ -782,7 +803,7 @@ export async function runStage2({
         if (Array.isArray(live.waves) && live.waves.length) {
           forceEmitStage2HumanLockable({
             waves: live.waves, outputDir, title, northStar, criteria, summary, testCommand,
-            depth, tier, triageLock, handoffTriage, artifactsDir: stateDir, log,
+            depth: effectiveDepth, tier, triageLock, handoffTriage, artifactsDir: stateDir, log,
             reason: 'Stage-2 process death after wave decomp — human-lockable draft emitted',
           });
         }
@@ -802,33 +823,39 @@ export async function runStage2({
       fn: () => decomposeIntoWaves({ agent, northStar, criteria, masterPlan, log }),
     });
 
-    // (1b) THE ELEGANCE PASS (John, 2026-09-05): the Rabbit-Catcher over every wave
-    // deliverable BEFORE hardening and the Sharks — CUT removes the deliverable (a wave
-    // with none left is dropped), HOLD is annotated with its trigger, and the verdict
-    // table rides the Shark draft so the reviewers attack the pass too.
+    // (1b) Elegance + RC-8 run ONLY on FULL / SPIKE-FIRST; retired on LITE & MATRIX-FAST-TRACK!
     let elegance = null;
-    try {
-      elegance = await withPhaseProgress({
-        phase: 'stage2-elegance-pass', log, progressPath, guards,
-        fn: () => runPlanElegancePass({ waves, northStar, criteria, provenance, agent, artifactsDir: stateDir, log, fileTag: '-stage2' }),
-      });
-      if (Array.isArray(elegance?.waves) && elegance.waves.length) waves = elegance.waves;
-    } catch (e) {
-      log(`!! elegance pass failed (non-fatal — waves unchanged, said aloud): ${e?.message || e}`);
-    }
-    // RC-8 (John, 2026-09-05): the wave-count question, asked AFTER the element verdicts and BEFORE
-    // the Sharks — the steering seat proposes merges of adjacent waves that are one change, the
-    // adversary disputes, only undisputed merges are applied; the record rides the draft.
     let waveCount = null;
-    try {
-      waveCount = await withPhaseProgress({
-        phase: 'stage2-wave-count', log, progressPath, guards,
-        fn: () => runWaveCountPass({ waves, northStar, agent, artifactsDir: stateDir, log, fileTag: '-stage2' }),
-      });
-      if (Array.isArray(waveCount?.waves) && waveCount.waves.length) waves = waveCount.waves;
-    } catch (e) {
-      log(`!! RC-8 wave-count check failed (non-fatal — waves unchanged, said aloud): ${e?.message || e}`);
+    if (!band.skipStage2ElegancePass) {
+      try {
+        elegance = await withPhaseProgress({
+          phase: 'stage2-elegance-pass', log, progressPath, guards,
+          fn: () => runPlanElegancePass({ waves, northStar, criteria, provenance, agent, artifactsDir: stateDir, log, fileTag: '-stage2' }),
+        });
+        if (Array.isArray(elegance?.waves) && elegance.waves.length) waves = elegance.waves;
+      } catch (e) {
+        log(`!! elegance pass failed (non-fatal — waves unchanged, said aloud): ${e?.message || e}`);
+      }
+      try {
+        waveCount = await withPhaseProgress({
+          phase: 'stage2-wave-count', log, progressPath, guards,
+          fn: () => runWaveCountPass({ waves, northStar, agent, artifactsDir: stateDir, log, fileTag: '-stage2' }),
+        });
+        if (Array.isArray(waveCount?.waves) && waveCount.waves.length) waves = waveCount.waves;
+      } catch (e) {
+        log(`!! RC-8 wave-count check failed (non-fatal — waves unchanged, said aloud): ${e?.message || e}`);
+      }
+    } else {
+      log(`stage2: skipping duplicate Stage-2 Elegance + RC-8 loop on band=${band.depth}`);
     }
+
+    // Disjoint sub-waves + portfolio skill gates on MATRIX-FAST-TRACK / Chekhov-enforced runs
+    if (band.matrixFastTrack || enforceChekhovQuality) {
+      waves = waves.map((w) => ({ ...w, subWaves: partitionDisjointSubWaves(w, w.n) }));
+      const detectedGates = detectPortfolioSkillGates({ intent: intent || masterPlan, northStar, waves });
+      waves = attachPortfolioSkillGates(waves, detectedGates);
+    }
+
     live.waves = waves;
     try {
       fs.writeFileSync(
@@ -842,15 +869,12 @@ export async function runStage2({
       extra: { wave_count: waves.length },
     });
 
-    // (2) Render the Foreman-ready plan (the loop vets THIS human-readable draft; the
-    //     final emission re-renders from the same structured waves, so well-formedness
-    //     is guaranteed by construction regardless of free-text revision).
-    //     Journal 0080: inject property-gate checklist into the draft the Sharks review
-    //     so "asserted as prose" cannot leave Stage 2 as GREEN without mechanism text.
+    // (2) Render the Foreman-ready plan.
     live.lastStep = 'render-plan';
-    let plan = renderImplementationPlan({ title, northStar, criteria, waves, testCommand });
+    const structuredWavePlan = renderImplementationPlan({ title, northStar, criteria, waves, testCommand });
+    let plan = structuredWavePlan;
     {
-      const applied = enforceHardeningGate({ plan, addsSurface: true, log });
+      const applied = enforceHardeningGate({ plan, addsSurface, propertyGates, log });
       plan = applied.plan;
       try {
         fs.writeFileSync(
@@ -859,107 +883,127 @@ export async function runStage2({
           'utf8',
         );
       } catch { /* best-effort */ }
-      // Do not HALT on fail at draft stage — Shark loop may add mechanisms; emit path is fail-closed.
       if (!applied.gate.pass) {
         log(`stage2: hardening draft not yet pass (will re-check on emit): ${applied.gate.detail}`);
       }
     }
+
+    if (band.matrixFastTrack || enforceChekhovQuality) {
+      const chekhov = runChekhovPlanQualityLint({
+        plan,
+        waves,
+        intent: intent || masterPlan,
+        northStar,
+        deferredScope,
+        pilotOverrideReason,
+      });
+      if (!chekhov.pass) {
+        throw haltForHuman(
+          `Chekhov Plan-Quality Guard blocked Stage 2: ${chekhov.issues.join(' | ')}`,
+          'chekhov-plan-quality-failed',
+        );
+      }
+    }
+
     live.plan = plan;
 
-    // (3) The Shark-Tank loop to model-side convergence (Stage-1's generic loop).
-    //
-    // T5 (2026-07-11): a round-cap HALT no longer throws the run away. The emission
-    // path re-renders from the STRUCTURED waves (well-formed by construction — the
-    // same property the approved path relies on), so on cap we can honestly emit
-    // the current doc-trio to an UNMISTAKABLY-unapproved draft dir, run the machine
-    // well-formedness gate over it, and HALT with everything attached for the user
-    // to review. The user stays the convergence authority; Foreman is never handed
-    // the draft dir (handoff still requires approval on the real outputDir).
-    live.lastStep = 'shark-tank';
-    stampStage2Progress(stateDir, { phase: 'shark-tank', status: 'start' });
+    // (3) Stage-2 Shark-Tank loop (retired on LITE and MATRIX-FAST-TRACK!).
     let loop;
-    try {
-      loop = await withPhaseProgress({
-        phase: 'stage2-shark-tank',
-        log,
-        progressPath,
-        guards,
-        fn: () => runMasterPlanLoop({
-          agent, northStar, criteria,
-          draft: plan + elegancePassSection(elegance) + waveCountSection(waveCount), research, acceptanceCriteria, roundCap, artifactsDir: stateDir, log,
-          sharkRoles: band.sharkRoles,
-          capPendingAction: 'stage2-round-cap',
-          // 2026-08-25: name what THIS gate actually locks (the reused loop used to say
-          // "the Master Plan" here — a verified R3 mislabel).
-          artifactName: 'the Implementation Plan (Stage 2)',
-          haltStagePrefix: 'stage2',
-          statusLog, statusLabel: `Crucible Stage 2 (${band.depth})`,
-          routes,
-        }),
-      });
-    } catch (e) {
-      // P1 2026-07-25 (journal 0069): with `approved: true` the user has ALREADY
-      // exercised the convergence authority — a human-lockable / round-cap outcome
-      // must EMIT-AND-RETURN on the real outputDir ("go go go" was impossible: the
-      // loop re-tanked, threw, and no doc-trio was ever written; the only recovery
-      // was an out-of-tree force-emit script). The machine well-formedness gate
-      // below still fails closed; only the throw-without-docs is retired.
-      // 2026-08-25: recognize the human-lockable case SEMANTICALLY (e.humanLockable),
-      // not by pending-action string — the id is now stage-correct ('stage2-human-
-      // lockable' since the mislabel fix) and string-matching it broke this catch once.
-      const lockableWithApproval = approved === true && e && e.halt_for_human &&
-        (e.humanLockable === true || /-human-lockable$/.test(String(e.pending_action || '')) ||
-          e.pending_action === 'stage2-round-cap') &&
-        (e.loop?.draft != null || e.best_draft != null);
-      if (lockableWithApproval) {
-        plan = assertPlanText(e.loop?.draft ?? e.best_draft, { label: 'implementation plan (human-lockable best draft)' });
-        loop = e.loop
-          ? { ...e.loop, humanLockable: true }
-          : { humanLockable: true, modelSideLockable: false, roundsRun: e.best_draft?.roundsRun ?? null, draft: plan };
-        log(`stage2: approved:true + ${e.pending_action} — emitting the HALT's best draft as the handoff ` +
-          `(0069 emit-and-return; the user is the convergence authority; well-formedness gate still applies)`);
-        stampStage2Progress(stateDir, { phase: 'shark-tank', status: 'human-lockable-approved' });
-      } else {
-      if (e && e.halt_for_human && e.pending_action === 'stage2-round-cap') {
-        const draftDir = path.join(path.resolve(outputDir), '_unapproved-cap-draft');
-        try {
-          const description = renderDescriptionDoc({ title, northStar, criteria, summary });
-          const executionLog = renderExecutionLog({ title, waveCount: waves.length });
-          const docTrio = writeDocTrio({
-            outputDir: draftDir, plan, description, executionLog,
-            depth, tier, triageLock, handoffTriage, log,
-          });
-          const gate = runWellFormednessGate({ projectDir: docTrio.dir, artifactsDir: stateDir, log });
-          e.emitted = { docTrio, wellFormedness: { pass: !!gate.pass, status: gate.status ?? null } };
-          e.reason += ` — the full doc-trio is EMITTED for review at ${docTrio.dir} ` +
-            `(well-formedness gate: ${gate.pass ? 'PASS' : 'FAIL'}; this draft dir is NOT the handoff)`;
-          log(`stage2 cap: unapproved doc-trio emitted to ${docTrio.dir} (well-formedness ${gate.pass ? 'PASS' : 'FAIL'})`);
-          writeStage2HaltJson(stateDir, {
-            reason: e.reason,
-            lastStep: 'shark-tank-round-cap',
-            humanLockable: true,
-            pendingAction: 'stage2-round-cap',
-            artifacts: { draft_dir: docTrio.dir },
-          });
-        } catch (emitErr) {
-          // Emission is best-effort on the HALT path — the HaltError still carries
-          // the best draft; never mask the cap HALT with an emission failure.
-          log(`stage2 cap: could not emit the draft doc-trio (${emitErr.reason || emitErr.message})`);
+    if (band.skipStage2SharkLoop) {
+      log(`stage2: skipping redundant Stage-2 Shark-Tank loop on band=${band.depth}`);
+      stampStage2Progress(stateDir, { phase: 'shark-tank', status: 'skipped-fast-track' });
+      loop = {
+        converged: true,
+        modelSideLockable: true,
+        humanLockable: false,
+        rounds: [],
+        roundsRun: 0,
+        draft: plan,
+        skippedDuplicateStage2Loop: true,
+      };
+    } else {
+      live.lastStep = 'shark-tank';
+      stampStage2Progress(stateDir, { phase: 'shark-tank', status: 'start' });
+      try {
+        loop = await withPhaseProgress({
+          phase: 'stage2-shark-tank',
+          log,
+          progressPath,
+          guards,
+          fn: () => runMasterPlanLoop({
+            agent, northStar, criteria,
+            draft: plan + elegancePassSection(elegance) + waveCountSection(waveCount),
+            research, acceptanceCriteria, roundCap, artifactsDir: stateDir, log,
+            sharkRoles: band.sharkRoles,
+            capPendingAction: 'stage2-round-cap',
+            artifactName: 'the Implementation Plan (Stage 2)',
+            haltStagePrefix: 'stage2',
+            preserveWaveHeaders: true,
+            statusLog, statusLabel: `Crucible Stage 2 (${band.depth})`,
+            routes,
+          }),
+        });
+      } catch (e) {
+        const lockableWithApproval = approved === true && e && e.halt_for_human &&
+          (e.humanLockable === true || /-human-lockable$/.test(String(e.pending_action || '')) ||
+            e.pending_action === 'stage2-round-cap') &&
+          (e.loop?.draft != null || e.best_draft != null);
+        if (lockableWithApproval) {
+          const candidateDraft = assertPlanText(e.loop?.draft ?? e.best_draft, { label: 'implementation plan (human-lockable best draft)' });
+          plan = /^## Wave \d+/m.test(candidateDraft) ? candidateDraft : structuredWavePlan;
+          loop = e.loop
+            ? { ...e.loop, humanLockable: true, draft: plan }
+            : { humanLockable: true, modelSideLockable: false, roundsRun: e.best_draft?.roundsRun ?? null, draft: plan };
+          log(`stage2: approved:true + ${e.pending_action} — emitting the HALT's best draft as the handoff ` +
+            `(0069 emit-and-return; the user is the convergence authority; well-formedness gate still applies)`);
+          stampStage2Progress(stateDir, { phase: 'shark-tank', status: 'human-lockable-approved' });
+        } else {
+          if (e && e.halt_for_human && e.pending_action === 'stage2-round-cap') {
+            const draftDir = path.join(path.resolve(outputDir), '_unapproved-cap-draft');
+            try {
+              const description = renderDescriptionDoc({ title, northStar, criteria, summary });
+              const executionLog = renderExecutionLog({ title, waveCount: waves.length });
+              const docTrio = writeDocTrio({
+                outputDir: draftDir, plan, description, executionLog,
+                depth: effectiveDepth, tier, triageLock, handoffTriage, addsSurface, propertyGates, log,
+              });
+              const gate = runWellFormednessGate({ projectDir: docTrio.dir, artifactsDir: stateDir, log });
+              e.emitted = { docTrio, wellFormedness: { pass: !!gate.pass, status: gate.status ?? null } };
+              e.reason += ` — the full doc-trio is EMITTED for review at ${docTrio.dir} ` +
+                `(well-formedness gate: ${gate.pass ? 'PASS' : 'FAIL'}; this draft dir is NOT the handoff)`;
+              log(`stage2 cap: unapproved doc-trio emitted to ${docTrio.dir} (well-formedness ${gate.pass ? 'PASS' : 'FAIL'})`);
+              writeStage2HaltJson(stateDir, {
+                reason: e.reason,
+                lastStep: 'shark-tank-round-cap',
+                humanLockable: true,
+                pendingAction: 'stage2-round-cap',
+                artifacts: { draft_dir: docTrio.dir },
+              });
+            } catch (emitErr) {
+              log(`stage2 cap: could not emit the draft doc-trio (${emitErr.reason || emitErr.message})`);
+            }
+          }
+          throw e;
         }
       }
-      throw e;
-      }
+      stampStage2Progress(stateDir, { phase: 'shark-tank', status: 'done' });
     }
-    stampStage2Progress(stateDir, { phase: 'shark-tank', status: 'done' });
 
-    // Prefer the loop's revised draft when present (human-readable Shark revisions).
+    // Prefer the loop's revised draft ONLY when it preserved `## Wave N` headings!
+    // Never allow a Stage-1-style free-text revision to strip structured wave headers.
     if (loop?.draft) {
-      plan = assertPlanText(loop.draft, { label: 'implementation plan (post-shark)' });
+      const candidate = assertPlanText(loop.draft, { label: 'implementation plan (post-shark)' });
+      if (/^## Wave \d+/m.test(candidate)) {
+        plan = candidate;
+      } else {
+        log('stage2: post-shark draft stripped `## Wave N` headings — keeping structured wave plan');
+        plan = structuredWavePlan;
+      }
       live.plan = plan;
     }
-    // Re-apply hardening after Shark free-text edits (checklist may have been stripped).
+    // Re-apply hardening after Shark edits.
     {
-      const applied = enforceHardeningGate({ plan, addsSurface: true, log });
+      const applied = enforceHardeningGate({ plan, addsSurface, propertyGates, log });
       plan = applied.plan;
       live.plan = plan;
       try {
@@ -982,9 +1026,10 @@ export async function runStage2({
     const executionLog = renderExecutionLog({ title, waveCount: waves.length });
     const docTrio = writeDocTrio({
       outputDir, plan, description, executionLog,
-      depth, tier, triageLock, handoffTriage, log,
+      depth: effectiveDepth, tier, triageLock, handoffTriage, log,
       enforceHardening: true,
-      addsSurface: true,
+      addsSurface,
+      propertyGates,
     });
     const handoff = runHandoffGate({ projectDir: docTrio.dir, artifactsDir: stateDir, log });
     stampStage2Progress(stateDir, { phase: 'emit-handoff', status: 'done' });
@@ -992,8 +1037,6 @@ export async function runStage2({
 
     return { waves, plan, loop, approval, docTrio, handoff };
   } catch (e) {
-    // Expected human HALTs (approval, cap, well-formedness) stay HaltErrors — do not
-    // re-label them as process death. Unexpected errors + process-death path leave HALT.json.
     const expectedHuman = e && e.halt_for_human;
     if (!expectedHuman) {
       writeStage2HaltJson(stateDir, {
@@ -1011,7 +1054,7 @@ export async function runStage2({
         try {
           forceEmitStage2HumanLockable({
             waves: live.waves, outputDir, title, northStar, criteria, summary, testCommand,
-            depth, tier, triageLock, handoffTriage, artifactsDir: stateDir, log,
+            depth: effectiveDepth, tier, triageLock, handoffTriage, artifactsDir: stateDir, log,
             reason: `Stage-2 unexpected error at ${live.lastStep} — human-lockable draft emitted`,
           });
         } catch { /* best-effort */ }
@@ -1020,6 +1063,60 @@ export async function runStage2({
     throw e;
   } finally {
     try { guards.uninstall(); } catch { /* */ }
+  }
+}
+
+function isMain() {
+  try {
+    if (!process.argv[1]) return false;
+    return fs.realpathSync(fileURLToPath(import.meta.url)) === fs.realpathSync(path.resolve(process.argv[1]));
+  } catch {
+    return false;
+  }
+}
+
+if (isMain()) {
+  const argv = process.argv.slice(2);
+  const flag = (n) => {
+    const i = argv.indexOf(n);
+    return i >= 0 && i + 1 < argv.length ? argv[i + 1] : null;
+  };
+  const outputDir = flag('--out') || flag('--output') || argv.find((a) => !a.startsWith('--'));
+  const northStar = flag('--north-star');
+  const masterPlanFile = flag('--master-plan');
+  const matrixFastTrack = argv.includes('--matrix-fast-track');
+  const depth = matrixFastTrack ? 'MATRIX-FAST-TRACK' : flag('--depth');
+  const approved = argv.includes('--approve') || argv.includes('--approved');
+  if (!outputDir || !northStar || !masterPlanFile) {
+    process.stderr.write(
+      'usage: node crucible/bin/stage2.mjs <outputDir> --north-star "<ns>" --master-plan <file> [--matrix-fast-track|--depth <band>] [--approve]\n',
+    );
+    process.exit(2);
+  }
+  const masterPlan = fs.readFileSync(masterPlanFile, 'utf8');
+  const { buildLiveCrucibleAgent } = await import('./enhanced.mjs');
+  const built = await buildLiveCrucibleAgent({ env: process.env, target: outputDir, log: (s) => console.log(s) });
+  try {
+    const out = await runStage2({
+      agent: built.agent,
+      northStar,
+      masterPlan,
+      outputDir,
+      depth,
+      matrixFastTrack,
+      approved,
+      routes: built.routes,
+      log: (s) => console.log(s),
+    });
+    console.log(`STAGE2_PLAN ${out.docTrio.files.plan}`);
+    process.exit(0);
+  } catch (e) {
+    if (e?.halt_for_human) {
+      console.log(`GATE ${e.message}`);
+      process.exit(3);
+    }
+    console.error(`stage2 failed: ${e?.message || e}`);
+    process.exit(2);
   }
 }
 

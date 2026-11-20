@@ -5,42 +5,105 @@
       "title": "Anvil Agent & Execution Protocol (SKILL.md)",
       "category": "material",
       "path": "SKILL.md",
-      "description": "Canonical instructions, stage gates, invariants, and operator manual."
+      "description": "Canonical Anvil v4 instructions, CLI subcommands, execution trust contract, 5-row failure-state table, and Elegance-Law invariants."
     },
     {
       "id": "anvil-mat-human-md",
       "title": "Anvil Human Guide (HUMAN.md)",
       "category": "material",
       "path": "HUMAN.md",
-      "description": "Plain-English overview, when to invoke, workflow stages, and honest boundaries."
+      "description": "Plain-English guide to the 48/52 Process Workbench, 25/45/30 Open IDE Debugger, 4-Stage Smart Variable Funnel, and consented_local_subprocess trust boundary."
     },
     {
       "id": "anvil-mat-north-star-md",
       "title": "Anvil Locked North Star (NORTH-STAR.md)",
       "category": "material",
       "path": "NORTH-STAR.md",
-      "description": "Locked mission objective, anti-drift contract, and acceptance criteria."
+      "description": "Locked Anvil v4 mission objective, non-VM execution trust contract, and ANV-01..ANV-15 requirement ledger."
+    },
+    {
+      "id": "anvil-mat-workbench-html",
+      "title": "Anvil v4 Graphical Workbench & Scientific IDE Debugger (static/anvil_v4_workbench.html)",
+      "category": "material",
+      "path": "static/anvil_v4_workbench.html",
+      "description": "Production two-posture UI asset: 48/52 B3 Process Map + Funnel Workbench and expandable 25/45/30 B2 Open IDE Debugger with UI Trace Consent Gate and synced Steward Co-Pilot."
     },
     {
       "id": "anvil-tool-scripts-anvil-engine-py",
       "title": "anvil_engine.py (scripts/anvil_engine.py)",
       "category": "tools",
       "path": "scripts/anvil_engine.py",
-      "description": "Executable polyglot AST/CST & LaTeX-MathML engine (key symbols: _classify_stage, _detect_ai_interaction, _summarize_function, _scan_python_files, build_map, run_code_walkthrough, run_beta_reader_panel, paper_to_code_map, cst_rewrite_module, extract_repo_facts, extract_repo_slice, verify_repo_diff)."
+      "description": "Unified CLI & polyglot AST/CST/LaTeX-MathML engine (process-map, trace-run, refactor-map, paper-map, profile-lit, xval-audit, workbench, plus preserved v3 primitives)."
+    },
+    {
+      "id": "anvil-tool-scripts-anvil-v4-process-py",
+      "title": "anvil_v4_process.py (scripts/anvil_v4_process.py)",
+      "category": "tools",
+      "path": "scripts/anvil_v4_process.py",
+      "description": "Anvil v4 Pillar 1 & storage substrate: canonical path containment (resolve_contained_path), cross-process file-locked atomic JSON persistence (atomic_locked_write_json), and zero-execution steady-coordinate L0->L3 Dual-Channel Process Map (build_process_map)."
+    },
+    {
+      "id": "anvil-tool-scripts-anvil-v4-trace-py",
+      "title": "anvil_v4_trace.py (scripts/anvil_v4_trace.py)",
+      "category": "tools",
+      "path": "scripts/anvil_v4_trace.py",
+      "description": "Anvil v4 Pillar 4: consented_local_subprocess runner (run_consented_trace), EXECUTION_POLICY argv validator, isolated temp worktree copy, scrubbed env, O(1) observer-safe sketches (sketch_value_safe), NaN/Inf tripwires, and 5-scope 4-Stage Smart Variable Funnel."
+    },
+    {
+      "id": "anvil-tool-scripts-anvil-v4-refactor-py",
+      "title": "anvil_v4_refactor.py (scripts/anvil_v4_refactor.py)",
+      "category": "tools",
+      "path": "scripts/anvil_v4_refactor.py",
+      "description": "Anvil v4 Pillars 2 & 5: N1..Nk Functional-Core / Imperative-Shell target map (build_refactor_map), 100% symbol conservation across 3-Tier Null Set, data-only Golden-Master stage-boundary replay, and untraced stage profiler + literature upgrades (run_profile_and_literature)."
+    },
+    {
+      "id": "anvil-tool-scripts-anvil-v4-xval-py",
+      "title": "anvil_v4_xval.py (scripts/anvil_v4_xval.py)",
+      "category": "tools",
+      "path": "scripts/anvil_v4_xval.py",
+      "description": "Anvil v4 Pillar 6: bounded <=2 concurrent 2-Seat Cross-Family Orchestrator <-> Validator reconciliation, <=32KB digest cap, HMAC seat receipts, and honest DETERMINISTIC_FALLBACK (run_xval_audit)."
+    },
+    {
+      "id": "anvil-tool-scripts-anvil-v4-workbench-py",
+      "title": "anvil_v4_workbench.py (scripts/anvil_v4_workbench.py)",
+      "category": "tools",
+      "path": "scripts/anvil_v4_workbench.py",
+      "description": "Anvil v4 loopback HTTP workbench server (127.0.0.1, never 8777, CSP + per-launch capability token, 5-row HTTP failure states) and standalone HTML exporter."
     },
     {
       "id": "anvil-tool-tests-test-anvil-engine-py",
       "title": "test_anvil_engine.py (tests/test_anvil_engine.py)",
       "category": "tools",
       "path": "tests/test_anvil_engine.py",
-      "description": "Executable .py module (227 LOC; key symbols: _make_sample_repo, test_mode1_conceptual_buckets_and_process_map_with_ai_badges, test_mode2_single_block_drilldown_and_empirical_claim_runner, test_mode3_remap_null_space_and_three_stage_pipeline_validation)."
+      "description": "Legacy v1-v3 regression & governance test suite verifying polyglot clustering, subprocess walkthroughs, LibCST rewriting, native MathML paper mapping, and Elegance-Law cleanliness."
+    },
+    {
+      "id": "anvil-tool-tests-test-w1-process-trace",
+      "title": "test_w1_anvil_v4_process_and_trace.py (tests/test_w1_anvil_v4_process_and_trace.py)",
+      "category": "tools",
+      "path": "tests/test_w1_anvil_v4_process_and_trace.py",
+      "description": "Wave 1 verification suite: zero-execution steady-coordinate Dual-Channel Process Map, consented_local_subprocess policy & path-escape refusals, O(1) safe sketches, NaN/Inf tripwires, Smart Variable Funnel monotonicity, and two-process lock concurrency."
+    },
+    {
+      "id": "anvil-tool-tests-test-w2-refactor-paper-xval",
+      "title": "test_w2_anvil_v4_refactor_paper_xval.py (tests/test_w2_anvil_v4_refactor_paper_xval.py)",
+      "category": "tools",
+      "path": "tests/test_w2_anvil_v4_refactor_paper_xval.py",
+      "description": "Wave 2 verification suite: N1..Nk Refactoring Crosswalk, 3-Tier Null Set 100% symbol conservation, Golden-Master stage-boundary equivalence, dual-target Paper <-> Software Crosswalk, untraced profiler/literature preconditions, and 2-Seat Cross-Validator."
+    },
+    {
+      "id": "anvil-tool-tests-test-w3-workbench-playwright",
+      "title": "test_w3_anvil_v4_workbench_playwright.py (tests/test_w3_anvil_v4_workbench_playwright.py)",
+      "category": "tools",
+      "path": "tests/test_w3_anvil_v4_workbench_playwright.py",
+      "description": "Wave 3 headless Chromium Playwright Gate-6 suite verifying 48/52 and 25/45/30 postures, UI Trace Consent Gate, synced watches/breakpoints/Steward dialogue, 5-row HTTP/UI failure states, 0 console errors, 0 SVG overlaps, and 0 raw LaTeX leaks."
     },
     {
       "id": "anvil-shared-tool-anvil-engine",
       "title": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
       "category": "tools",
       "path": "skills/anvil/scripts/anvil_engine.py",
-      "description": "Shared 3-level progressive abstraction, Orange Split, and Functional Core remapping engine."
+      "description": "Shared Foundry entrypoint for fast Trio slices (facts, slice, verify-diff) and Anvil v4 workbench/CLI operations."
     },
     {
       "id": "anvil-shared-tool-mapping",
@@ -50,60 +113,81 @@
       "description": "Shared complexity band evaluator and model_prefs.json seating resolver."
     },
     {
-      "id": "anvil-shared-tool-foreman-lib",
-      "title": "Foreman Durability & Sub-Agent Driver Library (foreman-lib.mjs)",
-      "category": "tools",
-      "path": "foreman/bin/foreman-lib.mjs",
-      "description": "Shared Trio worktree durability, checkpoint, and CLI dispatch library."
+      "id": "anvil-peer-figure-designer",
+      "title": "Figure-Designer Scientific Visual Standard",
+      "category": "skills",
+      "skill": "figure-designer",
+      "description": "Governs high-contrast vector process schematics, <=6-word node labels, >=11px typography, and zero text-wall SVG cards across Anvil v4 maps and reports."
+    },
+    {
+      "id": "anvil-peer-aegis",
+      "title": "Aegis Defensive Security Engine",
+      "category": "skills",
+      "skill": "aegis",
+      "description": "Provides deterministic AST taint/sink CWE scanning (AEG-01..AEG-06) for verify-diff and Seat 5 of the Beta-Reader Panel."
     },
     {
       "id": "anvil-peer-gandalf",
       "title": "Gandalf Deep-Think Advisor",
       "category": "skills",
       "skill": "gandalf",
-      "description": "Adversarial verification of Functional Core / Imperative Shell remapping and Null Space cuts"
+      "description": "Adversarial verification of Functional Core / Imperative Shell remapping and 3-Tier Null Set cuts."
     },
     {
       "id": "anvil-peer-researchprime",
       "title": "researchPrime Empirical Validator",
       "category": "skills",
       "skill": "researchprime",
-      "description": "Grounds best-in-class CST rewriting tools and differential equivalence protocols"
+      "description": "Grounds CST rewriting tools, differential equivalence protocols, and precondition-checked kernel literature upgrades."
     },
     {
       "id": "anvil-peer-ramanujan",
       "title": "Ramanujan Math Certifier",
       "category": "skills",
       "skill": "ramanujan",
-      "description": "Cross-checks Paper-to-Code native MathML formulas and numerical tolerances"
+      "description": "Cross-checks dual-target Paper-to-Code native MathML formulas and Golden-Master numerical tolerances."
+    },
+    {
+      "id": "anvil-peer-foreman",
+      "title": "Foreman Autonomous Multi-Wave Orchestrator",
+      "category": "skills",
+      "skill": "foreman",
+      "description": "Invokes Anvil fast AST primitives (facts, slice, verify-diff) as deterministic build-wave helper gates."
     },
     {
       "id": "anvil-ref-researchprime-code-rewriting-tools",
       "title": "Reference: RESEARCHPRIME-CODE-REWRITING-TOOLS.md",
       "category": "references",
       "path": "references/RESEARCHPRIME-CODE-REWRITING-TOOLS.md",
-      "description": "Domain reference and knowledge-base specification (references/RESEARCHPRIME-CODE-REWRITING-TOOLS.md)."
+      "description": "Domain reference on lossless CST rewriting, scope-aware transformations, and differential equivalence."
+    },
+    {
+      "id": "anvil-journal-0008-polyglot-ast-paper-mathml",
+      "title": "Journal: 0008-polyglot-ast-paper-mathml-mapper-and-single-surface-workbench",
+      "category": "references",
+      "path": "journal/0008-polyglot-ast-paper-mathml-mapper-and-single-surface-workbench.md",
+      "description": "Recorded operational field lesson on polyglot AST indexing, native MathML compilation, and single-surface workbench design."
     },
     {
       "id": "anvil-journal-0007-dual-map-algorithm-math-to-co",
       "title": "Journal: 0007-dual-map-algorithm-math-to-code-and-visual-glossary",
       "category": "references",
       "path": "journal/0007-dual-map-algorithm-math-to-code-and-visual-glossary.md",
-      "description": "Recorded operational run receipt and field lesson (journal/0007-dual-map-algorithm-math-to-code-and-visual-glossary.md)."
+      "description": "Recorded operational field lesson (journal/0007-dual-map-algorithm-math-to-code-and-visual-glossary.md)."
     },
     {
       "id": "anvil-journal-0006-anvil-v2-progressive-map-walk",
       "title": "Journal: 0006-anvil-v2-progressive-map-walkthrough-and-beta-readers",
       "category": "references",
       "path": "journal/0006-anvil-v2-progressive-map-walkthrough-and-beta-readers.md",
-      "description": "Recorded operational run receipt and field lesson (journal/0006-anvil-v2-progressive-map-walkthrough-and-beta-readers.md)."
+      "description": "Recorded operational field lesson (journal/0006-anvil-v2-progressive-map-walkthrough-and-beta-readers.md)."
     },
     {
       "id": "anvil-journal-0005-einstein-gandalf-progressive-",
       "title": "Journal: 0005-einstein-gandalf-progressive-report-organization",
       "category": "references",
       "path": "journal/0005-einstein-gandalf-progressive-report-organization.md",
-      "description": "Recorded operational run receipt and field lesson (journal/0005-einstein-gandalf-progressive-report-organization.md)."
+      "description": "Recorded operational field lesson (journal/0005-einstein-gandalf-progressive-report-organization.md)."
     },
     {
       "id": "anvil-kb-portfolio-triage-and-band-eval",

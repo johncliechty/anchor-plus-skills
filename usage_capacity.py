@@ -20,6 +20,7 @@ from __future__ import annotations
 import glob
 import json
 import os
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -29,6 +30,9 @@ TTL = 300
 AMBER = 0.8
 ENGINES = (("claude", "Claude"), ("chatgpt", "ChatGPT"), ("grok", "Grok"))
 _CACHE = {"at": 0.0, "key": None, "out": None}
+_LEDGER_DIR_SCAN_CACHE = {"dir": None, "mtime_ns": None, "at": 0.0, "recent_paths": []}
+_REFRESH_IN_FLIGHT = False
+_REFRESH_LOCK = threading.Lock()
 
 
 def ledger_dir():
@@ -216,13 +220,45 @@ def _seen(directory, now):
     sums = {cli: _sums() for cli, _ in ENGINES}
     docs = 0
     cut = (now - WEEK).timestamp()
+    in_pytest = bool(os.environ.get("PYTEST_CURRENT_TEST"))
     try:
-        # scandir carries each file's times on Windows: no stat per file (15k ledger files, 2026-10-10)
-        with os.scandir(directory) as it:
-            sigs = {e.path: (e.stat().st_mtime_ns, e.stat().st_size) for e in it if e.name.endswith(".json") and e.is_file()}
-        paths = sorted(p for p, s in sigs.items() if s[0] / 1e9 >= cut)
-    except Exception:
-        paths, sigs = [], {}
+        dir_mtime_ns = os.stat(directory).st_mtime_ns
+    except OSError:
+        dir_mtime_ns = None
+    now_mono = time.monotonic()
+    if (
+        not in_pytest
+        and dir_mtime_ns is not None
+        and _LEDGER_DIR_SCAN_CACHE["dir"] == directory
+        and _LEDGER_DIR_SCAN_CACHE["mtime_ns"] == dir_mtime_ns
+        and (now_mono - _LEDGER_DIR_SCAN_CACHE["at"]) < 60.0
+    ):
+        sigs = {}
+        paths = []
+        for p in _LEDGER_DIR_SCAN_CACHE["recent_paths"]:
+            try:
+                st = os.stat(p)
+                if st.st_mtime_ns / 1e9 >= cut:
+                    sigs[p] = (st.st_mtime_ns, st.st_size)
+                    paths.append(p)
+            except OSError:
+                continue
+        paths.sort()
+    else:
+        try:
+            # scandir carries each file's times on Windows: no stat per file (15k ledger files, 2026-10-10)
+            with os.scandir(directory) as it:
+                sigs = {e.path: (e.stat().st_mtime_ns, e.stat().st_size) for e in it if e.name.endswith(".json") and e.is_file()}
+            paths = sorted(p for p, s in sigs.items() if s[0] / 1e9 >= cut)
+            if not in_pytest and dir_mtime_ns is not None:
+                _LEDGER_DIR_SCAN_CACHE.update({
+                    "dir": directory,
+                    "mtime_ns": dir_mtime_ns,
+                    "at": now_mono,
+                    "recent_paths": list(paths),
+                })
+        except Exception:
+            paths, sigs = [], {}
     for p in paths:
         rows = _ledger_rows(p, sigs.get(p))
         if rows is None:
@@ -334,14 +370,7 @@ def _other_row(cli, label, s):
             "window_turns": s["window_turns"], "week_turns": s["week_turns"], "week_minutes": round(s["week_minutes"], 1), "bars": [], "amber": ""}
 
 
-def anchor_seen(now=None, directory=None, jobs=None, ttl=TTL):
-    """``{"as_of", "docs", "signal", "rows"}`` — one row per engine Anchor runs, plus the Gemini placeholder. Never raises."""
-    now = now or datetime.now(timezone.utc)
-    d = directory or ledger_dir()
-    j = jobs if jobs is not None else jobs_dir()
-    key = (d, j)
-    if _CACHE["out"] is not None and _CACHE["key"] == key and (time.time() - _CACHE["at"]) < ttl:
-        return _CACHE["out"]
+def _compute_anchor_seen(now, d, j, key):
     sums, docs = _seen(d, now)
     try:
         sig = latest_limit_signal(now, j) if j else None
@@ -353,6 +382,35 @@ def anchor_seen(now=None, directory=None, jobs=None, ttl=TTL):
     out = {"as_of": now.isoformat(), "docs": docs, "signal": sig, "rows": rows}
     _CACHE.update({"at": time.time(), "key": key, "out": out})
     return out
+
+
+def anchor_seen(now=None, directory=None, jobs=None, ttl=TTL):
+    """``{"as_of", "docs", "signal", "rows"}`` — one row per engine Anchor runs, plus the Gemini placeholder. Never raises."""
+    global _REFRESH_IN_FLIGHT
+    explicit_args = (now is not None) or (directory is not None) or (jobs is not None)
+    now_dt = now or datetime.now(timezone.utc)
+    d = directory or ledger_dir()
+    j = jobs if jobs is not None else jobs_dir()
+    key = (d, j)
+    if _CACHE["out"] is not None and _CACHE["key"] == key:
+        age = time.time() - _CACHE["at"]
+        if age < ttl:
+            return _CACHE["out"]
+        # Stale-while-revalidate in live server so HTTP threads never block for 1s+ on 16k ledger files
+        if not explicit_args and not os.environ.get("PYTEST_CURRENT_TEST"):
+            with _REFRESH_LOCK:
+                if not _REFRESH_IN_FLIGHT:
+                    _REFRESH_IN_FLIGHT = True
+                    def _bg():
+                        global _REFRESH_IN_FLIGHT
+                        try:
+                            _compute_anchor_seen(datetime.now(timezone.utc), d, j, key)
+                        finally:
+                            with _REFRESH_LOCK:
+                                _REFRESH_IN_FLIGHT = False
+                    threading.Thread(target=_bg, name="anchor-usage-capacity-refresh", daemon=True).start()
+            return _CACHE["out"]
+    return _compute_anchor_seen(now_dt, d, j, key)
 
 
 def capacity_rows(now=None, directory=None, jobs=None):

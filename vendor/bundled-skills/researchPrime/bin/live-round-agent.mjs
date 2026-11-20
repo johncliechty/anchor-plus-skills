@@ -37,6 +37,7 @@
 // live calls.
 
 import { TRIO_SURFACE } from './engine.mjs';
+import { canonicalizeLineage } from './trio-core/independence-accounting.mjs';
 const { HaltError } = TRIO_SURFACE['foreman-lib'];
 
 /** Historical default drafter family (Claude). Live runs resolve drafter from CODING_FAMILY. */
@@ -107,7 +108,7 @@ export function familyFromDriver(driver) {
   if (!t) return null;
   if (t.startsWith('gemini')) return 'gemini';
   if (t.startsWith('claude')) return 'claude';
-  if (t.startsWith('openai') || t.startsWith('gpt')) return 'openai';
+  if (t.startsWith('chatgpt') || t.startsWith('codex') || t.startsWith('openai') || t.startsWith('gpt')) return 'chatgpt';
   if (t.startsWith('grok')) return 'grok';
   return t.split(/[\s\-_]/)[0] || null;
 }
@@ -306,3 +307,165 @@ export async function buildLiveRoundAgent({
   });
   return instrumentRoundAgent({ agent: routed, routes: resolvedRoutes, tracker, geminiCap: cap });
 }
+
+const CANDIDATE_REVIEW_FAMILIES = Object.freeze(['gemini', 'chatgpt', 'grok', 'claude']);
+
+function dedupeCanonicalFamilies(list) {
+  const out = [];
+  const seen = new Set();
+  for (const item of list || []) {
+    const f = canonicalizeLineage(item);
+    if (f && !seen.has(f)) {
+      seen.add(f);
+      out.push(f);
+    }
+  }
+  return out;
+}
+
+/**
+ * Resolve multi-family G3 panel routing across >= 2 distinct non-drafter families
+ * when stakes require `minOrigins >= 2` (or whenever >= 2 non-drafter families are
+ * available), stamping `degradedQuorum: true` honestly when only <= 1 family is
+ * logged in / available on the host.
+ */
+export async function resolveG3PanelRouting({
+  tier = 'medium',
+  env = process.env,
+  live = false,
+  hasInjectedAgent = false,
+  probeAvailableFamilies = null,
+} = {}) {
+  const minOrigins = (tier === 'medium' || tier === 'high') ? 2 : 1;
+  let drafterFamily = canonicalizeLineage(env?.CODING_FAMILY || env?.ORCHESTRATOR_FAMILY || '') || DRAFTER_FAMILY;
+  let primaryReview = canonicalizeLineage(env?.REVIEW_FAMILY || env?.ANCHOR_REVIEW_FAMILY || '');
+
+  let allAvailable = [];
+  if (typeof probeAvailableFamilies === 'function') {
+    const probed = await probeAvailableFamilies({ env, drafterFamily, tier, minOrigins });
+    allAvailable = dedupeCanonicalFamilies(Array.isArray(probed) ? probed : []);
+  } else if (typeof env?.RESEARCHPRIME_AVAILABLE_FAMILIES === 'string' && env.RESEARCHPRIME_AVAILABLE_FAMILIES.trim()) {
+    allAvailable = dedupeCanonicalFamilies(env.RESEARCHPRIME_AVAILABLE_FAMILIES.split(','));
+  } else if (live === true) {
+    try {
+      const { loadModelFamilies } = await import('../../drivers/index.mjs');
+      const { resolveModelPolicy } = await import('../../drivers/model-policy.mjs');
+      try {
+        const prefs = loadModelFamilies(env);
+        if (prefs?.coding) drafterFamily = canonicalizeLineage(prefs.coding) || drafterFamily;
+        if (prefs?.review && !primaryReview) primaryReview = canonicalizeLineage(prefs.review);
+      } catch { /* fall back to env/default drafter */ }
+      const candidates = dedupeCanonicalFamilies([primaryReview, ...CANDIDATE_REVIEW_FAMILIES]);
+      const loggedIn = [];
+      for (const fam of candidates) {
+        try {
+          resolveModelPolicy(fam, { env });
+          loggedIn.push(fam);
+        } catch {
+          // Family CLI / subscription auth not available on this host.
+        }
+      }
+      allAvailable = loggedIn;
+    } catch {
+      allAvailable = dedupeCanonicalFamilies([primaryReview].filter(Boolean));
+    }
+  } else if (hasInjectedAgent) {
+    const first = primaryReview || (drafterFamily === 'gemini' ? 'chatgpt' : 'gemini');
+    const explicitSecond = canonicalizeLineage(env?.RESEARCHPRIME_SECONDARY_REVIEW_FAMILY || '');
+    const second = (explicitSecond && explicitSecond !== drafterFamily && explicitSecond !== first)
+      ? explicitSecond
+      : CANDIDATE_REVIEW_FAMILIES.find((f) => f !== drafterFamily && f !== first);
+    allAvailable = dedupeCanonicalFamilies([first, second].filter(Boolean));
+  } else {
+    allAvailable = dedupeCanonicalFamilies([primaryReview].filter(Boolean));
+  }
+
+  const nonDrafter = allAvailable.filter((f) => f !== drafterFamily);
+  // Ordering: keep primaryReview first when available among non-drafter families.
+  if (primaryReview && nonDrafter.includes(primaryReview) && nonDrafter[0] !== primaryReview) {
+    nonDrafter.splice(nonDrafter.indexOf(primaryReview), 1);
+    nonDrafter.unshift(primaryReview);
+  }
+
+  let seatLineages;
+  let degradedQuorum = false;
+  if (nonDrafter.length >= 2) {
+    seatLineages = [nonDrafter[0], nonDrafter[1], nonDrafter[0]];
+    degradedQuorum = false;
+  } else {
+    const sole = nonDrafter[0] || allAvailable[0] || primaryReview || null;
+    seatLineages = [sole, sole, sole];
+    // Honest degraded quorum if minOrigins >= 2, OR if <= 1 distinct non-drafter family is logged in.
+    degradedQuorum = minOrigins >= 2 || allAvailable.length <= 1;
+  }
+
+  return {
+    minOrigins,
+    drafterFamily,
+    availableFamilies: nonDrafter.length ? nonDrafter : allAvailable,
+    loggedInFamilies: allAvailable,
+    seatLineages,
+    degradedQuorum,
+  };
+}
+
+/**
+ * Build a per-seat agent resolver `(seatIndex, job, seatLineage) => agentFn` for `runPanelRound`
+ * so each G3 Shark seat dispatches to its routed family CLI (in live mode) or tags its seat
+ * lineage onto the injected agent seam (in hermetic test mode), recording reached families honestly.
+ */
+export async function buildPanelSeatAgentFactory({
+  baseAgent,
+  seatLineages = [],
+  live = false,
+  hasInjectedAgent = false,
+  tracker = null,
+  env = process.env,
+  target,
+  log,
+} = {}) {
+  if (live && !hasInjectedAgent) {
+    const { makeRoleRoutedAgent, familyToDriverName } = await import('../../drivers/index.mjs');
+    const { makeReliableAgent } = await import('../../drivers/reliability.mjs');
+    const cap = resolveGeminiCap(env);
+    const sem = makeSemaphore(cap);
+    const byFamily = new Map();
+    for (const rawFam of seatLineages) {
+      const fam = canonicalizeLineage(rawFam);
+      if (!fam || byFamily.has(fam)) continue;
+      const driver = familyToDriverName(fam);
+      if (!driver) continue;
+      const routes = { reviewer: { driver }, shark: { driver }, default: { driver } };
+      const routed = makeRoleRoutedAgent({
+        routes,
+        env: { ...env, CRUCIBLE_AGENT_LIVE: '1' },
+        ...(target !== undefined ? { target } : {}),
+        ...(log !== undefined ? { log } : {}),
+      });
+      const instrumented = instrumentRoundAgent({
+        agent: routed,
+        routes,
+        tracker,
+        geminiSemaphore: sem,
+      });
+      byFamily.set(fam, makeReliableAgent({ agent: instrumented, maxAttempts: 2 }));
+    }
+    return (_seatIndex, _job, seatLineage) => {
+      const fam = canonicalizeLineage(seatLineage);
+      return (fam && byFamily.get(fam)) || baseAgent;
+    };
+  }
+
+  return (_seatIndex, _job, seatLineage) => async (prompt, opts = {}) => {
+    const fam = canonicalizeLineage(seatLineage);
+    const out = await baseAgent(prompt, {
+      ...opts,
+      ...(fam ? { lineage: fam, family: fam } : {}),
+    });
+    if (fam && tracker && typeof tracker.note === 'function') {
+      tracker.note(fam);
+    }
+    return out;
+  };
+}
+

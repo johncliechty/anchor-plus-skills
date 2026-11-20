@@ -32,6 +32,7 @@ import signal
 import stat
 import subprocess
 import sys
+import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -278,29 +279,71 @@ def _first_paragraph(body):
     return ""
 
 
-def _journal_events(skill_dir):
-    """Real journal entries for a skill dir: files directly in
-    ``<dir>/journal/*.md``, ignoring README.md, subdirectories and all-caps
-    files. Each = ``{event, timestamp (mtime ms), status:'success', details}``.
-    """
+_JOURNAL_EVENT_CACHE = {}
+_SKILLS_CACHE_LOCK = threading.Lock()
+_SKILLS_PAYLOAD_CACHE = {
+    "stamp": None,
+    "json_str": "[]",
+    "json_bytes": b"[]",
+    "gzip_bytes": None,
+}
+
+
+def _stat_sig(file_path):
+    st = _stat_safe(file_path)
+    if not st:
+        return None
+    return (getattr(st, "st_mtime_ns", st.st_mtime), st.st_size)
+
+
+def _iter_valid_journal_dirents(skill_dir):
     journal_dir = os.path.join(skill_dir, "journal")
-    events = []
     for dirent in _read_dir_safe(journal_dir):
-        if not dirent.is_file():
+        try:
+            if not dirent.is_file():
+                continue
+        except OSError:
             continue
         file_name = dirent.name
         low = file_name.lower()
-        if not low.endswith(".md"):
-            continue
-        if low == "readme.md":
+        if not low.endswith(".md") or low == "readme.md":
             continue
         base = re.sub(r"\.md$", "", file_name, flags=re.IGNORECASE)
         # all-caps entries (SYNTHESIS.md etc.) are not run records
         if re.search(r"[A-Z]", base) and not re.search(r"[a-z]", base):
             continue
         file_path = os.path.join(journal_dir, file_name)
-        st = _stat_safe(file_path)
+        try:
+            st = dirent.stat()
+        except OSError:
+            st = _stat_safe(file_path)
         if not st:
+            continue
+        yield file_name, base, file_path, st
+
+
+def _journal_dir_stamp(skill_dir):
+    if not skill_dir:
+        return ()
+    rows = [
+        (fname, getattr(st, "st_mtime_ns", st.st_mtime), st.st_size)
+        for fname, _base, _fpath, st in _iter_valid_journal_dirents(skill_dir)
+    ]
+    rows.sort()
+    return tuple(rows)
+
+
+def _journal_events(skill_dir):
+    """Real journal entries for a skill dir: files directly in
+    ``<dir>/journal/*.md``, ignoring README.md, subdirectories and all-caps
+    files. Each = ``{event, timestamp (mtime ms), status:'success', details}``.
+    """
+    events = []
+    for _file_name, base, file_path, st in _iter_valid_journal_dirents(skill_dir):
+        cache_key = (file_path, getattr(st, "st_mtime_ns", st.st_mtime), st.st_size)
+        cached = _JOURNAL_EVENT_CACHE.get(cache_key)
+        if cached is not None:
+            events.append(dict(cached))
             continue
         text = _read_text_safe(file_path)
         encoding = "utf-8"
@@ -323,36 +366,78 @@ def _journal_events(skill_dir):
         if heading:
             details = details.replace(heading.group(0), "")
         details = details.strip()[:280]
-        events.append({
+        rec = {
             "event": title,
             "timestamp": st.st_mtime * 1000.0,
             "status": "success",
             "details": details,
             "sourceEncoding": encoding,
-        })
+        }
+        if len(_JOURNAL_EVENT_CACHE) > 8192:
+            _JOURNAL_EVENT_CACHE.clear()
+        _JOURNAL_EVENT_CACHE[cache_key] = rec
+        events.append(dict(rec))
     events.sort(key=lambda e: e["timestamp"], reverse=True)
     return events
 
 
-def _load_manifest():
-    """Load the manifest fresh; ``[]`` when missing/unparseable."""
+def _load_manifest_and_sig():
+    """Load the manifest fresh alongside a content digest; ``([], None)`` when missing."""
     text = _read_text_safe(MANIFEST_PATH)
     if not text:
-        return []
+        return [], None
+    sig = hashlib.sha1(text.encode("utf-8", "replace")).hexdigest()
     try:
         parsed = json.loads(text)
     except (json.JSONDecodeError, ValueError):
-        return []
+        return [], sig
     skills = parsed.get("skills")
-    return skills if isinstance(skills, list) else []
+    return (skills if isinstance(skills, list) else []), sig
 
 
-def build_skills():
-    """The full real ``/api/skills`` payload from the manifest + each skill's
-    files. Human-facing ``description`` / ``northStar`` prefer HUMAN.md when
-    present; SKILL.md remains agent protocol (agentDescription + sections)."""
+def _load_manifest():
+    """Load the manifest fresh; ``[]`` when missing/unparseable."""
+    skills, _sig = _load_manifest_and_sig()
+    return skills
+
+
+def _compute_skills_stamp(entries, manifest_sig):
+    per_skill = []
+    for entry in entries:
+        src = entry.get("source") if isinstance(entry, dict) else None
+        skill_dir = _resolve_source(src)
+        if skill_dir:
+            s_sig = _stat_sig(os.path.join(skill_dir, "SKILL.md"))
+            h_sig = _stat_sig(os.path.join(skill_dir, "HUMAN.md"))
+            j_sig = _journal_dir_stamp(skill_dir)
+        else:
+            s_sig = None
+            h_sig = None
+            j_sig = ()
+        per_skill.append((skill_dir, s_sig, h_sig, j_sig))
+    return (
+        str(MANIFEST_PATH),
+        _stat_sig(MANIFEST_PATH),
+        manifest_sig,
+        str(FOUNDRY_ROOT),
+        str(SKILLS_ROOT),
+        tuple(per_skill),
+    )
+
+
+def _ensure_skills_cache():
+    import gzip as _gzip
+    entries, manifest_sig = _load_manifest_and_sig()
+    stamp = _compute_skills_stamp(entries, manifest_sig)
+    with _SKILLS_CACHE_LOCK:
+        if _SKILLS_PAYLOAD_CACHE["stamp"] == stamp and _SKILLS_PAYLOAD_CACHE["gzip_bytes"] is not None:
+            return (
+                _SKILLS_PAYLOAD_CACHE["json_str"],
+                _SKILLS_PAYLOAD_CACHE["json_bytes"],
+                _SKILLS_PAYLOAD_CACHE["gzip_bytes"],
+            )
     out = []
-    for entry in _load_manifest():
+    for entry in entries:
         skill_dir = _resolve_source(entry.get("source"))
         skill_md = _read_text_safe(os.path.join(skill_dir, "SKILL.md")) if skill_dir else None
         human_md = _read_text_safe(os.path.join(skill_dir, "HUMAN.md")) if skill_dir else None
@@ -391,7 +476,32 @@ def build_skills():
             "timeline": timeline,
             "journalCount": len(timeline),
         })
-    return out
+    json_str = json.dumps(out)
+    json_bytes = json_str.encode("utf-8")
+    gzip_bytes = _gzip.compress(json_bytes, compresslevel=1)
+    with _SKILLS_CACHE_LOCK:
+        _SKILLS_PAYLOAD_CACHE["stamp"] = stamp
+        _SKILLS_PAYLOAD_CACHE["json_str"] = json_str
+        _SKILLS_PAYLOAD_CACHE["json_bytes"] = json_bytes
+        _SKILLS_PAYLOAD_CACHE["gzip_bytes"] = gzip_bytes
+    return json_str, json_bytes, gzip_bytes
+
+
+def build_skills():
+    """The full real ``/api/skills`` payload from the manifest + each skill's
+    files. Human-facing ``description`` / ``northStar`` prefer HUMAN.md when
+    present; SKILL.md remains agent protocol (agentDescription + sections)."""
+    json_str, _jb, _gb = _ensure_skills_cache()
+    return json.loads(json_str)
+
+
+def build_skills_http_payload():
+    """Pre-encoded JSON + gzip payload for ``GET /api/skills`` (`_send_json`)."""
+    _js, json_bytes, gzip_bytes = _ensure_skills_cache()
+    return {
+        "__preencoded_json__": json_bytes,
+        "__preencoded_gzip__": gzip_bytes,
+    }
 
 
 def load_north_star():

@@ -759,6 +759,8 @@ class Broker:
                 return
             if update.get("error"):
                 capture_error = update["error"]
+            if not update.get("error") and update.get("usage") is not None:
+                watchdog.progress()
             checkpoint = update
             self.emit({"type": "usage_checkpoint", "session_id": self.thread_id,
                        "invocation_id": invocation_id, "usage": update.get("usage"),

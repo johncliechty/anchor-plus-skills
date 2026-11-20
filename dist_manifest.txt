@@ -51,6 +51,7 @@ provider_setup.py
 usage_capacity.py
 high_seat_core.py
 high_seat_page.py
+poincare_state_map.py
 codex_catalog.py
 model_policy.py
 anchor_notebooks.py
@@ -369,6 +370,7 @@ steward_cockpit/static/v3.html
 steward_cockpit/static/report.html
 steward_cockpit/static/anvil.html
 steward_cockpit/static/aegis.html
+steward_cockpit/static/poincare.html
 steward_cockpit/static/wave17-aegis-cockpit-mockup.html
 steward_cockpit/static/wave18-cockpit-redesign-mockup.html
 steward_cockpit/static/shared.js

@@ -41,6 +41,28 @@ _FOUNDRY_CANDIDATES: Tuple[Path, ...] = (
 )
 
 
+_V4_MODULE_NAMES: Tuple[str, ...] = (
+    "anvil_v4_process",
+    "anvil_v4_trace",
+    "anvil_v4_refactor",
+    "anvil_v4_xval",
+    "anvil_v4_workbench",
+)
+_V4_MODULES_CACHE: Optional[Dict[str, Any]] = None
+_V4_MODULES_MTIME_SIG: Tuple[float, ...] = ()
+
+
+def _compute_anvil_scripts_mtime_sig(cand: Path) -> Tuple[float, ...]:
+    out: List[float] = []
+    for mname in ("anvil_engine", *_V4_MODULE_NAMES):
+        fp = cand / f"{mname}.py"
+        try:
+            out.append(fp.stat().st_mtime)
+        except OSError:
+            out.append(0.0)
+    return tuple(out)
+
+
 def _load_anvil_engine(candidates: Optional[Tuple[Path, ...]] = None) -> Any:
     """Load `anvil_engine` from Skill Foundry or bundled Anchor vendor fallback without writing `.pyc` files."""
     search = tuple(candidates) if candidates is not None else _FOUNDRY_CANDIDATES
@@ -59,6 +81,49 @@ def _load_anvil_engine(candidates: Optional[Tuple[Path, ...]] = None) -> Any:
             finally:
                 sys.dont_write_bytecode = prev_bc
     return None
+
+
+def _load_anvil_v4_modules(candidates: Optional[Tuple[Path, ...]] = None) -> Dict[str, Any]:
+    """Dynamically load Anvil v4 modules from Skill Foundry or bundled vendor fallback with zero `.pyc` writes."""
+    global _V4_MODULES_CACHE, _V4_MODULES_MTIME_SIG, anvil_engine
+    search = tuple(candidates) if candidates is not None else _FOUNDRY_CANDIDATES
+    active_cand = next(
+        (c for c in search if c.is_dir() and all((c / f"{m}.py").is_file() for m in _V4_MODULE_NAMES)),
+        None,
+    )
+    if candidates is None and active_cand is not None:
+        cur_sig = _compute_anvil_scripts_mtime_sig(active_cand)
+        if _V4_MODULES_CACHE is not None and cur_sig == _V4_MODULES_MTIME_SIG and all(k in _V4_MODULES_CACHE for k in _V4_MODULE_NAMES):
+            return _V4_MODULES_CACHE
+
+    for cand in search:
+        if not cand.is_dir():
+            continue
+        if not all((cand / f"{mname}.py").is_file() for mname in _V4_MODULE_NAMES):
+            continue
+        cand_str = str(cand.resolve())
+        sys.path[:] = [cand_str] + [p for p in sys.path if p != cand_str]
+        prev_bc = sys.dont_write_bytecode
+        sys.dont_write_bytecode = True
+        try:
+            loaded: Dict[str, Any] = {}
+            for mname in ("anvil_engine", *_V4_MODULE_NAMES):
+                sys.modules.pop(mname, None)
+            if (cand / "anvil_engine.py").is_file():
+                eng_mod = importlib.import_module("anvil_engine")
+                if candidates is None:
+                    anvil_engine = eng_mod
+            for mname in _V4_MODULE_NAMES:
+                loaded[mname] = importlib.import_module(mname)
+            if candidates is None:
+                _V4_MODULES_CACHE = loaded
+                _V4_MODULES_MTIME_SIG = _compute_anvil_scripts_mtime_sig(cand)
+            return loaded
+        except Exception:
+            continue
+        finally:
+            sys.dont_write_bytecode = prev_bc
+    return {}
 
 
 anvil_engine = _load_anvil_engine()
@@ -120,6 +185,10 @@ def _session_dir(cdir: Path) -> Path:
 
 def _session_file(cdir: Path) -> Path:
     return _session_dir(cdir) / "session.json"
+
+
+def _v4_dir(cdir: Path) -> Path:
+    return _session_dir(cdir) / "v4"
 
 
 def _cockpit_display_name(cdir: Path) -> str:
@@ -1318,9 +1387,12 @@ def _build_best_in_class_remap(
         })
 
     # Detect any existing extracted *_core.py blocks in module_buckets so we can link directly to them
-    core_mod = next(
-        (m for m in module_buckets if (m.get("file") or "").lower().endswith("_core.py")),
-        next((m for m in module_buckets if "core" in (m.get("file") or "").lower()), None),
+    stem_prefix = clean_stem.split("_")[0]
+    core_mod = (
+        next((m for m in module_buckets if Path(m.get("file") or "").name.lower() == f"{clean_stem}_core.py"), None)
+        or next((m for m in module_buckets if stem_prefix and Path(m.get("file") or "").name.lower() == f"{stem_prefix}_core.py"), None)
+        or next((m for m in module_buckets if (m.get("file") or "").lower().endswith("_core.py")), None)
+        or next((m for m in module_buckets if "core" in (m.get("file") or "").lower()), None)
     )
     core_arch_bucket = (
         file_to_arch_bucket.get(core_mod["file"])
@@ -1549,6 +1621,17 @@ def extract_paper_claims_and_align(
     except Exception:
         is_inline_json_claims = False
 
+    compact_paper_info: Dict[str, Any] = {
+        "path": paper_path_str,
+        "source_type": paper_info.get("source_type", "local"),
+        "title": paper_title,
+        "url": paper_info.get("url", ""),
+    }
+    if paper_info.get("bundle_dir"):
+        compact_paper_info["bundle_dir"] = paper_info["bundle_dir"]
+    if paper_info.get("primary_tex"):
+        compact_paper_info["primary_tex"] = paper_info["primary_tex"]
+
     # Delegate directly to anvil_engine.paper_to_code_map for rich sections[], algorithms[], and equations[]
     if not is_inline_json_claims and anvil_engine is not None and hasattr(anvil_engine, "paper_to_code_map") and paper_path_str:
         p_path = Path(paper_path_str)
@@ -1556,6 +1639,8 @@ def extract_paper_claims_and_align(
             pmap = anvil_engine.paper_to_code_map(repo, p_path, code_map=code_map)
             pmap["paper_source_type"] = paper_info.get("source_type", pmap.get("paper_source_type", "local"))
             pmap["paper_url"] = paper_info.get("url", pmap.get("paper_url", ""))
+            pmap["source_path"] = paper_path_str
+            pmap["paper_info"] = compact_paper_info
             if paper_info.get("bundle_dir"):
                 pmap["bundle_dir"] = paper_info["bundle_dir"]
             if paper_title and (not pmap.get("paper_title") or pmap.get("paper_title") == p_path.stem):
@@ -1632,10 +1717,13 @@ def extract_paper_claims_and_align(
 
     return {
         "schema": "anvil-paper-map/v1",
+        "has_paper": True,
         "paper_title": paper_title,
         "paper_source_type": paper_info.get("source_type", "local"),
         "paper_url": paper_info.get("url", ""),
         "paper_path": paper_path_str,
+        "source_path": paper_path_str,
+        "paper_info": compact_paper_info,
         "repo": str(repo),
         "claims_mapped": len(alignments),
         "native_mathml_enforced": True,
@@ -1744,11 +1832,7 @@ def _write_anvil_report(cdir: Path, session: Dict[str, Any]) -> Path:
     if report_path.is_file():
         try:
             existing_text = report_path.read_text(encoding="utf-8", errors="replace")
-            if existing_text.lstrip().startswith("# Illustrated Anvil Architecture"):
-                marker = "\n## 7. Anvil v2 —"
-                base_text = existing_text.split(marker)[0].rstrip()
-                v2_lines = _build_anvil_v2_report_section(session, heading_prefix="## 7.")
-                _atomic_write_text(report_path, base_text + "\n" + "\n".join(v2_lines) + "\n")
+            if "<!-- ANVIL_CUSTOM_REPORT_LOCKED -->" in existing_text:
                 return report_path
         except Exception:
             pass
@@ -2005,9 +2089,675 @@ def get_cockpit_file_source(cockpit_dir: str | Path, rel_file: str) -> Dict[str,
     }
 
 
+def _resolve_session_sw_dir(cdir: Path, session: Optional[Dict[str, Any]]) -> Path:
+    raw_sw = Path((session.get("software") or {}).get("path") or cdir).resolve() if session else cdir.resolve()
+    return raw_sw.parent.resolve() if raw_sw.is_file() else raw_sw
+
+
+def _v4_refusal_to_failure_payload(
+    err: Any,
+    v4_wb: Any,
+    fallback_bundle: Optional[Dict[str, Any]] = None,
+) -> Tuple[Dict[str, Any], int]:
+    surf = v4_wb._map_refusal_to_surface_failure(err)
+    if surf is not None:
+        code = int(surf["http_status"])
+        is_unknown = surf["status_kind"] == "backing-store-unreadable"
+        preserved = fallback_bundle if surf["status_kind"] in {"dependency-missing", "dependency-slow-or-killed"} else None
+        payload = {
+            "ok": False,
+            "error_code": err.error_code,
+            "error": surf["message"],
+            "status_kind": surf["status_kind"],
+            "failure_state": surf["status_kind"],
+            "http_status": code,
+            "badge": surf["badge"],
+            "message": surf["message"],
+            "unknown_state": is_unknown,
+            "surface_state": dict(surf),
+            "v4_bundle": preserved,
+            "bundle": preserved,
+        }
+        return payload, code
+    err_dict = err.to_dict() if hasattr(err, "to_dict") else {"ok": False, "error_code": "ANVIL_REFUSED", "message": str(err)}
+    err_code_str = str(err_dict.get("error_code") or "")
+    http_status = 403 if err_code_str in {"EXECUTION_POLICY_REFUSED", "PATH_ESCAPE_REFUSED", "CONSENT_REQUIRED_REFUSED"} else 400
+    err_dict.setdefault("error", str(err_dict.get("message") or "Anvil v4 request refused."))
+    err_dict["http_status"] = http_status
+    err_dict.setdefault("unknown_state", False)
+    return err_dict, http_status
+
+
+def _build_stage_symbol_maps(
+    process_map: Dict[str, Any],
+    refactor_map: Dict[str, Any],
+) -> Tuple[Dict[str, str], Dict[str, str], str, str]:
+    sym_to_old: Dict[str, str] = {}
+    file_to_old: Dict[str, str] = {}
+    stages = process_map.get("l1_stages") or []
+    default_old = str(stages[0]["id"]) if stages else "S1"
+    for st in stages:
+        sid = str(st.get("id") or default_old)
+        for f_rel in st.get("files") or []:
+            file_to_old.setdefault(str(f_rel), sid)
+        for step in st.get("l2_steps") or []:
+            cref = step.get("code_ref") or {}
+            sym = str(cref.get("symbol") or "")
+            cf = str(cref.get("file") or "")
+            if sym:
+                sym_to_old[sym] = sid
+                sym_to_old[sym.split(".")[-1]] = sid
+            if cf:
+                file_to_old.setdefault(cf, sid)
+
+    old_to_new: Dict[str, str] = {}
+    sym_to_new: Dict[str, str] = {}
+    target_stages = refactor_map.get("target_stages") or []
+    default_new = str(target_stages[0]["id"]) if target_stages else "N1"
+    for edge in refactor_map.get("mapped_to_new") or []:
+        if not isinstance(edge, dict):
+            continue
+        osid = str(edge.get("old_stage_id") or "")
+        nsid = str(edge.get("target_stage_id") or "")
+        esym = str(edge.get("symbol") or "")
+        if osid and nsid and osid not in old_to_new:
+            old_to_new[osid] = nsid
+        if esym and nsid:
+            sym_to_new[esym] = nsid
+            sym_to_new[esym.split(".")[-1]] = nsid
+
+    def resolve_old(sym: str, f_rel: str) -> str:
+        return (
+            sym_to_old.get(sym)
+            or sym_to_old.get(sym.split(".")[-1])
+            or file_to_old.get(f_rel)
+            or default_old
+        )
+
+    def resolve_new(sym: str, old_sid: str) -> str:
+        return (
+            sym_to_new.get(sym)
+            or sym_to_new.get(sym.split(".")[-1])
+            or old_to_new.get(old_sid)
+            or default_new
+        )
+
+    return sym_to_old, file_to_old, default_old, default_new
+
+
+def _resolve_session_paper_path(cdir: Path, session: Optional[Dict[str, Any]]) -> Optional[Path]:
+    if not isinstance(session, dict):
+        return None
+    sess_paper = session.get("paper_map")
+    if not isinstance(sess_paper, dict) or not sess_paper:
+        return None
+    pinfo = sess_paper.get("paper_info") if isinstance(sess_paper.get("paper_info"), dict) else {}
+    raw_paper_path = str(
+        pinfo.get("primary_tex")
+        or pinfo.get("path")
+        or sess_paper.get("source_path")
+        or sess_paper.get("paper_path")
+        or sess_paper.get("bundle_dir")
+        or ""
+    ).strip()
+    if not raw_paper_path:
+        return None
+    cand_p = Path(raw_paper_path)
+    if not cand_p.is_absolute():
+        cand_p = (cdir / cand_p).resolve()
+    return cand_p if cand_p.exists() else None
+
+
+def _build_companion_paper_bridge(
+    cdir: Path,
+    sw_dir: Path,
+    session: Dict[str, Any],
+    process_map: Dict[str, Any],
+    refactor_map: Dict[str, Any],
+    trace_data: Optional[Dict[str, Any]],
+    *,
+    pipeline_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    sess_paper = session.get("paper_map")
+    if not isinstance(sess_paper, dict) or not sess_paper:
+        return {
+            "ok": True,
+            "schema": "anvil-paper-map/v1",
+            "paper_map_version": "v4",
+            "has_paper": False,
+            "paper_path": "",
+            "paper_title": "",
+            "native_mathml_enforced": True,
+            "sections": [],
+            "algorithms": [],
+            "equations": [],
+            "unmapped_paper_items": [],
+            "code_only_modules": [],
+            "claims_mapped": 0,
+            "alignments": [],
+        }
+
+    pinfo = sess_paper.get("paper_info") if isinstance(sess_paper.get("paper_info"), dict) else {}
+    raw_paper_path = str(
+        pinfo.get("primary_tex")
+        or pinfo.get("path")
+        or sess_paper.get("source_path")
+        or sess_paper.get("paper_path")
+        or sess_paper.get("bundle_dir")
+        or ""
+    ).strip()
+
+    pmap: Optional[Dict[str, Any]] = None
+    pmap_error: Optional[str] = None
+    if raw_paper_path and anvil_engine is not None and hasattr(anvil_engine, "paper_to_code_map"):
+        cand_p = Path(raw_paper_path)
+        if not cand_p.is_absolute():
+            cand_p = (cdir / cand_p).resolve()
+        if cand_p.exists():
+            try:
+                use_cached_cmap = (session.get("code_map") if (not pipeline_id or pipeline_id == "all_paper_matched") else None)
+                pmap = anvil_engine.paper_to_code_map(
+                    sw_dir,
+                    paper_spec_path=cand_p,
+                    code_map=use_cached_cmap,
+                    pipeline_id=pipeline_id,
+                    trace_data=trace_data,
+                    approve_run=False,
+                )
+            except Exception as exc:
+                pmap_error = f"{type(exc).__name__}: {exc}"
+                pmap = None
+
+    stages = process_map.get("l1_stages") or []
+    target_stages = refactor_map.get("target_stages") or []
+    default_old = str(stages[0]["id"]) if stages else "S1"
+    default_new = str(target_stages[0]["id"]) if target_stages else "N1"
+    sym_to_old: Dict[str, str] = {}
+    file_to_old: Dict[str, str] = {}
+    for st in stages:
+        sid = str(st.get("id") or default_old)
+        for fr in st.get("files") or []:
+            file_to_old.setdefault(str(fr), sid)
+        for step in st.get("l2_steps") or []:
+            cref = step.get("code_ref") or {}
+            if cref.get("symbol"):
+                sym_to_old[str(cref["symbol"])] = sid
+                sym_to_old[str(cref["symbol"]).split(".")[-1]] = sid
+    old_to_new: Dict[str, str] = {}
+    sym_to_new: Dict[str, str] = {}
+    for edge in refactor_map.get("mapped_to_new") or []:
+        if isinstance(edge, dict) and edge.get("target_stage_id"):
+            nsid = str(edge["target_stage_id"])
+            if edge.get("old_stage_id"):
+                old_to_new.setdefault(str(edge["old_stage_id"]), nsid)
+            if edge.get("symbol"):
+                sym_to_new[str(edge["symbol"])] = nsid
+                sym_to_new[str(edge["symbol"]).split(".")[-1]] = nsid
+
+    def _dual_links(sym_name: str, file_rel: str) -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
+        clean_sym = str(sym_name or "").strip()
+        clean_file = str(file_rel or "").strip()
+        osid = sym_to_old.get(clean_sym) or sym_to_old.get(clean_sym.split(".")[-1]) or file_to_old.get(clean_file) or default_old
+        nsid = sym_to_new.get(clean_sym) or sym_to_new.get(clean_sym.split(".")[-1]) or old_to_new.get(osid) or default_new
+        lbl_sym = clean_sym or clean_file or osid
+        return ([{"stage_id": osid, "symbol": lbl_sym}], [{"stage_id": nsid, "symbol": lbl_sym}])
+
+    def _clean_mml(raw_mml: str, fallback_latex: str, title_hint: str) -> str:
+        s = str(raw_mml or "").strip()
+        if s and "$" not in s and "<math" in s:
+            return s
+        src_expr = (fallback_latex or s or title_hint or "f(x)").replace("$", "")
+        mml_fn = getattr(anvil_engine, "compile_latex_to_mathml", None) if anvil_engine is not None else None
+        out_m = mml_fn(src_expr, display=True) if callable(mml_fn) else latex_to_mathml(src_expr, title_hint=title_hint)
+        if not out_m or "<math" not in out_m or "$" in out_m:
+            out_m = latex_to_mathml(src_expr, title_hint=title_hint)
+        return out_m or "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><mi>f</mi></math>"
+
+    if isinstance(pmap, dict) and pmap.get("has_paper") and (
+        pmap.get("sections") or pmap.get("algorithms") or pmap.get("equations")
+    ):
+        out_pmap = dict(pmap)
+        out_pmap["has_paper"] = True
+        if sess_paper.get("paper_title") and (
+            not out_pmap.get("paper_title")
+            or out_pmap.get("paper_title") == Path(raw_paper_path).stem
+        ):
+            out_pmap["paper_title"] = sess_paper["paper_title"]
+        for eq in out_pmap.get("equations") or []:
+            eq["mathml"] = _clean_mml(eq.get("mathml", ""), eq.get("raw_latex", ""), eq.get("label", ""))
+            if not eq.get("maps_to_old") or not eq.get("maps_to_new"):
+                mfs = eq.get("matched_functions") or []
+                top = mfs[0] if mfs else {}
+                mo, mn = _dual_links(top.get("qualname", ""), top.get("file", ""))
+                eq.setdefault("maps_to_old", mo)
+                eq.setdefault("maps_to_new", mn)
+            eq.setdefault("verification_stamp", eq.get("status") or "STATIC_ALIGNED")
+        return out_pmap
+
+    # Synthesize v4 Dual-Target Paper Bridge from sess_paper (.md/.pdf/inline claims fallback)
+    paper_title = str(sess_paper.get("paper_title") or pinfo.get("title") or "Attached Manuscript")
+    secs = [dict(s) for s in (sess_paper.get("sections") or []) if isinstance(s, dict)]
+    algs = [dict(a) for a in (sess_paper.get("algorithms") or []) if isinstance(a, dict)]
+    eqs = [dict(e) for e in (sess_paper.get("equations") or []) if isinstance(e, dict)]
+    aligns = [dict(a) for a in (sess_paper.get("alignments") or []) if isinstance(a, dict)]
+
+    if not secs:
+        secs = [{
+            "id": "sec-1",
+            "number": "1",
+            "title": paper_title,
+            "summary": f"Companion manuscript ({paper_title}) mapped to software stages.",
+            "equation_ids": [str(e.get("id") or f"eq-{i+1}") for i, e in enumerate(eqs or aligns)],
+            "matched_functions": [a["mapped_function"] for a in aligns if a.get("mapped_function")][:4],
+            "matched_modules": [a["mapped_file"] for a in aligns if a.get("mapped_file")][:4],
+            "status": "STATIC_ALIGNED",
+        }]
+
+    for sec in secs:
+        mfs = sec.get("matched_functions") or []
+        mms = sec.get("matched_modules") or []
+        mo, mn = _dual_links(mfs[0] if mfs else "", mms[0] if mms else "")
+        if not sec.get("maps_to_old"):
+            sec["maps_to_old"] = mo
+        if not sec.get("maps_to_new"):
+            sec["maps_to_new"] = mn
+
+    for alg in algs:
+        mo, mn = _dual_links(alg.get("primary_function", ""), alg.get("matched_module", ""))
+        if not alg.get("maps_to_old"):
+            alg["maps_to_old"] = mo
+        if not alg.get("maps_to_new"):
+            alg["maps_to_new"] = mn
+        for st in alg.get("steps") or []:
+            st_fns = st.get("matched_functions") or []
+            st_fls = st.get("matched_files") or []
+            smo, smn = _dual_links(st_fns[0] if st_fns else "", st_fls[0] if st_fls else "")
+            if not st.get("maps_to_old"):
+                st["maps_to_old"] = smo
+            if not st.get("maps_to_new"):
+                st["maps_to_new"] = smn
+
+    if not eqs and aligns:
+        for idx, al in enumerate(aligns, start=1):
+            mfn = str(al.get("mapped_function") or "")
+            mfl = str(al.get("mapped_file") or "")
+            mo, mn = _dual_links(mfn, mfl)
+            v_st = "VERIFIED-TRACE" if (trace_data is not None and mfn) else ("STATIC_ALIGNED" if mfn else "PAPER_ONLY")
+            eqs.append({
+                "id": str(al.get("claim_id") or f"eq-{idx}"),
+                "number": str(idx),
+                "label": str(al.get("title") or f"eq-{idx}"),
+                "section_id": secs[0]["id"],
+                "source_file": Path(raw_paper_path).name if raw_paper_path else "paper.md",
+                "line_start": idx,
+                "raw_latex": str(al.get("raw_latex") or ""),
+                "mathml": _clean_mml(al.get("mathml", ""), al.get("raw_latex", ""), al.get("title", "")),
+                "matched_functions": (
+                    [{"qualname": mfn, "file": mfl, "line_start": int(al.get("lineno") or 1), "line_end": int(al.get("lineno") or 1), "score": 6.0, "matched_identifiers": []}]
+                    if mfn else []
+                ),
+                "maps_to_old": al.get("maps_to_old") or mo,
+                "maps_to_new": al.get("maps_to_new") or mn,
+                "verification_stamp": v_st,
+                "v4_verdict": v_st,
+                "status": v_st,
+            })
+    else:
+        for eq in eqs:
+            eq["mathml"] = _clean_mml(eq.get("mathml", ""), eq.get("raw_latex", ""), eq.get("label", ""))
+            mfs = eq.get("matched_functions") or []
+            top = mfs[0] if (mfs and isinstance(mfs[0], dict)) else {}
+            mo, mn = _dual_links(top.get("qualname", ""), top.get("file", ""))
+            if not eq.get("maps_to_old"):
+                eq["maps_to_old"] = mo
+            if not eq.get("maps_to_new"):
+                eq["maps_to_new"] = mn
+            eq.setdefault("verification_stamp", eq.get("status") or "STATIC_ALIGNED")
+
+    out_bridge: Dict[str, Any] = {
+        "ok": True,
+        "schema": "anvil-paper-map/v1",
+        "paper_map_version": "v4",
+        "has_paper": True,
+        "paper_path": raw_paper_path,
+        "source_path": raw_paper_path,
+        "paper_info": pinfo,
+        "paper_title": paper_title,
+        "native_mathml_enforced": True,
+        "sections": secs,
+        "algorithms": algs,
+        "equations": eqs,
+        "unmapped_paper_items": [],
+        "code_only_modules": [],
+        "summary_counts": {
+            "sections": len(secs),
+            "algorithms": len(algs),
+            "equations": len(eqs),
+        },
+        "claims_mapped": len(aligns) or len(eqs),
+        "alignments": aligns,
+    }
+    if pmap_error:
+        out_bridge["paper_map_error"] = pmap_error
+    return out_bridge
+
+
+def _load_or_build_cockpit_profile_lit(
+    cdir: Path,
+    sw_dir: Path,
+    v4_mods: Dict[str, Any],
+) -> Dict[str, Any]:
+    v4_proc = v4_mods["anvil_v4_process"]
+    v4_ref = v4_mods["anvil_v4_refactor"]
+    v4_wb = v4_mods["anvil_v4_workbench"]
+    v4_dir = v4_wb._probe_v4_store_dir(cdir)
+    prof_path = v4_dir / "profile_lit.json"
+    if v4_proc._is_link_or_junction(prof_path):
+        v4_wb._raise_backing_store_unreadable("profile_lit.json is a symlink or junction")
+    if prof_path.exists():
+        if not prof_path.is_file():
+            v4_wb._raise_backing_store_unreadable("profile_lit.json is not a regular file")
+        loaded = v4_proc.atomic_locked_read_json(prof_path)
+        if loaded.get("schema") == v4_ref.PROFILE_LIT_SCHEMA:
+            return loaded
+    doc = v4_ref.run_profile_and_literature(sw_dir, approve_run=False, persist=False)
+    v4_proc.atomic_locked_write_json(prof_path, doc)
+    return doc
+
+
+def _load_or_build_cockpit_xval(
+    cdir: Path,
+    sw_dir: Path,
+    process_map: Dict[str, Any],
+    refactor_map: Dict[str, Any],
+    paper_map: Dict[str, Any],
+    v4_mods: Dict[str, Any],
+) -> Dict[str, Any]:
+    v4_proc = v4_mods["anvil_v4_process"]
+    v4_xval = v4_mods["anvil_v4_xval"]
+    v4_wb = v4_mods["anvil_v4_workbench"]
+    v4_dir = v4_wb._probe_v4_store_dir(cdir)
+    xval_path = v4_dir / "xval_receipt.json"
+    seating = _read_model_seating_info()
+
+    def _stamp_seating(rec: Dict[str, Any]) -> Dict[str, Any]:
+        out_r = dict(rec)
+        if out_r.get("mode") == "DETERMINISTIC_FALLBACK":
+            out_r["orchestrator_family"] = seating["coding_family"]
+            out_r["orchestrator_model"] = seating["coding_short"]
+            out_r["seat1_orchestrator"] = seating["coding_label"]
+            out_r["seat2_validator"] = (
+                f"{seating['review_short']} · Deterministic Structural Fallback "
+                f"(configured review seat: {seating['review_family']}; cross_family_attested=false)"
+            )
+        else:
+            out_r.setdefault("seat1_orchestrator", seating["coding_label"])
+            out_r.setdefault("seat2_validator", seating["review_label"])
+        return out_r
+
+    if v4_proc._is_link_or_junction(xval_path):
+        v4_wb._raise_backing_store_unreadable("xval_receipt.json is a symlink or junction")
+    if xval_path.exists():
+        if not xval_path.is_file():
+            v4_wb._raise_backing_store_unreadable("xval_receipt.json is not a regular file")
+        loaded = v4_proc.atomic_locked_read_json(xval_path)
+        if loaded.get("schema") == v4_xval.XVAL_RECEIPT_SCHEMA:
+            stamped = _stamp_seating(loaded)
+            if stamped != loaded:
+                v4_proc.atomic_locked_write_json(xval_path, stamped)
+            return stamped
+
+    pap_arg = paper_map if paper_map.get("has_paper") else None
+    try:
+        receipt = v4_xval.run_xval_audit(
+            sw_dir,
+            process_map=process_map,
+            refactor_map=refactor_map,
+            paper_map=pap_arg,
+            persist=False,
+        )
+    except v4_proc.AnvilRefusalError as x_err:
+        if x_err.error_code != "BOUND_EXCEEDED_REFUSAL":
+            raise
+        det_verdict, det_findings = v4_xval._run_deterministic_seat2_checks(process_map, refactor_map, pap_arg)
+        fp_s = str(process_map.get("repo_fingerprint") or refactor_map.get("repo_fingerprint") or "")
+        receipt = {
+            "ok": True,
+            "schema": v4_xval.XVAL_RECEIPT_SCHEMA,
+            "mode": "DETERMINISTIC_FALLBACK",
+            "cross_family_attested": False,
+            "orchestrator_family": seating["coding_family"],
+            "orchestrator_model": seating["coding_short"],
+            "validator_family": "deterministic_local_verifier",
+            "verdict": det_verdict,
+            "validator_calls_made": 0,
+            "max_concurrency_enforced": 2,
+            "digest_bytes": 0,
+            "digest_sha256": hashlib.sha256(fp_s.encode("utf-8")).hexdigest()[:24],
+            "fallback_reason": f"Deterministic Seat-2 structural verification ({x_err.message})",
+            "shards": [],
+            "findings": det_findings,
+        }
+    stamped_new = _stamp_seating(receipt)
+    v4_proc.atomic_locked_write_json(xval_path, stamped_new)
+    return stamped_new
+
+
+def _sync_v4_dialogue_turns(
+    cdir: Path,
+    v4_sess: Dict[str, Any],
+    session: Dict[str, Any],
+    v4_proc: Any,
+) -> Dict[str, Any]:
+    chat_hist = session.get("chat_history") or []
+    active_sid = str(v4_sess.get("active_stage_id") or "S1")
+    mapped_turns: List[Dict[str, Any]] = []
+    for m in chat_hist[-80:]:
+        if not isinstance(m, dict) or not m.get("text"):
+            continue
+        raw_role = str(m.get("role") or "user").lower()
+        norm_role = "assistant" if raw_role in {"anvil", "assistant"} else "user"
+        mapped_turns.append({
+            "role": norm_role,
+            "text": str(m["text"])[:4096],
+            "stage_id": str(m.get("stage_id") or active_sid),
+            "ts": str(m.get("at") or ""),
+        })
+    existing_turns = v4_sess.get("dialogue_turns") or []
+    if mapped_turns and mapped_turns != existing_turns:
+        updated = dict(v4_sess)
+        updated["dialogue_turns"] = mapped_turns
+        v4_proc.atomic_locked_write_json(_v4_dir(cdir) / "workbench_session.json", updated)
+        return updated
+    return v4_sess
+
+
+def _build_cockpit_v4_bundle(cdir: Path, session: Dict[str, Any]) -> Dict[str, Any]:
+    v4_mods = _load_anvil_v4_modules()
+    if not v4_mods:
+        raise RuntimeError("Anvil v4 modules unavailable.")
+    v4_proc = v4_mods["anvil_v4_process"]
+    v4_trace = v4_mods["anvil_v4_trace"]
+    v4_ref = v4_mods["anvil_v4_refactor"]
+    v4_wb = v4_mods["anvil_v4_workbench"]
+
+    sw_dir = _resolve_session_sw_dir(cdir, session)
+    if not sw_dir.exists() or not sw_dir.is_dir():
+        raise v4_proc.AnvilRefusalError("PATH_ESCAPE_REFUSED", "Software target directory does not exist.", cwe="CWE-22")
+
+    # Strictly read/write per-cockpit v4 state under `<cdir>/.anvil/v4` (never `sw_dir`)
+    trace_data = v4_wb._load_optional_trace_store(cdir)
+    cand_paper = _resolve_session_paper_path(cdir, session)
+    prelim_map = v4_proc.build_process_map(sw_dir, trace_data=trace_data, persist=False, paper_path=cand_paper)
+    v4_sess = v4_wb._load_or_init_workbench_session(cdir, prelim_map, persist=True)
+    v4_sess = _sync_v4_dialogue_turns(cdir, v4_sess, session, v4_proc)
+    active_pipe = str(v4_sess.get("active_pipeline") or "").strip() or None
+    if active_pipe:
+        try:
+            process_map = v4_proc.build_process_map(sw_dir, trace_data=trace_data, persist=False, paper_path=cand_paper, pipeline_id=active_pipe)
+        except v4_proc.AnvilRefusalError:
+            active_pipe = None
+            process_map = prelim_map
+    else:
+        process_map = prelim_map
+    refactor_map = v4_ref.build_refactor_map(sw_dir, trace_data=trace_data, persist=False, paper_path=cand_paper, pipeline_id=active_pipe)
+    paper_map = _build_companion_paper_bridge(cdir, sw_dir, session, process_map, refactor_map, trace_data, pipeline_id=active_pipe)
+    sci_val = (
+        paper_map.get("scientific_validation")
+        if isinstance(paper_map, dict) and paper_map.get("scientific_validation")
+        else (session.get("code_map") or {}).get("scientific_validation")
+    )
+    profile_lit = _load_or_build_cockpit_profile_lit(cdir, sw_dir, v4_mods)
+    xval_receipt = _load_or_build_cockpit_xval(cdir, sw_dir, process_map, refactor_map, paper_map, v4_mods)
+    files_source_map = v4_wb._build_files_source_map(sw_dir, process_map, trace_data)
+    variable_catalog = v4_wb._build_smart_funnel_catalog(
+        process_map,
+        trace_data,
+        files_source_map,
+        v4_sess.get("pinned_watches") or [],
+    )
+
+    l0_list = process_map.get("l0_scenarios") or []
+    if l0_list and isinstance(l0_list[0].get("recommended_argv"), list):
+        rec_argv = [str(x) for x in l0_list[0]["recommended_argv"]]
+    elif files_source_map:
+        first_rel = next(iter(files_source_map.keys()))
+        ext = Path(first_rel).suffix.lower()
+        rbin = "node" if ext in {".js", ".mjs", ".ts"} else ("Rscript" if ext == ".r" else "python")
+        rec_argv = [rbin, first_rel]
+    else:
+        rec_argv = ["pytest", "-q"]
+
+    try:
+        resolved_argv = list(v4_trace.validate_execution_argv(sw_dir, rec_argv)["validated_argv"])
+    except Exception:
+        resolved_argv = list(rec_argv)
+    safe_slug = re.sub(r"[^A-Za-z0-9_.-]+", "_", sw_dir.name)[:32] or "repo"
+    isolated_temp_copy_path = f"$TMPDIR/anvil_v4_trace_{safe_slug}_<ephemeral_worktree>"
+
+    if process_map.get("status_kind") == "empty-but-valid":
+        surface_state: Dict[str, Any] = dict(v4_wb.SURFACE_FAILURE_TABLE["empty-but-valid"])
+    else:
+        surface_state = {
+            "kind": "healthy",
+            "status_kind": "healthy",
+            "http_status": 200,
+            "badge": "TRACED" if trace_data is not None else "STATIC_AST",
+            "message": (
+                "Consented runtime trace overlaid on steady-coordinate process map"
+                if trace_data is not None
+                else "Zero-execution static AST map ready (click Run Consented Trace to overlay live values)"
+            ),
+        }
+
+    return {
+        "ok": True,
+        "schema": v4_wb.WORKBENCH_BUNDLE_SCHEMA,
+        "repo_name": sw_dir.name,
+        "repo_fingerprint": process_map.get("repo_fingerprint", ""),
+        "isolation_boundary": v4_trace.ISOLATION_BOUNDARY if trace_data is not None else "static_ast_zero_execution",
+        "non_vm_trust_warning": v4_trace.NON_VM_TRUST_WARNING,
+        "cli_approve_run": False,
+        "has_trace": bool(trace_data is not None),
+        "has_paper": bool(paper_map.get("has_paper", False)),
+        "recommended_argv": rec_argv,
+        "resolved_argv": resolved_argv,
+        "isolated_temp_copy_path": isolated_temp_copy_path,
+        "surface_state": surface_state,
+        "status_kind": surface_state["status_kind"],
+        "badge": surface_state["badge"],
+        "message": surface_state["message"],
+        "process_map": process_map,
+        "refactor_map": refactor_map,
+        "paper_map": paper_map,
+        "scientific_validation": sci_val,
+        "profile_lit": profile_lit,
+        "xval_receipt": xval_receipt,
+        "trace_summary": (
+            {
+                "validated_argv": trace_data.get("validated_argv", []),
+                "returncode": trace_data.get("returncode", 0),
+                "elapsed_sec": trace_data.get("elapsed_sec", 0.0),
+                "tripwires": trace_data.get("tripwires", []),
+                "map_drift_edges": trace_data.get("map_drift_edges", []),
+                "stage_verdicts": trace_data.get("stage_verdicts", {}),
+                "stage_wall_sec": trace_data.get("stage_wall_sec", {}),
+                "bounds": trace_data.get("bounds", {}),
+                "uncaught_exception": trace_data.get("uncaught_exception"),
+            }
+            if trace_data is not None
+            else None
+        ),
+        "variable_catalog": variable_catalog,
+        "files_source_map": files_source_map,
+        "session": v4_sess,
+    }
+
+
+_SUMMARY_STATUS_CACHE: Dict[str, Any] = {}
+
+
 def get_session_status(cockpit_dir: str | Path, summary_only: bool = False) -> Dict[str, Any]:
     cdir = Path(cockpit_dir).resolve()
     sfile = _session_file(cdir)
+    if summary_only:
+        in_pytest = bool(os.environ.get("PYTEST_CURRENT_TEST"))
+        try:
+            sf_stat = sfile.stat() if sfile.is_file() else None
+            sf_sig = (sf_stat.st_mtime_ns, sf_stat.st_size) if sf_stat else (0, 0)
+        except OSError:
+            sf_sig = (0, 0)
+        has_v4_trace_fast = False
+        try:
+            has_v4_trace_fast = (_v4_dir(cdir) / "last_trace.json").is_file()
+        except Exception:
+            has_v4_trace_fast = False
+        cache_key = str(cdir)
+        now_m = time.monotonic()
+        if not in_pytest:
+            hit = _SUMMARY_STATUS_CACHE.get(cache_key)
+            if hit and hit[0] == (sf_sig, has_v4_trace_fast) and (now_m - hit[1]) < 15.0:
+                return dict(hit[2])
+        sess_sum = None
+        raw_updated_at = None
+        raw_has_paper = False
+        corrupt_err_fast = None
+        if sfile.is_file():
+            try:
+                loaded_fast = json.loads(sfile.read_text(encoding="utf-8", errors="replace"))
+                if isinstance(loaded_fast, dict) and loaded_fast.get("active"):
+                    loaded_fast["cockpit_name"] = _cockpit_display_name(cdir)
+                    raw_updated_at = loaded_fast.get("updated_at")
+                    raw_has_paper = bool(loaded_fast.get("paper_map"))
+                    sess_sum = _project_session_summary(loaded_fast)
+            except Exception as exc:
+                corrupt_err_fast = f"Session file {sfile.name} could not be parsed: {exc}"
+        cands_fast = discover_cockpit_candidates(cdir)
+        out_fast: Dict[str, Any] = {
+            "ok": True,
+            "cockpit_dir": str(cdir),
+            "cockpit_name": _cockpit_display_name(cdir),
+            "active": bool(sess_sum is not None),
+            "summary_only": True,
+            "session": sess_sum,
+            "candidates": {
+                "software": (cands_fast.get("software") or [])[:6],
+                "papers": (cands_fast.get("papers") or [])[:6],
+            },
+            "v4_stamp": {
+                "updated_at": raw_updated_at,
+                "has_trace": has_v4_trace_fast,
+                "has_paper": raw_has_paper,
+            },
+        }
+        if corrupt_err_fast:
+            out_fast["warning"] = corrupt_err_fast
+        if not in_pytest:
+            if len(_SUMMARY_STATUS_CACHE) > 128:
+                _SUMMARY_STATUS_CACHE.clear()
+            _SUMMARY_STATUS_CACHE[cache_key] = ((sf_sig, has_v4_trace_fast), now_m, dict(out_fast))
+        return out_fast
+
     session = None
     corrupt_error = None
     if sfile.is_file():
@@ -2105,10 +2855,138 @@ def get_session_status(cockpit_dir: str | Path, summary_only: bool = False) -> D
     }
     if corrupt_error:
         out["warning"] = corrupt_error
+    if summary_only:
+        has_v4_trace = False
+        try:
+            has_v4_trace = (_v4_dir(cdir) / "last_trace.json").is_file()
+        except OSError:
+            has_v4_trace = False
+        out["v4_stamp"] = {
+            "updated_at": session.get("updated_at") if session else None,
+            "has_trace": has_v4_trace,
+            "has_paper": bool(session and session.get("paper_map")),
+        }
+    elif session:
+        v4_mods = _load_anvil_v4_modules()
+        if v4_mods:
+            v4_proc = v4_mods["anvil_v4_process"]
+            v4_wb = v4_mods["anvil_v4_workbench"]
+            try:
+                v4_bundle = _build_cockpit_v4_bundle(cdir, session)
+                out["v4_bundle"] = v4_bundle
+                out["surface_state"] = v4_bundle["surface_state"]
+                out["unknown_state"] = False
+            except v4_proc.AnvilRefusalError as v4_err:
+                fail_payload, _ = _v4_refusal_to_failure_payload(v4_err, v4_wb)
+                out["v4_bundle"] = None
+                out["surface_state"] = fail_payload.get("surface_state")
+                out["unknown_state"] = bool(fail_payload.get("unknown_state", False))
+                out["v4_error"] = fail_payload
+            except Exception as v4_exc:
+                out["v4_bundle"] = None
+                out["surface_state"] = dict(v4_wb.SURFACE_FAILURE_TABLE["backing-store-unreadable"])
+                out["unknown_state"] = True
+                out["v4_error"] = {"ok": False, "message": str(v4_exc)}
     return out
 
 
 get_cockpit_status = get_session_status
+
+
+def get_v4_cockpit_state(cockpit_dir: str | Path) -> Tuple[Dict[str, Any], int]:
+    """Return `(payload, http_status)` for the Cockpit's Anvil v4 state, enforcing 5-state fail-closed semantics."""
+    cdir = Path(cockpit_dir).resolve()
+    v4_mods = _load_anvil_v4_modules()
+    if not v4_mods:
+        return (
+            {
+                "ok": False,
+                "error_code": "DEPENDENCY_MISSING",
+                "status_kind": "dependency-missing",
+                "http_status": 503,
+                "badge": "DEGRADED_STATIC",
+                "message": "Required runtime/tracer unavailable — showing static AST map",
+                "unknown_state": False,
+            },
+            503,
+        )
+    v4_proc = v4_mods["anvil_v4_process"]
+    v4_wb = v4_mods["anvil_v4_workbench"]
+
+    # Always validate `.anvil/v4` stores fail-closed FIRST (500 on unreadable/corrupt session, 502 on corrupt trace)
+    try:
+        _ = v4_wb._load_optional_trace_store(cdir)
+        ws_path = _v4_dir(cdir) / "workbench_session.json"
+        if v4_proc._is_link_or_junction(ws_path):
+            v4_wb._raise_backing_store_unreadable("workbench_session.json is a symlink or junction")
+        if ws_path.exists():
+            if not ws_path.is_file():
+                v4_wb._raise_backing_store_unreadable("workbench_session.json is not a regular file")
+            try:
+                raw_ws = v4_proc.atomic_locked_read_json(ws_path, max_bytes=4_194_304)
+                v4_wb._validate_and_normalize_session(
+                    raw_ws,
+                    v4_wb._default_session_payload({"l1_stages": [], "l2_steps": [], "l3_files": []}),
+                )
+            except v4_proc.AnvilRefusalError as ws_err:
+                v4_wb._raise_backing_store_unreadable(ws_err.message)
+    except v4_proc.AnvilRefusalError as store_err:
+        return _v4_refusal_to_failure_payload(store_err, v4_wb)
+
+    base_status = get_session_status(cdir, summary_only=True)
+    sfile = _session_file(cdir)
+    session: Optional[Dict[str, Any]] = None
+    if sfile.is_file():
+        try:
+            loaded = json.loads(sfile.read_text(encoding="utf-8", errors="replace"))
+            if isinstance(loaded, dict) and loaded.get("active"):
+                session = loaded
+        except Exception as exc:
+            try:
+                v4_wb._raise_backing_store_unreadable(f"Corrupt session.json: {exc}")
+            except v4_proc.AnvilRefusalError as s_err:
+                return _v4_refusal_to_failure_payload(s_err, v4_wb)
+
+    if not session:
+        empty_surf = dict(v4_wb.SURFACE_FAILURE_TABLE["empty-but-valid"])
+        return (
+            {
+                "ok": True,
+                "active": False,
+                "cockpit_dir": str(cdir),
+                "cockpit_name": base_status.get("cockpit_name", _cockpit_display_name(cdir)),
+                "candidates": base_status.get("candidates", {}),
+                "surface_state": empty_surf,
+                "status_kind": empty_surf["status_kind"],
+                "badge": empty_surf["badge"],
+                "message": empty_surf["message"],
+                "unknown_state": False,
+                "v4_bundle": None,
+                "bundle": None,
+            },
+            200,
+        )
+
+    try:
+        v4_bundle = _build_cockpit_v4_bundle(cdir, session)
+        return (
+            {
+                "ok": True,
+                "active": True,
+                "cockpit_dir": str(cdir),
+                "cockpit_name": base_status.get("cockpit_name", _cockpit_display_name(cdir)),
+                "surface_state": v4_bundle["surface_state"],
+                "status_kind": v4_bundle["status_kind"],
+                "badge": v4_bundle["badge"],
+                "message": v4_bundle["message"],
+                "unknown_state": False,
+                "v4_bundle": v4_bundle,
+                "bundle": v4_bundle,
+            },
+            200,
+        )
+    except v4_proc.AnvilRefusalError as err:
+        return _v4_refusal_to_failure_payload(err, v4_wb)
 
 
 def start_cockpit_session(
@@ -2131,31 +3009,44 @@ def start_cockpit_session(
         # Preserve prior signed_off_drops and back up previous session before overwriting
         sfile = _session_file(cdir)
         prior_signed: List[str] = []
+        prior_sw_path: str = ""
         if sfile.is_file():
             try:
                 old_raw = sfile.read_text(encoding="utf-8", errors="replace")
                 _atomic_write_text(_session_dir(cdir) / "session.prev.json", old_raw)
                 old_obj = json.loads(old_raw)
-                if isinstance(old_obj, dict) and isinstance(old_obj.get("signed_off_drops"), list):
-                    prior_signed = list(old_obj["signed_off_drops"])
+                if isinstance(old_obj, dict):
+                    if isinstance(old_obj.get("signed_off_drops"), list):
+                        prior_signed = list(old_obj["signed_off_drops"])
+                    prior_sw_path = str((old_obj.get("software") or {}).get("path") or "")
             except Exception:
                 pass
 
         sw_info = resolve_software_target(cdir, software_spec or ".", role="primary")
         sw_path = Path(sw_info["path"])
+        if prior_sw_path and prior_sw_path != str(sw_path):
+            shutil.rmtree(_v4_dir(cdir), ignore_errors=True)
 
         cmp_info = resolve_software_target(cdir, compare_spec, role="compare") if compare_spec.strip() else sw_info
         cmp_path = Path(cmp_info["path"])
 
+        paper_info: Optional[Dict[str, Any]] = None
+        resolved_paper_for_map: Optional[Path] = None
+        if mode == "paper" or paper_spec.strip():
+            paper_info = resolve_paper_source(cdir, paper_spec)
+            p_str = str(paper_info.get("primary_tex") or paper_info.get("path") or "").strip()
+            if p_str and Path(p_str).exists():
+                resolved_paper_for_map = Path(p_str).resolve()
+
         # Single full-repo AST scan for sw_path; reuse `code_map` across all downstream steps!
         try:
-            code_map = anvil_engine.build_map(sw_path, _include_v2_enrichment=False)
+            code_map = anvil_engine.build_map(sw_path, _include_v2_enrichment=False, paper_path=resolved_paper_for_map)
         except TypeError:
             code_map = anvil_engine.build_map(sw_path)
         cmp_map = code_map if sw_path == cmp_path else None
         if cmp_map is None:
             try:
-                cmp_map = anvil_engine.build_map(cmp_path, _include_v2_enrichment=False)
+                cmp_map = anvil_engine.build_map(cmp_path, _include_v2_enrichment=False, paper_path=resolved_paper_for_map)
             except TypeError:
                 cmp_map = anvil_engine.build_map(cmp_path)
 
@@ -2223,7 +3114,8 @@ def start_cockpit_session(
 
         paper_map = None
         if mode == "paper" or paper_spec.strip():
-            paper_info = resolve_paper_source(cdir, paper_spec)
+            if paper_info is None:
+                paper_info = resolve_paper_source(cdir, paper_spec)
             paper_map = extract_paper_claims_and_align(
                 sw_path,
                 code_map.get("conceptual_buckets") or [],
@@ -2319,7 +3211,7 @@ def start_cockpit_session(
 
 def _is_placeholder_model_label(label: str) -> bool:
     low = (label or "").strip().lower()
-    return not low or any(tok in low for tok in ("-argon", "-fable-", "-sol"))
+    return not low or any(tok in low for tok in ("-argon", "-sol"))
 
 
 def _read_model_seating_info() -> Dict[str, str]:
@@ -2517,6 +3409,418 @@ def _verify_all_buckets_in_place(session: Dict[str, Any], cdir: Path) -> Tuple[i
     return newly_probed, total_executed
 
 
+def _load_active_cockpit_session_dict(cdir: Path) -> Optional[Dict[str, Any]]:
+    sfile = _session_file(cdir)
+    if not sfile.is_file():
+        return None
+    try:
+        loaded = json.loads(sfile.read_text(encoding="utf-8", errors="replace"))
+        if isinstance(loaded, dict) and loaded.get("active"):
+            return loaded
+    except Exception:
+        return None
+    return None
+
+
+def save_v4_cockpit_ui_session(
+    cockpit_dir: str | Path,
+    patch: Dict[str, Any],
+) -> Tuple[Dict[str, Any], int]:
+    """Validate and atomically merge client UI session patch into `<cdir>/.anvil/v4/workbench_session.json`."""
+    if not isinstance(patch, dict):
+        return (
+            {
+                "ok": False,
+                "error_code": "MALFORMED_DATA_REFUSED",
+                "error": "JSON object body required.",
+                "message": "JSON object body required.",
+            },
+            400,
+        )
+    if "pinned_watches" in patch:
+        pw = patch["pinned_watches"]
+        if not isinstance(pw, list) or any(not isinstance(x, str) for x in pw):
+            return (
+                {"ok": False, "error_code": "MALFORMED_DATA_REFUSED", "error": "'pinned_watches' must be a list of strings.", "message": "'pinned_watches' must be a list of strings."},
+                400,
+            )
+        if len(pw) > 64:
+            return (
+                {"ok": False, "error_code": "BOUND_EXCEEDED_REFUSAL", "error": "'pinned_watches' exceeds 64 items.", "message": "'pinned_watches' exceeds 64 items."},
+                400,
+            )
+    if "breakpoints" in patch:
+        bps = patch["breakpoints"]
+        if not isinstance(bps, list):
+            return (
+                {"ok": False, "error_code": "MALFORMED_DATA_REFUSED", "error": "'breakpoints' must be a list.", "message": "'breakpoints' must be a list."},
+                400,
+            )
+        if len(bps) > 128:
+            return (
+                {"ok": False, "error_code": "BOUND_EXCEEDED_REFUSAL", "error": "'breakpoints' exceeds 128 items.", "message": "'breakpoints' exceeds 128 items."},
+                400,
+            )
+        for bp in bps:
+            valid_bp = (
+                (isinstance(bp, int) and not isinstance(bp, bool) and bp >= 1)
+                or (isinstance(bp, str) and bool(bp.strip()))
+                or (
+                    isinstance(bp, dict)
+                    and isinstance(bp.get("file"), str)
+                    and isinstance(bp.get("line"), int)
+                    and not isinstance(bp.get("line"), bool)
+                    and bp["line"] >= 1
+                )
+            )
+            if not valid_bp:
+                return (
+                    {"ok": False, "error_code": "MALFORMED_DATA_REFUSED", "error": "Invalid breakpoint item in 'breakpoints'.", "message": "Invalid breakpoint item in 'breakpoints'."},
+                    400,
+                )
+    if "active_line" in patch:
+        aln = patch["active_line"]
+        if isinstance(aln, bool) or not isinstance(aln, int) or aln < 1 or aln > 1_000_000:
+            code_str = "BOUND_EXCEEDED_REFUSAL" if (isinstance(aln, int) and not isinstance(aln, bool)) else "MALFORMED_DATA_REFUSED"
+            return (
+                {"ok": False, "error_code": code_str, "error": "'active_line' must be an integer in 1..1000000.", "message": "'active_line' must be an integer in 1..1000000."},
+                400,
+            )
+    if "ide_open" in patch and not isinstance(patch["ide_open"], bool):
+        return (
+            {"ok": False, "error_code": "MALFORMED_DATA_REFUSED", "error": "'ide_open' must be a boolean.", "message": "'ide_open' must be a boolean."},
+            400,
+        )
+    if "ide_theme" in patch and patch["ide_theme"] not in {"light", "dark"}:
+        return (
+            {"ok": False, "error_code": "MALFORMED_DATA_REFUSED", "error": "'ide_theme' must be 'light' or 'dark'.", "message": "'ide_theme' must be 'light' or 'dark'."},
+            400,
+        )
+    for str_key in ("active_stage_id", "active_step_id", "active_file", "active_pipeline"):
+        if str_key in patch and not isinstance(patch[str_key], str):
+            return (
+                {"ok": False, "error_code": "MALFORMED_DATA_REFUSED", "error": f"'{str_key}' must be a string.", "message": f"'{str_key}' must be a string."},
+                400,
+            )
+
+    cdir = Path(cockpit_dir).resolve()
+    v4_mods = _load_anvil_v4_modules()
+    if not v4_mods:
+        return (
+            {"ok": False, "error_code": "DEPENDENCY_MISSING", "message": "Required runtime/tracer unavailable — showing static AST map"},
+            503,
+        )
+    v4_proc = v4_mods["anvil_v4_process"]
+    v4_wb = v4_mods["anvil_v4_workbench"]
+
+    with _get_cockpit_lock(cdir):
+        try:
+            session = _load_active_cockpit_session_dict(cdir)
+            sw_dir = _resolve_session_sw_dir(cdir, session)
+            cand_paper = _resolve_session_paper_path(cdir, session)
+            proc_map = v4_proc.build_process_map(sw_dir, persist=False, paper_path=cand_paper)
+            current = v4_wb._load_or_init_workbench_session(cdir, proc_map, persist=True)
+            merged = dict(current)
+            for k in (
+                "pinned_watches",
+                "breakpoints",
+                "active_stage_id",
+                "active_step_id",
+                "active_file",
+                "active_line",
+                "ide_open",
+                "ide_theme",
+                "active_pipeline",
+            ):
+                if k in patch:
+                    merged[k] = patch[k]
+            norm_v4_sess = v4_wb._validate_and_normalize_session(
+                merged,
+                v4_wb._default_session_payload(proc_map),
+            )
+            v4_proc.atomic_locked_write_json(_v4_dir(cdir) / "workbench_session.json", norm_v4_sess)
+            if session is not None:
+                session["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                _atomic_write_text(_session_file(cdir), json.dumps(session, indent=2))
+            return ({"ok": True, "session": norm_v4_sess}, 200)
+        except v4_proc.AnvilRefusalError as err:
+            return _v4_refusal_to_failure_payload(err, v4_wb)
+
+
+def _validate_v4_exec_request(
+    sw_dir: Path,
+    body: Dict[str, Any],
+    v4_mods: Dict[str, Any],
+) -> Tuple[Optional[Tuple[List[str], float]], Optional[Tuple[Dict[str, Any], int]]]:
+    v4_proc = v4_mods["anvil_v4_process"]
+    v4_trace = v4_mods["anvil_v4_trace"]
+    v4_wb = v4_mods["anvil_v4_workbench"]
+
+    if not isinstance(body, dict):
+        return None, (
+            {"ok": False, "error_code": "MALFORMED_DATA_REFUSED", "error": "JSON object body required.", "message": "JSON object body required."},
+            400,
+        )
+    if "cmd" in body or "command" in body or "shell" in body:
+        return None, (
+            {
+                "ok": False,
+                "error_code": "EXECUTION_POLICY_REFUSED",
+                "cwe": "CWE-78",
+                "error": "Shell command strings ('cmd'/'command'/'shell') are strictly refused; pass an explicit 'argv' array.",
+                "message": "Shell command strings ('cmd'/'command'/'shell') are strictly refused; pass an explicit 'argv' array.",
+            },
+            403,
+        )
+    raw_argv = body.get("argv")
+    if isinstance(raw_argv, (str, bytes)) or not isinstance(raw_argv, list) or len(raw_argv) == 0:
+        return None, (
+            {
+                "ok": False,
+                "error_code": "EXECUTION_POLICY_REFUSED",
+                "cwe": "CWE-78",
+                "error": "Execution requires a non-empty JSON 'argv' list of strings.",
+                "message": "Execution requires a non-empty JSON 'argv' list of strings.",
+            },
+            403,
+        )
+    if body.get("operator_consent_confirmed") is not True:
+        return None, (
+            {
+                "ok": False,
+                "error_code": "CONSENT_REQUIRED_REFUSED",
+                "error": "Explicit operator_consent_confirmed: true from UI consent gate is required.",
+                "message": "Explicit operator_consent_confirmed: true from UI consent gate is required.",
+                "isolation_boundary": v4_trace.ISOLATION_BOUNDARY,
+                "non_vm_trust_warning": v4_trace.NON_VM_TRUST_WARNING,
+            },
+            403,
+        )
+    try:
+        v4_trace.validate_execution_argv(sw_dir, raw_argv)
+    except v4_proc.AnvilRefusalError as pol_err:
+        if pol_err.error_code == "DEPENDENCY_MISSING":
+            return None, _v4_refusal_to_failure_payload(pol_err, v4_wb)
+        err_d = pol_err.to_dict()
+        err_d.setdefault("error", err_d.get("message", "Execution policy refused."))
+        return None, (err_d, 403)
+
+    raw_to = body.get("timeout_sec", 30.0)
+    if isinstance(raw_to, bool) or not isinstance(raw_to, (int, float)):
+        return None, (
+            {"ok": False, "error_code": "MALFORMED_DATA_REFUSED", "error": "'timeout_sec' must be numeric.", "message": "'timeout_sec' must be numeric."},
+            400,
+        )
+    timeout_sec = float(raw_to)
+    if timeout_sec <= 0.0 or timeout_sec > 300.0 or timeout_sec != timeout_sec:
+        return None, (
+            {
+                "ok": False,
+                "error_code": "BOUND_EXCEEDED_REFUSAL",
+                "error": "'timeout_sec' must be within (0, 300.0].",
+                "message": "'timeout_sec' must be within (0, 300.0].",
+                "bound_name": "timeout_sec",
+                "bound_limit": 300.0,
+                "observed_value": timeout_sec,
+            },
+            400,
+        )
+    return ([str(x) for x in raw_argv], timeout_sec), None
+
+
+def run_v4_cockpit_trace(
+    cockpit_dir: str | Path,
+    body: Dict[str, Any],
+) -> Tuple[Dict[str, Any], int]:
+    """Execute a consented Anvil v4 subprocess trace in an isolated temp copy, writing strictly under `<cdir>/.anvil/v4`."""
+    cdir = Path(cockpit_dir).resolve()
+    v4_mods = _load_anvil_v4_modules()
+    if not v4_mods:
+        return (
+            {"ok": False, "error_code": "DEPENDENCY_MISSING", "status_kind": "dependency-missing", "http_status": 503, "badge": "DEGRADED_STATIC", "message": "Required runtime/tracer unavailable — showing static AST map"},
+            503,
+        )
+    v4_proc = v4_mods["anvil_v4_process"]
+    v4_trace = v4_mods["anvil_v4_trace"]
+    v4_wb = v4_mods["anvil_v4_workbench"]
+
+    with _get_cockpit_lock(cdir):
+        session = _load_active_cockpit_session_dict(cdir)
+        sw_dir = _resolve_session_sw_dir(cdir, session)
+        validated, err_resp = _validate_v4_exec_request(sw_dir, body, v4_mods)
+        if err_resp is not None or validated is None:
+            return err_resp or ({"ok": False, "error_code": "EXECUTION_POLICY_REFUSED", "message": "Invalid execution request."}, 403)
+        clean_argv, timeout_sec = validated
+
+        try:
+            cand_paper = _resolve_session_paper_path(cdir, session)
+            proc_map = v4_proc.build_process_map(sw_dir, persist=False, paper_path=cand_paper)
+            v4_sess = v4_wb._load_or_init_workbench_session(cdir, proc_map, persist=True)
+            active_pipe = str(v4_sess.get("active_pipeline") or "").strip() or None
+            if active_pipe:
+                try:
+                    proc_map = v4_proc.build_process_map(sw_dir, persist=False, paper_path=cand_paper, pipeline_id=active_pipe)
+                except v4_proc.AnvilRefusalError:
+                    active_pipe = None
+            req_pins = body.get("pinned_watches")
+            pins = (
+                [str(x).strip() for x in req_pins if isinstance(x, str) and x.strip()][:64]
+                if isinstance(req_pins, list)
+                else list(v4_sess.get("pinned_watches") or [])
+            )
+            trace_out_path = _v4_dir(cdir) / "last_trace.json"
+            trace_doc = v4_trace.run_consented_trace(
+                sw_dir,
+                clean_argv,
+                approve_run=True,
+                timeout_sec=timeout_sec,
+                pinned_watches=pins,
+                output_path=trace_out_path,
+                persist=False,
+                paper_path=cand_paper,
+                pipeline_id=active_pipe,
+                static_map=proc_map,
+            )
+            xval_p = _v4_dir(cdir) / "xval_receipt.json"
+            if xval_p.is_file():
+                try:
+                    xval_p.unlink()
+                except OSError:
+                    pass
+
+            now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            if session is not None:
+                exec_files = {
+                    str(el.get("file") or "")
+                    for el in (trace_doc.get("executed_lines") or [])
+                    if isinstance(el, dict) and el.get("file")
+                }
+                tw_files = {
+                    str(tw.get("file") or "")
+                    for tw in (trace_doc.get("tripwires") or [])
+                    if isinstance(tw, dict) and tw.get("file")
+                }
+                rc_zero = int(trace_doc.get("returncode", 1)) == 0
+                zero_tw = len(trace_doc.get("tripwires") or []) == 0 and trace_doc.get("uncaught_exception") is None
+                trace_clean = rc_zero and zero_tw
+
+                buckets = (session.get("code_map") or {}).get("conceptual_buckets") or []
+                for b in buckets:
+                    b_files = set(b.get("member_files") or [])
+                    single_f = b.get("primary_file") or b.get("file") or ""
+                    if single_f:
+                        b_files.add(str(single_f))
+                    hit_bucket = bool(b_files & (exec_files | tw_files)) or (not trace_clean and not exec_files)
+                    if not hit_bucket:
+                        continue
+                    if trace_clean and not (b_files & tw_files):
+                        b["static_syntax_ok"] = True
+                        b["validated"] = True
+                        b["validated_description"] = b.get("validated_description") or b.get("summary")
+                        b["empirical_validation"] = {
+                            "ran": True,
+                            "status": "EXECUTED_PASS",
+                            "checked_at": now_iso,
+                            "stdout": f"✓ Consented v4 subprocess trace exited 0 across {len(exec_files)} file(s) with 0 tripwires.",
+                        }
+                    else:
+                        b["validated"] = False
+                        b["empirical_validation"] = {
+                            "ran": True,
+                            "status": "DIVERGENCE",
+                            "checked_at": now_iso,
+                            "stdout": f"✗ Consented v4 subprocess trace reported divergence (returncode={trace_doc.get('returncode')}, tripwires={len(trace_doc.get('tripwires') or [])}).",
+                        }
+                paper_map = session.get("paper_map")
+                if isinstance(paper_map, dict):
+                    valid_bids = {b["id"] for b in buckets if b.get("validated")}
+                    for al in paper_map.get("alignments") or []:
+                        if al.get("bucket_id") in valid_bids and al.get("mapped_function"):
+                            al["empirical_status"] = "EXECUTED_PASS"
+                session["updated_at"] = now_iso
+                _atomic_write_text(_session_file(cdir), json.dumps(session, indent=2))
+                _write_anvil_manifest(cdir, session)
+                _write_anvil_report(cdir, session)
+
+            v4_bundle = _build_cockpit_v4_bundle(cdir, session or {"software": {"path": str(sw_dir)}})
+            return (
+                {
+                    "ok": True,
+                    "trace_ok": bool(trace_doc.get("ok", True)),
+                    "trace_summary": v4_bundle.get("trace_summary"),
+                    "v4_bundle": v4_bundle,
+                    "bundle": v4_bundle,
+                    "session": session,
+                },
+                200,
+            )
+        except v4_proc.AnvilRefusalError as err:
+            fallback_b: Optional[Dict[str, Any]] = None
+            if err.error_code in {"DEPENDENCY_MISSING", "TRACE_TIMEOUT_REFUSED"} and session is not None:
+                try:
+                    fallback_b = _build_cockpit_v4_bundle(cdir, session)
+                except Exception:
+                    fallback_b = None
+            return _v4_refusal_to_failure_payload(err, v4_wb, fallback_bundle=fallback_b)
+
+
+def run_v4_cockpit_profile_lit(
+    cockpit_dir: str | Path,
+    body: Dict[str, Any],
+) -> Tuple[Dict[str, Any], int]:
+    """Execute a consented untraced stage profile + literature check, writing strictly under `<cdir>/.anvil/v4`."""
+    cdir = Path(cockpit_dir).resolve()
+    v4_mods = _load_anvil_v4_modules()
+    if not v4_mods:
+        return (
+            {"ok": False, "error_code": "DEPENDENCY_MISSING", "status_kind": "dependency-missing", "http_status": 503, "badge": "DEGRADED_STATIC", "message": "Required runtime/tracer unavailable — showing static AST map"},
+            503,
+        )
+    v4_proc = v4_mods["anvil_v4_process"]
+    v4_ref = v4_mods["anvil_v4_refactor"]
+    v4_wb = v4_mods["anvil_v4_workbench"]
+
+    with _get_cockpit_lock(cdir):
+        session = _load_active_cockpit_session_dict(cdir)
+        sw_dir = _resolve_session_sw_dir(cdir, session)
+        validated, err_resp = _validate_v4_exec_request(sw_dir, body, v4_mods)
+        if err_resp is not None or validated is None:
+            return err_resp or ({"ok": False, "error_code": "EXECUTION_POLICY_REFUSED", "message": "Invalid execution request."}, 403)
+        clean_argv, timeout_sec = validated
+
+        try:
+            prof_doc = v4_ref.run_profile_and_literature(
+                sw_dir,
+                approve_run=True,
+                argv=clean_argv,
+                timeout_sec=timeout_sec,
+                persist=False,
+            )
+            v4_proc.atomic_locked_write_json(_v4_dir(cdir) / "profile_lit.json", prof_doc)
+            if session is not None:
+                session["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                _atomic_write_text(_session_file(cdir), json.dumps(session, indent=2))
+            v4_bundle = _build_cockpit_v4_bundle(cdir, session or {"software": {"path": str(sw_dir)}})
+            return (
+                {
+                    "ok": True,
+                    "profile_lit": prof_doc,
+                    "v4_bundle": v4_bundle,
+                    "bundle": v4_bundle,
+                    "session": session,
+                },
+                200,
+            )
+        except v4_proc.AnvilRefusalError as err:
+            fallback_b: Optional[Dict[str, Any]] = None
+            if err.error_code in {"DEPENDENCY_MISSING", "TRACE_TIMEOUT_REFUSED"} and session is not None:
+                try:
+                    fallback_b = _build_cockpit_v4_bundle(cdir, session)
+                except Exception:
+                    fallback_b = None
+            return _v4_refusal_to_failure_payload(err, v4_wb, fallback_bundle=fallback_b)
+
+
 def probe_block_in_session(
     cockpit_dir: str | Path,
     block_id: str,
@@ -2525,6 +3829,32 @@ def probe_block_in_session(
 ) -> Dict[str, Any]:
     """Run static AST/Ruff checks AND isolated child-subprocess runtime walkthrough on a block honestly."""
     cdir = Path(cockpit_dir).resolve()
+    raw_desc = (lock_description or "").strip()
+    if (block_id or "").strip() == "__anvil_v4_op__" and raw_desc.startswith("{"):
+        try:
+            op_env = json.loads(raw_desc)
+        except Exception as exc:
+            return {"ok": False, "http_status": 400, "error_code": "MALFORMED_DATA_REFUSED", "message": f"Invalid v4 op JSON: {exc}"}
+        if not isinstance(op_env, dict):
+            return {"ok": False, "http_status": 400, "error_code": "MALFORMED_DATA_REFUSED", "message": "v4 op envelope must be an object."}
+        op_name = str(op_env.get("op") or "").strip().lower()
+        op_payload = op_env.get("payload") if isinstance(op_env.get("payload"), dict) else {}
+        if op_name in {"v4_state", "state"}:
+            res_d, code = get_v4_cockpit_state(cdir)
+        elif op_name in {"v4_session", "session"}:
+            res_d, code = save_v4_cockpit_ui_session(cdir, op_payload)
+        elif op_name in {"v4_trace", "trace"}:
+            res_d, code = run_v4_cockpit_trace(cdir, op_payload)
+        elif op_name in {"v4_profile_lit", "profile_lit", "profile-lit"}:
+            res_d, code = run_v4_cockpit_profile_lit(cdir, op_payload)
+        else:
+            return {"ok": False, "http_status": 400, "error_code": "UNKNOWN_V4_OP", "message": f"Unknown v4 op: {op_name}"}
+        if code != 200:
+            if op_env.get("raise_on_error") is True:
+                raise PermissionError(res_d.get("message") or res_d.get("error_code") or f"HTTP {code}")
+            return {"ok": False, "http_status": code, **res_d}
+        return {"http_status": 200, **res_d}
+
     with _get_cockpit_lock(cdir):
         status = get_session_status(cdir)
         session = status.get("session")
@@ -2744,6 +4074,12 @@ def attach_paper_to_session(cockpit_dir: str | Path, paper_spec: str) -> Dict[st
         paper_map = extract_paper_claims_and_align(sw_path, buckets, paper_info, code_map=code_map)
         session["paper_map"] = paper_map
         session["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        xval_p = _v4_dir(cdir) / "xval_receipt.json"
+        if xval_p.is_file():
+            try:
+                xval_p.unlink()
+            except OSError:
+                pass
         _atomic_write_text(_session_file(cdir), json.dumps(session, indent=2))
         _write_anvil_report(cdir, session)
         return {**get_session_status(cdir), "paper_map": paper_map}
@@ -2865,6 +4201,7 @@ def _synthesize_grounded_anvil_answer(
     mode: str,
     target: str,
     seating: Dict[str, str],
+    v4_bundle: Optional[Dict[str, Any]] = None,
 ) -> Tuple[str, str]:
     """Answer Anvil dialogue questions from real AST symbols, callers/callees, Null Space, Aegis, and Paper-Map facts."""
     q = (question or "").strip()
@@ -2959,6 +4296,77 @@ def _synthesize_grounded_anvil_answer(
                 + (f"; `{len(test_only)}` function(s) referenced by `tests/` only" if test_only else "")
                 + ")."
             )
+        live = _try_live_cli_chat(q, base_reply)
+        return (live, "live_model") if live else (base_reply, "static_ast")
+
+    # 3b. Anvil v4 Process Stage (S1..Sk), Refactor Target (N1..Nk), Smart Funnel, Pinned Watches & Tripwires
+    stage_mention = re.search(r"\b([sn][1-9]\d?)\b", q_low)
+    v4_kw_hit = any(
+        kw in q_low
+        for kw in (
+            "funnel", "smart variable", "pinned watch", "pinned_watch", "watches",
+            "tripwire", "non-finite", "nan ", "+infinity", "-infinity", "golden master",
+            "crosswalk", "hotspot", "profile_lit", "xval",
+        )
+    )
+    if isinstance(v4_bundle, dict) and (
+        stage_mention is not None
+        or v4_kw_hit
+        or mode == "v4"
+        or re.match(r"^[SN][1-9]\d?$", (target or "").strip(), flags=re.I)
+    ):
+        proc_m = v4_bundle.get("process_map") or {}
+        ref_m = v4_bundle.get("refactor_map") or {}
+        var_cat = v4_bundle.get("variable_catalog") or {}
+        funnel = var_cat.get("funnel") or {}
+        v4_sess_d = v4_bundle.get("session") or {}
+        trace_s = v4_bundle.get("trace_summary") or {}
+        stages = proc_m.get("l1_stages") or []
+        target_stages = ref_m.get("target_stages") or []
+
+        req_tok = (
+            stage_mention.group(1).upper()
+            if stage_mention
+            else ((target or "").strip().upper() if re.match(r"^[SN][1-9]\d?$", (target or "").strip(), flags=re.I) else str(v4_sess_d.get("active_stage_id") or "S1"))
+        )
+        matched_stg = next((s for s in stages if str(s.get("id")) == req_tok), None)
+        if matched_stg is None and req_tok.startswith("N"):
+            old_for_n = next(
+                (str(e.get("old_stage_id")) for e in (ref_m.get("mapped_to_new") or []) if str(e.get("target_stage_id")) == req_tok and e.get("old_stage_id")),
+                "",
+            )
+            if old_for_n:
+                matched_stg = next((s for s in stages if str(s.get("id")) == old_for_n), None)
+        if matched_stg is None and stages:
+            matched_stg = stages[0]
+
+        sid = str(matched_stg.get("id")) if matched_stg else "S1"
+        stitle = str(matched_stg.get("title") or sid) if matched_stg else sw_label
+        sfiles = (matched_stg.get("files") or []) if matched_stg else []
+        lead_f = str(v4_sess_d.get("active_file") or (sfiles[0] if sfiles else ""))
+        lead_ln = int(v4_sess_d.get("active_line") or 1)
+        mapped_n = list(dict.fromkeys(
+            str(e.get("target_stage_id"))
+            for e in (ref_m.get("mapped_to_new") or [])
+            if str(e.get("old_stage_id")) == sid and e.get("target_stage_id")
+        )) or ([str(target_stages[0].get("id"))] if target_stages else ["N1"])
+        pins = v4_sess_d.get("pinned_watches") or []
+        tws = trace_s.get("tripwires") or []
+
+        enters = ", ".join(str(x) for x in (matched_stg.get("what_enters") or [])[:4]) if matched_stg else "none"
+        exits = ", ".join(str(x) for x in (matched_stg.get("what_exits") or [])[:4]) if matched_stg else "return"
+        tw_clause = (
+            f" Tripwires (`{len(tws)}`): `{tws[0].get('variable', 'val')}` hit `{tws[0].get('kind', 'non-finite')}` at `{tws[0].get('file', lead_f)}:L{tws[0].get('line', lead_ln)}`."
+            if tws
+            else " Tripwires: `0` non-finite faults observed."
+        )
+        base_reply = (
+            f"Stage **`{sid}`** (**{stitle}**, verdict `{(matched_stg or {}).get('verdict', 'STATIC_ONLY')}`) maps to Pure-Core target **`{', '.join(mapped_n)}`**"
+            + (f" at `{lead_f}:L{lead_ln}`" if lead_f else "")
+            + f" (contract: enters `{enters or 'none'}` → exits `{exits or 'return'}`). "
+            f"4-Stage Smart Variable Funnel: `{funnel.get('all_state', 0)} → {funnel.get('stage_scope', 0)} → {funnel.get('delta_mutated', 0)} → {funnel.get('anomalies_and_pinned_watches', 0)}` "
+            f"(pinned watches: `{', '.join(pins) if pins else 'none'}`).{tw_clause}"
+        )
         live = _try_live_cli_chat(q, base_reply)
         return (live, "live_model") if live else (base_reply, "static_ast")
 
@@ -3214,7 +4622,14 @@ def chat_in_session(
                 f"Signed off `{len(ns_items)}` `∅ Null Space` candidate(s); Old-to-New Remap verdict is now **`{remap.get('verdict', 'PASS')}`** with `0` unexplained blockers."
             )
         else:
-            reply, answer_mode = _synthesize_grounded_anvil_answer(session, q, mode, target, seating)
+            reply, answer_mode = _synthesize_grounded_anvil_answer(
+                session,
+                q,
+                mode,
+                target,
+                seating,
+                v4_bundle=status.get("v4_bundle"),
+            )
 
         history.append({
             "role": "anvil",
@@ -3228,6 +4643,28 @@ def chat_in_session(
         session["updated_at"] = now_iso
         _atomic_write_text(_session_file(cdir), json.dumps(session, indent=2))
         _write_anvil_report(cdir, session)
+
+        # Also append user + assistant turns into `<cdir>/.anvil/v4/workbench_session.json`
+        v4_mods = _load_anvil_v4_modules()
+        if v4_mods:
+            try:
+                v4_proc = v4_mods["anvil_v4_process"]
+                v4_wb = v4_mods["anvil_v4_workbench"]
+                sw_dir = _resolve_session_sw_dir(cdir, session)
+                proc_m = (
+                    (status.get("v4_bundle") or {}).get("process_map")
+                    or v4_proc.build_process_map(sw_dir, persist=False)
+                )
+                v4_sess = v4_wb._load_or_init_workbench_session(cdir, proc_m, persist=True)
+                active_sid = str(v4_sess.get("active_stage_id") or "S1")
+                turns = list(v4_sess.get("dialogue_turns") or [])
+                turns.append({"role": "user", "text": q[:4096], "stage_id": active_sid, "ts": now_iso})
+                turns.append({"role": "assistant", "text": reply[:4096], "stage_id": active_sid, "ts": now_iso})
+                v4_sess["dialogue_turns"] = turns[-80:]
+                v4_proc.atomic_locked_write_json(_v4_dir(cdir) / "workbench_session.json", v4_sess)
+            except Exception:
+                pass
+
         return {**get_session_status(cdir), "reply": reply, "answer_mode": answer_mode}
 
 
@@ -3353,6 +4790,9 @@ def reset_cockpit_session(cockpit_dir: str | Path) -> Dict[str, Any]:
                 sfile.unlink()
             except Exception:
                 pass
+        v4_d = _v4_dir(cdir)
+        if v4_d.exists():
+            shutil.rmtree(v4_d, ignore_errors=True)
         return get_session_status(cdir)
 
 

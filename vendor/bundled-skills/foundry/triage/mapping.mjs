@@ -117,8 +117,16 @@ export const BAND_MAPPINGS = Object.freeze({
     }),
     [DEPTH_BANDS.LITE]: Object.freeze({
       sharkRounds: 1,
+      maxModelCalls: 4,
       seats: 'standard',
       ceremony: 'lite',
+    }),
+    [DEPTH_BANDS.MATRIX_FAST_TRACK]: Object.freeze({
+      sharkRounds: 1,
+      matrixLayers: 6,
+      maxModelCalls: 9,
+      seats: 'frontier',
+      ceremony: 'matrix-fast-track',
     }),
     [DEPTH_BANDS.SPIKE_FIRST]: Object.freeze({
       sharkRounds: 2,
@@ -136,6 +144,11 @@ export const BAND_MAPPINGS = Object.freeze({
       reviewers: 1,
       seats: 'standard',
       ceremony: 'lite',
+    }),
+    [DEPTH_BANDS.MATRIX_FAST_TRACK]: Object.freeze({
+      reviewers: 2,
+      seats: 'frontier',
+      ceremony: 'matrix-fast-track',
     }),
     [DEPTH_BANDS.SPIKE_FIRST]: Object.freeze({
       reviewers: 2,
@@ -155,6 +168,12 @@ export const BAND_MAPPINGS = Object.freeze({
       includeAdjudication: false,
       seats: 'standard',
       ceremony: 'lite',
+    }),
+    [DEPTH_BANDS.MATRIX_FAST_TRACK]: Object.freeze({
+      maxRounds: 2,
+      includeAdjudication: true,
+      seats: 'frontier',
+      ceremony: 'matrix-fast-track',
     }),
     [DEPTH_BANDS.SPIKE_FIRST]: Object.freeze({
       maxRounds: 4,
@@ -733,10 +752,22 @@ export function knobsForSkill(skill, depth, tier) {
     canonicalizeDepth(depth) ??
     (isProcessDepth(depth) ? /** @type {string} */ (depth) : normalizeDepth(depth));
   if (!d) return null;
-  const row = table[d] ?? (d === DEPTH_BANDS.SPIKE ? table['SPIKE-FIRST'] : null);
+  const row =
+    table[d] ??
+    (d === DEPTH_BANDS.SPIKE ? table['SPIKE-FIRST'] : null) ??
+    (d === DEPTH_BANDS.MATRIX_FAST_TRACK
+      ? table[DEPTH_BANDS.SPIKE] ?? table['SPIKE-FIRST']
+      : null);
   if (!row) return null;
 
-  const base = { ...row, skill: skillId, depth: d === 'SPIKE-FIRST' ? DEPTH_BANDS.SPIKE : d };
+  const base = {
+    ...row,
+    skill: skillId,
+    depth: d === 'SPIKE-FIRST' ? DEPTH_BANDS.SPIKE : d,
+    ...(d === DEPTH_BANDS.MATRIX_FAST_TRACK && !table[d]
+      ? { ceremony: 'matrix-fast-track' }
+      : {}),
+  };
   const t = isModelTier(tier) ? tier : normalizeTier(tier);
   if (t) {
     base.tier = t;

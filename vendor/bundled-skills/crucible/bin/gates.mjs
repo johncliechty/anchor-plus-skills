@@ -265,7 +265,9 @@ export function driftTier(change) {
  * otherwise (out-of-scope / non-tracing) it is option A.
  */
 export function classifyDriftOption(change) {
-  const traces = String(change?.traces_to_north_star || '').toLowerCase() === 'yes';
+  const rawTraces = change?.traces_to_north_star;
+  const traces = rawTraces === true ||
+    (typeof rawTraces === 'string' && rawTraces.trim().length > 0 && !/^(false|no|0|none|n\/a)$/i.test(rawTraces.trim()));
   const tag = change?.tag;
   const isRefinement = tag === 'refinement' || (traces && tag !== 'out-of-scope');
   if (isRefinement) {

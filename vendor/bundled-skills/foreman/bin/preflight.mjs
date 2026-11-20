@@ -13,6 +13,10 @@
 // elsewhere in the plan may be an output still to be made, so it only earns a note, as before.
 
 import path from 'node:path';
+import {
+  preflightSubscriptionCli,
+  preflightAllSubscriptionClis,
+} from '../../drivers/model-policy.mjs';
 
 // An absolute path: a drive (C:\ or C:/) or a UNC share (\\server\share). Quoted spans are matched by their OWN
 // delimiter, so "C:\data\O'Brien.csv" and `C:\data\results (final)` keep every character (review r1).
@@ -114,4 +118,143 @@ export function siblingPlan({ planText, projReal, engineHome = null, home = null
   // review r1: a missing input INSIDE the project is missing too - no exemption
   const missingInputs = inputPaths(inputsSection(planText), projReal).filter((p) => !exists(p));
   return { checked, excluded, unresolved, missingInputs };
+}
+
+const ALL_SUBSCRIPTION_FAMILIES = ['claude', 'chatgpt', 'gemini', 'grok'];
+
+function normalizeSubscriptionFamily(value) {
+  const f = String(value || '').trim().toLowerCase();
+  if (f === 'claude') return 'claude';
+  if (f === 'chatgpt' || f === 'codex' || f === 'chatgpt-cli') return 'chatgpt';
+  if (f === 'gemini' || f.startsWith('gemini-cli') || f === 'agy') return 'gemini';
+  if (f === 'grok' || f === 'grok-cli') return 'grok';
+  return null;
+}
+
+/**
+ * Deterministic subscription CLI auth preflight across all 4 families
+ * (`claude auth status`, `codex login status`, `agy models`, `grok models`)
+ * before Wave 1 starts.
+ *
+ * - If the coding family is `auth_expired` / `login_required`, halts immediately with
+ *   `[taxonomy:auth-expired]` before spawning Wave 1.
+ * - If the primary review family is `auth_expired` / `login_required` (or unavailable),
+ *   probes the remaining non-coding families (`family !== codingFamily` unless
+ *   `crossModel === false`) so a healthy 3rd family can take the verification seat cleanly;
+ *   if no healthy verification family exists, halts immediately with `[taxonomy:auth-expired]`.
+ */
+export function preflightCliAuth({
+  codingFamily = null,
+  reviewFamily = null,
+  families = null,
+  crossModel = true,
+  env = process.env,
+  ...probeOpts
+} = {}) {
+  if (Array.isArray(families) && families.length > 0 && !codingFamily && !reviewFamily) {
+    const normalized = families.map(normalizeSubscriptionFamily).filter(Boolean);
+    const all = preflightAllSubscriptionClis(normalized, { env, ...probeOpts });
+    const authFailures = all.failed.filter((r) => r.status === 'auth_expired' || r.login_required);
+    if (authFailures.length > 0) {
+      const f = authFailures[0];
+      return {
+        ok: false,
+        status: 'auth_expired',
+        login_required: true,
+        taxonomy: 'auth-expired',
+        haltReason: `[taxonomy:auth-expired] HALT before Wave 1: ${f.family} subscription CLI authentication required (${f.error || f.status})`,
+        results: all.results,
+        failed: all.failed,
+        failoverReviewFamily: null,
+      };
+    }
+    return {
+      ok: all.ok,
+      status: all.ok ? 'ready' : (all.failed[0]?.status || 'cli_unavailable'),
+      login_required: false,
+      taxonomy: all.ok ? null : 'cli-unavailable',
+      haltReason: all.ok
+        ? null
+        : `[taxonomy:cli-unavailable] HALT before Wave 1: ${all.failed.map((f) => `${f.family}: ${f.error || f.status}`).join('; ')}`,
+      results: all.results,
+      failed: all.failed,
+      failoverReviewFamily: null,
+    };
+  }
+
+  const codingFam = normalizeSubscriptionFamily(codingFamily);
+  const reviewFam = normalizeSubscriptionFamily(reviewFamily);
+  const initialTargets = [...new Set([codingFam, reviewFam].filter(Boolean))];
+  const checked = preflightAllSubscriptionClis(initialTargets, { env, ...probeOpts });
+  const results = { ...checked.results };
+
+  if (codingFam && results[codingFam] && !results[codingFam].ok) {
+    const c = results[codingFam];
+    const isAuth = c.status === 'auth_expired' || c.login_required === true;
+    const tax = isAuth ? 'auth-expired' : 'cli-unavailable';
+    return {
+      ok: false,
+      status: isAuth ? 'auth_expired' : c.status,
+      login_required: isAuth,
+      taxonomy: tax,
+      haltReason: `[taxonomy:${tax}] HALT before Wave 1: coding family "${codingFam}" CLI is not ready (${c.error || c.status})`,
+      results,
+      failed: [c],
+      failoverReviewFamily: null,
+    };
+  }
+
+  if (reviewFam && results[reviewFam] && !results[reviewFam].ok) {
+    const primaryRev = results[reviewFam];
+    const fallbackCandidates = ALL_SUBSCRIPTION_FAMILIES.filter((fam) =>
+      fam !== reviewFam && (crossModel === false || !codingFam || fam !== codingFam),
+    );
+    for (const cand of fallbackCandidates) {
+      const customExec = probeOpts.executables?.[cand]
+        ?? (typeof probeOpts.executableForImpl === 'function' ? probeOpts.executableForImpl(cand, env) : undefined);
+      const res = preflightSubscriptionCli(cand, {
+        env,
+        ...probeOpts,
+        ...(customExec !== undefined ? { executable: customExec } : {}),
+      });
+      results[cand] = res;
+      if (res.ok) {
+        return {
+          ok: true,
+          status: 'failover_ready',
+          login_required: false,
+          taxonomy: null,
+          haltReason: null,
+          results,
+          failed: [primaryRev],
+          failoverReviewFamily: cand,
+        };
+      }
+    }
+    const isAuth = primaryRev.status === 'auth_expired' || primaryRev.login_required === true;
+    const tax = isAuth ? 'auth-expired' : 'cli-unavailable';
+    return {
+      ok: false,
+      status: isAuth ? 'auth_expired' : primaryRev.status,
+      login_required: isAuth,
+      taxonomy: tax,
+      haltReason:
+        `[taxonomy:${tax}] HALT before Wave 1: review family "${reviewFam}" CLI is not ready (${primaryRev.error || primaryRev.status}) ` +
+        `and no healthy independent failover family is authenticated.`,
+      results,
+      failed: Object.values(results).filter((r) => r && !r.ok),
+      failoverReviewFamily: null,
+    };
+  }
+
+  return {
+    ok: true,
+    status: 'ready',
+    login_required: false,
+    taxonomy: null,
+    haltReason: null,
+    results,
+    failed: [],
+    failoverReviewFamily: null,
+  };
 }

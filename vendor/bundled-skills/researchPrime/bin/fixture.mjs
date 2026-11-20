@@ -1,4 +1,5 @@
-// bin/fixture.mjs — Wave 3 planted-defect fixture (the ground truth for crit-1/3/7).
+// bin/fixture.mjs — Wave 3 planted-defect fixture (the ground truth for crit-1/3/7)
+// [BENCHMARK-ONLY SYNTHETIC HARNESS — canonical production Phase-3 runner is `bin/run-rounds.mjs`].
 //
 // FIXTURE-SPEC.md defines WHAT this corpus contains and HOW each class is scored; Wave 3
 // produces the actual corpus + the machine-readable defect manifest at the power-calc size.

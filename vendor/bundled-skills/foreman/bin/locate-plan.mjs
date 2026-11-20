@@ -52,7 +52,24 @@ function main(argv) {
       execution_log: docs.execution_log,
       resolved_via: docs.source,
     },
-    waves: waves.map((w) => ({ n: w.n, title: w.title, line: w.line, kind: w.waveKind ?? null, outputs: w.outputs ?? [] })),
+    waves: waves.map((w) => ({
+      n: w.n,
+      title: w.title,
+      line: w.line,
+      kind: w.waveKind ?? null,
+      outputs: w.outputs ?? [],
+      ...(w.writes?.length ? { writes: w.writes } : {}),
+      ...(w.subwaves?.length ? {
+        subwaves: w.subwaves.map((sw) => ({
+          id: sw.id,
+          title: sw.title,
+          line: sw.line,
+          writes: sw.writes ?? [],
+          depends_on: sw.dependsOn ?? [],
+        })),
+        subwave_batches: w.subwaveBatches ?? [],
+      } : {}),
+    })),
     total_waves: waves.length,
     test_command: testCmd,
     project_done: done,
@@ -76,6 +93,10 @@ function main(argv) {
   out.push(`  waves parsed   : ${waves.length}`);
   for (const w of waves) {
     out.push(`     ${String(w.n).padStart(2)}. ${w.title || '(untitled)'}   [plan:${w.line}]`);
+    for (const sw of w.subwaves || []) {
+      const deps = sw.dependsOn?.length ? ` (depends-on: ${sw.dependsOn.join(', ')})` : '';
+      out.push(`         ↳ ${sw.id} ${sw.title || '(sub-wave)'} — writes: ${(sw.writes || []).join(', ') || 'none'}${deps}   [plan:${sw.line}]`);
+    }
   }
   out.push('');
   out.push(`  test command   : ${testCmd.command ?? '(none — every wave is a non-code wave proven by its declared outputs)'}   (source: ${testCmd.source})`);

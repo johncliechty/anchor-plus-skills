@@ -191,11 +191,28 @@
         })
         .catch(function (e) { if (e && e.auth) refusedOnce(); });
     }
+    var _pollAbort = null, _resumeStep = null;
+    function isDialogueHidden() {
+      try { return !!(document.hidden || window.__anchorHidden || (window.frameElement && window.frameElement.hidden)); }
+      catch (e) { return !!document.hidden; }
+    }
+    window.addEventListener('anchor-app-visibility', function (ev) {
+      var hid = !!(ev && ev.detail && ev.detail.hidden);
+      window.__anchorHidden = hid;
+      if (hid) {
+        try { if (_pollAbort) _pollAbort.abort(); } catch (e) {}
+      } else if (_resumeStep) {
+        var fn = _resumeStep; _resumeStep = null; fn();
+      }
+    });
     function pollLoop() {
       if (live.polling) return; live.polling = true;
       (function step() {
         if (live.stopped) { live.polling = false; return; }   // W2e: a card's dialogue stops when the card closes
-        fetch('/api/steward/events' + q() + '&since=' + live.seq, { headers: getHeaders() })
+        if (isDialogueHidden()) { _resumeStep = step; return; }
+        var opts = { headers: getHeaders() };
+        try { _pollAbort = new AbortController(); opts.signal = _pollAbort.signal; } catch (e) { _pollAbort = null; }
+        fetch('/api/steward/events' + q() + '&since=' + live.seq, opts)
           .then(asJson)
           .then(function (j) {
             if (!j || !j.events) { setTimeout(step, 3000); return; }   // an answer with no stream in it: wait, never hammer
@@ -213,7 +230,11 @@
             }
             if (!live.stopped) setTimeout(step, 250);
           })
-          .catch(function (e) { if (e && e.auth) { refusedOnce(); return; } if (!live.stopped) setTimeout(step, 3000); });
+          .catch(function (e) {
+            if (e && e.auth) { refusedOnce(); return; }
+            if (isDialogueHidden()) { _resumeStep = step; return; }
+            if (!live.stopped) setTimeout(step, 3000);
+          });
       })();
     }
     function send(text, goal, list, btn, box, DK) {

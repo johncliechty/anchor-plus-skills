@@ -13,7 +13,7 @@ Usage:
 Launch from Cowork by typing "Dashboard" — Claude will run this for you.
 """
 
-import hashlib, json, logging, os, re, socket, sys, threading, time, traceback, webbrowser
+import gzip, hashlib, json, logging, os, re, socket, sys, threading, time, traceback, webbrowser
 from datetime import datetime, date
 from pathlib import Path
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
@@ -17823,7 +17823,7 @@ def _doctor_sync_live_code():
     try:
         import importlib
         _mod_mtimes = globals().setdefault("_DOCTOR_MOD_MTIMES", {})
-        for mod_name in ("paths", "office_preview", "proc_probe", "lanes", "deliverables_register", "home_rows", "high_seat_page",
+        for mod_name in ("paths", "brownfield_scan", "office_preview", "proc_probe", "lanes", "deliverables_register", "home_rows", "high_seat_page",
                          "campaign_page", "desk", "desk_page", "mothership_collab", "website_portal",
                          "foundry_page", "foundry_api", "usage_capacity", "usage_ledger", "usage_index",
                          "usage_allowance_monitor", "usage_nightly_sync",
@@ -17833,7 +17833,8 @@ def _doctor_sync_live_code():
                          "steward_cockpit.campaign_acts", "steward_cockpit.campaign_say",
                          "steward_cockpit.anvil_session", "steward_cockpit.aegis_session",
                          "steward_cockpit.steward_routes",
-                         "terminal_session", "comms_connector", "doctor_plain"):
+                         "model_policy", "provider_setup", "gwl_admin_gui", "onboard_wizard",
+                         "terminal_session", "comms_connector", "doctor_plain", "poincare_state_map"):
             if mod_name in sys.modules:
                 try:
                     _m_obj = sys.modules[mod_name]
@@ -17848,6 +17849,11 @@ def _doctor_sync_live_code():
     except Exception:
         pass
     try:
+        if "provider_setup" in sys.modules:
+            _ps_mod = sys.modules["provider_setup"]
+            _MIGRATED_HANDLERS["handle_provider_setup_page"] = _ps_mod.handle_page
+            _MIGRATED_HANDLERS["handle_provider_setup_get"] = _ps_mod.handle_get
+            _MIGRATED_HANDLERS["handle_provider_setup_post"] = _ps_mod.handle_post
         if "steward_cockpit.steward_routes" in sys.modules:
             sys.modules["steward_cockpit.steward_routes"].CONFIG["build"] = BUILD_ID
     except Exception:
@@ -18154,8 +18160,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
       <div class="mh-spacer"></div>
       <div class="mh-actions">
         <button type="button" class="btn btn-ghost" onclick="manualProbeNow()" title="Probe the live server endpoints right now">&#128260; Probe Live Server</button>
-        <a class="backlink" href="/high-seat">&larr; Cave of Wonders</a>
+        <a class="backlink" href="/high-seat" data-return-cave="1">&larr; Cave of Wonders</a>
         <a class="backlink" href="/">&larr; Dashboard</a>
+        <button type="button" id="btnCloseDoctorX" data-overlay-close="1" title="Close Doctor and return to Cave of Wonders or AI Cockpit (Esc)" aria-label="Close Doctor window" style="display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:8px;border:1px solid rgba(248,113,113,0.55);background:rgba(239,68,68,0.16);color:#fecaca;font-size:15px;font-weight:800;cursor:pointer">&#10005;</button>
       </div>
     </div>
 
@@ -18882,6 +18889,37 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
       })
       .catch(function (e) { out.textContent += '\n[doctor] run failed: ' + e + '\n'; });
   };
+  function closeDoctorOverlay() {
+    if (window.parent && window.parent !== window) {
+      try { window.parent.postMessage({ type: 'anchor-overlay-close', closeTile: true, source: 'doctor' }, window.location.origin); } catch (e) {}
+      try { window.parent.postMessage({ type: 'anchor-setup-close' }, window.location.origin); } catch (e) {}
+      return;
+    }
+    try {
+      if (document.referrer) {
+        var ref = new URL(document.referrer);
+        if (ref.origin === window.location.origin && /^\/(high-seat|steward|project\/)/.test(ref.pathname)) {
+          window.location.href = ref.pathname + ref.search;
+          return;
+        }
+      }
+    } catch (e) {}
+    window.location.href = window.pywebview ? '/static/app.html' : '/high-seat';
+  }
+  document.querySelectorAll('[data-overlay-close]').forEach(function (b) {
+    b.addEventListener('click', function (ev) { ev.preventDefault(); closeDoctorOverlay(); });
+  });
+  if (window.parent !== window) {
+    document.querySelectorAll('a[href^="/high-seat"]').forEach(function (a) {
+      a.addEventListener('click', function (ev) { ev.preventDefault(); closeDoctorOverlay(); });
+    });
+  }
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape' && document.activeElement && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+      ev.preventDefault();
+      closeDoctorOverlay();
+    }
+  });
 })();
 </script>
 </body>
@@ -22420,6 +22458,11 @@ class AnchorHandler(BaseHTTPRequestHandler):
             _qpid = (_q.get("pid") or _q.get("dir") or [""])[0]
             if method == "GET":
                 qs = {k: v[0] for k, v in _q.items()}
+                qs.pop("_range_cont", None)
+                if verb == "deliverable-file":
+                    _rng_h = (self.headers.get("Range") or "").strip()
+                    if re.match(r"^bytes=[1-9]\d*-", _rng_h, flags=re.IGNORECASE):
+                        qs["_range_cont"] = "1"
                 if verb == "usage-summary":
                     obj, code = _scr.global_usage_summary(qs)
                 elif verb == "usage-allowance":
@@ -22430,6 +22473,13 @@ class AnchorHandler(BaseHTTPRequestHandler):
                     _doctor_sync_live_code()
                     import comms_connector as _cc
                     obj, code = _cc.handle_comms_get(qs)
+                elif verb == "poincare":
+                    _doctor_sync_live_code()
+                    import poincare_state_map as _psm
+                    proot_p = self._steward_pid_dir(_qpid) if _qpid else None
+                    if _qpid and proot_p is None and qs.get("mode") != "fleet":
+                        self._send_json({"ok": False, "error": "unknown project"}, code=404); return
+                    obj, code = _psm.handle_poincare_api_get(proot_p, qs)
                 elif verb == "collab":
                     import mothership_collab as _mc
                     try:
@@ -22461,6 +22511,13 @@ class AnchorHandler(BaseHTTPRequestHandler):
                     _doctor_sync_live_code()
                     import comms_connector as _cc
                     obj, code = _cc.handle_comms_post(body or {})
+                elif verb == "poincare":
+                    _doctor_sync_live_code()
+                    import poincare_state_map as _psm
+                    proot_p = self._steward_pid_dir(pid) if pid else None
+                    if pid and proot_p is None and (body or {}).get("mode") != "fleet":
+                        self._send_json({"ok": False, "error": "unknown project"}, code=404); return
+                    obj, code = _psm.handle_poincare_api_post(proot_p, body or {})
                 elif verb == "collab":
                     import mothership_collab as _mc
                     try:
@@ -22507,21 +22564,14 @@ class AnchorHandler(BaseHTTPRequestHandler):
                 return
             if code == 200 and isinstance(obj, dict) and "__file__" in obj:
                 try:
-                    with open(obj["__file__"], "rb") as fh:
-                        raw = fh.read()
-                    self.send_response(200)
-                    self.send_header("Content-Type", obj.get("__ctype__", "application/octet-stream"))
-                    self.send_header("X-Content-Type-Options", "nosniff")
-                    if obj.get("__csp__"):
-                        # a project's own HTML/SVG renders in an OPAQUE origin (2026-09-06)
-                        self.send_header("Content-Security-Policy", obj["__csp__"])
-                    self.send_header("Content-Disposition",
-                                     '%s; filename="%s"' % (obj.get("__disposition__") or "inline",
-                                                            os.path.basename(obj["__file__"]).replace('"', '')))
-                    self.send_header("Cache-Control", "no-store")
-                    self.send_header("Content-Length", str(len(raw)))
-                    self.end_headers()
-                    self.wfile.write(raw)
+                    self._serve_file_response(
+                        obj["__file__"],
+                        obj.get("__ctype__", "application/octet-stream"),
+                        disposition=obj.get("__disposition__") or "inline",
+                        filename=obj.get("__filename__"),
+                        content_disposition=obj.get("__content_disposition__"),
+                        csp=obj.get("__csp__"),
+                    )
                 except Exception as exc:
                     if not _is_benign_disconnect(exc):
                         self._send_json({"error": "deliverable read failed: " + str(exc)}, code=500)
@@ -22532,15 +22582,163 @@ class AnchorHandler(BaseHTTPRequestHandler):
                 return
             self._send_json({"error": "steward: " + str(exc)}, code=500)
 
+    def _serve_file_response(self, file_path, content_type, *, disposition="inline",
+                             filename=None, content_disposition=None, csp=None,
+                             cache_control="private, no-cache"):
+        """Stream a contained file with strong ETag (`304 Not Modified`) and
+        RFC 9110 single-range (`206 Partial Content` / `416`) support so PDFs,
+        slides, and archives stream Page 1 immediately and revalidate cleanly."""
+        safe_fn = (
+            (filename or os.path.basename(file_path))
+            .replace('"', '')
+            .replace('\r', '')
+            .replace('\n', '')
+        )
+        cd_hdr = (
+            content_disposition.replace('\r', '').replace('\n', '')
+            if content_disposition
+            else ('%s; filename="%s"' % (disposition or "inline", safe_fn))
+        )
+        with open(file_path, "rb") as fh:
+            st = os.fstat(fh.fileno())
+            total_size = int(st.st_size)
+            mtime_ns = int(getattr(st, "st_mtime_ns", int(st.st_mtime * 1_000_000_000)))
+            ctime_ns = int(getattr(st, "st_ctime_ns", 0))
+            ino_val = int(getattr(st, "st_ino", 0))
+            hdr_sig = _hashlib.sha1(
+                f"{content_type}|{cd_hdr}|{csp or ''}|{ctime_ns:x}|{ino_val:x}".encode("utf-8", "replace")
+            ).hexdigest()[:8]
+            etag = f'"{mtime_ns:x}-{total_size:x}-{hdr_sig}"'
+
+            raw_range = (self.headers.get("Range") or "").strip()
+            inm = (self.headers.get("If-None-Match") or "").strip()
+            if inm:
+                matched_inm = (inm == "*")
+                if not matched_inm:
+                    for tok_et in inm.split(","):
+                        cand_et = tok_et.strip()
+                        if cand_et.startswith("W/"):
+                            cand_et = cand_et[2:].strip()
+                        if cand_et == etag:
+                            matched_inm = True
+                            break
+                if matched_inm:
+                    self.send_response(304)
+                    self.send_header("ETag", etag)
+                    self.send_header("Cache-Control", cache_control)
+                    self.send_header("Accept-Ranges", "bytes")
+                    if csp:
+                        self.send_header("Content-Security-Policy", csp)
+                    self.end_headers()
+                    return
+
+            use_range = bool(raw_range)
+            if use_range:
+                if_range = (self.headers.get("If-Range") or "").strip()
+                if if_range and if_range != etag:
+                    use_range = False
+
+            range_tuple = None
+            if use_range and raw_range.lower().startswith("bytes="):
+                spec = raw_range[6:].strip()
+                if spec and "," not in spec:
+                    m_rng = re.fullmatch(r"(\d{0,18})-(\d{0,18})", spec)
+                    if m_rng and (m_rng.group(1) or m_rng.group(2)):
+                        s_str, e_str = m_rng.group(1), m_rng.group(2)
+                        unsat = False
+                        if s_str and e_str:
+                            r_start, r_end = int(s_str), int(e_str)
+                            if r_start <= r_end:
+                                if total_size == 0 or r_start >= total_size:
+                                    unsat = True
+                                else:
+                                    range_tuple = (r_start, min(r_end, total_size - 1))
+                        elif s_str:
+                            r_start = int(s_str)
+                            if total_size == 0 or r_start >= total_size:
+                                unsat = True
+                            else:
+                                range_tuple = (r_start, total_size - 1)
+                        else:
+                            suffix_len = int(e_str)
+                            if suffix_len == 0 or total_size == 0:
+                                unsat = True
+                            else:
+                                range_tuple = (max(0, total_size - suffix_len), total_size - 1)
+                        if unsat:
+                            self.send_response(416)
+                            self.send_header("Content-Range", f"bytes */{total_size}")
+                            self.send_header("ETag", etag)
+                            self.send_header("Cache-Control", cache_control)
+                            self.send_header("Accept-Ranges", "bytes")
+                            self.send_header("Content-Length", "0")
+                            self.end_headers()
+                            return
+
+            if range_tuple is not None:
+                start_pos, end_pos = range_tuple
+                send_len = end_pos - start_pos + 1
+                self.send_response(206)
+                self.send_header("Content-Range", f"bytes {start_pos}-{end_pos}/{total_size}")
+            else:
+                start_pos = 0
+                send_len = total_size
+                self.send_response(200)
+
+            self.send_header("Content-Type", content_type)
+            self.send_header("X-Content-Type-Options", "nosniff")
+            if csp:
+                self.send_header("Content-Security-Policy", csp)
+            self.send_header("Content-Disposition", cd_hdr)
+            self.send_header("Cache-Control", cache_control)
+            self.send_header("ETag", etag)
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Content-Length", str(send_len))
+            self.end_headers()
+
+            try:
+                if start_pos > 0:
+                    fh.seek(start_pos)
+                remaining = send_len
+                while remaining > 0:
+                    chunk = fh.read(min(65536, remaining))
+                    if not chunk:
+                        self.close_connection = True
+                        break
+                    self.wfile.write(chunk)
+                    remaining -= len(chunk)
+            except (BrokenPipeError, ConnectionResetError, OSError, ValueError):
+                # Headers were already committed; close the keep-alive socket
+                # cleanly rather than writing a second HTTP 500 header block.
+                self.close_connection = True
+                return
+
+    def _accepts_gzip(self) -> bool:
+        try:
+            ae = (self.headers.get("Accept-Encoding") or "").lower()
+            return "gzip" in ae and "gzip;q=0" not in ae.replace(" ", "")
+        except Exception:
+            return False
+
     def _send_json(self, data, code=200):
-        body = json.dumps(data).encode()
+        pre_gz = None
+        if isinstance(data, dict) and "__preencoded_json__" in data:
+            body = data["__preencoded_json__"]
+            pre_gz = data.get("__preencoded_gzip__")
+        else:
+            body = json.dumps(data).encode("utf-8")
+        use_gz = len(body) >= 2048 and self._accepts_gzip()
+        wire = (pre_gz if pre_gz is not None else gzip.compress(body, compresslevel=1)) if use_gz else body
         try:
             self.send_response(code)
             self.send_header("Content-Type", "application/json")
             self.send_header("X-Content-Type-Options", "nosniff")
-            self.send_header("Content-Length", str(len(body)))
+            if use_gz:
+                self.send_header("Content-Encoding", "gzip")
+                self.send_header("Vary", "Accept-Encoding")
+            self.send_header("Content-Length", str(len(wire)))
             self.end_headers()
-            self.wfile.write(body)
+            self.wfile.write(wire)
         except Exception as exc:
             # Client closed mid-response (browser tab close / Playwright
             # teardown). Nothing left to send — swallow ONLY the benign
@@ -22549,39 +22747,62 @@ class AnchorHandler(BaseHTTPRequestHandler):
                 return
             raise
 
-    def _send_html(self, html_text, cookie=None):
+    def _send_html(self, html_text, cookie=None, code=200):
         try:
             from high_seat_page import with_tab_icon as _with_tab_icon
             html_text = _with_tab_icon(html_text, BUILD_ID)   # every page wears his anchor in its tab (2026-10-01)
         except Exception as _e:                               # the page goes as it was; the log says why (Grok W3d)
             print("  [%s] TAB ICON rewrite failed: %r" % (datetime.now().strftime("%H:%M:%S"), _e))
         body = html_text.encode("utf-8")
+        use_gz = len(body) >= 1024 and self._accepts_gzip()
+        wire = gzip.compress(body, compresslevel=1) if use_gz else body
         try:
-            self.send_response(200)
+            self.send_response(code)
             self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
+            if use_gz:
+                self.send_header("Content-Encoding", "gzip")
+                self.send_header("Vary", "Accept-Encoding")
+            self.send_header("Content-Length", str(len(wire)))
             self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
             self.send_header("Pragma", "no-cache")
             self.send_header("Expires", "0")
             if cookie:
                 self.send_header("Set-Cookie", cookie)      # the local browser's login, set by the page itself (2026-10-01)
             self.end_headers()
-            self.wfile.write(body)
+            self.wfile.write(wire)
         except Exception as exc:
             if _is_benign_disconnect(exc):
                 return
             raise
 
     def _send_bytes(self, data, content_type, cache="no-cache", cookie=None):
+        ct_low = (content_type or "").lower()
+        compressible = ct_low.startswith((
+            "text/",
+            "application/javascript",
+            "application/x-javascript",
+            "application/json",
+            "image/svg+xml",
+        ))
+        use_gz = (
+            compressible
+            and len(data) >= 1024
+            and not data.startswith(b"\x1f\x8b")
+            and self._accepts_gzip()
+        )
+        wire = gzip.compress(data, compresslevel=1) if use_gz else data
         try:
             self.send_response(200)
             self.send_header("Content-Type", content_type)
-            self.send_header("Content-Length", str(len(data)))
+            if use_gz:
+                self.send_header("Content-Encoding", "gzip")
+                self.send_header("Vary", "Accept-Encoding")
+            self.send_header("Content-Length", str(len(wire)))
             self.send_header("Cache-Control", cache)
             if cookie:
                 self.send_header("Set-Cookie", cookie)
             self.end_headers()
-            self.wfile.write(data)
+            self.wfile.write(wire)
         except Exception as exc:
             if _is_benign_disconnect(exc):
                 return
@@ -23356,13 +23577,16 @@ class AnchorHandler(BaseHTTPRequestHandler):
                 _ctype, _ = _mimetypes.guess_type(str(_resolved_att))
                 if not _ctype:
                     _ctype = "application/pdf" if _resolved_att.suffix.lower() == ".pdf" else "application/octet-stream"
-                _raw_bytes = _resolved_att.read_bytes()
-                self.send_response(200)
-                self.send_header("Content-Type", _ctype)
-                self.send_header("Content-Length", str(len(_raw_bytes)))
-                self.send_header("Content-Disposition", f'inline; filename="{_resolved_att.name}"')
-                self.end_headers()
-                self.wfile.write(_raw_bytes)
+                try:
+                    self._serve_file_response(
+                        str(_resolved_att),
+                        _ctype,
+                        disposition="inline",
+                        filename=_resolved_att.name,
+                    )
+                except Exception as _att_exc:
+                    if not _is_benign_disconnect(_att_exc):
+                        self._send_json({"ok": False, "error": "attachment read failed"}, code=500)
                 return
             if _path_only.startswith("/api/steward/") or urlparse(self.path).path == "/api/anvil/walkthrough":
                 _verb_get = "anvil/walkthrough" if urlparse(self.path).path == "/api/anvil/walkthrough" else _path_only[len("/api/steward/"):]
@@ -23395,6 +23619,18 @@ class AnchorHandler(BaseHTTPRequestHandler):
                 _ck = self._local_login_cookie()
                 print("  [%s] PAGE /high-seat %s set-cookie=%s" % (datetime.now().strftime("%H:%M:%S"), self._auth_shape(), "yes" if _ck else "no"))
                 self._send_html(render_high_seat_page(logged_in=bool(_ck) or self._term_token_ok()), cookie=_ck)
+            elif _path_only == "/poincare-map":
+                _lock, _ck = self._locked_page()
+                if _lock:
+                    self._send_html(_lock, cookie=None)
+                else:
+                    _doctor_sync_live_code()
+                    import poincare_state_map as _psm
+                    _q_pm = parse_qs(_parsed.query or "")
+                    _qs_pm = {k: v[0] for k, v in _q_pm.items() if v}
+                    _pid_pm = _qs_pm.get("pid") or ""
+                    _proot_pm = self._steward_pid_dir(_pid_pm) if _pid_pm else None
+                    self._send_html(_psm.render_poincare_route_html(_proot_pm, _qs_pm), cookie=_ck)
             elif _path_only == "/doctor":
                 # Doctor V3 Wave 3 — the honest diagnostics page in Anchor's
                 # own style (render_doctor_page_html: real stats from
@@ -23563,7 +23799,7 @@ class AnchorHandler(BaseHTTPRequestHandler):
                 # missing file is an honest empty. Read-only, open (same as the
                 # /foundry page); the app calls these same-origin, tokenless.
                 if _path_only == "/api/skills":
-                    self._send_json(_fapi.build_skills())
+                    self._send_json(_fapi.build_skills_http_payload())
                 elif _path_only == "/api/north-star":
                     self._send_json({"northStar": _fapi.load_north_star()})
                 elif _path_only == "/api/summary":
@@ -24180,12 +24416,18 @@ class AnchorHandler(BaseHTTPRequestHandler):
             return
         if _path_only == "/api/onboard-wizard/action":
             import onboard_wizard as _ow
-            _b = body if isinstance(body, dict) else {}
+            _b = dict(body) if isinstance(body, dict) else {}
+            for _rk in list(_b.keys()):
+                if str(_rk).startswith("_req_"):
+                    _b.pop(_rk, None)
+            _b["_req_auth_ok"] = bool(_paths.auth_ok(provided) or _local_browser(self))
+            _b["_req_node_cap"] = str(self.headers.get("X-Anchor-Node-Capability") or "").strip()
             q = parse_qs(urlparse(self.path).query)
             is_sb = bool(_b.get("sandbox")) or str((q.get("sandbox") or [""])[0]).strip().lower() in ("1", "true", "yes")
             _act = str(_b.get("action") or "").strip()
             _out = _ow.dispatch_wizard_action(_act, _b, sandbox=is_sb)
-            self._send_json(_out, 200 if _out.get("ok") else 400)
+            _code_ow = int(_out.get("status_code") or (200 if _out.get("ok") else 400))
+            self._send_json(_out, _code_ow)
             return
         if _path_only == "/api/gwl-admin/action":
             import gwl_admin_gui as _gag
@@ -24197,10 +24439,14 @@ class AnchorHandler(BaseHTTPRequestHandler):
             self._send_json(_out, 200 if _out.get("ok") else 400)
             return
         if _path_only in ("/api/system/pull_update", "/api/mothership/register", "/api/mothership/push_update"):
-            if not (_paths.auth_ok(provided) or _local_browser(self)):
+            import mothership_updater as _mu
+            _node_cap_ok = (
+                _path_only == "/api/system/pull_update"
+                and _mu.verify_pull_update_capability(self.headers.get("X-Anchor-Node-Capability"))
+            )
+            if not (_paths.auth_ok(provided) or _local_browser(self) or _node_cap_ok):
                 self._send_json({"ok": False, "error": "unauthorized"}, 401)
                 return
-            import mothership_updater as _mu
             _b = body if isinstance(body, dict) else {}
             if _path_only == "/api/system/pull_update":
                 _out = _mu.pull_latest_update(
@@ -24876,6 +25122,12 @@ def main():
             _logger.info("usage_nightly_sync daemon started (every 5m + nightly snapshot)")
         except Exception as e_uns:
             _logger.error("usage_nightly_sync daemon start failed: %s", e_uns)
+        try:
+            import mothership_updater as _mu_boot
+            if _mu_boot.start_background_homebase_telemetry_daemon(interval_seconds=900):
+                _logger.info("homebase journal/error telemetry sync daemon started (every 15m)")
+        except Exception as e_mu:
+            _logger.error("homebase telemetry daemon start failed: %s", e_mu)
     except Exception as e:
         _logger.error(f"session autosave daemon start failed: {e}")
 

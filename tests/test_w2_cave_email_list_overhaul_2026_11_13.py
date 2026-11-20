@@ -694,9 +694,10 @@ def test_retired_cos_mockups_and_open_by_default_living_list_ui(isolated_data, m
     assert "cosExpandableBody" not in html
     assert 'id="shTriage"' in html
 
-    # 2) #caveWorkingListSpine (*The List*) renders collapsed-by-default with top 2-3 items in #theListCompactRow + dynamic horizon counts
+    # 2) #caveWorkingListSpine (*The List*) renders open-by-default with #wlSpineBody visible + dynamic horizon counts
     assert 'id="caveWorkingListSpine"' in html
-    assert 'id="wlSpineBody" hidden' in html
+    assert 'data-open="1"' in html
+    assert 'id="wlSpineBody"' in html and 'id="wlSpineBody" hidden' not in html
     assert '<div id="theListCompactRow" class="cos-compact-summary-row"' in html
     assert "Finalize Quantum Paper Figures" in html
     assert "Prepare Lecture Deck" in html
@@ -1026,3 +1027,106 @@ def test_wave2_five_state_failure_contract_and_distro_cleanliness(isolated_data,
         hits.extend(distro._scan_text(rel, txt))
         hits.extend(distro._scan_registry_artifact(rel, txt))
     assert hits == [], f"Unexpected distro PII/secret/host-path hits in Wave 2 files: {hits}"
+
+
+def test_mba_rsvp_prime_irrational_icons_and_send_tile_display_name_auto_archive(isolated_data):
+    # 1. MBA / HMBA / BA 815 / STAT 610 recurring teaching blocks auto-accept unless user_override
+    rsvp_mba = comms._resolve_event_rsvp({"title": "MBA 815 Quantitative Strategy", "date": "2026-11-18"}, {})
+    assert rsvp_mba["rsvp_status"] == "responded"
+    assert rsvp_mba["rsvp_responded"] is True
+    assert rsvp_mba["rsvp_source"] == "own_teaching_commitment"
+
+    rsvp_hmba = comms._resolve_event_rsvp(
+        {"title": "HMBA Residency Workshop", "date": "2026-11-19", "rsvp_status": "none"},
+        {},
+    )
+    assert rsvp_hmba["rsvp_status"] == "responded"
+    assert rsvp_hmba["rsvp_source"] == "own_teaching_commitment"
+
+    # Explicit user override still wins
+    rsvp_ov = comms._resolve_event_rsvp(
+        {"id": "ev-mba-1", "title": "MBA 815 Quantitative Strategy", "date": "2026-11-18"},
+        {"overrides": {"ev-mba-1": {"status": "not_responded"}}},
+    )
+    assert rsvp_ov["rsvp_status"] == "not_responded"
+    assert rsvp_ov["rsvp_source"] == "user_override"
+
+    # 2. Bespoke Prime & Irrational SVG icons, 2-line mail cards, and proposal tray above #wlSpineBody
+    ctx = _minimal_cave_ctx(
+        comms={
+            "important_emails": [
+                {
+                    "uid": "uid-p1",
+                    "from": "Jordan Ellis <jordan@example.org>",
+                    "subject": "Term sheet revisions for review",
+                    "date": "2026-11-16T09:00:00Z",
+                    "account_badge": "Gmail",
+                    "bucket": "important",
+                }
+            ],
+            "other_emails": [
+                {
+                    "uid": "uid-o1",
+                    "from": "Campus Digest <digest@example.org>",
+                    "subject": "Weekly Colloquium Bulletin",
+                    "date": "2026-11-16T08:00:00Z",
+                    "account_badge": "Outlook",
+                    "bucket": "other",
+                }
+            ],
+        }
+    )
+    html = high_seat_page.render_high_seat_html(ctx)
+    assert 'class="cave-pi-ico prime-ico"' in html
+    assert 'class="cave-pi-ico irrational-ico"' in html
+    assert "cave-mail-2line-row" in html
+    assert 'id="wlSpineHead" data-wl-toggle-spine="1"' in html
+    assert 'id="wlHeaderPropsBadge"' in html
+    assert html.index('id="wlSpineBody"') < html.index('id="wlProposalTray"')
+
+    # 3. Outbound email reconciles recipient display names even when bare envelope_addrs are present,
+    #    and auto-archives dedicated "Send / Reply / Email" tiles while keeping archive proposals for multi-step tiles.
+    send_tile = comms.mutate_working_list_spine(
+        "add_tile",
+        {
+            "title": "Send reply to Alex Mercer on factor draft",
+            "priority": 1,
+            "category": "Academic",
+            "steps": [{"id": "st-send-alex", "text": "Email Alex Mercer with updated factor appendix", "done": False}],
+        },
+    )["tile"]
+    multi_tile = comms.mutate_working_list_spine(
+        "add_tile",
+        {
+            "title": "Factor Appendix Deliverable",
+            "priority": 2,
+            "category": "Academic",
+            "steps": [{"id": "st-multi-alex", "text": "Send factor appendix to Alex Mercer", "done": False}],
+        },
+    )["tile"]
+
+    rec = comms.reconcile_working_list_activity(
+        sent_emails=[
+            {
+                "to": "Alex Mercer <am99@example.com>",
+                "recipient_emails": ["am99@example.com"],
+                "subject": "Re: Updated factor appendix",
+                "sr_id": "sr-901",
+            }
+        ]
+    )
+    wl_after = rec["working_list"]
+    t_send_after = next(t for t in wl_after["tiles"] if t["id"] == send_tile["id"])
+    t_multi_after = next(t for t in wl_after["tiles"] if t["id"] == multi_tile["id"])
+
+    assert t_send_after["steps"][0]["done"] is True
+    assert t_send_after["done"] is True
+    assert t_send_after["archived"] is True
+
+    assert t_multi_after["steps"][0]["done"] is True
+    assert t_multi_after["archived"] is False
+    assert any(
+        p["proposal_op"] == "archive_tile" and (p.get("tile_id") == multi_tile["id"] or p.get("target_tile_id") == multi_tile["id"])
+        for p in wl_after["proposals"]
+    )
+

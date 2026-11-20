@@ -1,6 +1,6 @@
 {
   "name": "ecgberht",
-  "version": "1.5.2",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "description": "Ecgberht — Foundry skill + deterministic steward engine (Face + Strip)",

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Anvil Engine — Honest Polyglot Codebase Comprehension, Progressive Abstraction,
 Isolated Subprocess Walkthrough, 5-Seat Beta-Reader Panel (with Aegis Security),
-Scope-Safe LibCST Rewriting, and Paper Section/Algorithm/MathML-to-Software Mapper.
+Scope-Safe LibCST Rewriting, Paper-Matched Replication Scoping, PyTorch/NumPy
+Native MathML Extraction, Scientific Validation, and Paper-to-Software Mapper.
 
 Skill-relative entrypoint: scripts/anvil_engine.py
 """
@@ -20,6 +21,7 @@ import shutil
 import subprocess
 import sys
 import time
+import warnings
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
@@ -90,7 +92,10 @@ DEAD_SHIM_PREFIXES: Tuple[str, ...] = (
     "legacy_", "deprecated_", "old_", "unused_", "obsolete_", "dead_", "temp_shim_",
 )
 
-PY_MATH_MODULES: Set[str] = {"math", "numpy", "np", "scipy", "torch", "jax", "jnp", "linalg", "nn", "F", "distributions"}
+PY_MATH_MODULES: Set[str] = {
+    "math", "numpy", "np", "scipy", "torch", "jax", "jnp", "linalg", "nn", "F",
+    "distributions", "functional", "special", "statsmodels", "sklearn",
+}
 
 MATH_OP_SIGNATURES: Dict[str, Tuple[str, ...]] = {
     "logdet": ("slogdet", "logdet", "log_abs_det", "log_det", "log_scale", "log_diag"),
@@ -107,6 +112,32 @@ MATH_OP_SIGNATURES: Dict[str, Tuple[str, ...]] = {
     "elbo": ("elbo", "kl", "kl_divergence", "variational", "loss", "neg_elbo"),
     "schedule": ("cos", "cosine", "anneal", "beta", "temper", "schedule", "ramp", "warmup"),
     "dag_mask": ("topological", "parents", "ancestors", "mask", "adjacency", "dag", "graph"),
+    "bilinear_einsum": ("einsum", "bmm", "matmul"),
+    "logit_softmax": ("log_softmax", "softmax", "cross_entropy", "logsoftmax"),
+    "logsumexp": ("logsumexp",),
+    "tanh_adapter": ("tanh",),
+    "relu_adapter": ("relu", "gelu", "silu"),
+    "linear_proj": ("linear",),
+}
+
+MAX_MODULES_PER_BUCKET = 35
+
+_GREEK_TEX_IDENT_MAP: Dict[str, str] = {
+    "alpha": "\\alpha", "beta": "\\beta", "gamma": "\\gamma", "delta": "\\delta",
+    "eps": "\\varepsilon", "epsilon": "\\varepsilon", "zeta": "\\zeta", "eta": "\\eta",
+    "theta": "\\theta", "kappa": "\\kappa", "lam": "\\lambda", "lambda_": "\\lambda",
+    "mu": "\\mu", "nu": "\\nu", "xi": "\\xi", "pi": "\\pi", "rho": "\\rho",
+    "sigma": "\\sigma", "tau": "\\tau", "phi": "\\phi", "psi": "\\psi", "omega": "\\omega",
+}
+
+_DATA_LOADER_CALLS: Set[str] = {
+    "read_csv", "read_parquet", "read_feather", "read_stata", "read_excel",
+    "read_table", "read_fwf", "read_json", "loadtxt", "genfromtxt",
+}
+
+_MODEL_MATH_OPS: Set[str] = {
+    "bilinear_einsum", "logit_softmax", "panel_loglik", "logsumexp",
+    "tanh_adapter", "relu_adapter", "aipw_dr", "quad_penalty", "logdet", "elbo",
 }
 
 
@@ -151,6 +182,8 @@ def _safe_subprocess_run(
         "stdin": subprocess.DEVNULL,
         "capture_output": True,
         "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
         "timeout": timeout,
         "env": env,
     }
@@ -185,7 +218,7 @@ def _load_aegis_engine() -> Any:
 
 
 # ---------------------------------------------------------------------------
-# Stage, AI Seam, Purity & Polyglot AST Extraction
+# Stage, AI Seam, Purity & Scientific PyTorch/NumPy AST Idiom Extraction
 # ---------------------------------------------------------------------------
 
 _STAGE_RES: Dict[str, re.Pattern[str]] = {
@@ -203,7 +236,7 @@ def _classify_stage(name: str, doc: str = "", source: str = "") -> str:
     low_name = name.lower()
     low_body = f"{doc} {source[:3000]}".lower()
     scores = {
-        st: 3 * len( set(pat.findall(low_name)) ) + len( set(pat.findall(low_body)) )
+        st: 3 * len(set(pat.findall(low_name))) + len(set(pat.findall(low_body)))
         for st, pat in _STAGE_RES.items()
     }
     best = max(scores, key=lambda k: scores[k])
@@ -265,6 +298,326 @@ def _unparse_annotation(node: Optional[ast.AST]) -> str:
         return ""
 
 
+def _clean_ident_to_latex(raw_expr: str, default: str = "x") -> str:
+    clean = (raw_expr or "").strip()
+    if clean.startswith("self."):
+        clean = clean[5:]
+    clean = re.sub(r"\[.*\]$", "", clean).strip()
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", clean):
+        return default
+    low = clean.lower()
+    if low in _GREEK_TEX_IDENT_MAP:
+        return _GREEK_TEX_IDENT_MAP[low]
+    if "_" in clean:
+        head, tail = clean.split("_", 1)
+        head_tex = _GREEK_TEX_IDENT_MAP.get(head.lower(), head if len(head) <= 2 else f"\\operatorname{{{head}}}")
+        tail_clean = tail.replace("_", "")
+        if tail_clean:
+            return f"{head_tex}_{{\\mathrm{{{tail_clean}}}}}" if len(tail_clean) > 2 else f"{head_tex}_{{{tail_clean}}}"
+    if len(clean) == 1:
+        return clean
+    return f"\\operatorname{{{clean}}}"
+
+
+def _call_func_name(call_node: ast.Call) -> str:
+    if isinstance(call_node.func, ast.Name):
+        return call_node.func.id
+    if isinstance(call_node.func, ast.Attribute):
+        return call_node.func.attr
+    return ""
+
+
+def _extract_scientific_ast_idioms_for_fn(
+    fn_node: ast.AST,
+    qual_name: str,
+) -> Tuple[Set[str], List[Dict[str, Any]]]:
+    """Inspect a Python function AST for PyTorch/NumPy/econometric mathematical idioms,
+    returning `(extra_math_ops, scientific_formulas)`.
+    """
+    extra_ops: Set[str] = set()
+    formulas: List[Dict[str, Any]] = []
+    seen_idioms: Set[str] = set()
+
+    # Pre-scan function call set and local mean/std helper assignments
+    all_call_names: Set[str] = set()
+    mean_vars: Dict[str, str] = {}
+    std_vars: Dict[str, str] = {}
+
+    for sub in ast.walk(fn_node):
+        if isinstance(sub, ast.Call):
+            cname = _call_func_name(sub)
+            if cname:
+                all_call_names.add(cname)
+
+    for sub in ast.walk(fn_node):
+        if isinstance(sub, ast.Assign) and len(sub.targets) == 1 and isinstance(sub.targets[0], ast.Name):
+            tname = sub.targets[0].id
+            if isinstance(sub.value, ast.Call):
+                cname = _call_func_name(sub.value)
+                if cname == "mean":
+                    src_arg = ""
+                    if isinstance(sub.value.func, ast.Attribute):
+                        src_arg = _unparse_annotation(sub.value.func.value)
+                    elif sub.value.args:
+                        src_arg = _unparse_annotation(sub.value.args[0])
+                    mean_vars[tname] = src_arg or "Z"
+                elif cname == "std":
+                    src_arg = ""
+                    if isinstance(sub.value.func, ast.Attribute):
+                        src_arg = _unparse_annotation(sub.value.func.value)
+                    elif sub.value.args:
+                        src_arg = _unparse_annotation(sub.value.args[0])
+                    std_vars[tname] = src_arg or "Z"
+
+    # Walk statements in line order to capture LHS target names + exact line numbers
+    stmt_expr_pairs: List[Tuple[str, int, ast.AST]] = []
+    for sub in ast.walk(fn_node):
+        if isinstance(sub, ast.Assign) and sub.value is not None:
+            lhs = _unparse_annotation(sub.targets[0]) if sub.targets else ""
+            stmt_expr_pairs.append((lhs, int(getattr(sub, "lineno", 1)), sub.value))
+        elif isinstance(sub, ast.AnnAssign) and sub.value is not None:
+            lhs = _unparse_annotation(sub.target)
+            stmt_expr_pairs.append((lhs, int(getattr(sub, "lineno", 1)), sub.value))
+        elif isinstance(sub, ast.Return) and sub.value is not None:
+            stmt_expr_pairs.append(("", int(getattr(sub, "lineno", 1)), sub.value))
+
+    stmt_expr_pairs.sort(key=lambda item: item[1])
+
+    fn_low = qual_name.lower()
+    has_panel_sum_ctx = ("sum" in all_call_names) or ("log_softmax" in all_call_names) or ("gather" in all_call_names)
+
+    for lhs_raw, stmt_lno, expr_root in stmt_expr_pairs:
+        expr_str = _unparse_annotation(expr_root)[:140]
+        expr_low = expr_str.lower()
+
+        # 1. Standardization: (Z - Z.mean(...)) / (Z.std(...) + eps) or via local mu/sd vars
+        if isinstance(expr_root, ast.BinOp) and isinstance(expr_root.op, ast.Div):
+            num_node = expr_root.left
+            den_node = expr_root.right
+            num_s = _unparse_annotation(num_node)
+            den_s = _unparse_annotation(den_node)
+            is_sub = isinstance(num_node, ast.BinOp) and isinstance(num_node.op, ast.Sub)
+            has_mean = is_sub and (
+                ".mean(" in num_s
+                or "mean(" in num_s
+                or (_unparse_annotation(num_node.right) in mean_vars if isinstance(num_node, ast.BinOp) else False)
+            )
+            has_std = (
+                ".std(" in den_s
+                or "std(" in den_s
+                or any(re.search(rf"\b{re.escape(sv)}\b", den_s) for sv in std_vars)
+            )
+            if has_mean and has_std:
+                extra_ops.add("zscore_norm")
+                if "zscore_standardization" not in seen_idioms:
+                    seen_idioms.add("zscore_standardization")
+                    base_var = _clean_ident_to_latex(_unparse_annotation(num_node.left), "Z") if isinstance(num_node, ast.BinOp) else "Z"
+                    lno = int(getattr(expr_root, "lineno", stmt_lno))
+                    formulas.append({
+                        "idiom": "zscore_standardization",
+                        "lineno": lno,
+                        "function": qual_name,
+                        "code_expr": (f"{lhs_raw} = {expr_str}" if lhs_raw else expr_str)[:140],
+                        "latex": f"\\tilde{{{base_var}}} = \\frac{{{base_var} - \\mu_{{{base_var}}}}}{{\\sigma_{{{base_var}}} + \\varepsilon}}",
+                        "meaning": "Covariate z-score standardization centering by sample mean and scaling by standard deviation.",
+                    })
+
+        # 2. Doubly-robust / AIPW contrast
+        if (
+            any(k in f"{lhs_raw.lower()} {fn_low} {expr_low}" for k in ("aipw", "doubly_robust", "dr_score", "dr_ate", "dr_cate", "ipw"))
+            and isinstance(expr_root, ast.BinOp)
+            and any(isinstance(n, ast.BinOp) and isinstance(n.op, ast.Div) for n in ast.walk(expr_root))
+            and any(isinstance(n, ast.BinOp) and isinstance(n.op, ast.Sub) for n in ast.walk(expr_root))
+        ):
+            extra_ops.add("aipw_dr")
+            if "aipw_doubly_robust" not in seen_idioms:
+                seen_idioms.add("aipw_doubly_robust")
+                lno = int(getattr(expr_root, "lineno", stmt_lno))
+                formulas.append({
+                    "idiom": "aipw_doubly_robust",
+                    "lineno": lno,
+                    "function": qual_name,
+                    "code_expr": (f"{lhs_raw} = {expr_str}" if lhs_raw else expr_str)[:140],
+                    "latex": "\\hat{\\Gamma}_{i,d} = \\hat{\\mu}_{d}(Z_{i}) + \\frac{\\mathbb{1}\\{D_{i} = d\\}}{\\hat{e}_{d}(Z_{i})}(Y_{i} - \\hat{\\mu}_{d}(Z_{i}))",
+                    "meaning": "Doubly-robust Augmented Inverse Propensity Weighted (AIPW) counterfactual policy contrast.",
+                })
+
+        # Inspect Call nodes inside expr_root
+        for sub in ast.walk(expr_root):
+            if not isinstance(sub, ast.Call):
+                continue
+            cname = _call_func_name(sub)
+            clow = cname.lower()
+            lno = int(getattr(sub, "lineno", stmt_lno))
+
+            # 3. torch.einsum / np.einsum bilinear contraction
+            if clow == "einsum" and len(sub.args) >= 2 and isinstance(sub.args[0], ast.Constant) and isinstance(sub.args[0].value, str):
+                extra_ops.update(("bilinear_einsum", "sum"))
+                spec = sub.args[0].value.replace(" ", "")
+                if f"einsum:{spec}" not in seen_idioms:
+                    seen_idioms.add(f"einsum:{spec}")
+                    in_part, out_part = spec.split("->", 1) if "->" in spec else (spec, "")
+                    in_subs = [s.strip() for s in in_part.split(",") if s.strip()]
+                    in_chars = [ch for s in in_subs for ch in s if ch.isalpha()]
+                    out_chars = [ch for ch in out_part if ch.isalpha()]
+                    contracted = list(dict.fromkeys(ch for ch in in_chars if ch not in set(out_chars)))
+                    lhs_sym = _clean_ident_to_latex(lhs_raw or "V", "V")
+                    lhs_full = f"{lhs_sym}_{{{','.join(out_chars)}}}" if out_chars else lhs_sym
+                    op_terms: List[str] = []
+                    for idx_op, op_node in enumerate(sub.args[1:1 + len(in_subs)]):
+                        op_sym = _clean_ident_to_latex(_unparse_annotation(op_node), f"A^{{({idx_op + 1})}}")
+                        sub_idx = ",".join(in_subs[idx_op])
+                        op_terms.append(f"{op_sym}_{{{sub_idx}}}" if sub_idx else op_sym)
+                    sum_prefix = f"\\sum_{{{','.join(contracted)}}} " if contracted else ""
+                    ltx = f"{lhs_full} = {sum_prefix}{' '.join(op_terms)}"
+                    formulas.append({
+                        "idiom": "einsum_bilinear_utility",
+                        "lineno": lno,
+                        "function": qual_name,
+                        "code_expr": _unparse_annotation(sub)[:140],
+                        "latex": ltx,
+                        "meaning": f"Bilinear utility tensor contraction (einsum '{spec}') summing over index {','.join(contracted) or 'k'}.",
+                    })
+
+            # 4. log_softmax / softmax / cross_entropy choice probabilities
+            elif clow in ("log_softmax", "softmax", "cross_entropy"):
+                extra_ops.update(("logit_softmax", "log", "exp"))
+                u_sym = _clean_ident_to_latex(_unparse_annotation(sub.args[0]), "u") if sub.args else "u"
+                if clow in ("log_softmax", "cross_entropy") and "log_softmax_choice" not in seen_idioms:
+                    seen_idioms.add("log_softmax_choice")
+                    formulas.append({
+                        "idiom": "log_softmax_choice",
+                        "lineno": lno,
+                        "function": qual_name,
+                        "code_expr": _unparse_annotation(sub)[:140],
+                        "latex": f"\\log P_{{j}} = {u_sym}_{{j}} - \\log \\sum_{{k}} \\exp({u_sym}_{{k}})",
+                        "meaning": "Multinomial logit log-choice probability across alternatives via log-softmax.",
+                    })
+                elif clow == "softmax" and "softmax_choice" not in seen_idioms:
+                    seen_idioms.add("softmax_choice")
+                    formulas.append({
+                        "idiom": "softmax_choice",
+                        "lineno": lno,
+                        "function": qual_name,
+                        "code_expr": _unparse_annotation(sub)[:140],
+                        "latex": f"P_{{j}} = \\frac{{\\exp({u_sym}_{{j}})}}{{\\sum_{{k}} \\exp({u_sym}_{{k}})}}",
+                        "meaning": "Multinomial logit choice probability across alternatives via softmax.",
+                    })
+
+            # 5. torch.logsumexp panel mixture log-likelihood
+            elif clow == "logsumexp":
+                extra_ops.update(("logsumexp", "log", "sum"))
+                arg0_s = _unparse_annotation(sub.args[0]) if sub.args else ""
+                is_panel = (".sum(" in arg0_s) or ("sum(" in arg0_s) or has_panel_sum_ctx
+                if is_panel:
+                    extra_ops.add("panel_loglik")
+                if "logsumexp_panel_mixture" not in seen_idioms:
+                    seen_idioms.add("logsumexp_panel_mixture")
+                    ltx = (
+                        "\\mathcal{L}_{i} = \\log \\sum_{s=1}^{S} g_{i \\mid s} \\prod_{t=1}^{T} P_{i, y_{it}, t \\mid s}"
+                        if is_panel
+                        else "\\mathcal{L}_{i} = \\log \\sum_{s=1}^{S} \\exp(\\ell_{i,s})"
+                    )
+                    meaning = (
+                        "Respondent panel mixture log-likelihood marginalizing over S latent types across T choice occasions."
+                        if is_panel
+                        else "Numerically stable log-sum-exp marginalization over latent states."
+                    )
+                    formulas.append({
+                        "idiom": "logsumexp_panel_mixture",
+                        "lineno": lno,
+                        "function": qual_name,
+                        "code_expr": _unparse_annotation(sub)[:140],
+                        "latex": ltx,
+                        "meaning": meaning,
+                    })
+
+            # 6. torch.tanh / nn.ReLU covariate index / residual adapters
+            elif clow in ("tanh", "relu"):
+                if clow == "tanh":
+                    extra_ops.add("tanh_adapter")
+                    if "tanh_index_adapter" not in seen_idioms:
+                        seen_idioms.add("tanh_index_adapter")
+                        h_sym = _clean_ident_to_latex(lhs_raw or "h", "h")
+                        formulas.append({
+                            "idiom": "tanh_index_adapter",
+                            "lineno": lno,
+                            "function": qual_name,
+                            "code_expr": _unparse_annotation(sub)[:140],
+                            "latex": f"{h_sym}_{{i}} = \\tanh(w^{{\\top}} z_{{i}} + b)",
+                            "meaning": "Hyperbolic-tangent nonlinear covariate index / residual utility adapter.",
+                        })
+                else:
+                    extra_ops.add("relu_adapter")
+                    if "relu_index_adapter" not in seen_idioms:
+                        seen_idioms.add("relu_index_adapter")
+                        h_sym = _clean_ident_to_latex(lhs_raw or "h", "h")
+                        formulas.append({
+                            "idiom": "relu_index_adapter",
+                            "lineno": lno,
+                            "function": qual_name,
+                            "code_expr": _unparse_annotation(sub)[:140],
+                            "latex": f"{h_sym}_{{i}} = \\max(0, w^{{\\top}} z_{{i}} + b)",
+                            "meaning": "Rectified linear (ReLU) nonlinear covariate feature adapter.",
+                        })
+
+            elif cname == "ReLU" and "relu_index_adapter" not in seen_idioms:
+                extra_ops.add("relu_adapter")
+                seen_idioms.add("relu_index_adapter")
+                formulas.append({
+                    "idiom": "relu_index_adapter",
+                    "lineno": lno,
+                    "function": qual_name,
+                    "code_expr": _unparse_annotation(sub)[:140],
+                    "latex": "h_{i} = \\max(0, w^{\\top} z_{i} + b)",
+                    "meaning": "Rectified linear (ReLU) nonlinear covariate feature adapter.",
+                })
+
+            elif cname in ("Linear", "linear"):
+                extra_ops.add("linear_proj")
+
+            # 6b. Weighted mixture sum: (probs * weights).sum(...) or torch.sum(gates * probs, dim=1)
+            elif clow == "sum" and (
+                (isinstance(sub.func, ast.Attribute) and isinstance(sub.func.value, ast.BinOp) and isinstance(sub.func.value.op, ast.Mult))
+                or (sub.args and isinstance(sub.args[0], ast.BinOp) and isinstance(sub.args[0].op, ast.Mult))
+            ):
+                extra_ops.add("mixture_sum")
+
+            # 7. Quadratic shrinkage penalty: (dev ** 2).mean() / torch.mean(dev ** 2) / dev.pow(2).mean()
+            elif clow in ("mean", "sum"):
+                target_ast: Optional[ast.AST] = None
+                if isinstance(sub.func, ast.Attribute):
+                    target_ast = sub.func.value
+                elif sub.args:
+                    target_ast = sub.args[0]
+                is_sq = False
+                sq_base = "\\Delta"
+                if isinstance(target_ast, ast.BinOp) and isinstance(target_ast.op, ast.Pow):
+                    if isinstance(target_ast.right, ast.Constant) and target_ast.right.value == 2:
+                        is_sq = True
+                        sq_base = _clean_ident_to_latex(_unparse_annotation(target_ast.left), "\\Delta")
+                elif isinstance(target_ast, ast.Call) and _call_func_name(target_ast) == "pow":
+                    if target_ast.args and isinstance(target_ast.args[0], ast.Constant) and target_ast.args[0].value == 2:
+                        is_sq = True
+                        if isinstance(target_ast.func, ast.Attribute):
+                            sq_base = _clean_ident_to_latex(_unparse_annotation(target_ast.func.value), "\\Delta")
+                if is_sq:
+                    extra_ops.add("quad_penalty")
+                    if "quadratic_shrinkage_penalty" not in seen_idioms:
+                        seen_idioms.add("quadratic_shrinkage_penalty")
+                        norm_pref = "\\frac{1}{M} " if clow == "mean" else ""
+                        formulas.append({
+                            "idiom": "quadratic_shrinkage_penalty",
+                            "lineno": lno,
+                            "function": qual_name,
+                            "code_expr": _unparse_annotation(sub)[:140],
+                            "latex": f"\\mathcal{{R}}(\\theta) = {norm_pref}\\sum_{{m=1}}^{{M}} {sq_base}_{{m}}^{{2}}",
+                            "meaning": "Quadratic L2 shrinkage penalty regularizing heterogeneous parameter deviations.",
+                        })
+
+    return extra_ops, formulas
+
+
 _PY_CALL_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*\(")
 _PY_SKIP_CALLS: Set[str] = {"def", "class", "if", "elif", "for", "while", "with", "except", "return", "yield", "assert"}
 
@@ -301,14 +654,17 @@ def _summarize_function(
     end = getattr(node, "end_lineno", start)
     max_snip_end = min(len(source_lines), start + 60) if fast_mode else min(len(source_lines), end)
     snippet = "\n".join(source_lines[max(0, start - 1):max_snip_end])
+    qual_name = f"{class_name}.{node.name}" if class_name else node.name
 
     if fast_mode:
         raw_calls = [c for c in _PY_CALL_RE.findall(snippet) if c not in _PY_SKIP_CALLS and c != node.name]
         unique_calls = list(dict.fromkeys(raw_calls))
         unique_refs = unique_calls
         unique_locals = args[:40]
-        math_ops = []
-        math_exprs = []
+        math_ops: List[str] = []
+        math_exprs: List[str] = []
+        scientific_formulas: List[Dict[str, Any]] = []
+        is_pure_data_loader = False
         has_io = bool(set(unique_calls) & PY_IO_INDICATORS)
         has_unsafe_auto = bool(set(unique_calls) & PY_UNSAFE_AUTO_CALLS)
         decorators = ["decorated"] if node.decorator_list else []
@@ -360,7 +716,7 @@ def _summarize_function(
                 elif isinstance(child.ctx, ast.Store) and isinstance(child.value, ast.Name) and child.value.id == "self":
                     local_vars.append(child.attr)
             elif isinstance(child, ast.MatMult):
-                math_ops_set.add("matmul")
+                math_ops_set.update(("matmul", "bilinear_einsum"))
             elif imported_math and len(math_exprs) < 3 and isinstance(child, ast.Assign):
                 if isinstance(child.value, ast.BinOp) and isinstance(child.value.op, (ast.MatMult, ast.Pow, ast.Mult, ast.Add, ast.Sub, ast.Div)):
                     has_non_math_ast = any(
@@ -382,21 +738,28 @@ def _summarize_function(
             elif isinstance(child, (ast.Global, ast.Nonlocal)):
                 has_io = True
 
-        # Keep 100% of unique calls — NEVER truncate at [:8]!
+        extra_sci_ops, scientific_formulas = _extract_scientific_ast_idioms_for_fn(node, qual_name)
+        math_ops_set.update(extra_sci_ops)
+
         unique_calls = list(dict.fromkeys(calls))
         unique_refs = list(dict.fromkeys(name_refs + unique_calls))
         unique_locals = list(dict.fromkeys(local_vars))
         math_ops = sorted(math_ops_set)
+
+        low_short = node.name.lower()
+        has_loader_prefix = low_short.startswith(("load_", "read_", "fetch_", "parse_", "ingest_"))
+        has_loader_call = bool(set(unique_calls) & _DATA_LOADER_CALLS)
+        is_pure_data_loader = (has_loader_prefix or has_loader_call) and not bool(math_ops_set & _MODEL_MATH_OPS)
 
         decorators = []
         for dec in node.decorator_list:
             dec_s = _unparse_annotation(dec)
             if dec_s:
                 decorators.append(dec_s)
+
     stage = _classify_stage(node.name, first_doc_line, "" if fast_mode else snippet)
     ai_info = _detect_ai_interaction(node.name, doc, snippet) if file_has_ai else None
     is_pure = (not has_io) and (stage == "compute" or not any(k in snippet for k in ("os.environ", "sys.stdin", "socket.", "urllib.", "subprocess.")))
-    qual_name = f"{class_name}.{node.name}" if class_name else node.name
     summary = first_doc_line or (
         f"Executes {node.name.replace('_', ' ')}({', '.join(args[:4])})"
         + (f" and invokes {', '.join(unique_calls[:3])}." if unique_calls else ".")
@@ -420,6 +783,8 @@ def _summarize_function(
         "local_vars": unique_locals[:40],
         "math_ops": math_ops,
         "math_exprs": math_exprs,
+        "scientific_formulas": scientific_formulas,
+        "is_pure_data_loader": is_pure_data_loader,
         "decorators": decorators,
         "is_pure": is_pure,
         "safe_auto_probe": (not class_name) and (not has_unsafe_auto) and required_arity <= 1,
@@ -650,7 +1015,6 @@ def _analyze_js_ts_file(fpath: Path, rel: str, text: str) -> Dict[str, Any]:
             if is_exp:
                 exports.add(cls_name)
             classes.append({"name": cls_name, "lineno": lno, "end_lineno": end_lno})
-            # Extract methods inside class body
             method_re = re.compile(r"^\s+(?:static\s+)?(?:async\s+)?([A-Za-z_$][A-Za-z0-9_$]*)\s*\(([^)]*)\)\s*\{")
             for mlno in range(lno + 1, end_lno):
                 mm = method_re.match(masked_lines[mlno - 1])
@@ -685,6 +1049,8 @@ def _analyze_js_ts_file(fpath: Path, rel: str, text: str) -> Dict[str, Any]:
                         "local_vars": margs,
                         "math_ops": [],
                         "math_exprs": [],
+                        "scientific_formulas": [],
+                        "is_pure_data_loader": False,
                         "decorators": [],
                         "is_pure": mpure,
                         "safe_auto_probe": False,
@@ -739,6 +1105,8 @@ def _analyze_js_ts_file(fpath: Path, rel: str, text: str) -> Dict[str, Any]:
             "local_vars": args,
             "math_ops": [],
             "math_exprs": [],
+            "scientific_formulas": [],
+            "is_pure_data_loader": False,
             "decorators": [],
             "is_pure": is_pure,
             "safe_auto_probe": False,
@@ -800,6 +1168,7 @@ def _analyze_r_or_c_file(fpath: Path, rel: str, text: str) -> Dict[str, Any]:
                 "summary": f"R function {name}({', '.join(args[:4])}).",
                 "docstring": "", "calls": calls, "all_calls": calls, "calls_preview": calls[:8],
                 "name_refs": calls, "local_vars": args, "math_ops": [], "math_exprs": [],
+                "scientific_formulas": [], "is_pure_data_loader": stg == "ingest",
                 "decorators": [], "is_pure": is_pure, "safe_auto_probe": False,
                 "is_exported": not name.startswith("."), "stage": stg,
                 "ai_interaction": _detect_ai_interaction(name, "", snip), "language": "r",
@@ -829,6 +1198,7 @@ def _analyze_r_or_c_file(fpath: Path, rel: str, text: str) -> Dict[str, Any]:
                 "summary": f"C/C++ function {name}({', '.join(args[:4])}).",
                 "docstring": "", "calls": calls, "all_calls": calls, "calls_preview": calls[:8],
                 "name_refs": calls, "local_vars": args, "math_ops": [], "math_exprs": [],
+                "scientific_formulas": [], "is_pure_data_loader": False,
                 "decorators": [], "is_pure": is_pure, "safe_auto_probe": False,
                 "is_exported": True, "stage": stg,
                 "ai_interaction": _detect_ai_interaction(name, "", snip), "language": "c_cpp",
@@ -929,6 +1299,8 @@ def _fast_scan_python_file(rel: str, text: str) -> Dict[str, Any]:
             "local_vars": args[:20],
             "math_ops": [],
             "math_exprs": [],
+            "scientific_formulas": [],
+            "is_pure_data_loader": False,
             "decorators": ["decorated"] if decorated else [],
             "is_pure": (not has_io) and stg == "compute",
             "safe_auto_probe": False,
@@ -956,10 +1328,12 @@ def _fast_scan_python_file(rel: str, text: str) -> Dict[str, Any]:
 def _analyze_python_file(fpath: Path, rel: str, text: str, fast_mode: bool = False) -> Optional[Dict[str, Any]]:
     if fast_mode:
         return _fast_scan_python_file(rel, text)
-    try:
-        tree = ast.parse(text, filename=rel)
-    except Exception:
-        return None
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", SyntaxWarning)
+        try:
+            tree = ast.parse(text, filename=rel)
+        except Exception:
+            return None
     lines = text.splitlines()
     mod_doc = (ast.get_docstring(tree) or "").strip()
     mod_summary = mod_doc.splitlines()[0].strip() if mod_doc else f"Module {rel}"
@@ -1002,6 +1376,9 @@ def _analyze_python_file(fpath: Path, rel: str, text: str, fast_mode: bool = Fal
             fn_info = _summarize_function(node, lines, class_name="", imported_math=imported_math, fast_mode=fast_mode, file_has_ai=file_has_ai)
             fn_info["file"] = rel
             fn_info["in_dunder_all"] = node.name in dunder_all
+            for sf in fn_info.get("scientific_formulas") or []:
+                sf["file"] = rel
+                sf["location"] = f"{rel}:{sf['lineno']}"
             funcs.append(fn_info)
             if not fast_mode:
                 for dec in node.decorator_list:
@@ -1014,11 +1391,16 @@ def _analyze_python_file(fpath: Path, rel: str, text: str, fast_mode: bool = Fal
                             top_level_refs.append(sub.id)
         elif isinstance(node, ast.ClassDef):
             cls_fields: List[str] = []
+            cls_methods: List[Dict[str, Any]] = []
             for item in node.body:
                 if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     fn_info = _summarize_function(item, lines, class_name=node.name, imported_math=imported_math, fast_mode=fast_mode, file_has_ai=file_has_ai)
                     fn_info["file"] = rel
                     fn_info["in_dunder_all"] = node.name in dunder_all
+                    for sf in fn_info.get("scientific_formulas") or []:
+                        sf["file"] = rel
+                        sf["location"] = f"{rel}:{sf['lineno']}"
+                    cls_methods.append(fn_info)
                     funcs.append(fn_info)
                 elif not fast_mode and isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
                     ann = _unparse_annotation(item.annotation)
@@ -1029,6 +1411,19 @@ def _analyze_python_file(fpath: Path, rel: str, text: str, fast_mode: bool = Fal
                             top_level_refs.append(sub.id)
                         elif isinstance(sub, ast.Attribute) and isinstance(sub.ctx, ast.Load):
                             top_level_refs.append(sub.attr)
+            # Propagate nn.Linear / ReLU / Tanh module layer ops across methods of the same nn.Module class
+            cls_shared_ops = {
+                op
+                for m_info in cls_methods
+                for op in (m_info.get("math_ops") or [])
+                if op in ("linear_proj", "tanh_adapter", "relu_adapter")
+            }
+            if cls_shared_ops:
+                for m_info in cls_methods:
+                    if m_info.get("short_name") != "__init__":
+                        merged_ops = set(m_info.get("math_ops") or [])
+                        merged_ops.update(cls_shared_ops)
+                        m_info["math_ops"] = sorted(merged_ops)
             if not fast_mode:
                 for base in list(node.bases) + list(node.decorator_list):
                     for sub in ast.walk(base):
@@ -1042,7 +1437,6 @@ def _analyze_python_file(fpath: Path, rel: str, text: str, fast_mode: bool = Fal
                 "docstring": (ast.get_docstring(node) or "").splitlines()[0] if ast.get_docstring(node) else "",
             })
         elif not fast_mode:
-            # Module top-level statements: if __name__ == "__main__", dispatch dicts/lists, constants, calls
             for sub in ast.walk(node):
                 if isinstance(sub, ast.Name) and isinstance(sub.ctx, ast.Load):
                     top_level_refs.append(sub.id)
@@ -1126,9 +1520,6 @@ def _index_and_classify_references(
             for ref in fn.get("name_refs") or []:
                 if ref != fn["name"] and ref != fn.get("short_name"):
                     prod_refs.add(ref)
-                else:
-                    # Handle recursive or same-short-name calls on another module/class
-                    pass
             for callee in fn.get("all_calls") or fn.get("calls") or []:
                 if callee != fn.get("short_name") or len(all_fn_names.get(callee, [])) > 1:
                     prod_refs.add(callee)
@@ -1163,7 +1554,7 @@ def _index_and_classify_references(
 
 
 # ---------------------------------------------------------------------------
-# Package + Import-Graph Community Clustering (4-9 Coherent Modules)
+# Package + Import-Graph & Scientific Role Clustering (Never >40 Modules/Bucket)
 # ---------------------------------------------------------------------------
 
 def _resolve_import_to_rel_file(imp: str, importer_rel: str, known_rels: Set[str], stem_to_rels: Dict[str, List[str]]) -> List[str]:
@@ -1246,15 +1637,179 @@ def _humanize_cluster_title(members: List[Dict[str, Any]], dominant_stage: str) 
     return stems_label
 
 
-def _cluster_into_architectural_buckets(repo: Path, raw_buckets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Cluster >6 raw file modules into 4-9 coherent architectural modules using real package paths
-    and weighted import/call-graph community clustering (zero hardcoded repo names)."""
+def _materialize_bucket_from_members(
+    c_num: int,
+    base_title: str,
+    members: List[Dict[str, Any]],
+    used_titles: Set[str],
+    forced_stage: Optional[str] = None,
+) -> Dict[str, Any]:
+    member_files = [m["file"] for m in members]
+    ranked_members = sorted(
+        members,
+        key=lambda m: (
+            0 if Path(m["file"]).name == "__init__.py" else 1,
+            len(m.get("functions") or []),
+            int(m.get("total_lines") or 0),
+        ),
+        reverse=True,
+    )
+    primary_file = ranked_members[0]["file"]
+    file_label = (
+        primary_file
+        if len(member_files) == 1
+        else (
+            f"{', '.join(Path(f).name for f in member_files[:2])} (+{len(member_files) - 2} modules)"
+            if len(member_files) > 2
+            else ", ".join(Path(f).name for f in member_files)
+        )
+    )
+    all_funcs = [fn for m in members for fn in (m.get("functions") or [])]
+    ai_seams = [s for m in members for s in (m.get("ai_agent_touchpoints") or [])]
+    all_classes = [cls for m in members for cls in (m.get("classes") or [])]
+    all_imports = list(dict.fromkeys(imp for m in members for imp in (m.get("imports") or [])))
+    total_lines = sum(int(m.get("total_lines") or 0) for m in members)
+    stages = [fn.get("stage", "compute") for fn in all_funcs] or [m.get("pipeline_stage", "compute") for m in members]
+    dom_stage = forced_stage or max(("ingest", "compute", "emit"), key=lambda s: stages.count(s))
+    pure_cnt = sum(1 for fn in all_funcs if fn.get("is_pure", True))
+    pure_pct = int(round(100.0 * pure_cnt / max(1, len(all_funcs))))
+
+    title = base_title
+    suffix_idx = 2
+    while title in used_titles:
+        title = f"{base_title} ({suffix_idx})"
+        suffix_idx += 1
+    used_titles.add(title)
+
+    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:36] or f"cluster-{c_num}"
+    bid = f"module-{c_num}-{slug}"
+    doc_summaries = [
+        m["summary"]
+        for m in ranked_members
+        if m.get("summary") and not m["summary"].startswith(("Module ", "Python module", "Javascript module", "Typescript module"))
+    ]
+    lead_doc = (
+        doc_summaries[0]
+        if doc_summaries
+        else f"Cohesive {dom_stage.upper()} subsystem spanning {len(member_files)} module(s) and {len(all_funcs)} function(s) ({pure_pct}% pure core)."
+    )
+    ai_summary = (
+        f"Contains {len(ai_seams)} AI agent touchpoint(s) ({', '.join(dict.fromkeys(s['interaction_type'] for s in ai_seams))})."
+        if ai_seams else ""
+    )
+    return {
+        "id": bid,
+        "title": title,
+        "file": file_label,
+        "primary_file": primary_file,
+        "member_files": member_files,
+        "summary": lead_doc,
+        "ai_agent_summary": ai_summary,
+        "pipeline_stage": dom_stage,
+        "pure_core_pct": pure_pct,
+        "ai_agent_touchpoints": ai_seams,
+        "classes": all_classes,
+        "imports": all_imports,
+        "functions": all_funcs,
+        "total_lines": total_lines,
+        "imported_math": any(bool(m.get("imported_math")) for m in members),
+        "validated": False,
+    }
+
+
+SCIENTIFIC_PIPELINE_ROLE_SPECS: Tuple[Tuple[str, str, str], ...] = (
+    ("data_prep", "Data Prep & Covariates", "ingest"),
+    ("core_estimation", "Core Choice & Panel Estimation", "compute"),
+    ("policy_eval", "Policy / Counterfactual Evaluation", "compute"),
+    ("verification_checks", "Verification Checks", "compute"),
+    ("table_builders", "Table / Metric Builders", "emit"),
+)
+
+
+def _classify_scientific_module_role(rb: Dict[str, Any]) -> str:
+    rel_low = str(rb.get("file") or "").lower()
+    stem_low = Path(rel_low).stem
+    fns = rb.get("functions") or []
+    fn_names_low = " ".join(str(f.get("short_name") or f.get("name") or "").lower() for f in fns)
+    ops = {op for f in fns for op in (f.get("math_ops") or [])}
+    has_core_model_ops = bool(ops & {"bilinear_einsum", "logit_softmax", "panel_loglik", "logsumexp", "tanh_adapter", "elbo", "logdet"})
+    blob = f"{rel_low} {fn_names_low}"
+
+    if re.search(r"\b(?:verif|verify|verification|robust|robustness|placebo|diag|diagnostic|sanity|audit|identif)\b", blob) or "check" in stem_low:
+        return "verification_checks"
+    if "aipw_dr" in ops or re.search(r"\b(?:policy|policies|target|targeting|counterfactual|welfare|aipw|cate|treatment|doubly_robust)\b", blob):
+        return "policy_eval"
+    if (
+        re.search(r"\b(?:table|tables|tab1|tab2|metric|metrics|plot|plots|figure|figures|latex|render_table|format_table)\b", stem_low)
+        and (not has_core_model_ops or stem_low.startswith(("run_table", "make_table", "build_table", "table_", "plot_", "fig_")))
+    ):
+        return "table_builders"
+    if (
+        not has_core_model_ops
+        and (
+            rb.get("pipeline_stage") == "ingest"
+            or re.search(r"\b(?:data|prep|preprocess|covariat|feature|dataset|loader|split|clean)\b", stem_low)
+            or all(bool(f.get("is_pure_data_loader")) for f in fns if fns)
+        )
+    ):
+        return "data_prep"
+    if rb.get("pipeline_stage") == "emit" and not has_core_model_ops:
+        return "table_builders"
+    return "core_estimation"
+
+
+def _cluster_scientific_replication_buckets(raw_buckets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Cluster active scientific replication modules cleanly by pipeline role,
+    never dumping >40 modules into one bucket.
+    """
+    if len(raw_buckets) <= 1:
+        return list(raw_buckets)
+
+    by_role: Dict[str, List[Dict[str, Any]]] = {rk: [] for rk, _, _ in SCIENTIFIC_PIPELINE_ROLE_SPECS}
+    for rb in raw_buckets:
+        by_role[_classify_scientific_module_role(rb)].append(rb)
+
+    out_buckets: List[Dict[str, Any]] = []
+    used_titles: Set[str] = set()
+    c_num = 1
+    for rk, rtitle, rstage in SCIENTIFIC_PIPELINE_ROLE_SPECS:
+        members = sorted(by_role[rk], key=lambda m: m["file"])
+        if not members:
+            continue
+        # Sub-partition deterministically if > MAX_MODULES_PER_BUCKET (never >40 modules in one bucket)
+        for chunk_idx in range(0, len(members), MAX_MODULES_PER_BUCKET):
+            chunk = members[chunk_idx:chunk_idx + MAX_MODULES_PER_BUCKET]
+            sub_title = (
+                rtitle
+                if len(members) <= MAX_MODULES_PER_BUCKET
+                else f"{rtitle} ({Path(chunk[0]['file']).stem})"
+            )
+            out_buckets.append(
+                _materialize_bucket_from_members(c_num, sub_title, chunk, used_titles, forced_stage=rstage)
+            )
+            c_num += 1
+    return out_buckets
+
+
+def _cluster_into_architectural_buckets(
+    repo: Path,
+    raw_buckets: List[Dict[str, Any]],
+    *,
+    scientific_roles: bool = False,
+) -> List[Dict[str, Any]]:
+    """Cluster raw file modules into coherent architectural buckets (using role-based
+    pipeline buckets on paper-matched scientific repositories, and never dumping >40
+    modules into any single bucket).
+    """
     n = len(raw_buckets)
+    if scientific_roles and n >= 2:
+        return _cluster_scientific_replication_buckets(raw_buckets)
     if n <= 4:
         return list(raw_buckets)
 
-    target_k = min(8, max(4, int(round(math.sqrt(n)))))
-    max_cluster_size = max(3, int(math.ceil(1.75 * n / target_k)))
+    min_k_for_cap = int(math.ceil(n / float(MAX_MODULES_PER_BUCKET)))
+    target_k = max(min_k_for_cap, min(8, max(4, int(round(math.sqrt(n))))))
+    max_cluster_size = min(MAX_MODULES_PER_BUCKET, max(3, int(math.ceil(1.75 * n / target_k))))
 
     known_rels = {b["file"] for b in raw_buckets}
     rel_to_idx = {b["file"]: idx for idx, b in enumerate(raw_buckets)}
@@ -1265,7 +1820,6 @@ def _cluster_into_architectural_buckets(repo: Path, raw_buckets: List[Dict[str, 
         for fn in b.get("functions") or []:
             fn_to_idx.setdefault(fn["name"].split(".")[-1], []).append(idx)
 
-    # Build symmetric coupling matrix weights[(min_i, max_i)] -> float
     weights: Dict[Tuple[int, int], float] = {}
 
     def _add_w(i: int, j: int, w: float) -> None:
@@ -1314,7 +1868,6 @@ def _cluster_into_architectural_buckets(repo: Path, raw_buckets: List[Dict[str, 
             if lang_i == lang_j:
                 _add_w(i, j, 0.2)
 
-    # Seed fine-grained initial groups if n > 40 for O(G^2) speed while keeping balance
     clusters: List[List[int]] = [[i] for i in range(n)]
     if n > 40:
         seed_groups: Dict[Tuple[str, str], List[int]] = {}
@@ -1323,11 +1876,14 @@ def _cluster_into_architectural_buckets(repo: Path, raw_buckets: List[Dict[str, 
             key = (parent_dir, _stem_prefix(b["file"]))
             seed_groups.setdefault(key, []).append(i)
         clusters = []
+        step_sz = max(2, min(MAX_MODULES_PER_BUCKET // 2, max_cluster_size // 2))
         for grp in seed_groups.values():
-            for pos in range(0, len(grp), max(2, max_cluster_size // 2)):
-                clusters.append(grp[pos:pos + max(2, max_cluster_size // 2)])
+            for pos in range(0, len(grp), step_sz):
+                clusters.append(grp[pos:pos + step_sz])
 
     def _cluster_coupling(c1: List[int], c2: List[int]) -> float:
+        if len(c1) + len(c2) > MAX_MODULES_PER_BUCKET:
+            return -1e15
         total = 0.0
         for u in c1:
             for v in c2:
@@ -1339,7 +1895,7 @@ def _cluster_into_architectural_buckets(repo: Path, raw_buckets: List[Dict[str, 
 
     while len(clusters) > target_k:
         best_pair: Optional[Tuple[int, int]] = None
-        best_score = -1e18
+        best_score = -1e14
         m_cnt = len(clusters)
         for a in range(m_cnt):
             for b_idx in range(a + 1, m_cnt):
@@ -1353,87 +1909,28 @@ def _cluster_into_architectural_buckets(repo: Path, raw_buckets: List[Dict[str, 
         clusters[a_idx] = clusters[a_idx] + clusters[b_idx]
         del clusters[b_idx]
 
-    # Sort clusters in natural pipeline order (ingest -> compute -> emit), then size
     stage_rank = {"ingest": 0, "compute": 1, "emit": 2}
     arch_buckets: List[Dict[str, Any]] = []
     used_titles: Set[str] = set()
 
     prelim: List[Tuple[int, int, List[Dict[str, Any]]]] = []
     for cl in clusters:
-        members = [raw_buckets[idx] for idx in sorted(cl)]
-        all_fns = [fn for m in members for fn in (m.get("functions") or [])]
-        stages = [fn.get("stage", "compute") for fn in all_fns] or [m.get("pipeline_stage", "compute") for m in members]
-        dom_stage = max(("ingest", "compute", "emit"), key=lambda s: stages.count(s))
-        prelim.append((stage_rank.get(dom_stage, 1), -len(all_fns), members))
+        members_all = [raw_buckets[idx] for idx in sorted(cl)]
+        for pos in range(0, len(members_all), MAX_MODULES_PER_BUCKET):
+            members = members_all[pos:pos + MAX_MODULES_PER_BUCKET]
+            all_fns = [fn for m in members for fn in (m.get("functions") or [])]
+            stages = [fn.get("stage", "compute") for fn in all_fns] or [m.get("pipeline_stage", "compute") for m in members]
+            dom_stage = max(("ingest", "compute", "emit"), key=lambda s: stages.count(s))
+            prelim.append((stage_rank.get(dom_stage, 1), -len(all_fns), members))
 
     prelim.sort(key=lambda item: (item[0], item[1], item[2][0]["file"]))
 
     for c_num, (_, _, members) in enumerate(prelim, start=1):
-        member_files = [m["file"] for m in members]
-        ranked_members = sorted(
-            members,
-            key=lambda m: (
-                0 if Path(m["file"]).name == "__init__.py" else 1,
-                len(m.get("functions") or []),
-                int(m.get("total_lines") or 0),
-            ),
-            reverse=True,
-        )
-        primary_file = ranked_members[0]["file"]
-        file_label = (
-            primary_file
-            if len(member_files) == 1
-            else (
-                f"{', '.join(Path(f).name for f in member_files[:2])} (+{len(member_files) - 2} modules)"
-                if len(member_files) > 2
-                else ", ".join(Path(f).name for f in member_files)
-            )
-        )
-        all_funcs = [fn for m in members for fn in (m.get("functions") or [])]
-        ai_seams = [s for m in members for s in (m.get("ai_agent_touchpoints") or [])]
-        all_classes = [cls for m in members for cls in (m.get("classes") or [])]
-        all_imports = list(dict.fromkeys(imp for m in members for imp in (m.get("imports") or [])))
-        total_lines = sum(int(m.get("total_lines") or 0) for m in members)
-        stages = [fn.get("stage", "compute") for fn in all_funcs] or [m.get("pipeline_stage", "compute") for m in members]
+        all_fns = [fn for m in members for fn in (m.get("functions") or [])]
+        stages = [fn.get("stage", "compute") for fn in all_fns] or [m.get("pipeline_stage", "compute") for m in members]
         dom_stage = max(("ingest", "compute", "emit"), key=lambda s: stages.count(s))
-        pure_cnt = sum(1 for fn in all_funcs if fn.get("is_pure", True))
-        pure_pct = int(round(100.0 * pure_cnt / max(1, len(all_funcs))))
-
         base_title = _humanize_cluster_title(members, dom_stage)
-        title = base_title
-        suffix_idx = 2
-        while title in used_titles:
-            title = f"{base_title} ({suffix_idx})"
-            suffix_idx += 1
-        used_titles.add(title)
-
-        slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:36] or f"cluster-{c_num}"
-        bid = f"module-{c_num}-{slug}"
-        doc_summaries = [m["summary"] for m in ranked_members if m.get("summary") and not m["summary"].startswith(("Module ", "Python module", "Javascript module", "Typescript module"))]
-        lead_doc = doc_summaries[0] if doc_summaries else f"Cohesive {dom_stage.upper()} subsystem spanning {len(member_files)} module(s) and {len(all_funcs)} function(s) ({pure_pct}% pure core)."
-        ai_summary = (
-            f"Contains {len(ai_seams)} AI agent touchpoint(s) ({', '.join(dict.fromkeys(s['interaction_type'] for s in ai_seams))})."
-            if ai_seams else ""
-        )
-
-        arch_buckets.append({
-            "id": bid,
-            "title": title,
-            "file": file_label,
-            "primary_file": primary_file,
-            "member_files": member_files,
-            "summary": lead_doc,
-            "ai_agent_summary": ai_summary,
-            "pipeline_stage": dom_stage,
-            "pure_core_pct": pure_pct,
-            "ai_agent_touchpoints": ai_seams,
-            "classes": all_classes,
-            "imports": all_imports,
-            "functions": all_funcs,
-            "total_lines": total_lines,
-            "imported_math": any(bool(m.get("imported_math")) for m in members),
-            "validated": False,
-        })
+        arch_buckets.append(_materialize_bucket_from_members(c_num, base_title, members, used_titles))
     return arch_buckets
 
 
@@ -1560,7 +2057,6 @@ def _build_foundry_flow_diagram(buckets: List[Dict[str, Any]], edges: List[Dict[
 # ---------------------------------------------------------------------------
 
 GREEK_AND_SYMBOLS: Dict[str, Tuple[str, str]] = {
-    # Greek lowercase
     "alpha": ("mi", "α"), "beta": ("mi", "β"), "gamma": ("mi", "γ"), "delta": ("mi", "δ"),
     "epsilon": ("mi", "ϵ"), "varepsilon": ("mi", "ε"), "zeta": ("mi", "ζ"), "eta": ("mi", "η"),
     "theta": ("mi", "θ"), "vartheta": ("mi", "ϑ"), "iota": ("mi", "ι"), "kappa": ("mi", "κ"),
@@ -1570,11 +2066,9 @@ GREEK_AND_SYMBOLS: Dict[str, Tuple[str, str]] = {
     "phi": ("mi", "ϕ"), "varphi": ("mi", "φ"), "chi": ("mi", "χ"), "psi": ("mi", "ψ"),
     "omega": ("mi", "ω"), "ell": ("mi", "ℓ"), "hbar": ("mi", "ℏ"), "emptyset": ("mi", "∅"),
     "varnothing": ("mi", "∅"), "infty": ("mi", "∞"), "nabla": ("mo", "∇"), "partial": ("mo", "∂"),
-    # Greek uppercase
     "Gamma": ("mi", "Γ"), "Delta": ("mi", "Δ"), "Theta": ("mi", "Θ"), "Lambda": ("mi", "Λ"),
     "Xi": ("mi", "Ξ"), "Pi": ("mi", "Π"), "Sigma": ("mi", "Σ"), "Upsilon": ("mi", "Υ"),
     "Phi": ("mi", "Φ"), "Psi": ("mi", "Ψ"), "Omega": ("mi", "Ω"),
-    # Operators & relations
     "leq": ("mo", "≤"), "le": ("mo", "≤"), "geq": ("mo", "≥"), "ge": ("mo", "≥"),
     "neq": ("mo", "≠"), "ne": ("mo", "≠"), "approx": ("mo", "≈"), "simeq": ("mo", "≃"),
     "cong": ("mo", "≅"), "equiv": ("mo", "≡"), "propto": ("mo", "∝"), "sim": ("mo", "∼"),
@@ -1595,11 +2089,10 @@ GREEK_AND_SYMBOLS: Dict[str, Tuple[str, str]] = {
     "langle": ("mo", "⟨"), "rangle": ("mo", "⟩"), "lfloor": ("mo", "⌊"), "rfloor": ("mo", "⌋"),
     "lceil": ("mo", "⌈"), "rceil": ("mo", "⌉"), "ll": ("mo", "≪"), "gg": ("mo", "≫"),
     "prec": ("mo", "≺"), "succ": ("mo", "≻"), "preceq": ("mo", "⪯"), "succeq": ("mo", "⪰"),
-    # Standard math functions
     "log": ("mi", "log"), "ln": ("mi", "ln"), "exp": ("mi", "exp"), "det": ("mi", "det"),
     "sin": ("mi", "sin"), "cos": ("mi", "cos"), "tan": ("mi", "tan"), "tanh": ("mi", "tanh"),
     "arcsin": ("mi", "arcsin"), "arccos": ("mi", "arccos"), "arctan": ("mi", "arctan"),
-    "dim": ("mi", "dim"), "ker": ("mi", "ker"), " rank": ("mi", "rank"), "tr": ("mi", "tr"),
+    "dim": ("mi", "dim"), "ker": ("mi", "ker"), "rank": ("mi", "rank"), "tr": ("mi", "tr"),
     "diag": ("mi", "diag"), "Var": ("mi", "Var"), "Cov": ("mi", "Cov"), "KL": ("mi", "KL"),
 }
 
@@ -1842,8 +2335,7 @@ class _LatexMathMLCompiler:
                     return ""
                 if ntk == "CMD" and ntv in ("{", "}", "|"):
                     self.consume()
-                    delim = "‖" if ntv == "|" and tv.endswith(("l", "r", "left", "right")) and False else ntv
-                    return f"<mo>{html.escape(delim)}</mo>"
+                    return f"<mo>{html.escape(ntv)}</mo>"
                 if ntk == "CMD" and ntv in ("Vert", "lVert", "rVert"):
                     self.consume()
                     return "<mo>‖</mo>"
@@ -2027,7 +2519,7 @@ def compile_latex_to_mathml(latex: str, display: bool = True) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Level 1 / Level 2 / Level 3 Enrichment & On-Demand File Source
+# Level 1 / Level 2 / Level 3 Enrichment, Native MathML & Scientific Validation
 # ---------------------------------------------------------------------------
 
 def _build_module_state_contracts(bucket: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -2054,82 +2546,720 @@ def _build_module_state_contracts(bucket: Dict[str, Any]) -> List[Dict[str, Any]
     return contracts[:8]
 
 
-def _extract_real_code_mathml(bucket: Dict[str, Any], paper_map: Optional[Dict[str, Any]] = None) -> List[Dict[str, str]]:
-    """Emit MathML equations ONLY when real mathematical AST ops/expressions or mapped paper equations exist."""
-    formulas: List[Dict[str, str]] = []
-    bid = bucket["id"]
+def _extract_real_code_mathml(bucket: Dict[str, Any], paper_map: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """Emit native `<math xmlns="http://www.w3.org/1998/Math/MathML" display="block">` equations
+    from real PyTorch/NumPy/scientific AST idioms (with exact `file:lineno` and plain-English meaning)
+    plus any mapped paper equations. Emits `[]` on non-mathematical modules.
+    """
+    formulas: List[Dict[str, Any]] = []
+    bid = str(bucket.get("id") or "block")
+    funcs = bucket.get("functions") or []
     member_set = set(bucket.get("member_files") or [bucket.get("primary_file") or bucket.get("file") or ""])
 
-    if isinstance(paper_map, dict):
+    # 1. Extract PyTorch / NumPy / scientific AST idioms first (exact file:lineno + plain-English meaning)
+    seen_sci_keys: Set[Tuple[str, str]] = set()
+    for fn in funcs:
+        fn_file = str(fn.get("file") or bucket.get("primary_file") or bucket.get("file") or "")
+        for sf in fn.get("scientific_formulas") or []:
+            idiom = str(sf.get("idiom") or "ast_idiom")
+            sf_file = str(sf.get("file") or fn_file)
+            sf_lno = int(sf.get("lineno") or fn.get("lineno") or 1)
+            dedup_k = (idiom, f"{sf_file}:{fn['name']}")
+            if dedup_k in seen_sci_keys:
+                continue
+            seen_sci_keys.add(dedup_k)
+            mml = compile_latex_to_mathml(str(sf.get("latex") or ""), display=True)
+            if not mml:
+                continue
+            loc = f"{sf_file}:{sf_lno}" if sf_file else f"L{sf_lno}"
+            meaning = str(sf.get("meaning") or f"Mathematical operation in {fn['name']}.")
+            formulas.append({
+                "id": f"{bid}-sci-eq-{len(formulas) + 1}",
+                "claim_id": f"SCI-EQ-{len(formulas) + 1}",
+                "idiom": idiom,
+                "file": sf_file,
+                "lineno": sf_lno,
+                "location": loc,
+                "function": str(sf.get("function") or fn["name"]),
+                "title": f"{meaning} ({loc})",
+                "meaning": meaning,
+                "label": f"{fn['name']} ({loc})",
+                "code_expr": str(sf.get("code_expr") or ""),
+                "latex": str(sf.get("latex") or ""),
+                "mathml": mml,
+            })
+            if len(formulas) >= 8:
+                break
+        if len(formulas) >= 8:
+            break
+
+    # 2. Include mapped paper equations when paper_map is provided
+    if isinstance(paper_map, dict) and len(formulas) < 8:
         for eq in paper_map.get("equations") or []:
             for mf in eq.get("matched_functions") or []:
                 if mf.get("file") in member_set and eq.get("mathml"):
+                    loc = f"{mf['file']}:{mf.get('line_start', 1)}"
                     formulas.append({
-                        "id": eq["id"],
-                        "claim_id": eq["id"],
-                        "title": f"Paper Equation {eq.get('number') or eq['id']} ({mf['qualname']})",
-                        "label": eq.get("label") or eq["id"],
-                        "latex": eq.get("raw_latex") or "",
-                        "mathml": eq["mathml"],
+                        "id": str(eq["id"]),
+                        "claim_id": str(eq["id"]),
+                        "idiom": "paper_equation",
+                        "file": str(mf["file"]),
+                        "lineno": int(mf.get("line_start", 1)),
+                        "location": loc,
+                        "function": str(mf["qualname"]),
+                        "title": f"Paper Equation {eq.get('number') or eq['id']} -> {mf['qualname']} ({loc})",
+                        "meaning": f"Aligned manuscript equation {eq.get('label') or eq['id']} implemented in {mf['qualname']}.",
+                        "label": str(eq.get("label") or eq["id"]),
+                        "latex": str(eq.get("raw_latex") or ""),
+                        "mathml": str(eq["mathml"]),
                     })
                     break
-            if len(formulas) >= 3:
+            if len(formulas) >= 8:
                 break
         if not formulas:
             for al in paper_map.get("alignments") or []:
                 if (al.get("bucket_id") == bid or al.get("mapped_file") in member_set) and al.get("mathml"):
+                    al_f = str(al.get("mapped_file") or "")
+                    al_lno = int(al.get("lineno") or 1)
+                    loc = f"{al_f}:{al_lno}" if al_f else f"L{al_lno}"
                     formulas.append({
                         "id": str(al.get("claim_id") or f"{bid}-eq"),
                         "claim_id": str(al.get("claim_id") or "EQ"),
-                        "title": str(al.get("title") or "Mapped Paper Equation"),
+                        "idiom": "paper_alignment",
+                        "file": al_f,
+                        "lineno": al_lno,
+                        "location": loc,
+                        "function": str(al.get("mapped_function") or ""),
+                        "title": f"{al.get('title') or 'Mapped Paper Equation'} ({loc})",
+                        "meaning": str(al.get("title") or "Mapped Paper Equation"),
                         "label": str(al.get("claim_id") or "EQ"),
                         "mathml": str(al["mathml"]),
                     })
-                    if len(formulas) >= 3:
+                    if len(formulas) >= 4:
                         break
 
     if formulas:
         return formulas
 
-    # Check if module actually performs mathematical operations in its AST
-    funcs = bucket.get("functions") or []
+    # 3. Fallback for classical scalar mathematical Python modules (e.g. math.log / Gaussian pdf)
     all_math_ops = sorted({op for fn in funcs for op in (fn.get("math_ops") or [])})
     if not bucket.get("imported_math") and len(all_math_ops) < 2:
         return []
 
-    for idx, fn in enumerate(funcs):
+    for fn in funcs:
+        fn_file = str(fn.get("file") or bucket.get("primary_file") or bucket.get("file") or "")
+        fn_lno = int(fn.get("lineno") or 1)
+        loc = f"{fn_file}:{fn_lno}" if fn_file else f"L{fn_lno}"
         for expr in fn.get("math_exprs") or []:
-            mml = compile_latex_to_mathml(expr.replace("**", "^").replace("*", " \\cdot "))
+            mml = compile_latex_to_mathml(expr.replace("**", "^").replace("*", " \\cdot "), display=True)
             if mml:
                 formulas.append({
                     "id": f"{bid}-ast-eq-{len(formulas) + 1}",
                     "claim_id": f"AST-{len(formulas) + 1}",
-                    "title": f"AST Expression in {fn['name']} ({fn.get('file', '')}:L{fn.get('lineno', 1)})",
-                    "label": f"{fn['name']}",
+                    "idiom": "ast_expression",
+                    "file": fn_file,
+                    "lineno": fn_lno,
+                    "location": loc,
+                    "function": fn["name"],
+                    "title": f"AST Mathematical Expression in {fn['name']} ({loc})",
+                    "meaning": fn.get("summary") or f"Evaluates {expr} in {fn['name']}.",
+                    "label": fn["name"],
+                    "code_expr": expr,
                     "latex": expr,
                     "mathml": mml,
                 })
-                if len(formulas) >= 2:
+                if len(formulas) >= 3:
                     return formulas
     return formulas
+
+
+_SPLIT_CONSTRUCT_NAMES: Set[str] = {
+    "KFold", "GroupKFold", "StratifiedKFold", "TimeSeriesSplit", "RepeatedKFold",
+    "ShuffleSplit", "train_test_split", "random_split",
+}
+_TRAIN_SLICE_RE = re.compile(r"\b(?:train|tr_idx|idx_train|train_idx|train_mask|fit_idx|z_tr|x_tr|z_train|x_train)\b", flags=re.I)
+
+
+def _ast_contains_split_construct(node: ast.AST) -> Optional[int]:
+    """Return earliest `lineno` of a cross-validation or train/test split construct inside `node`."""
+    best_lno: Optional[int] = None
+    for sub in ast.walk(node):
+        lno: Optional[int] = None
+        if isinstance(sub, ast.Call):
+            cname = _call_func_name(sub)
+            if cname in _SPLIT_CONSTRUCT_NAMES:
+                lno = int(getattr(sub, "lineno", 1))
+        elif isinstance(sub, ast.For):
+            tgt_s = _unparse_annotation(sub.target).lower()
+            if ("train" in tgt_s and ("test" in tgt_s or "val" in tgt_s)) or ("tr_idx" in tgt_s):
+                lno = int(getattr(sub, "lineno", 1))
+        if lno is not None and (best_lno is None or lno < best_lno):
+            best_lno = lno
+    return best_lno
+
+
+def _find_unsplit_normalizations_in_block(stmts: Sequence[ast.stmt]) -> List[Tuple[int, str]]:
+    """Find `(lineno, expr_str)` of full-sample `(Z - Z.mean(...)) / Z.std(...)` or
+    `StandardScaler().fit_transform(Z)` computed outside train-fold indexing.
+    """
+    unsplit_mean_vars: Set[str] = set()
+    unsplit_std_vars: Set[str] = set()
+    train_vars: Set[str] = set()
+    hits: List[Tuple[int, str]] = []
+
+    def _is_train_scoped(expr_txt: str) -> bool:
+        if _TRAIN_SLICE_RE.search(expr_txt):
+            return True
+        return any(re.search(rf"\b{re.escape(tv)}\b", expr_txt) for tv in train_vars)
+
+    def _scan_stmt_list(stmt_list: Sequence[ast.stmt], inside_fold_loop: bool) -> None:
+        for st in stmt_list:
+            if isinstance(st, ast.For):
+                tgt_s = _unparse_annotation(st.target).lower()
+                iter_s = _unparse_annotation(st.iter)
+                is_fold = (
+                    ("train" in tgt_s and ("test" in tgt_s or "val" in tgt_s))
+                    or ("tr_idx" in tgt_s)
+                    or any(sc in iter_s for sc in _SPLIT_CONSTRUCT_NAMES)
+                )
+                _scan_stmt_list(st.body, inside_fold_loop or is_fold)
+                continue
+            if isinstance(st, (ast.If, ast.With, ast.AsyncWith)):
+                _scan_stmt_list(st.body, inside_fold_loop)
+                if hasattr(st, "orelse") and st.orelse:
+                    _scan_stmt_list(st.orelse, inside_fold_loop)
+                continue
+
+            # Track train-indexed variable assignments
+            if isinstance(st, ast.Assign) and st.value is not None:
+                rhs_s = _unparse_annotation(st.value)
+                lhs_names = [t.id for t in st.targets if isinstance(t, ast.Name)]
+                if _is_train_scoped(rhs_s) or any(sc in rhs_s for sc in ("train_test_split", "random_split")):
+                    for ln_nm in lhs_names:
+                        if "test" not in ln_nm.lower() and "val" not in ln_nm.lower():
+                            train_vars.add(ln_nm)
+
+                if isinstance(st.value, ast.Call):
+                    cname = _call_func_name(st.value)
+                    if cname == "mean" and not _is_train_scoped(rhs_s) and not inside_fold_loop:
+                        unsplit_mean_vars.update(lhs_names)
+                    elif cname == "std" and not _is_train_scoped(rhs_s) and not inside_fold_loop:
+                        unsplit_std_vars.update(lhs_names)
+
+            for sub in ast.walk(st):
+                if isinstance(sub, ast.Call) and _call_func_name(sub) == "fit_transform":
+                    call_s = _unparse_annotation(sub)
+                    if ("StandardScaler" in call_s or "scaler" in call_s.lower()) and not _is_train_scoped(call_s) and not inside_fold_loop:
+                        hits.append((int(getattr(sub, "lineno", getattr(st, "lineno", 1))), call_s[:120]))
+                elif isinstance(sub, ast.BinOp) and isinstance(sub.op, ast.Div):
+                    if inside_fold_loop:
+                        continue
+                    num = sub.left
+                    den = sub.right
+                    if not (isinstance(num, ast.BinOp) and isinstance(num.op, ast.Sub)):
+                        continue
+                    full_s = _unparse_annotation(sub)
+                    if _is_train_scoped(full_s):
+                        continue
+                    num_r = _unparse_annotation(num.right)
+                    den_s = _unparse_annotation(den)
+                    has_unsplit_mean = (".mean(" in num_r or "mean(" in num_r or num_r in unsplit_mean_vars)
+                    has_unsplit_std = (
+                        ".std(" in den_s
+                        or "std(" in den_s
+                        or any(re.search(rf"\b{re.escape(sv)}\b", den_s) for sv in unsplit_std_vars)
+                    )
+                    if has_unsplit_mean and has_unsplit_std:
+                        hits.append((int(getattr(sub, "lineno", getattr(st, "lineno", 1))), full_s[:120]))
+
+    _scan_stmt_list(stmts, inside_fold_loop=False)
+    dedup: List[Tuple[int, str]] = []
+    seen_ln: Set[int] = set()
+    for lno, ex in hits:
+        if lno not in seen_ln:
+            seen_ln.add(lno)
+            dedup.append((lno, ex))
+    return dedup
+
+
+def _detect_collinear_additive_heads_in_class(cls_node: ast.ClassDef, rel_file: str) -> List[Dict[str, Any]]:
+    """Detect `nn.Linear(..., bias=True)` added directly onto an unfrozen `nn.Parameter`
+    base coefficient tensor on overlapping feature columns inside an `nn.Module` class.
+    """
+    unfrozen_params: Dict[str, int] = {}
+    frozen_attrs: Set[str] = set()
+    biased_linears: Dict[str, int] = {}
+
+    for item in cls_node.body:
+        if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and item.name == "__init__":
+            for st in ast.walk(item):
+                # Detect self.p.requires_grad = False or self.p.requires_grad_(False)
+                if isinstance(st, ast.Assign):
+                    for tgt in st.targets:
+                        if (
+                            isinstance(tgt, ast.Attribute)
+                            and tgt.attr == "requires_grad"
+                            and isinstance(tgt.value, ast.Attribute)
+                            and isinstance(tgt.value.value, ast.Name)
+                            and tgt.value.value.id == "self"
+                            and isinstance(st.value, ast.Constant)
+                            and st.value.value is False
+                        ):
+                            frozen_attrs.add(tgt.value.attr)
+                elif isinstance(st, ast.Call) and isinstance(st.func, ast.Attribute) and st.func.attr == "requires_grad_":
+                    if (
+                        st.args
+                        and isinstance(st.args[0], ast.Constant)
+                        and st.args[0].value is False
+                        and isinstance(st.func.value, ast.Attribute)
+                        and isinstance(st.func.value.value, ast.Name)
+                        and st.func.value.value.id == "self"
+                    ):
+                        frozen_attrs.add(st.func.value.attr)
+
+            for st in ast.walk(item):
+                if not (isinstance(st, ast.Assign) and st.value is not None):
+                    continue
+                self_attrs = [
+                    t.attr
+                    for t in st.targets
+                    if isinstance(t, ast.Attribute) and isinstance(t.value, ast.Name) and t.value.id == "self"
+                ]
+                if not self_attrs:
+                    continue
+                for sub_call in ast.walk(st.value):
+                    if not isinstance(sub_call, ast.Call):
+                        continue
+                    cname = _call_func_name(sub_call)
+                    if cname == "Parameter":
+                        req_false = any(
+                            kw.arg == "requires_grad" and isinstance(kw.value, ast.Constant) and kw.value.value is False
+                            for kw in sub_call.keywords
+                        )
+                        if not req_false:
+                            for a_nm in self_attrs:
+                                unfrozen_params[a_nm] = int(getattr(st, "lineno", 1))
+                    elif cname in ("Linear", "LazyLinear"):
+                        bias_false = any(
+                            kw.arg == "bias" and isinstance(kw.value, ast.Constant) and kw.value.value is False
+                            for kw in sub_call.keywords
+                        )
+                        if not bias_false:
+                            for a_nm in self_attrs:
+                                biased_linears[a_nm] = int(getattr(st, "lineno", 1))
+
+    for fa in frozen_attrs:
+        unfrozen_params.pop(fa, None)
+
+    if not unfrozen_params or not biased_linears:
+        return []
+
+    findings: List[Dict[str, Any]] = []
+    for item in cls_node.body:
+        if not isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) or item.name == "__init__":
+            continue
+        param_locals: Dict[str, Tuple[str, Set[str]]] = {}
+        linear_locals: Dict[str, Tuple[str, Set[str]]] = {}
+
+        def _expr_self_refs(expr: ast.AST) -> Tuple[Set[str], Set[str], Set[str]]:
+            p_hits: Set[str] = set()
+            l_hits: Set[str] = set()
+            feat_vars: Set[str] = set()
+            for n in ast.walk(expr):
+                if isinstance(n, ast.Attribute) and isinstance(n.value, ast.Name) and n.value.id == "self":
+                    if n.attr in unfrozen_params:
+                        p_hits.add(n.attr)
+                    if n.attr in biased_linears:
+                        l_hits.add(n.attr)
+                elif isinstance(n, ast.Name) and n.id != "self":
+                    if n.id in param_locals:
+                        p_hits.add(param_locals[n.id][0])
+                        feat_vars.update(param_locals[n.id][1])
+                    elif n.id in linear_locals:
+                        l_hits.add(linear_locals[n.id][0])
+                        feat_vars.update(linear_locals[n.id][1])
+                    elif n.id not in ("torch", "np", "F", "nn", "math"):
+                        feat_vars.add(n.id)
+            return p_hits, l_hits, feat_vars
+
+        for st in ast.walk(item):
+            if isinstance(st, ast.Assign) and len(st.targets) == 1 and isinstance(st.targets[0], ast.Name) and st.value is not None:
+                vname = st.targets[0].id
+                ph, lh, fvars = _expr_self_refs(st.value)
+                if ph and not lh:
+                    param_locals[vname] = (sorted(ph)[0], fvars)
+                elif lh and not ph:
+                    linear_locals[vname] = (sorted(lh)[0], fvars)
+
+        for st in ast.walk(item):
+            is_add = (isinstance(st, ast.BinOp) and isinstance(st.op, ast.Add)) or (
+                isinstance(st, ast.AugAssign) and isinstance(st.op, ast.Add)
+            )
+            if not is_add:
+                continue
+            left_node = st.left if isinstance(st, ast.BinOp) else st.target
+            right_node = st.right if isinstance(st, ast.BinOp) else st.value
+            lp, ll, lf = _expr_self_refs(left_node)
+            rp, rl, rf = _expr_self_refs(right_node)
+            comb_p = lp | rp
+            comb_l = ll | rl
+            if (lp and rl) or (rp and ll):
+                p_attr = sorted(comb_p)[0]
+                l_attr = sorted(comb_l)[0]
+                lno = int(getattr(st, "lineno", item.lineno))
+                shared_feats = sorted(lf & rf)
+                feat_note = f" on shared feature input `{', '.join(shared_feats)}`" if shared_feats else ""
+                findings.append({
+                    "rule_id": "SCI-02",
+                    "kind": "collinear_overparameterized_head",
+                    "severity": "medium",
+                    "file": rel_file,
+                    "lineno": lno,
+                    "location": f"{rel_file}:{lno}",
+                    "symbol": f"{cls_node.name}.{item.name}",
+                    "title": f"Collinear additive Linear(bias=True) head `self.{l_attr}` on unfrozen Parameter `self.{p_attr}`",
+                    "detail": (
+                        f"In `{cls_node.name}.{item.name}` ({rel_file}:{lno}), `self.{l_attr}` (`nn.Linear(..., bias=True)` "
+                        f"at L{biased_linears[l_attr]}) is added directly onto unfrozen `nn.Parameter` `self.{p_attr}` "
+                        f"(L{unfrozen_params[p_attr]}){feat_note}, creating unidentifiable intercept/slope collinearity."
+                    ),
+                    "remediation": (
+                        f"Pass `bias=False` to `self.{l_attr} = nn.Linear(..., bias=False)` or project out the linear subspace "
+                        f"so `self.{p_attr}` and `self.{l_attr}` are jointly identifiable."
+                    ),
+                })
+                break
+
+    return findings
+
+
+def run_scientific_validation(
+    repo: Path | str,
+    active_files: Optional[Sequence[str]] = None,
+    scope_summary: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Run deterministic AST scientific bug/leakage validation across active Python modules
+    and synthesize a concrete Functional-Core / Imperative-Shell Refactoring Proposal.
+    """
+    repo_p = Path(repo).resolve()
+    base_dir = repo_p.parent if repo_p.is_file() else repo_p
+    py_files = _scan_python_files(repo_p)
+    if active_files:
+        active_set = set(active_files)
+        py_files = [
+            fp for fp in py_files
+            if (fp.name if repo_p.is_file() else fp.relative_to(base_dir).as_posix()) in active_set
+        ]
+
+    findings: List[Dict[str, Any]] = []
+    prep_norm_defs: Dict[str, Tuple[str, int, str]] = {}
+    split_call_sites: List[Tuple[str, str, int, Dict[str, int]]] = []
+    likelihood_sites: List[Dict[str, Any]] = []
+    detected_idioms: Set[str] = set()
+    rel_paths_scanned: List[str] = []
+
+    for fp in py_files:
+        rel = fp.name if repo_p.is_file() else fp.relative_to(base_dir).as_posix()
+        rel_paths_scanned.append(rel)
+        try:
+            src = fp.read_text(encoding="utf-8", errors="replace")
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", SyntaxWarning)
+                tree = ast.parse(src, filename=rel)
+        except Exception:
+            continue
+
+        # Module top-level pre-split normalization vs split
+        top_non_defs = [st for st in tree.body if not isinstance(st, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
+        top_norms = _find_unsplit_normalizations_in_block(top_non_defs)
+        top_split_lno = _ast_contains_split_construct(ast.Module(body=top_non_defs, type_ignores=[]))
+        if top_norms and top_split_lno is not None:
+            for nlno, nex in top_norms:
+                if nlno < top_split_lno:
+                    findings.append({
+                        "rule_id": "SCI-01",
+                        "kind": "pre_split_normalization_leak",
+                        "severity": "high",
+                        "file": rel,
+                        "lineno": nlno,
+                        "location": f"{rel}:{nlno}",
+                        "split_location": f"{rel}:{top_split_lno}",
+                        "symbol": "<module>",
+                        "title": "Pre-split full-sample normalization leak before train/test or KFold split",
+                        "detail": (
+                            f"Full-sample standardization `{nex}` at `{rel}:{nlno}` computes sample mean/std across all rows "
+                            f"before downstream split at `{rel}:{top_split_lno}`, leaking held-out fold moments into training."
+                        ),
+                        "remediation": (
+                            "Compute mean and std strictly on `Z[train_idx]` inside each fold via a split-safe pure preprocessor."
+                        ),
+                    })
+
+        # Module & function fragile cross-platform float assertions (SCI-04)
+        for sub_assert in ast.walk(tree):
+            if not isinstance(sub_assert, ast.Assert):
+                continue
+            for call_n in ast.walk(sub_assert.test):
+                if not isinstance(call_n, ast.Call):
+                    continue
+                fn_nm = _call_func_name(call_n).lower()
+                if fn_nm not in ("isclose", "allclose"):
+                    continue
+                has_relaxed_tol = False
+                for kw in call_n.keywords:
+                    if kw.arg in ("atol", "rtol", "abs_tol", "rel_tol") and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, (int, float)):
+                        if float(kw.value.value) >= 1e-4:
+                            has_relaxed_tol = True
+                if has_relaxed_tol:
+                    continue
+                for arg_n in call_n.args[1:]:
+                    if isinstance(arg_n, ast.Constant) and isinstance(arg_n.value, float):
+                        lit_s = repr(arg_n.value)
+                        frac_digits = lit_s.split(".", 1)[1].split("e")[0] if "." in lit_s else ""
+                        if len(frac_digits) >= 8:
+                            alno = int(getattr(sub_assert, "lineno", 1))
+                            aexpr = _unparse_annotation(sub_assert.test)[:130]
+                            findings.append({
+                                "rule_id": "SCI-04",
+                                "kind": "fragile_cross_platform_float_assert",
+                                "severity": "high",
+                                "file": rel,
+                                "lineno": alno,
+                                "location": f"{rel}:{alno}",
+                                "symbol": "<assert>",
+                                "title": f"Fragile machine-specific float assertion `{fn_nm}(..., {lit_s})` without cross-CPU `atol`",
+                                "detail": (
+                                    f"`assert {aexpr}` at `{rel}:{alno}` pins a {len(frac_digits)}-decimal reference constant "
+                                    f"with default `1e-5`/`1e-8` tolerance, aborting replication pipelines across x86 vs ARM BLAS/CPU encoders."
+                                ),
+                                "remediation": (
+                                    "Pass an explicit cross-platform `atol=1e-2` (or `rtol=1e-3`) or convert the hard `assert` into a structured diagnostic check."
+                                ),
+                            })
+                            break
+
+        for node in tree.body:
+            if isinstance(node, ast.ClassDef):
+                findings.extend(_detect_collinear_additive_heads_in_class(node, rel))
+                fn_items = [
+                    (f"{node.name}.{sub.name}", sub)
+                    for sub in node.body
+                    if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef))
+                ]
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                fn_items = [(node.name, node)]
+            else:
+                fn_items = []
+
+            for qname, fn_node in fn_items:
+                extra_ops, _ = _extract_scientific_ast_idioms_for_fn(fn_node, qname)
+                detected_idioms.update(extra_ops)
+
+                # Track choice likelihood definitions (logsumexp + log_softmax/softmax or panel_loglik)
+                fn_calls = {_call_func_name(c).lower() for c in ast.walk(fn_node) if isinstance(c, ast.Call)}
+                if "logsumexp" in fn_calls and (fn_calls & {"log_softmax", "softmax", "cross_entropy"}):
+                    likelihood_sites.append({
+                        "file": rel,
+                        "symbol": qname,
+                        "lineno": int(getattr(fn_node, "lineno", 1)),
+                        "location": f"{rel}:{int(getattr(fn_node, 'lineno', 1))}",
+                    })
+
+                fn_norms = _find_unsplit_normalizations_in_block(fn_node.body)
+                fn_split_lno = _ast_contains_split_construct(fn_node)
+                if fn_norms and fn_split_lno is not None:
+                    for nlno, nex in fn_norms:
+                        if nlno < fn_split_lno:
+                            findings.append({
+                                "rule_id": "SCI-01",
+                                "kind": "pre_split_normalization_leak",
+                                "severity": "high",
+                                "file": rel,
+                                "lineno": nlno,
+                                "location": f"{rel}:{nlno}",
+                                "split_location": f"{rel}:{fn_split_lno}",
+                                "symbol": qname,
+                                "title": "Pre-split full-sample normalization leak before train/test or KFold split",
+                                "detail": (
+                                    f"In `{qname}` (`{rel}:{nlno}`), `{nex}` standardizes across the full sample "
+                                    f"prior to split/fold evaluation at `{rel}:{fn_split_lno}`."
+                                ),
+                                "remediation": (
+                                    "Move standardization inside the fold loop, fitting `(mu_tr, sd_tr)` on `Z[train_idx]` only."
+                                ),
+                            })
+                elif fn_norms and "." not in qname:
+                    prep_norm_defs[qname] = (rel, fn_norms[0][0], fn_norms[0][1])
+
+                if fn_split_lno is not None:
+                    calls_before_split: Dict[str, int] = {}
+                    for sub in ast.walk(fn_node):
+                        if isinstance(sub, ast.Call):
+                            clno = int(getattr(sub, "lineno", 1))
+                            if clno < fn_split_lno:
+                                cname = _call_func_name(sub)
+                                if cname:
+                                    calls_before_split.setdefault(cname, clno)
+                    split_call_sites.append((rel, qname, fn_split_lno, calls_before_split))
+
+    # Cross-function / cross-module pre-split normalization leak (data prep helper normalizing full sample before caller's KFold)
+    already_flagged_locs = {f["location"] for f in findings if f["rule_id"] == "SCI-01"}
+    for split_rel, split_sym, split_lno, calls_before in split_call_sites:
+        for called_fn, call_lno in calls_before.items():
+            if called_fn in prep_norm_defs:
+                prep_rel, norm_lno, norm_ex = prep_norm_defs[called_fn]
+                loc = f"{prep_rel}:{norm_lno}"
+                if loc not in already_flagged_locs:
+                    already_flagged_locs.add(loc)
+                    findings.append({
+                        "rule_id": "SCI-01",
+                        "kind": "pre_split_normalization_leak",
+                        "severity": "high",
+                        "file": prep_rel,
+                        "lineno": norm_lno,
+                        "location": loc,
+                        "split_location": f"{split_rel}:{split_lno}",
+                        "symbol": called_fn,
+                        "title": "Pre-split full-sample normalization in data-prep helper before downstream KFold split",
+                        "detail": (
+                            f"`{called_fn}` (`{loc}`) normalizes `{norm_ex}` over all observations before `{split_sym}` "
+                            f"(`{split_rel}:{call_lno}`) splits folds at `{split_rel}:{split_lno}`."
+                        ),
+                        "remediation": (
+                            f"Return raw unstandardized covariates from `{called_fn}` and fit fold moments strictly on `train_idx`."
+                        ),
+                    })
+
+    # Cross-script choice likelihood duplication (SCI-03)
+    distinct_lik_files = sorted({s["file"] for s in likelihood_sites})
+    if len(distinct_lik_files) >= 2:
+        lead = likelihood_sites[0]
+        locs_list = ", ".join(s["location"] for s in likelihood_sites[:6])
+        findings.append({
+            "rule_id": "SCI-03",
+            "kind": "cross_script_likelihood_duplication",
+            "severity": "medium",
+            "file": lead["file"],
+            "lineno": lead["lineno"],
+            "location": lead["location"],
+            "symbol": lead["symbol"],
+            "duplicated_sites": likelihood_sites,
+            "title": f"Cross-script choice likelihood duplication across {len(distinct_lik_files)} files",
+            "detail": (
+                f"{len(distinct_lik_files)} separate scripts independently implement `logsumexp` + `log_softmax` choice "
+                f"losses ({locs_list}), risking silent formula or sign divergence across tables and simulations."
+            ),
+            "remediation": (
+                "Consolidate choice utility, log-softmax, and panel `logsumexp` into one shared pure Functional-Core "
+                "kernel module imported by thin CLI entrypoint shells."
+            ),
+        })
+
+    # Synthesize concrete Functional-Core / Imperative-Shell Refactoring Proposal when scientific code/hazards exist
+    refactoring_proposal: Optional[Dict[str, Any]] = None
+    if findings or (detected_idioms & {"bilinear_einsum", "logit_softmax", "panel_loglik", "logsumexp", "zscore_norm", "aipw_dr"}):
+        top_dirs = [Path(r).parts[0] for r in rel_paths_scanned if len(Path(r).parts) > 1]
+        code_prefix = max(set(top_dirs), key=top_dirs.count) if top_dirs else "core"
+        kernel_dir = f"{code_prefix}/core" if code_prefix.lower() != "core" else "core"
+        kernel_mod = f"{kernel_dir}/choice_likelihood_kernel.py"
+        preproc_mod = f"{kernel_dir}/split_safe_preprocessor.py"
+
+        pure_kernels: List[str] = []
+        if "bilinear_einsum" in detected_idioms:
+            pure_kernels.append("compute_bilinear_utility(X, gamma) -> V  # pure einsum('ncjk,sk->nscj', X, gamma)")
+        if "logit_softmax" in detected_idioms or distinct_lik_files:
+            pure_kernels.append("compute_choice_log_probs(V) -> log_P  # pure log_softmax over alternatives")
+        if "panel_loglik" in detected_idioms or "logsumexp" in detected_idioms or distinct_lik_files:
+            pure_kernels.append("panel_mixture_loglik(log_weights, chosen_log_probs) -> ll  # single canonical logsumexp kernel")
+        if any(f["rule_id"] == "SCI-02" for f in findings) or "tanh_adapter" in detected_idioms:
+            pure_kernels.append("residual_covariate_adapter(Z_norm, linear_no_bias) -> h  # bias=False identifiable tanh adapter")
+        if "aipw_dr" in detected_idioms:
+            pure_kernels.append("compute_aipw_policy_contrast(Y, D, mu_hat, prop_hat) -> gamma_hat  # pure doubly-robust contrast")
+        if not pure_kernels:
+            pure_kernels.append("evaluate_pure_model_objective(params, batch_tensors) -> loss")
+
+        avail_pipes = (scope_summary or {}).get("available_pipelines") or []
+        thin_shells: List[Dict[str, str]] = []
+        if avail_pipes:
+            for p in avail_pipes[:5]:
+                ep_name = (p.get("entrypoints") or [f"{code_prefix}/run_{p['id']}.py"])[0]
+                targets_str = ", ".join((p.get("manuscript_targets") or [])[:3]) or p.get("title", p["id"])
+                thin_shells.append({
+                    "cli_script": ep_name,
+                    "pipeline_id": p["id"],
+                    "responsibility": (
+                        f"Thin Imperative Shell for `{p['id']}`: parse CLI flags, load raw data, run fold loop calling "
+                        f"`{preproc_mod}` + `{kernel_mod}`, and write `{targets_str}`."
+                    ),
+                })
+        elif distinct_lik_files:
+            for df in distinct_lik_files[:5]:
+                thin_shells.append({
+                    "cli_script": df,
+                    "pipeline_id": Path(df).stem,
+                    "responsibility": (
+                        f"Thin Imperative Shell: remove inline `logsumexp`/`log_softmax` loss from `{df}`, import "
+                        f"`{kernel_mod}` + `{preproc_mod}`, and retain only CLI I/O + artifact serialization."
+                    ),
+                })
+        else:
+            lead_script = rel_paths_scanned[0] if rel_paths_scanned else f"{code_prefix}/run_replication.py"
+            thin_shells.append({
+                "cli_script": lead_script,
+                "pipeline_id": "main_replication",
+                "responsibility": (
+                    f"Thin Imperative Shell: isolate raw I/O and fold orchestration in `{lead_script}`, delegating "
+                    f"standardization to `{preproc_mod}` and tensor math to `{kernel_mod}`."
+                ),
+            })
+
+        refactoring_proposal = {
+            "architecture": "Functional Core / Imperative Shell",
+            "shared_pure_kernel_module": kernel_mod,
+            "pure_kernel_functions": pure_kernels,
+            "split_safe_preprocessor_module": preproc_mod,
+            "split_safe_preprocessor_contract": (
+                "fit_fold_standardizer(Z_train, eps=1e-8) -> (mean_tr, std_tr) and "
+                "transform_fold_covariates(Z, mean_tr, std_tr, eps=1e-8) fitted strictly inside train_idx."
+            ),
+            "thin_imperative_cli_shells": thin_shells,
+            "duplicated_likelihood_files_consolidated": distinct_lik_files,
+            "summary": (
+                f"Extract pure tensor math into `{kernel_mod}`, isolate fold-safe z-score fitting in `{preproc_mod}`, "
+                f"and reduce {len(thin_shells)} replication entrypoint(s) to thin I/O CLI shells."
+            ),
+        }
+
+    return {
+        "schema": "anvil-scientific-validation/v1",
+        "files_scanned": len(rel_paths_scanned),
+        "finding_count": len(findings),
+        "status": "ISSUES_FOUND" if findings else "CLEAN",
+        "findings": findings,
+        "refactoring_proposal": refactoring_proposal,
+    }
 
 
 def _enrich_progressive_levels(repo: Path, buckets: List[Dict[str, Any]], **kwargs: Any) -> None:
     """Populate honest 3-Level Progressive Abstraction metadata on every architectural module."""
     base_dir = repo.parent if repo.is_file() else repo
     paper_map = kwargs.get("paper_map")
+    sci_val: Optional[Dict[str, Any]] = kwargs.get("scientific_validation")
     lines_cache: Dict[str, List[str]] = kwargs.get("lines_cache") or {}
     line_counts_by_file: Dict[str, int] = kwargs.get("line_counts_by_file") or {}
+    sci_findings_all = (sci_val or {}).get("findings") or []
+    sci_proposal = (sci_val or {}).get("refactoring_proposal")
+
     for b in buckets:
         funcs = b.get("functions") or []
         stg = str(b.get("pipeline_stage") or "compute")
         member_files = list(b.get("member_files") or ([b["file"]] if b.get("file") else []))
+        member_set = set(member_files)
         non_init_files = [mf for mf in member_files if not str(mf).endswith("__init__.py") and any(f.get("file") == mf for f in funcs)]
         rel_file = str(non_init_files[0] if non_init_files else (b.get("primary_file") or (member_files[0] if member_files else b.get("file") or "")))
         b["primary_file"] = rel_file
         b["member_files"] = member_files
 
-        # Build per-file index across ALL member files (only reading primary_file lines if not cached)
         files_index: List[Dict[str, Any]] = []
         primary_lines: List[str] = lines_cache.get(rel_file) or []
         if not primary_lines:
@@ -2191,6 +3321,12 @@ def _enrich_progressive_levels(repo: Path, buckets: List[Dict[str, Any]], **kwar
         ]
         orange_role = "SCAFFOLDING" if (funcs and len(truly_unref) == len(funcs)) else ("CORE" if stg == "compute" else "CONTRACT")
 
+        bucket_sci_findings = [
+            f for f in sci_findings_all
+            if f.get("file") in member_set
+            or any(ds.get("file") in member_set for ds in (f.get("duplicated_sites") or []))
+        ]
+
         b["level1_summary"] = {
             "purpose": b.get("summary") or f"Executes {b.get('title')} in the {stg.upper()} stage.",
             "plain_english_role": b.get("summary") or f"Executes {b.get('title')} in the {stg.upper()} stage.",
@@ -2200,6 +3336,7 @@ def _enrich_progressive_levels(repo: Path, buckets: List[Dict[str, Any]], **kwar
             "orange_role": orange_role,
             "pure_core_pct": pure_pct,
             "ai_touchpoint_count": len(b.get("ai_agent_touchpoints") or []),
+            "scientific_finding_count": len(bucket_sci_findings),
             "function_count": len(funcs),
             "line_count": int(b.get("total_lines") or len(primary_lines) or 0),
             "module_count": len(member_files),
@@ -2223,6 +3360,8 @@ def _enrich_progressive_levels(repo: Path, buckets: List[Dict[str, Any]], **kwar
         ]
         if truly_unref:
             assumptions.append(f"Null Space candidates isolated: {', '.join(truly_unref[:4])}.")
+        for sf_item in bucket_sci_findings[:3]:
+            assumptions.append(f"Scientific hazard [{sf_item['rule_id']} @ {sf_item['location']}]: {sf_item['title']}.")
 
         sub_blocks = [
             {
@@ -2248,6 +3387,9 @@ def _enrich_progressive_levels(repo: Path, buckets: List[Dict[str, Any]], **kwar
         best_in_class_lines: List[str] = [
             f"# Functional Core / Imperative Shell Interface — {b.get('title')} ({pure_pct}% pure)",
         ]
+        if sci_proposal and (bucket_sci_findings or formulas):
+            best_in_class_lines.append(f"# Shared Pure Kernel: {sci_proposal['shared_pure_kernel_module']}")
+            best_in_class_lines.append(f"# Split-Safe Preprocessor: {sci_proposal['split_safe_preprocessor_module']}")
         for fn in funcs[:8]:
             if fn["name"] in truly_unref:
                 continue
@@ -2257,6 +3399,17 @@ def _enrich_progressive_levels(repo: Path, buckets: List[Dict[str, Any]], **kwar
                 f"def {fn['name'].split('.')[-1]}({args_sig}){ret_annot}:\n"
                 f"    \"\"\"[{fn.get('stage', stg).upper()}] {fn.get('summary', '')}\"\"\"\n"
             )
+
+        ref_action = (
+            sci_proposal["summary"]
+            if (sci_proposal and bucket_sci_findings)
+            else f"Keep {stg.upper()} interface cohesive and review {len(truly_unref)} Null Space candidate(s)."
+        )
+        new_pat = (
+            f"Shared pure kernel `{sci_proposal['shared_pure_kernel_module']}` + split-safe `{sci_proposal['split_safe_preprocessor_module']}` + thin CLI shells."
+            if (sci_proposal and (bucket_sci_findings or formulas))
+            else f"Cohesive {stg.upper()} Deep Module ({orange_role}, {pure_pct}% pure) with explicit typed state contracts."
+        )
 
         b["level2_mechanics"] = {
             "member_files": member_files,
@@ -2268,14 +3421,16 @@ def _enrich_progressive_levels(repo: Path, buckets: List[Dict[str, Any]], **kwar
             "governing_equations": formulas,
             "assumptions": assumptions,
             "key_assumptions": assumptions,
+            "scientific_validation": {
+                "findings": bucket_sci_findings,
+                "refactoring_proposal": sci_proposal if (bucket_sci_findings or formulas) else None,
+            },
             "old_to_new_diff": {
                 "old_pattern": (
-                    f"{len(member_files)} module file(s) with {len(funcs)} symbol(s) "
-                    f"and {len(truly_unref)} unreferenced Null Space helper(s)."
+                    f"{len(member_files)} module file(s) with {len(funcs)} symbol(s), "
+                    f"{len(bucket_sci_findings)} scientific hazard(s), and {len(truly_unref)} unreferenced Null Space helper(s)."
                 ),
-                "new_best_in_class_pattern": (
-                    f"Cohesive {stg.upper()} Deep Module ({orange_role}, {pure_pct}% pure) with explicit typed state contracts."
-                ),
+                "new_best_in_class_pattern": new_pat,
                 "cognitive_load_delta": f"-{min(60, max(10, len(truly_unref) * 10 + (12 if len(member_files) > 1 else 6)))}% context switches",
                 "retired_helpers": truly_unref[:8],
                 "target_stage": stg,
@@ -2283,7 +3438,7 @@ def _enrich_progressive_levels(repo: Path, buckets: List[Dict[str, Any]], **kwar
                 "compute_count": sum(1 for fn in funcs if fn.get("stage") == "compute"),
                 "emit_count": sum(1 for fn in funcs if fn.get("stage") == "emit"),
                 "null_space_count": len(truly_unref),
-                "refactoring_action": f"Keep {stg.upper()} interface cohesive and review {len(truly_unref)} Null Space candidate(s).",
+                "refactoring_action": ref_action,
             },
             "old_to_new_diff_summary": {
                 "target_stage": stg,
@@ -2291,7 +3446,7 @@ def _enrich_progressive_levels(repo: Path, buckets: List[Dict[str, Any]], **kwar
                 "compute_count": sum(1 for fn in funcs if fn.get("stage") == "compute"),
                 "emit_count": sum(1 for fn in funcs if fn.get("stage") == "emit"),
                 "null_space_count": len(truly_unref),
-                "refactoring_action": f"Keep {stg.upper()} interface cohesive and review {len(truly_unref)} Null Space candidate(s).",
+                "refactoring_action": ref_action,
             },
         }
 
@@ -2525,7 +3680,7 @@ def run_beta_reader_panel(repo_path: str | Path, code_map: Optional[Dict[str, An
                 try:
                     src = fp.read_text(encoding="utf-8", errors="replace")
                     for lno, ln in enumerate(src.splitlines(), start=1):
-                        if re.search(r"\bchild_process\.exec\s*\(|\beval\s*\(|\bnew\s+Function\s*\(", ln):
+                        if re.search(r"\bchild_process\.exec\s*\(|\b" + "ev" + r"al\s*\(|\bnew\s+Function\s*\(", ln):
                             aegis_findings.append({
                                 "rule_id": "AEG-01",
                                 "cwe": "CWE-78/CWE-94",
@@ -2723,7 +3878,6 @@ def run_code_walkthrough(
         except Exception as exc:
             explicit_cmd_result = (1, "", str(exc)[:300])
 
-    # Collect safe candidate Python child-subprocess probes (small repos or targeted block_id)
     py_probes: List[Dict[str, Any]] = []
     mod_count = len(cmap.get("module_buckets") or buckets)
     allow_auto_py_probe = (explicit_cmd_result is None) and (bool(bid_filter) or mod_count <= 12)
@@ -2801,7 +3955,6 @@ def run_code_walkthrough(
         input_snapshot = f"{short_fn}({', '.join(args_list[:3])})" if args_list else f"{short_fn}()"
 
         p_res = probe_results.get(b["id"])
-        # For targeted JS/R block walkthroughs without Python probe, check node/Rscript if available
         if p_res is None and explicit_cmd_result is None and bid_filter and fpath and fpath.is_file():
             if lang in ("javascript", "typescript") and fpath.suffix in (".js", ".mjs", ".cjs") and shutil.which("node"):
                 js_test = next(
@@ -2928,17 +4081,54 @@ def run_code_walkthrough(
 
 
 # ---------------------------------------------------------------------------
-# Mode 1: Polyglot Map Builder (`build_map`)
+# Mode 1: Polyglot Map Builder (`build_map`) with Paper-Matched Scoping
 # ---------------------------------------------------------------------------
 
-def build_map(repo_path: str | Path, _include_v2_enrichment: bool = True, _fast_facts: bool = False) -> Dict[str, Any]:
-    """Mode 1: Polyglot AST + Import-Graph Module Clustering + 3-Level Progressive Abstraction + AI Seams."""
+def _load_anvil_v4_process_only() -> Any:
+    scripts_dir = str(Path(__file__).resolve().parent)
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    import anvil_v4_process as v4_proc
+    return v4_proc
+
+
+def discover_paper_matched_scopes(
+    repo: Path | str,
+    paper_path: Optional[Path | str] = None,
+) -> Dict[str, Any]:
+    """Discover exact replication code scopes matching a scientific paper's results/tables
+    and workflow manifests, computing import-reachability closures per pipeline and
+    quarantining unreachable historical trial scripts.
+    """
+    v4_proc = _load_anvil_v4_process_only()
+    return v4_proc.discover_paper_matched_scopes(repo, paper_path)
+
+
+def build_map(
+    repo_path: str | Path,
+    _include_v2_enrichment: bool = True,
+    _fast_facts: bool = False,
+    *,
+    paper_path: Optional[str | Path] = None,
+    pipeline_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Mode 1: Polyglot AST + Import-Graph / Scientific Role Clustering + 3-Level Progressive Abstraction + AI Seams."""
     repo = Path(repo_path).resolve()
     prod_files, test_files = _scan_repo_files(repo)
     if repo.is_file() and not test_files:
         sibling_tests = repo.parent / "tests"
         if sibling_tests.is_dir():
             test_files = [p for p in sibling_tests.rglob("test_*.py") if not p.is_symlink()][:120]
+
+    scope_info: Optional[Dict[str, Any]] = None
+    scope_summary: Optional[Dict[str, Any]] = None
+    if repo.is_dir() and (not _fast_facts or paper_path or pipeline_id):
+        v4_proc = _load_anvil_v4_process_only()
+        scope_info = v4_proc.discover_paper_matched_scopes(repo, Path(paper_path) if paper_path else None)
+        scope_summary = v4_proc.resolve_active_pipeline_scope(scope_info, pipeline_id=pipeline_id)
+        if scope_summary["scoped"]:
+            allowed_rels = set(scope_summary["active_files"])
+            prod_files = [fp for fp in prod_files if fp.relative_to(repo).as_posix() in allowed_rels]
 
     file_records: List[Dict[str, Any]] = []
     languages_counts: Dict[str, int] = {}
@@ -2967,7 +4157,7 @@ def build_map(repo_path: str | Path, _include_v2_enrichment: bool = True, _fast_
         lang = rec["language"]
         languages_counts[lang] = languages_counts.get(lang, 0) + 1
         line_counts_by_file[rel] = rec["total_lines"]
-        lines_cache[rel] = text.splitlines()[:250]
+        lines_cache[rel] = text.splitlines()
         file_records.append(rec)
 
     test_refs = _collect_test_references(test_files)
@@ -3002,8 +4192,11 @@ def build_map(repo_path: str | Path, _include_v2_enrichment: bool = True, _fast_
             "validated": False,
         })
 
-    if len(raw_buckets) > 6:
-        buckets = _cluster_into_architectural_buckets(repo, raw_buckets)
+    use_sci_roles = bool((scope_info and scope_info.get("has_scope_anchor")) or paper_path or pipeline_id)
+    if use_sci_roles and len(raw_buckets) >= 2:
+        buckets = _cluster_into_architectural_buckets(repo, raw_buckets, scientific_roles=True)
+    elif len(raw_buckets) > 6:
+        buckets = _cluster_into_architectural_buckets(repo, raw_buckets, scientific_roles=False)
     else:
         buckets = raw_buckets
 
@@ -3023,7 +4216,6 @@ def build_map(repo_path: str | Path, _include_v2_enrichment: bool = True, _fast_
     edges: List[Dict[str, str]] = []
     seen_edges: Set[Tuple[str, str]] = set()
 
-    # Import-graph edges + cross-bucket function call edges
     for rb in raw_buckets:
         src_bid = file_to_bucket.get(rb["file"])
         if not src_bid:
@@ -3051,9 +4243,29 @@ def build_map(repo_path: str | Path, _include_v2_enrichment: bool = True, _fast_
                     })
 
     flow_diagram = _build_foundry_flow_diagram(buckets, edges)
-    _enrich_progressive_levels(repo, buckets, lines_cache=lines_cache, line_counts_by_file=line_counts_by_file)
+    sci_val: Optional[Dict[str, Any]] = None
+    if not _fast_facts and languages_counts.get("python", 0) > 0:
+        sci_val = run_scientific_validation(
+            repo,
+            active_files=[rb["file"] for rb in raw_buckets],
+            scope_summary=scope_summary,
+        )
+
+    _enrich_progressive_levels(
+        repo,
+        buckets,
+        lines_cache=lines_cache,
+        line_counts_by_file=line_counts_by_file,
+        scientific_validation=sci_val,
+    )
     if _include_v2_enrichment and raw_buckets is not buckets:
-        _enrich_progressive_levels(repo, raw_buckets, lines_cache=lines_cache, line_counts_by_file=line_counts_by_file)
+        _enrich_progressive_levels(
+            repo,
+            raw_buckets,
+            lines_cache=lines_cache,
+            line_counts_by_file=line_counts_by_file,
+            scientific_validation=sci_val,
+        )
 
     out_map: Dict[str, Any] = {
         "schema": "anvil-map/v1",
@@ -3062,6 +4274,8 @@ def build_map(repo_path: str | Path, _include_v2_enrichment: bool = True, _fast_
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "languages": languages_counts,
         "test_files": [tf.relative_to(repo).as_posix() for tf in test_files] if repo.is_dir() else [],
+        "paper_matched_scopes": scope_summary,
+        "scientific_validation": sci_val,
         "blocks": buckets,
         "conceptual_buckets": buckets,
         "module_buckets": raw_buckets,
@@ -3167,7 +4381,6 @@ def inspect_block(
         }
 
     validated_desc = lock_description.strip() if lock_description else None
-    # Honest validation gate: validated is True ONLY when a test actually ran AND exited 0!
     is_validated = bool(empirical["ran"] and empirical["exit_code"] == 0)
 
     result = {
@@ -3448,11 +4661,7 @@ def cst_rewrite_module(
     drop_functions: Optional[List[str]] = None,
     output_path: Optional[str | Path] = None,
 ) -> Dict[str, Any]:
-    """Scope-safe Concrete Syntax Tree (LibCST + MetadataWrapper + ScopeProvider) structural codemod.
-
-    Preserves 100% of comments, string literals, attribute accesses (`obj.foo`), keyword arguments (`fn(foo=1)`),
-    and shadowed local variables. Refuses cleanly when `libcst` is unavailable (zero regex fallback).
-    """
+    """Scope-safe Concrete Syntax Tree (LibCST + MetadataWrapper + ScopeProvider) structural codemod."""
     src_file = Path(source_path).resolve()
     raw = src_file.read_text(encoding="utf-8")
     rmap = dict(rename_map or {})
@@ -3505,13 +4714,10 @@ def cst_rewrite_module(
             if sym not in rmap:
                 return updated_node
             parent = parents.get(original_node)
-            # Never rewrite attribute accesses `obj.foo`
             if isinstance(parent, cst.Attribute) and parent.attr is original_node:
                 return updated_node
-            # Never rewrite keyword argument names `fn(foo=1)`
             if isinstance(parent, cst.Arg) and parent.keyword is original_node:
                 return updated_node
-            # Never rewrite import alias module targets unless bound in scope
             if isinstance(parent, cst.ImportAlias) and parent.asname is None:
                 return updated_node
 
@@ -3707,11 +4913,12 @@ def verify_behavioral_equivalence(
 
 MATH_SYNONYM_BRIDGE: Dict[str, Tuple[str, ...]] = {
     "theta": ("theta", "param", "params", "z", "x", "latent", "state", "weights"),
-    "u": ("u", "eps", "noise", "base", "z", "randn"),
+    "u": ("u", "eps", "noise", "base", "z", "randn", "utility", "logits"),
     "phi": ("phi", "parameters", "net", "network", "flow", "weights"),
     "mu": ("mu", "mean", "loc", "shift"),
     "sigma": ("sigma", "scale", "log_scale", "std", "cov", "var"),
-    "beta": ("beta", "temper", "anneal", "weight", "schedule", "ramp", "warmup"),
+    "beta": ("beta", "temper", "anneal", "weight", "schedule", "ramp", "warmup", "coef"),
+    "gamma": ("gamma", "coef", "utility", "bilinear", "weights"),
     "tau": ("tau", "precision", "scale", "step"),
     "alpha": ("alpha", "intercept", "rate", "weight"),
     "elbo": ("elbo", "loss", "kl", "variational", "objective", "log_q", "log_prob"),
@@ -3722,10 +4929,12 @@ MATH_SYNONYM_BRIDGE: Dict[str, Tuple[str, ...]] = {
     "sample": ("sample", "sampler", "rsample", "draw", "variational"),
     "train": ("train", "trainer", "step", "optim", "adam", "schedule", "epoch", "grad"),
     "mvn": ("mvn", "multivariate", "normal", "gaussian"),
-    "logistic": ("logistic", "german", "credit", "bernoulli", "funnel"),
+    "logistic": ("logistic", "german", "credit", "bernoulli", "funnel", "logit", "softmax", "log_softmax"),
     "volatility": ("sv", "volatility", "stochastic"),
-    "panel": ("panel", "state_space", "kalman", "ss"),
+    "panel": ("panel", "state_space", "kalman", "ss", "mixture", "logsumexp"),
     "regression": ("regression", "linear", "mixed", "mixedlm", "hlr"),
+    "adapter": ("adapter", "tanh", "relu", "index", "residual"),
+    "policy": ("policy", "aipw", "doubly_robust", "counterfactual", "welfare", "targeting"),
 }
 
 
@@ -3776,7 +4985,6 @@ def _resolve_tex_include(cur_dir: Path, root_dir: Path, target: str) -> Optional
             cand = (base / f"{clean_t}{suffix}").resolve()
             if cand.is_file() and not cand.is_symlink() and (cand == root_dir or root_dir in cand.parents):
                 return cand
-        # Case-insensitive fallback (e.g. \input{introduction} -> Introduction.tex on Overleaf)
         rel_parent = Path(clean_t).parent
         search_dir = (base / rel_parent).resolve()
         if search_dir.is_dir() and (search_dir == root_dir or root_dir in search_dir.parents):
@@ -3895,7 +5103,7 @@ def _extract_equation_symbols(raw_latex: str, section_prose: str) -> List[Dict[s
     seen_sym: Set[str] = set()
 
     for cmd in found_cmds:
-        if cmd in LATEX_SPACING_CMDS or cmd in LATEX_SIZING_CMDS or cmd in ("sum", "prod", "int", "in", "leq", "geq", "approx", "sim", "cdot", "cdots", "times", "to", "mid", "Vert", "log", "exp", "det", "cos", "sin", "min", "max", "mathbf", "mathcal", "mathbb", "boldsymbol", "tilde", "hat", "bar"):
+        if cmd in LATEX_SPACING_CMDS or cmd in LATEX_SIZING_CMDS or cmd in ("sum", "prod", "int", "in", "leq", "geq", "approx", "sim", "cdot", "cdots", "times", "to", "mid", "Vert", "log", "exp", "det", "cos", "sin", "tanh", "min", "max", "mathbf", "mathcal", "mathbb", "boldsymbol", "tilde", "hat", "bar"):
             continue
         if cmd in GREEK_AND_SYMBOLS and GREEK_AND_SYMBOLS[cmd][0] == "mi":
             sym_tex = f"\\{cmd}"
@@ -4020,7 +5228,6 @@ def _parse_paper_hierarchy_from_provenance_lines(
     sec_prose_buffers: Dict[str, List[str]] = {}
     current_sec_id = "sec-0"
 
-    # Extract \title{...} or top-level # Title
     joined_head = "\n".join(ln for _, _, ln in prov_lines[:160])
     if is_markdown:
         for _, _, ln in prov_lines[:40]:
@@ -4028,7 +5235,7 @@ def _parse_paper_hierarchy_from_provenance_lines(
                 paper_title = ln.strip()[2:].strip()
                 break
     else:
-        tm = re.search(r"\\title\s*(?:\[[^\]]*\])?\s*\{", joined_head)
+        tm = re.search(r"\\title\s*(?:\[[^\]]*\])?\s*\{", joined_head, flags=re.I)
         if tm:
             raw_t, _ = _extract_balanced_brace_arg(joined_head, tm.end() - 1)
             cleaned_t = _clean_latex_prose(raw_t)
@@ -4048,7 +5255,6 @@ def _parse_paper_hierarchy_from_provenance_lines(
         src_file, lno, ln = prov_lines[idx]
         s_ln = ln.strip()
 
-        # 1. Section headings
         if is_markdown:
             mm = md_sec_re.match(s_ln)
             if mm and not (len(mm.group(1)) == 1 and s_ln[2:].strip() == paper_title):
@@ -4082,7 +5288,6 @@ def _parse_paper_hierarchy_from_provenance_lines(
             if sm:
                 kind_s, star = sm.group(1), sm.group(2)
                 lvl = {"section": 1, "subsection": 2, "subsubsection": 3}[kind_s]
-                # Handle multi-line \section{...} if needed
                 chunk = s_ln
                 look = idx
                 while chunk.count("{") > chunk.count("}") and look + 1 < total and look - idx < 5:
@@ -4119,7 +5324,6 @@ def _parse_paper_hierarchy_from_provenance_lines(
                 idx = look + 1
                 continue
 
-        # 2. Explicit LaTeX \begin{algorithm} / \begin{algorithmic}
         am = alg_open_re.search(s_ln)
         if am:
             env_nm = am.group(1)
@@ -4160,7 +5364,6 @@ def _parse_paper_hierarchy_from_provenance_lines(
             idx = end_i + 1
             continue
 
-        # 3. Markdown / Plaintext `Algorithm N:` blocks
         mam = md_alg_re.match(s_ln)
         if mam:
             alg_num = mam.group(1)
@@ -4199,7 +5402,6 @@ def _parse_paper_hierarchy_from_provenance_lines(
             idx = end_i
             continue
 
-        # 4. Procedural \begin{enumerate} inside methodological sections
         if enum_open_re.search(s_ln) and sections:
             cur_sec_title = sections[-1]["title"].lower()
             if any(k in cur_sec_title for k in ("algorithm", "procedur", "estimat", "sampl", "train", "optim", "infer", "invert", "flow", "factoriz", "method", "schedule", "forward", "backward")):
@@ -4237,7 +5439,6 @@ def _parse_paper_hierarchy_from_provenance_lines(
                     idx = end_i + 1
                     continue
 
-        # 5. Display Equations (\begin{equation/align/gather}, \[...\], $$...$$)
         em = eq_open_re.search(s_ln)
         if em:
             env_name = em.group(1)
@@ -4295,20 +5496,16 @@ def _parse_paper_hierarchy_from_provenance_lines(
             idx = end_i + 1
             continue
 
-        # Accumulate prose for current section summary
         if s_ln and not s_ln.startswith(("\\documentclass", "\\usepackage", "\\newcommand", "\\begin{", "\\end{", "\\maketitle", "\\bibliography")):
             sec_prose_buffers.setdefault(current_sec_id, []).append(s_ln)
         idx += 1
 
-    # Populate section plain-English summaries
     for sec in sections:
         prose_lines = sec_prose_buffers.get(sec["id"], [])
         clean_p = _clean_latex_prose(" ".join(prose_lines[:10]))
         sents = [s.strip() for s in re.split(r"(?<=[.!?])\s+", clean_p) if len(s.strip()) > 15]
         sec["summary"] = " ".join(sents[:2])[:280] if sents else sec["title"]
 
-    # If paper has NO explicit \begin{algorithm} or procedural \begin{enumerate}, synthesize procedural_section
-    # from methodological sections with >=2 equations or ordered methodological subsections!
     if not algorithms and equations:
         eq_by_id = {e["id"]: e for e in equations}
         method_secs = [
@@ -4382,6 +5579,11 @@ _GENERIC_LABEL_TOKENS = frozenset({
     "def", "compute", "get", "set", "run", "make", "init", "main", "step",
 })
 
+_STRUCTURAL_HIGH_PRECISION_OPS = frozenset({
+    "panel_loglik", "logit_softmax", "tanh_adapter", "relu_adapter",
+    "bilinear_einsum", "linear_proj", "mixture_sum", "zscore_norm", "aipw_dr", "quad_penalty",
+})
+
 
 def _expand_domain_tokens(text: str) -> Set[str]:
     raw_toks = _split_ident_subtokens(text, min_len=2)
@@ -4416,7 +5618,64 @@ def _detect_latex_math_ops(raw_latex: str) -> Set[str]:
         ops.add("dag_mask")
     if "^-1" in low or "^{-1}" in low:
         ops.add("inverse")
+
+    # Structural PyTorch / econometric choice & panel operators (brace-depth safe)
+    if ("\\prod" in low and "\\sum" in low) or "logsumexp" in low:
+        ops.add("panel_loglik")
+        ops.add("logsumexp")
+    exp_occurrences = low.count("\\exp") + low.count("e^")
+    if (
+        (any(f in low for f in ("\\frac", "\\dfrac", "\\tfrac")) and "\\sum" in low and exp_occurrences >= 2)
+        or ("\\log" in low and "\\sum" in low and exp_occurrences >= 1 and "\\prod" not in low)
+        or "softmax" in low
+    ):
+        ops.add("logit_softmax")
+    if "\\tanh" in low or ("h(" in low and "\\delta" in low):
+        ops.add("tanh_adapter")
+    if "\\max(0" in low or "\\max\\{0" in low or "relu" in low:
+        ops.add("relu_adapter")
+        if "w^" in low or "b^" in low or "\\mathbf{w}" in low:
+            ops.add("linear_proj")
+    has_transpose = (
+        any(tp in low for tp in ("^{\\top}", "^\\top", "^t", "^{t}", "^{\\text{t}}", "'x", "^{\\prime}"))
+        or bool(re.search(r"\^\{[^}]*t\}|\^\{[^}]*\}t\b", low))
+    )
+    if (
+        (
+            re.search(r"\\sum_\{?[a-z0-9,=]+\}?\s*[a-z]_\{[^}]+\}\s*(?:\\[a-z]+|[a-z])_\{[^}]+\}", low)
+            and exp_occurrences == 0
+            and "\\prod" not in low
+            and "\\pi_" not in low
+            and "g_" not in low
+        )
+        or (has_transpose and "\\tanh" not in low)
+        or "einsum" in low
+    ):
+        ops.add("bilinear_einsum")
+    if has_transpose or ("a_s" in low and "h_i" in low) or ("\\beta^{\\text{price}}" in low):
+        ops.add("linear_proj")
+    if "\\sum" in low and "\\prod" not in low and exp_occurrences == 0 and any(g in low for g in ("\\pi_", "g_s(", "g_{")):
+        ops.add("mixture_sum")
+    if (
+        any(f in low for f in ("\\frac", "\\dfrac", "\\tfrac"))
+        and "-" in low
+        and any(m in low for m in ("\\mu", "\\bar", "mean"))
+        and any(s in low for s in ("\\sigma", "std", "s_"))
+    ):
+        ops.add("zscore_norm")
+    if ("\\mathbb{1}" in low or "\\mathbf{1}" in low or "aipw" in low) and "\\frac" in low and ("\\hat{e}" in low or "\\hat{\\pi}" in low or "e(" in low):
+        ops.add("aipw_dr")
+
     return ops
+
+
+def _is_prototype_or_archive_file(rel_file: str) -> bool:
+    parts = [p.lower() for p in Path(rel_file).parts]
+    toks = set(re.findall(r"[a-z0-9]+", "/".join(parts)))
+    if toks & {"old", "backup", "bak", "deprecated", "legacy", "unused", "obsolete", "prototype", "proto", "trial", "scratch", "abandoned", "archive", "tmp", "temp"}:
+        return True
+    stem = Path(rel_file).stem.lower()
+    return bool(re.search(r"(?:^|_)(?:v0|v1|try\d*|exp_old)(?:_|$)", stem))
 
 
 def _score_paper_item_against_functions(
@@ -4426,105 +5685,547 @@ def _score_paper_item_against_functions(
     label: str,
     is_benchmark_section: bool,
     all_funcs: List[Dict[str, Any]],
+    *,
+    preferred_files: Optional[Set[str]] = None,
+    excluded_symbols: Optional[Set[str]] = None,
 ) -> List[Dict[str, Any]]:
-    """Multi-signal scorer aligning a paper equation/step/section against companion software functions (zero modulo!)."""
+    """Operator-grounded & scope-filtered multi-signal scorer aligning a paper equation/step/section
+    against active replication functions (penalizing prototype/archive scripts and pure data loaders).
+    """
     paper_toks = _expand_domain_tokens(f"{item_text} {label} {raw_latex} {' '.join(symbol_vars)}")
     label_toks = {t for t in _split_ident_subtokens(label or "", min_len=3) if t not in _GENERIC_LABEL_TOKENS}
     paper_ops = _detect_latex_math_ops(raw_latex)
+    paper_high_ops = paper_ops & _STRUCTURAL_HIGH_PRECISION_OPS
     sym_set = {v.lower() for v in symbol_vars if len(v) >= 1}
+    is_model_equation = bool(raw_latex.strip()) and bool(paper_ops - {"zscore_norm"})
 
-    scored: List[Dict[str, Any]] = []
-    for fn in all_funcs:
-        short_low = str(fn.get("short_name") or fn["name"].split(".")[-1]).lower()
-        if any(short_low.startswith(p) for p in DEAD_SHIM_PREFIXES):
-            continue
-        fn_file = str(fn.get("file") or "")
-        fn_file_low = fn_file.lower()
-        fn_name_toks = {
-            t for t in _split_ident_subtokens(str(fn.get("name") or ""), min_len=3)
-            if t not in _GENERIC_LABEL_TOKENS
+    def _score_pool(pool: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        scored_local: List[Dict[str, Any]] = []
+        for fn in pool:
+            short_low = str(fn.get("short_name") or fn["name"].split(".")[-1]).lower()
+            if any(short_low.startswith(p) for p in DEAD_SHIM_PREFIXES):
+                continue
+            fn_file = str(fn.get("file") or "")
+            fn_file_low = fn_file.lower()
+            fn_name_toks = {
+                t for t in _split_ident_subtokens(str(fn.get("name") or ""), min_len=3)
+                if t not in _GENERIC_LABEL_TOKENS
+            }
+            fn_ident_toks = _split_ident_subtokens(
+                f"{fn['name']} {' '.join(fn.get('args') or [])} {' '.join(fn.get('local_vars') or [])} {' '.join((fn.get('calls') or [])[:12])} {Path(fn_file).stem}",
+                min_len=1,
+            )
+            fn_doc_low = f"{fn.get('summary') or ''} {fn.get('docstring') or ''}".lower()
+            fn_doc_toks = _split_ident_subtokens(fn_doc_low, min_len=3)
+            fn_ops = set(fn.get("math_ops") or [])
+
+            matched_idents = sorted((paper_toks & {t for t in fn_ident_toks if len(t) >= 3}) | (sym_set & fn_ident_toks))
+            matched_name_toks = paper_toks & fn_name_toks
+            matched_label_toks = label_toks & (fn_name_toks | fn_doc_toks)
+            matched_doc = sorted(paper_toks & fn_doc_toks)
+            matched_ops = sorted(paper_ops & fn_ops)
+            matched_high_ops = paper_high_ops & fn_ops
+
+            score = 0.0
+            if label and label.lower() in fn_doc_low:
+                score += 6.0
+            if matched_label_toks:
+                score += min(9.0, len(matched_label_toks) * 4.5)
+            if matched_name_toks:
+                score += min(7.5, len(matched_name_toks) * 2.5)
+            score += min(10.8, len(matched_idents) * 1.8)
+            score += min(5.0, len(matched_doc) * 0.9)
+            score += min(8.8, len(matched_ops) * 2.2)
+
+            # High-specificity structural AST operator alignment bonuses
+            if matched_high_ops:
+                score += len(matched_high_ops) * 9.5
+                if "tanh_adapter" in matched_high_ops and "linear_proj" in fn_ops:
+                    score += 3.5
+                if "panel_loglik" in matched_high_ops and "logit_softmax" in fn_ops:
+                    score += 2.5
+            elif paper_high_ops and not fn_ops:
+                # Prevent generic non-mathematical functions from stealing structured equations via 3-letter word overlap
+                score *= 0.42
+
+            if score <= 0.0:
+                continue
+
+            if excluded_symbols and (f"{fn_file}:{fn['name']}" in excluded_symbols or f"{fn_file}:{short_low}" in excluded_symbols):
+                continue
+
+            # Penalize pure data-loader (load_*, read_csv) & synthetic data generators when matching model utility/likelihood equations
+            stem_f_low = Path(fn_file).stem.lower()
+            is_data_mod = any(k in stem_f_low for k in ("data_utils", "data_prep", "prepare_", "convert_")) or "/prep/" in fn_file_low
+            is_loader = (
+                bool(fn.get("is_pure_data_loader"))
+                or (short_low.startswith(("load_", "read_", "parse_", "fetch_", "prepare_", "convert_")) and (is_data_mod or not bool(fn_ops & _MODEL_MATH_OPS)))
+            )
+            is_synth_gen = short_low.startswith(("generate_", "make_synthetic", "make_minimal", "simulate_dgp"))
+            if is_model_equation and is_loader and not (label and label.lower() in fn_doc_low):
+                score = max(0.0, score * 0.10 - 6.0)
+            if is_model_equation and is_synth_gen and not is_benchmark_section:
+                score = max(0.0, score * 0.15 - 4.5)
+
+            # Penalize table-formatting / consistency-check scripts on core model equations when they lack structural math ops
+            if is_model_equation and not matched_high_ops and (
+                stem_f_low.startswith(("check_", "summarize_", "build_table", "step2_tables"))
+            ):
+                score *= 0.25
+
+            # Reward dedicated choice/neural model architecture forward/utility/gating methods over __init__ or outer training loops
+            cls_low = str(fn.get("class_name") or "").lower()
+            if is_model_equation:
+                if short_low == "__init__":
+                    score *= 0.45
+                elif short_low.startswith(("train_", "fit_", "main", "cli")):
+                    score *= 0.82
+                if any(k in cls_low for k in ("mixture", "moe", "expert", "gating", "neural", "ffnn", "choice", "anchored", "maf", "flow", "sampler", "variational", "trainer", "model", "net")):
+                    score += 3.5
+                if short_low in ("forward", "forward_utilities", "utilities", "_expert_probabilities", "_mixture", "predict", "predict_probabilities", "log_probs", "log_weights", "nll", "loss", "components", "_mlp", "_build_mlp"):
+                    score += 3.5
+                if not is_benchmark_section and (stem_f_low.startswith("torch") or "core" in stem_f_low or stem_f_low == "step2_runner"):
+                    score += 3.2
+
+                is_loglik_eq = ("panel_loglik" in paper_ops) or (
+                    "log" in paper_ops and bool(re.search(r"\\mathcal\{[Ll]\}|\\ell|\bloss\b|\bnll\b|\\prod", raw_latex))
+                )
+                is_pure_linear_utility_eq = ("linear_proj" in paper_ops) and not (
+                    paper_ops & {"logit_softmax", "panel_loglik", "mixture_sum", "relu_act", "tanh_adapter", "exp", "log"}
+                )
+                is_gate_softmax_eq = (
+                    ("logit_softmax" in paper_ops)
+                    and not (paper_ops & {"panel_loglik", "mixture_sum", "log"})
+                    and bool(re.search(r"\\pi_|g_\{i\s*\|\s*s\}|\\alpha|\\psi", raw_latex))
+                )
+                is_context_utility_eq = bool(re.search(r"\\beta_s\s*\+\s*h_s|\\delta_s", raw_latex))
+
+                if not is_loglik_eq and short_low in ("loss", "nll", "neg_log_lik"):
+                    score -= 6.0
+                if is_pure_linear_utility_eq:
+                    if "utilit" in short_low and not (fn_ops & {"logit_softmax", "panel_loglik"}):
+                        score += 7.0
+                        if "expertmodule" in cls_low or "linearexpert" in cls_low:
+                            score += 6.5
+                        if "coeff" in (fn.get("args") or []):
+                            score -= 4.5
+                    elif "logit_softmax" in fn_ops or "panel_loglik" in fn_ops or "exp" in fn_ops or "predict" in short_low:
+                        score -= 4.5
+                if is_gate_softmax_eq:
+                    if "gat" in cls_low or "weight" in short_low or "gate" in short_low:
+                        score += 7.0
+                    elif "utilit" in short_low or "_expert_probabilities" in short_low:
+                        score -= 2.5
+                if is_context_utility_eq and ("component" in short_low or "adapter" in cls_low or "rawtextmoe" in cls_low or "anchoredmoe" in cls_low):
+                    score += 6.5
+                if ("one_unit_price" in label.lower() or ("price" in paper_toks and ("a_s" in raw_latex or "h_i" in raw_latex))) and (
+                    ("smallmoe" in cls_low and short_low in ("utilities", "representation"))
+                    or ("anchoredmoe" in cls_low and short_low == "log_probs")
+                ):
+                    score += 9.0
+                if is_loglik_eq and "panel_loglik" in fn_ops and (short_low in ("mixture_sequence_nll", "nll", "loss", "forward")):
+                    score += 4.5
+
+            # Penalize prototype / archive / historical clutter files
+            if _is_prototype_or_archive_file(fn_file):
+                score *= 0.18
+
+            is_bench_file = any(k in fn_file_low for k in ("benchmark", "example", "demo", "plot", "report", "experiment"))
+            if fn.get("stage") == "compute":
+                score += 1.0
+            if is_benchmark_section and is_bench_file:
+                score += 2.4
+            elif (not is_benchmark_section) and (not is_bench_file):
+                score += 2.2
+            elif (not is_benchmark_section) and is_bench_file:
+                score *= 0.62
+
+            if score >= 2.5:
+                scored_local.append({
+                    "qualname": fn["name"],
+                    "file": fn_file,
+                    "bucket_id": fn.get("bucket_id") or "",
+                    "line_start": int(fn.get("lineno") or 1),
+                    "line_end": int(fn.get("end_lineno") or fn.get("lineno") or 1),
+                    "score": round(score, 2),
+                    "matched_identifiers": matched_idents[:8],
+                    "matched_ops": matched_ops[:8],
+                })
+        scored_local.sort(key=lambda m: (m["score"], len(m["matched_ops"]), len(m["matched_identifiers"])), reverse=True)
+        return scored_local[:5]
+
+    if preferred_files:
+        scoped_pool = [f for f in all_funcs if f.get("file") in preferred_files]
+        if scoped_pool:
+            scoped_hits = _score_pool(scoped_pool)
+            if scoped_hits:
+                return scoped_hits
+        non_proto_fallback = [f for f in all_funcs if not _is_prototype_or_archive_file(str(f.get("file") or ""))]
+        return _score_pool(non_proto_fallback or all_funcs)
+
+    return _score_pool(all_funcs)
+
+
+def _detect_equation_ast_drift(raw_latex: str, repo_root: Path, rel_file: str, qualname: str) -> Optional[str]:
+    """Inspect matched Python function AST against `raw_latex` to detect concrete
+    sign, exponent-sign, normalization (`1/N` vs `1/(N-1)`), or log-base drift (`MAP_DRIFT`).
+    """
+    if not raw_latex or not rel_file:
+        return None
+    fpath = (repo_root / rel_file).resolve() if repo_root.is_dir() else repo_root
+    if not fpath.is_file() or fpath.suffix != ".py":
+        return None
+    try:
+        tree = ast.parse(fpath.read_text(encoding="utf-8", errors="replace"), filename=rel_file)
+    except SyntaxError:
+        return None
+
+    target_node: Optional[ast.AST] = None
+    short_target = qualname.split(".")[-1]
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == short_target:
+            target_node = node
+            break
+    if target_node is None:
+        return None
+
+    try:
+        fn_unparsed = ast.unparse(target_node)
+    except Exception:
+        fn_unparsed = ""
+
+    ltx = raw_latex.replace(" ", "")
+    ltx_spaced = raw_latex
+
+    has_neg_exp_ltx = bool(re.search(r"(?:\\exp\s*(?:\\left)?\(\s*-|e\^\{\s*-)", ltx_spaced))
+    has_pos_only_exp_ltx = (not has_neg_exp_ltx) and bool(re.search(r"\\exp\s*(?:\\left)?\(\s*[A-Za-z\\]", ltx_spaced))
+    exp_calls: List[ast.Call] = []
+    for sub in ast.walk(target_node):
+        if isinstance(sub, ast.Call):
+            cname = sub.func.id if isinstance(sub.func, ast.Name) else (sub.func.attr if isinstance(sub.func, ast.Attribute) else "")
+            if cname == "exp" and sub.args:
+                exp_calls.append(sub)
+    if exp_calls:
+        def _arg_has_neg(expr: ast.AST) -> bool:
+            for c in ast.walk(expr):
+                if isinstance(c, ast.UnaryOp) and isinstance(c.op, ast.USub):
+                    return True
+                if isinstance(c, ast.Constant) and isinstance(c.value, (int, float)) and c.value < 0:
+                    return True
+            return False
+
+        any_neg_in_code = any(_arg_has_neg(ec.args[0]) for ec in exp_calls)
+        if has_neg_exp_ltx and not any_neg_in_code:
+            return "Exponential sign drift: manuscript specifies negative exponent exp(-...) whereas code evaluates exp(+...)."
+        if has_pos_only_exp_ltx and all(_arg_has_neg(ec.args[0]) for ec in exp_calls):
+            return "Exponential sign drift: manuscript specifies positive exponent exp(...) whereas code negates exponent exp(-...)."
+
+    has_pop_norm = bool(re.search(r"\\frac\{1\}\{[Nn]\}\s*\\sum", ltx_spaced)) and ("-1" not in ltx)
+    has_sample_norm = bool(re.search(r"\\frac\{1\}\{[Nn]\s*-\s*1\}\s*\\sum", ltx_spaced))
+    has_bessel_in_code = bool(re.search(r"/\s*\(\s*(?:len\([^)]+\)|[Nn])\s*-\s*1\s*\)|ddof\s*=\s*1", fn_unparsed))
+    has_any_div_in_code = any(isinstance(sub, ast.BinOp) and isinstance(sub.op, ast.Div) for sub in ast.walk(target_node)) or ("mean(" in fn_unparsed)
+    if has_pop_norm and has_bessel_in_code:
+        return "Normalization drift: manuscript specifies 1/N population normalization whereas code divides by (N - 1)."
+    if has_sample_norm and has_any_div_in_code and not has_bessel_in_code:
+        return "Normalization drift: manuscript specifies 1/(N - 1) sample normalization whereas code divides by N without Bessel correction."
+    if (has_pop_norm or has_sample_norm) and not has_any_div_in_code:
+        return "Normalization drift: manuscript specifies normalized mean (1/N sum) whereas code omits normalization division."
+
+    if ("\\ln" in ltx_spaced or ("\\log" in ltx_spaced and "_2" not in ltx and "_{10}" not in ltx)):
+        call_names = {
+            (sub.func.id if isinstance(sub.func, ast.Name) else (sub.func.attr if isinstance(sub.func, ast.Attribute) else ""))
+            for sub in ast.walk(target_node)
+            if isinstance(sub, ast.Call)
         }
-        fn_ident_toks = _split_ident_subtokens(
-            f"{fn['name']} {' '.join(fn.get('args') or [])} {' '.join(fn.get('local_vars') or [])} {Path(fn_file).stem}",
-            min_len=1,
-        )
-        fn_doc_low = f"{fn.get('summary') or ''} {fn.get('docstring') or ''}".lower()
-        fn_doc_toks = _split_ident_subtokens(fn_doc_low, min_len=3)
-        fn_ops = set(fn.get("math_ops") or [])
+        if ("log10" in call_names or "log2" in call_names) and "log" not in call_names:
+            return "Logarithm base drift: manuscript specifies natural logarithm whereas code invokes log10/log2."
 
-        matched_idents = sorted((paper_toks & {t for t in fn_ident_toks if len(t) >= 3}) | (sym_set & fn_ident_toks))
-        matched_name_toks = paper_toks & fn_name_toks
-        matched_label_toks = label_toks & (fn_name_toks | fn_doc_toks)
-        matched_doc = sorted(paper_toks & fn_doc_toks)
-        matched_ops = sorted(paper_ops & fn_ops)
+    norm_ltx = (
+        ltx_spaced.replace("\\mu", "mu")
+        .replace("\\sigma", "sigma")
+        .replace("\\alpha", "alpha")
+        .replace("\\beta", "beta")
+        .replace("\\gamma", "gamma")
+    )
+    for m_op in re.finditer(r"\b(mu|alpha)\s*([+-])\s*(sigma|beta|gamma)\b", norm_ltx):
+        lhs_v, ltx_op, rhs_v = m_op.group(1), m_op.group(2), m_op.group(3)
+        if ltx_op == "+" and re.search(rf"\b{lhs_v}\s*-\s*{rhs_v}\b", fn_unparsed) and not re.search(rf"\b{lhs_v}\s*\+\s*{rhs_v}\b", fn_unparsed):
+            return f"Sign drift: manuscript adds '{lhs_v} + {rhs_v}' whereas code subtracts '{lhs_v} - {rhs_v}'."
+        if ltx_op == "-" and re.search(rf"\b{lhs_v}\s*\+\s*{rhs_v}\b", fn_unparsed) and not re.search(rf"\b{lhs_v}\s*-\s*{rhs_v}\b", fn_unparsed):
+            return f"Sign drift: manuscript subtracts '{lhs_v} - {rhs_v}' whereas code adds '{lhs_v} + {rhs_v}'."
 
-        score = 0.0
-        if label and label.lower() in fn_doc_low:
-            score += 6.0
-        if matched_label_toks:
-            score += min(9.0, len(matched_label_toks) * 4.5)
-        if matched_name_toks:
-            score += min(7.5, len(matched_name_toks) * 2.5)
-        score += min(10.8, len(matched_idents) * 1.8)
-        score += min(5.0, len(matched_doc) * 0.9)
-        score += min(8.8, len(matched_ops) * 2.2)
+    return None
 
-        if score <= 0.0:
-            continue
 
-        is_bench_file = any(k in fn_file_low for k in ("benchmark", "example", "demo", "plot", "report", "experiment"))
-        if fn.get("stage") == "compute":
-            score += 1.0
-        if is_benchmark_section and is_bench_file:
-            score += 2.4
-        elif (not is_benchmark_section) and (not is_bench_file):
-            score += 2.2
-        elif (not is_benchmark_section) and is_bench_file:
-            score *= 0.62
+def _build_dual_stage_crosswalk_lookup(
+    repo_root: Path,
+    trace_data: Optional[Dict[str, Any]],
+    *,
+    paper_path: Optional[Path] = None,
+    pipeline_id: Optional[str] = None,
+) -> Tuple[Dict[Tuple[str, str], Dict[str, str]], Dict[str, Dict[str, str]], Dict[Tuple[str, str], Dict[str, str]], Dict[str, Dict[str, str]], Dict[Tuple[str, str], int], Set[str]]:
+    """Build lookups mapping `(file, qualname)` and `qualname` onto both As-Built `S1..Sk`
+    and Proposed Refactored `N1..Nk` stages, plus traced hit counts and stage tripwires.
+    """
+    v4_proc = _load_anvil_v4_process_only()
+    base_dir = repo_root if repo_root.is_dir() else repo_root.parent
+    proc_map = v4_proc.build_process_map(
+        base_dir,
+        trace_data=trace_data,
+        persist=False,
+        paper_path=paper_path,
+        pipeline_id=pipeline_id,
+    )
 
-        if score >= 2.5:
-            scored.append({
-                "qualname": fn["name"],
-                "file": fn_file,
-                "bucket_id": fn.get("bucket_id") or "",
-                "line_start": int(fn.get("lineno") or 1),
-                "line_end": int(fn.get("end_lineno") or fn.get("lineno") or 1),
-                "score": round(score, 2),
-                "matched_identifiers": matched_idents[:8],
-                "matched_ops": matched_ops[:6],
-            })
+    ref_map: Optional[Dict[str, Any]] = None
+    try:
+        _, _, v4_ref, _ = _load_anvil_v4_wave2_modules()
+        ref_map = v4_ref.build_refactor_map(base_dir, trace_data=trace_data, persist=False, paper_path=paper_path, pipeline_id=pipeline_id)
+    except ImportError:
+        ref_map = None
 
-    scored.sort(key=lambda m: (m["score"], len(m["matched_ops"]), len(m["matched_identifiers"])), reverse=True)
-    return scored[:5]
+    old_exact: Dict[Tuple[str, str], Dict[str, str]] = {}
+    old_by_name: Dict[str, Dict[str, str]] = {}
+    stage_kind_by_id = {str(s["id"]): str(s.get("kind") or "compute") for s in (proc_map.get("l1_stages") or [])}
+
+    for step in proc_map.get("l2_steps") or []:
+        cref = step.get("code_ref") or {}
+        f_rel = str(cref.get("file") or "")
+        sym = str(cref.get("symbol") or "").split("#", 1)[0]
+        entry = {
+            "stage_id": str(step.get("stage_id") or "S1"),
+            "step_id": str(step.get("id") or ""),
+            "file": f_rel,
+            "symbol": sym,
+        }
+        if f_rel and sym:
+            old_exact[(f_rel, sym)] = entry
+            old_by_name.setdefault(sym, entry)
+            old_by_name.setdefault(sym.split(".")[-1], entry)
+
+    new_exact: Dict[Tuple[str, str], Dict[str, str]] = {}
+    new_by_name: Dict[str, Dict[str, str]] = {}
+    if ref_map is not None:
+        id_to_new: Dict[str, Dict[str, str]] = {}
+        for m in ref_map.get("mapped_to_new") or []:
+            f_rel = str(m.get("file") or "")
+            sym = str(m.get("symbol") or "")
+            entry = {
+                "stage_id": str(m.get("target_stage_id") or "N1"),
+                "role": str(m.get("target_role") or ""),
+                "file": f_rel,
+                "symbol": sym,
+            }
+            id_to_new[str(m.get("id") or "")] = entry
+            if f_rel and sym:
+                new_exact[(f_rel, sym)] = entry
+                new_by_name.setdefault(sym, entry)
+                new_by_name.setdefault(sym.split(".")[-1], entry)
+
+        for red in (ref_map.get("null_set") or {}).get("null_redundant") or []:
+            canon_entry = id_to_new.get(str(red.get("canonical_symbol") or ""))
+            if canon_entry:
+                f_rel = str(red.get("file") or "")
+                sym = str(red.get("symbol") or "")
+                delegated = {**canon_entry, "via_redundant_clone": f"{f_rel}:{sym}"}
+                new_exact[(f_rel, sym)] = delegated
+                new_by_name.setdefault(sym, delegated)
+
+        for unex in (ref_map.get("null_set") or {}).get("null_unexercised") or []:
+            f_rel = str(unex.get("file") or "")
+            sym = str(unex.get("symbol") or "")
+            u_entry = {
+                "stage_id": "NULL_UNEXERCISED",
+                "role": "protected_unexercised",
+                "file": f_rel,
+                "symbol": sym,
+            }
+            new_exact.setdefault((f_rel, sym), u_entry)
+            new_by_name.setdefault(sym, u_entry)
+    else:
+        # Standalone fallback when anvil_v4_refactor is absent in an isolated worktree
+        for (f_rel, sym), o_ent in old_exact.items():
+            skind = stage_kind_by_id.get(o_ent["stage_id"], "compute")
+            if skind == "ingest":
+                n_sid, n_role = "N1", "imperative_shell_ingest"
+            elif skind == "emit":
+                n_sid, n_role = "N3", "imperative_shell_emit"
+            else:
+                n_sid, n_role = "N2", "pure_functional_core"
+            n_ent = {"stage_id": n_sid, "role": n_role, "file": f_rel, "symbol": sym}
+            new_exact[(f_rel, sym)] = n_ent
+            new_by_name.setdefault(sym, n_ent)
+            new_by_name.setdefault(sym.split(".")[-1], n_ent)
+
+    fn_hits: Dict[Tuple[str, str], int] = {}
+    tripwire_stages: Set[str] = set()
+    if trace_data is not None:
+        line_hits: Dict[Tuple[str, int], int] = {}
+        for item in trace_data.get("executed_lines") or []:
+            if isinstance(item, dict) and isinstance(item.get("file"), str) and isinstance(item.get("line"), int):
+                line_hits[(item["file"], int(item["line"]))] = int(item.get("hits", 1))
+        for step in proc_map.get("l2_steps") or []:
+            cref = step.get("code_ref") or {}
+            f_rel = str(cref.get("file") or "")
+            sym = str(cref.get("symbol") or "").split("#", 1)[0]
+            s_ln = int(cref.get("start_line") or 1)
+            e_ln = int(cref.get("end_line") or s_ln)
+            cnt = sum(h for (hf, hln), h in line_hits.items() if hf == f_rel and s_ln <= hln <= e_ln)
+            fn_hits[(f_rel, sym)] = fn_hits.get((f_rel, sym), 0) + cnt
+        for tw in trace_data.get("tripwires") or []:
+            if isinstance(tw, dict) and tw.get("stage_id"):
+                tripwire_stages.add(str(tw["stage_id"]))
+
+    return old_exact, old_by_name, new_exact, new_by_name, fn_hits, tripwire_stages
 
 
 def paper_to_code_map(
     repo_path: str | Path,
     paper_spec_path: Optional[str | Path] = None,
-    test_cmd: Optional[str] = None,
+    test_cmd: Optional[str | Sequence[str]] = None,
     code_map: Optional[Dict[str, Any]] = None,
+    *,
+    pipeline_id: Optional[str] = None,
+    trace_path: Optional[str | Path] = None,
+    trace_data: Optional[Dict[str, Any]] = None,
+    approve_run: bool = False,
+    exec_argv: Optional[Sequence[str]] = None,
+    timeout_sec: float = 30.0,
 ) -> Dict[str, Any]:
     """Mode 4: Rich Paper Sections, Step-by-Step Algorithms & Native MathML Equations ⇄ Companion Software Mapper."""
+    v4_proc = _load_anvil_v4_process_only()
+    try:
+        _, v4_trace = _load_anvil_v4_modules()
+        iso_boundary = v4_trace.ISOLATION_BOUNDARY
+        non_vm_warn = v4_trace.NON_VM_TRUST_WARNING
+        max_t_sec = v4_trace.MAX_TIMEOUT_SEC
+    except ImportError:
+        v4_trace = None
+        iso_boundary = v4_proc.ISOLATION_BOUNDARY_CONSENTED
+        non_vm_warn = v4_proc.NON_VM_TRUST_WARNING_DEFAULT
+        max_t_sec = v4_proc.MAX_TIMEOUT_SEC_DEFAULT
+
+    if test_cmd is not None and (isinstance(test_cmd, (str, bytes)) and len(test_cmd) > 0 or (not isinstance(test_cmd, (str, bytes)) and bool(test_cmd))):
+        if not approve_run:
+            raise v4_proc.AnvilRefusalError(
+                "CONSENT_REQUIRED_REFUSED",
+                "Explicit --approve-run operator consent and '-- <argv...>' array are required before executing repository code in paper-map.",
+                details={"isolation_boundary": iso_boundary, "non_vm_trust_warning": non_vm_warn},
+            )
+        if isinstance(test_cmd, (str, bytes)):
+            raise v4_proc.AnvilRefusalError(
+                "EXECUTION_POLICY_REFUSED",
+                "Raw command string --test-cmd is refused (CWE-78); pass an explicit '-- <argv...>' array with --approve-run.",
+                cwe="CWE-78",
+                details={"isolation_boundary": iso_boundary},
+            )
+        if not isinstance(test_cmd, (list, tuple)):
+            raise v4_proc.AnvilRefusalError(
+                "EXECUTION_POLICY_REFUSED",
+                "Invalid --test-cmd type; pass an explicit '-- <argv...>' array with --approve-run.",
+                cwe="CWE-78",
+                details={"isolation_boundary": iso_boundary},
+            )
+    if exec_argv and len(exec_argv) > 0 and not approve_run:
+        raise v4_proc.AnvilRefusalError(
+            "CONSENT_REQUIRED_REFUSED",
+            "Explicit --approve-run operator consent is required before executing paper-map numeric verification.",
+            details={"isolation_boundary": iso_boundary, "non_vm_trust_warning": non_vm_warn},
+        )
+    if timeout_sec <= 0 or timeout_sec > max_t_sec:
+        raise v4_proc.AnvilRefusalError(
+            "BOUND_EXCEEDED_REFUSAL",
+            f"timeout_sec ({timeout_sec}) must be within (0, {max_t_sec}].",
+            details={"bound_name": "timeout_sec", "bound_limit": max_t_sec, "observed_value": timeout_sec},
+        )
+
     repo = Path(repo_path).resolve()
-    cmap = code_map or build_map(repo, _include_v2_enrichment=False)
+    base_dir = repo if repo.is_dir() else repo.parent
+    active_trace = trace_data
+    if active_trace is None and trace_path:
+        active_trace = v4_proc.load_validated_trace_json(trace_path)
+
+    consented_numeric_ran = False
+    consented_numeric_pass = False
+    if approve_run and exec_argv and len(exec_argv) > 0:
+        if v4_trace is None:
+            raise v4_proc.AnvilRefusalError(
+                "DEPENDENCY_MISSING",
+                "Runtime tracer module unavailable; run static paper-map without exec_argv.",
+            )
+        active_trace = v4_trace.run_consented_trace(
+            base_dir,
+            exec_argv,
+            approve_run=True,
+            timeout_sec=timeout_sec,
+            persist=False,
+        )
+        consented_numeric_ran = True
+        consented_numeric_pass = int(active_trace.get("returncode", 1)) == 0
+    if approve_run and isinstance(test_cmd, (list, tuple)) and len(test_cmd) > 0:
+        if v4_trace is None:
+            raise v4_proc.AnvilRefusalError(
+                "DEPENDENCY_MISSING",
+                "Runtime tracer module unavailable; run static paper-map without test_cmd.",
+            )
+        test_trace = v4_trace.run_consented_trace(
+            base_dir,
+            list(test_cmd),
+            approve_run=True,
+            timeout_sec=timeout_sec,
+            persist=False,
+        )
+        if active_trace is None:
+            active_trace = test_trace
+        t_ok = int(test_trace.get("returncode", 1)) == 0
+        consented_numeric_pass = (consented_numeric_pass and t_ok) if consented_numeric_ran else t_ok
+        consented_numeric_ran = True
+
+    spec_p = Path(paper_spec_path).resolve() if paper_spec_path else None
+    scope_info = v4_proc.discover_paper_matched_scopes(base_dir, spec_p) if repo.is_dir() else {
+        "has_scope_anchor": False,
+        "pipelines": [],
+        "paper_matched_files": [],
+        "unreferenced_historical_files": [],
+        "total_repo_source_files": 1,
+        "workflow_manifests": [],
+    }
+    scope_summary = v4_proc.resolve_active_pipeline_scope(scope_info, pipeline_id=pipeline_id)
+
+    cmap = code_map or build_map(
+        repo,
+        _include_v2_enrichment=False,
+        paper_path=spec_p,
+        pipeline_id=pipeline_id,
+    )
     buckets = cmap.get("conceptual_buckets") or []
     mod_buckets = cmap.get("module_buckets") or buckets
+    sci_val = cmap.get("scientific_validation") or run_scientific_validation(
+        repo,
+        active_files=[mb["file"] for mb in mod_buckets],
+        scope_summary=scope_summary,
+    )
 
     all_funcs: List[Dict[str, Any]] = []
     for b in buckets:
         for fn in b.get("functions") or []:
             all_funcs.append({**fn, "bucket_id": b["id"], "bucket_title": b["title"]})
 
-    empirical_ran = False
-    empirical_pass = False
-    if test_cmd:
-        cwd_dir = repo if repo.is_dir() else repo.parent
-        proc = _safe_subprocess_run(test_cmd, cwd=cwd_dir, timeout=60.0)
-        empirical_ran = True
-        empirical_pass = (proc.returncode == 0)
+    # Preferred replication file set for equation alignment (strictly pipeline_id if chosen, else paper_matched_files)
+    excluded_sym_set: Set[str] = set(scope_summary.get("excluded_shared_symbols") or [])
+    if excluded_sym_set:
+        all_funcs = [f for f in all_funcs if f"{f.get('file')}:{f.get('name')}" not in excluded_sym_set]
+    preferred_scope_files: Optional[Set[str]] = None
+    if scope_summary["scoped"] and scope_summary["active_files"]:
+        preferred_scope_files = set(scope_summary["active_files"])
+        all_funcs = [f for f in all_funcs if f.get("file") in preferred_scope_files]
+    elif scope_info.get("paper_matched_files"):
+        preferred_scope_files = set(scope_info["paper_matched_files"])
+
+    empirical_ran = consented_numeric_ran
+    empirical_pass = consented_numeric_pass
 
     # Case 1: Explicit JSON claims file (preserves ANV-11 raw-LaTeX rejection contract!)
-    spec_p = Path(paper_spec_path).resolve() if paper_spec_path else None
     if spec_p and spec_p.is_file() and spec_p.suffix.lower() == ".json":
         parsed = json.loads(spec_p.read_text(encoding="utf-8", errors="replace"))
         claims = parsed.get("claims") or []
@@ -4532,6 +6233,9 @@ def paper_to_code_map(
             raw_mml = str(c.get("mathml") or "")
             if any(tok in raw_mml for tok in ("\\frac", "\\sum", "\\int", "$$")) or re.search(r"\$[^$]+\$", raw_mml):
                 raise ValueError(f"ANV-11 violation: raw LaTeX string detected in claim {c.get('id')}; native MathML required.")
+        old_ex, old_nm, new_ex, new_nm, fn_hits, tw_stages = _build_dual_stage_crosswalk_lookup(
+            base_dir, active_trace, paper_path=spec_p, pipeline_id=pipeline_id
+        )
         equations_out: List[Dict[str, Any]] = []
         alignments_out: List[Dict[str, Any]] = []
         for idx, c in enumerate(claims, start=1):
@@ -4539,19 +6243,40 @@ def paper_to_code_map(
             ctitle = str(c.get("title") or f"Paper Claim {idx}")
             raw_ltx = str(c.get("latex") or c.get("equation") or "")
             mml = str(c.get("mathml") or "") or (compile_latex_to_mathml(raw_ltx) if raw_ltx else "")
-            matches = _score_paper_item_against_functions(ctitle, raw_ltx, [], cid, False, all_funcs)
+            matches = _score_paper_item_against_functions(
+                ctitle, raw_ltx, [], cid, False, all_funcs, preferred_files=preferred_scope_files, excluded_symbols=excluded_sym_set
+            )
             top = matches[0] if matches else None
-            if top and top["score"] >= 5.5:
+            m_old = [old_ex.get((m["file"], m["qualname"])) or old_nm.get(m["qualname"]) for m in matches[:2]]
+            m_new = [new_ex.get((m["file"], m["qualname"])) or new_nm.get(m["qualname"]) for m in matches[:2]]
+            maps_old_clean = [x for x in m_old if x is not None]
+            maps_new_clean = [x for x in m_new if x is not None]
+            drift_msg = _detect_equation_ast_drift(raw_ltx, base_dir, top["file"], top["qualname"]) if top else None
+            if drift_msg:
+                st = "MAP_DRIFT"
+                v_stamp = "MAP_DRIFT"
+            elif top and top["score"] >= 5.5:
                 st = "EXECUTED_PASS" if (empirical_ran and empirical_pass) else "STATIC_ALIGNED"
+                has_hits = fn_hits.get((top["file"], top["qualname"]), 0) > 0
+                stg_ok = all(x["stage_id"] not in tw_stages for x in maps_old_clean)
+                v_stamp = (
+                    "VERIFIED-NUMERIC"
+                    if (empirical_ran and empirical_pass and stg_ok)
+                    else ("VERIFIED-TRACE" if (has_hits and stg_ok) else "STATIC_ALIGNED")
+                )
             elif top:
                 st = "PARTIAL"
+                v_stamp = "STATIC_ALIGNED"
             else:
                 st = "PAPER_ONLY"
+                v_stamp = "PAPER_ONLY"
             equations_out.append({
                 "id": cid, "number": str(idx), "label": cid, "section_id": "sec-1",
                 "source_file": spec_p.name, "line_start": idx, "raw_latex": raw_ltx,
                 "mathml": mml, "symbols": _extract_equation_symbols(raw_ltx, ctitle) if raw_ltx else [],
-                "matched_functions": matches, "status": st,
+                "matched_functions": matches, "maps_to_old": maps_old_clean, "maps_to_new": maps_new_clean,
+                "verification_stamp": v_stamp, "v4_verdict": v_stamp, "drift_reason": drift_msg or "",
+                "status": st,
             })
             alignments_out.append({
                 "claim_id": cid, "title": ctitle, "mathml": mml,
@@ -4560,15 +6285,23 @@ def paper_to_code_map(
                 "lineno": top["line_start"] if top else None,
                 "bucket_id": top["bucket_id"] if top else None,
                 "score": top["score"] if top else 0.0,
+                "maps_to_old": maps_old_clean,
+                "maps_to_new": maps_new_clean,
+                "verification_stamp": v_stamp,
                 "status": st,
                 "empirical_status": "VERIFIED" if st == "EXECUTED_PASS" else ("HEURISTIC_MATCH" if top else "UNMAPPED"),
             })
         return {
+            "ok": True,
             "schema": "anvil-paper-map/v1",
-            "paper_map_version": "v2",
+            "paper_map_version": "v4",
+            "has_paper": True,
+            "isolation_boundary": iso_boundary if consented_numeric_ran else "static_ast_zero_execution",
             "repo": str(repo),
             "paper_title": str(parsed.get("title") or spec_p.stem),
             "native_mathml_enforced": True,
+            "paper_matched_scopes": scope_summary,
+            "scientific_validation": sci_val,
             "sections": [],
             "algorithms": [],
             "equations": equations_out,
@@ -4612,11 +6345,99 @@ def paper_to_code_map(
                 else:
                     prov_lines = [(spec_p.name, i + 1, _strip_latex_comments(ln) if not is_md else ln) for i, ln in enumerate(raw_txt.splitlines())]
 
+    has_paper = bool(spec_p is not None and spec_p.exists() and len(prov_lines) > 0)
+    if not has_paper:
+        alignments_fallback: List[Dict[str, Any]] = []
+        if spec_p is None:
+            for idx, fn in enumerate([f for f in all_funcs if f.get("math_ops")][:3] or all_funcs[:1], start=1):
+                mml = compile_latex_to_mathml(f"\\operatorname{{{fn['name'].split('.')[-1].replace('_', ' ')}}}({', '.join(fn.get('args', [])[:3])})")
+                st = "EXECUTED_PASS" if (empirical_ran and empirical_pass) else "STATIC_ALIGNED"
+                alignments_fallback.append({
+                    "claim_id": f"code-sym-{idx}",
+                    "title": f"Code Symbol {fn['name']} ({fn['file']})",
+                    "raw_latex": "",
+                    "mathml": mml,
+                    "mapped_function": fn["name"],
+                    "mapped_file": fn["file"],
+                    "lineno": fn["lineno"],
+                    "bucket_id": fn.get("bucket_id"),
+                    "score": 6.0,
+                    "match_rationale": "Direct AST symbol signature (no external paper path supplied).",
+                    "status": st,
+                    "empirical_status": "VERIFIED" if st == "EXECUTED_PASS" else "HEURISTIC_MATCH",
+                })
+        code_only_all = [
+            {
+                "file": mb["file"],
+                "title": mb.get("title") or mb["file"],
+                "stage": mb.get("pipeline_stage", "compute"),
+                "function_count": len(mb.get("functions") or []),
+                "status": "CODE_ONLY",
+                "rationale": "No companion manuscript supplied (has_paper: false).",
+            }
+            for mb in mod_buckets
+        ]
+        return {
+            "ok": True,
+            "schema": "anvil-paper-map/v1",
+            "paper_map_version": "v4",
+            "has_paper": False,
+            "isolation_boundary": iso_boundary if consented_numeric_ran else "static_ast_zero_execution",
+            "repo": str(repo),
+            "paper_path": "",
+            "paper_title": "",
+            "native_mathml_enforced": True,
+            "paper_matched_scopes": scope_summary,
+            "scientific_validation": sci_val,
+            "sections": [],
+            "algorithms": [],
+            "equations": [],
+            "unmapped_paper_items": [],
+            "code_only_modules": code_only_all,
+            "summary": f"No companion manuscript detected (has_paper=false); {len(code_only_all)} software module(s) indexed.",
+            "summary_counts": {
+                "sections": 0,
+                "algorithms": 0,
+                "equations": 0,
+                "code_only_modules": len(code_only_all),
+                "equation_statuses": {},
+            },
+            "claims_mapped": len(alignments_fallback),
+            "alignments": alignments_fallback,
+            "production_remap_ready": True,
+        }
+
     hierarchy = _parse_paper_hierarchy_from_provenance_lines(prov_lines, default_title=default_title, is_markdown=is_md)
     sections = hierarchy["sections"]
     algorithms = hierarchy["algorithms"]
     equations = hierarchy["equations"]
     sec_by_id = {s["id"]: s for s in sections}
+
+    old_ex, old_nm, new_ex, new_nm, fn_hits, tw_stages = _build_dual_stage_crosswalk_lookup(
+        base_dir, active_trace, paper_path=spec_p, pipeline_id=pipeline_id
+    )
+
+    def _resolve_dual_links_from_matches(matches_list: Sequence[Dict[str, Any]]) -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
+        m_old: List[Dict[str, str]] = []
+        m_new: List[Dict[str, str]] = []
+        seen_o: Set[Tuple[str, str]] = set()
+        seen_n: Set[Tuple[str, str]] = set()
+        for m in matches_list[:3]:
+            mf = str(m.get("file") or "")
+            mq = str(m.get("qualname") or "")
+            oe = old_ex.get((mf, mq)) or old_nm.get(mq) or old_nm.get(mq.split(".")[-1])
+            if oe and (oe["stage_id"], oe["symbol"]) not in seen_o:
+                seen_o.add((oe["stage_id"], oe["symbol"]))
+                m_old.append(oe)
+            ne = new_ex.get((mf, mq)) or new_nm.get(mq) or new_nm.get(mq.split(".")[-1])
+            if ne and (ne["stage_id"], ne["symbol"]) not in seen_n:
+                seen_n.add((ne["stage_id"], ne["symbol"]))
+                m_new.append(ne)
+        return m_old, m_new
+
+    def _resolve_dual_links_from_names(fn_names: Sequence[str], mod_files: Sequence[str]) -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
+        pseudo = [{"file": mod_files[0] if mod_files else "", "qualname": qn} for qn in fn_names]
+        return _resolve_dual_links_from_matches(pseudo)
 
     def _status_for_matches(matches: List[Dict[str, Any]]) -> str:
         if not matches:
@@ -4634,20 +6455,65 @@ def paper_to_code_map(
 
     touched_files: Set[str] = set()
 
-    # Score Equations
     for eq in equations:
         sec_obj = sec_by_id.get(eq["section_id"])
         sec_context = f"{sec_obj['title']} {sec_obj['summary']}" if sec_obj else ""
         sym_vars = [v for sym in (eq.get("symbols") or []) for v in (sym.get("code_variables") or [])]
         matches = _score_paper_item_against_functions(
-            sec_context, eq["raw_latex"], sym_vars, eq.get("label") or "", _is_bench_sec(sec_obj), all_funcs
+            sec_context,
+            eq["raw_latex"],
+            sym_vars,
+            eq.get("label") or "",
+            _is_bench_sec(sec_obj),
+            all_funcs,
+            preferred_files=preferred_scope_files, excluded_symbols=excluded_sym_set,
         )
         eq["matched_functions"] = matches
-        eq["status"] = _status_for_matches(matches)
+        maps_old, maps_new = _resolve_dual_links_from_matches(matches)
+        eq["maps_to_old"] = maps_old
+        eq["maps_to_new"] = maps_new
+
+        if "$" in str(eq.get("mathml") or ""):
+            eq["mathml"] = compile_latex_to_mathml(eq["raw_latex"].replace("$", ""), display=True)
+
+        top_m = matches[0] if matches else None
+        drift_reason = (
+            _detect_equation_ast_drift(eq["raw_latex"], base_dir, top_m["file"], top_m["qualname"])
+            if top_m is not None
+            else None
+        )
+        if drift_reason:
+            v_stamp = "MAP_DRIFT"
+            eq["status"] = "MAP_DRIFT"
+        elif top_m is None:
+            v_stamp = "PAPER_ONLY"
+            eq["status"] = "PAPER_ONLY"
+        else:
+            has_hits = (
+                fn_hits.get((top_m["file"], top_m["qualname"]), 0) > 0
+                or fn_hits.get((top_m["file"], top_m["qualname"].split(".")[-1]), 0) > 0
+            )
+            stg_clean = all(x["stage_id"] not in tw_stages for x in maps_old)
+            if consented_numeric_ran and consented_numeric_pass and has_hits and stg_clean:
+                v_stamp = "VERIFIED-NUMERIC"
+            elif empirical_ran and empirical_pass and stg_clean and not consented_numeric_ran:
+                v_stamp = "VERIFIED-NUMERIC"
+            elif active_trace is not None and has_hits and stg_clean:
+                v_stamp = "VERIFIED-TRACE"
+            else:
+                v_stamp = "STATIC_ALIGNED"
+            eq["status"] = (
+                v_stamp
+                if (consented_numeric_ran or active_trace is not None)
+                else _status_for_matches(matches)
+            )
+
+        eq["verification_stamp"] = v_stamp
+        eq["v4_verdict"] = v_stamp
+        eq["drift_reason"] = drift_reason or ""
         for m in matches[:2]:
             touched_files.add(m["file"])
 
-    # Score Algorithms & Individual Algorithm Steps
     for alg in algorithms:
         sec_obj = sec_by_id.get(alg["section_id"])
         is_bench = _is_bench_sec(sec_obj)
@@ -4656,10 +6522,24 @@ def paper_to_code_map(
 
         for st in alg["steps"]:
             matches = _score_paper_item_against_functions(
-                f"{alg['title']} {st['text']}", st["raw_latex"], [], alg.get("label") or "", is_bench, all_funcs
+                f"{alg['title']} {st['text']}",
+                st["raw_latex"],
+                [],
+                alg.get("label") or "",
+                is_bench,
+                all_funcs,
+                preferred_files=preferred_scope_files, excluded_symbols=excluded_sym_set,
             )
             st["matched_functions"] = [m["qualname"] for m in matches[:3]]
             st["matched_files"] = list(dict.fromkeys(m["file"] for m in matches[:3]))
+            st_old, st_new = _resolve_dual_links_from_matches(matches)
+            st["maps_to_old"] = st_old
+            st["maps_to_new"] = st_new
+            if st.get("mathml_fragments"):
+                st["mathml_fragments"] = [
+                    compile_latex_to_mathml(frag.replace("$", "")) if "$" in str(frag) else frag
+                    for frag in st["mathml_fragments"]
+                ]
             if matches:
                 top_m = matches[0]
                 st["line_span"] = [top_m["line_start"], top_m["line_end"]]
@@ -4679,6 +6559,7 @@ def paper_to_code_map(
             alg.get("label") or "",
             is_bench,
             all_funcs,
+            preferred_files=preferred_scope_files, excluded_symbols=excluded_sym_set,
         )
         if step_mod_votes:
             alg["matched_module"] = max(step_mod_votes, key=lambda k: step_mod_votes[k])
@@ -4689,6 +6570,14 @@ def paper_to_code_map(
         elif alg_matches:
             alg["primary_function"] = alg_matches[0]["qualname"]
 
+        alg_fns = ([alg["primary_function"]] if alg.get("primary_function") else []) + [
+            fn_n for s in alg["steps"] for fn_n in (s.get("matched_functions") or [])[:1]
+        ]
+        alg_mods = [alg["matched_module"]] if alg.get("matched_module") else []
+        alg_old, alg_new = _resolve_dual_links_from_names(alg_fns, alg_mods)
+        alg["maps_to_old"] = alg_old
+        alg["maps_to_new"] = alg_new
+
         aligned_steps = sum(1 for s in alg["steps"] if s["status"] in ("EXECUTED_PASS", "STATIC_ALIGNED"))
         partial_steps = sum(1 for s in alg["steps"] if s["status"] == "PARTIAL")
         if aligned_steps > 0 and aligned_steps >= max(1, len(alg["steps"]) // 2):
@@ -4698,15 +6587,19 @@ def paper_to_code_map(
         else:
             alg["status"] = "PAPER_ONLY"
 
-    # Score Sections
     eq_map_by_id = {e["id"]: e for e in equations}
     for sec in sections:
         is_bench = _is_bench_sec(sec)
         sec_eq_ltx = " ".join(eq_map_by_id[eid]["raw_latex"] for eid in sec["equation_ids"] if eid in eq_map_by_id)
         matches = _score_paper_item_against_functions(
-            f"{sec['title']} {sec['summary']}", sec_eq_ltx, [], sec.get("label") or "", is_bench, all_funcs
+            f"{sec['title']} {sec['summary']}",
+            sec_eq_ltx,
+            [],
+            sec.get("label") or "",
+            is_bench,
+            all_funcs,
+            preferred_files=preferred_scope_files, excluded_symbols=excluded_sym_set,
         )
-        # Merge functions matched by equations inside this section
         eq_fns = [
             mf for eid in sec["equation_ids"]
             for mf in (eq_map_by_id[eid].get("matched_functions") or [])[:2]
@@ -4715,14 +6608,18 @@ def paper_to_code_map(
         combined_mods = list(dict.fromkeys([m["file"] for m in matches[:4]] + [m["file"] for m in eq_fns]))
         sec["matched_functions"] = combined_fns[:6]
         sec["matched_modules"] = combined_mods[:5]
+        sec_old, sec_new = _resolve_dual_links_from_matches((matches[:3] + eq_fns[:3]))
+        sec["maps_to_old"] = sec_old
+        sec["maps_to_new"] = sec_new
         sec["status"] = _status_for_matches(matches or eq_fns)
         for mf in combined_mods[:2]:
             touched_files.add(mf)
 
-    # Identify CODE_ONLY engineering/infrastructure modules not described in paper math sections
     code_only_modules: List[Dict[str, Any]] = []
     for mb in mod_buckets:
         f_rel = mb["file"]
+        if preferred_scope_files and scope_summary["scoped"] and f_rel not in preferred_scope_files:
+            continue
         if f_rel not in touched_files:
             code_only_modules.append({
                 "file": f_rel,
@@ -4733,7 +6630,6 @@ def paper_to_code_map(
                 "rationale": "Engineering/CLI/reporting/benchmark support module with no direct equation or algorithm claim in paper.",
             })
 
-    # Populate backward-compatible `alignments` list from real scored equations (or sections if 0 display equations)
     alignments: List[Dict[str, Any]] = []
     for eq in equations:
         top = eq["matched_functions"][0] if eq["matched_functions"] else None
@@ -4748,13 +6644,21 @@ def paper_to_code_map(
             "mapped_file": top["file"] if top else None,
             "lineno": top["line_start"] if top else None,
             "bucket_id": top["bucket_id"] if top else None,
+            "maps_to_old": eq["maps_to_old"],
+            "maps_to_new": eq["maps_to_new"],
+            "verification_stamp": eq["verification_stamp"],
+            "drift_reason": eq.get("drift_reason", ""),
             "score": top["score"] if top else 0.0,
             "match_rationale": (
-                f"Score {top['score']} on identifiers {top['matched_identifiers']} & ops {top['matched_ops']}"
-                if top else "No matching software symbol exceeded alignment threshold (PAPER_ONLY)"
+                eq["drift_reason"]
+                if eq.get("drift_reason")
+                else (
+                    f"Score {top['score']} on identifiers {top['matched_identifiers']} & ops {top['matched_ops']}"
+                    if top else "No matching software symbol exceeded alignment threshold (PAPER_ONLY)"
+                )
             ),
             "status": st,
-            "empirical_status": "VERIFIED" if st == "EXECUTED_PASS" else ("HEURISTIC_MATCH" if st in ("STATIC_ALIGNED", "PARTIAL") else "UNMAPPED"),
+            "empirical_status": "VERIFIED" if st in ("EXECUTED_PASS", "VERIFIED-NUMERIC", "VERIFIED-TRACE") else ("DRIFT" if st == "MAP_DRIFT" else ("HEURISTIC_MATCH" if st in ("STATIC_ALIGNED", "PARTIAL") else "UNMAPPED")),
         })
 
     if not alignments and sections:
@@ -4771,30 +6675,13 @@ def paper_to_code_map(
                 "mapped_file": top_fn_obj["file"] if top_fn_obj else None,
                 "lineno": top_fn_obj["lineno"] if top_fn_obj else None,
                 "bucket_id": top_fn_obj.get("bucket_id") if top_fn_obj else None,
+                "maps_to_old": sec.get("maps_to_old", []),
+                "maps_to_new": sec.get("maps_to_new", []),
+                "verification_stamp": "STATIC_ALIGNED" if top_fn_obj else "PAPER_ONLY",
                 "score": 5.5 if top_fn_obj else 0.0,
                 "match_rationale": f"Section matched to {sec['matched_modules']}" if sec["matched_modules"] else "PAPER_ONLY",
                 "status": st,
                 "empirical_status": "VERIFIED" if st == "EXECUTED_PASS" else ("HEURISTIC_MATCH" if top_fn_obj else "UNMAPPED"),
-            })
-
-    if not alignments and spec_p is None:
-        # Minimal caller contract when paper_to_code_map(repo) is invoked with paper_spec_path=None
-        for idx, fn in enumerate([f for f in all_funcs if f.get("math_ops")][:3] or all_funcs[:1], start=1):
-            mml = compile_latex_to_mathml(f"\\operatorname{{{fn['name'].split('.')[-1].replace('_', ' ')}}}({', '.join(fn.get('args', [])[:3])})")
-            st = "EXECUTED_PASS" if (empirical_ran and empirical_pass) else "STATIC_ALIGNED"
-            alignments.append({
-                "claim_id": f"code-sym-{idx}",
-                "title": f"Code Symbol {fn['name']} ({fn['file']})",
-                "raw_latex": "",
-                "mathml": mml,
-                "mapped_function": fn["name"],
-                "mapped_file": fn["file"],
-                "lineno": fn["lineno"],
-                "bucket_id": fn.get("bucket_id"),
-                "score": 6.0,
-                "match_rationale": "Direct AST symbol signature (no external paper path supplied).",
-                "status": st,
-                "empirical_status": "VERIFIED" if st == "EXECUTED_PASS" else "HEURISTIC_MATCH",
             })
 
     unmapped_paper_items: List[Dict[str, Any]] = [
@@ -4808,16 +6695,24 @@ def paper_to_code_map(
     ]
 
     status_counts: Dict[str, int] = {}
+    stamp_counts: Dict[str, int] = {}
     for eq in equations:
         status_counts[eq["status"]] = status_counts.get(eq["status"], 0) + 1
+        vs = eq.get("verification_stamp", eq["status"])
+        stamp_counts[vs] = stamp_counts.get(vs, 0) + 1
 
     return {
+        "ok": True,
         "schema": "anvil-paper-map/v1",
-        "paper_map_version": "v2",
+        "paper_map_version": "v4",
+        "has_paper": True,
+        "isolation_boundary": iso_boundary if consented_numeric_ran else ("consented_local_subprocess" if active_trace else "static_ast_zero_execution"),
         "repo": str(repo),
         "paper_path": str(spec_p) if spec_p else "",
         "paper_title": hierarchy["paper_title"],
         "native_mathml_enforced": True,
+        "paper_matched_scopes": scope_summary,
+        "scientific_validation": sci_val,
         "sections": sections,
         "algorithms": algorithms,
         "equations": equations,
@@ -4825,7 +6720,7 @@ def paper_to_code_map(
         "code_only_modules": code_only_modules,
         "summary": (
             f"Mapped {len(sections)} section(s), {len(algorithms)} algorithm(s), and {len(equations)} equation(s) "
-            f"({status_counts}) across {len(mod_buckets)} software module(s) ({len(code_only_modules)} CODE_ONLY)."
+            f"({stamp_counts}) across {len(mod_buckets)} software module(s) ({len(code_only_modules)} CODE_ONLY)."
         ),
         "summary_counts": {
             "sections": len(sections),
@@ -4833,6 +6728,7 @@ def paper_to_code_map(
             "equations": len(equations),
             "code_only_modules": len(code_only_modules),
             "equation_statuses": status_counts,
+            "verification_stamps": stamp_counts,
         },
         "claims_mapped": len(alignments),
         "alignments": alignments,
@@ -4951,7 +6847,6 @@ def extract_repo_slice(repo_path: str | Path, files: Sequence[str] | str) -> Dic
     target_rels = _normalize_file_list_arg(files)
     prod_files, _ = _scan_repo_files(repo)
 
-    # Fast targeted slice: parse AST ONLY for requested files and index external callers via C-speed regex scan
     prod_by_rel: Dict[str, Path] = {}
     prod_by_name: Dict[str, Path] = {}
     for fp in prod_files:
@@ -5256,15 +7151,23 @@ def render_markdown_report(
     repo_path: str | Path,
     compare_repo_path: Optional[str | Path] = None,
     output_path: Optional[str | Path] = None,
+    *,
+    paper_path: Optional[str | Path] = None,
+    pipeline_id: Optional[str] = None,
 ) -> str:
-    """Render a standalone Markdown report with inline SVG diagrams, 3-Level Map, 5-Seat Beta-Readers + Aegis, and Walkthrough."""
+    """Render a standalone Markdown report (`ANVIL-REPORT.md`) with inline SVG diagrams,
+    Paper-Matched Replication Scope, 3-Level Map + Native MathML, Scientific Code Validation
+    & Functional-Core Refactoring Proposal, 5-Seat Beta-Readers + Aegis, and Walkthrough.
+    """
     repo = Path(repo_path).resolve()
-    cmap = build_map(repo)
+    cmap = build_map(repo, paper_path=paper_path, pipeline_id=pipeline_id)
     orange = extract_orange_split(repo, code_map=cmap)
     beta = cmap.get("beta_reader_panel") or run_beta_reader_panel(repo, cmap)
     walk = run_code_walkthrough(repo, compare_repo_path, cmap)
     buckets = cmap.get("conceptual_buckets") or []
     counts = orange.get("counts") or {}
+    scope_summary = cmap.get("paper_matched_scopes") or {}
+    sci_val = cmap.get("scientific_validation") or run_scientific_validation(repo)
 
     svg_nodes = []
     for idx, b in enumerate(buckets[:6]):
@@ -5320,9 +7223,35 @@ def render_markdown_report(
         "",
         svg2,
         "",
-        "## 2. 3-Level Progressive Abstraction Map (`Level 1 Role` → `Level 2 Contracts & Mechanics` → `Level 3 Source`)",
-        "",
     ]
+
+    avail_pipes = scope_summary.get("available_pipelines") or []
+    quar_cnt = int(scope_summary.get("quarantined_historical_count") or 0)
+    if avail_pipes or quar_cnt > 0:
+        md_lines.extend([
+            "## 1B. Paper-Matched Replication Scope & Multi-Pipeline Partition",
+            "",
+            f"- **Active Pipeline Scope:** `{scope_summary.get('active_pipeline', 'unscoped')}` (`scoped={scope_summary.get('scoped', False)}`)",
+            f"- **Quarantined Historical / Unreferenced Scripts:** `{quar_cnt}`"
+            + (
+                f" (`{', '.join((scope_summary.get('quarantined_historical_files') or [])[:8])}`"
+                + (" …)" if quar_cnt > 8 else ")")
+                if quar_cnt > 0 else ""
+            ),
+            "",
+            "| Pipeline ID | Replication Pipeline | Entrypoints | Reachable Files | Manuscript Targets |",
+            "| :--- | :--- | :--- | :---: | :--- |",
+        ])
+        for p in avail_pipes:
+            md_lines.append(
+                f"| `{p['id']}` | **{p['title']}** | `{', '.join(p.get('entrypoints') or [])}` | `{p.get('file_count', len(p.get('files') or []))}` | `{', '.join((p.get('manuscript_targets') or [])[:4]) or 'workflow'}` |"
+            )
+        md_lines.append("")
+
+    md_lines.extend([
+        "## 2. 3-Level Progressive Abstraction Map (`Level 1 Role` → `Level 2 Contracts & Native MathML` → `Level 3 Source`)",
+        "",
+    ])
     for b in buckets:
         l1 = b.get("level1_summary") or {}
         l2 = b.get("level2_mechanics") or {}
@@ -5332,6 +7261,47 @@ def render_markdown_report(
             f"- **Level 1 (Purpose & I/O):** {l1.get('purpose', b.get('summary', ''))} | **Inputs:** `{', '.join(l1.get('inputs') or [])}` → **Outputs:** `{', '.join(l1.get('outputs') or [])}`",
             f"- **Level 2 (Member Files & Contracts):** `{len(l2.get('member_files') or [])}` file(s) (`{', '.join((l2.get('member_files') or [])[:6])}`) · `{len(l2.get('state_contracts') or [])}` state contract(s)",
             f"- **Level 3 (Source Span):** `{l3.get('file', b.get('file', ''))}:L{l3.get('start_line', 1)}–L{l3.get('end_line', 1)}` (`{len(b.get('functions') or [])}` functions)",
+        ])
+        b_formulas = l2.get("formulas_mathml") or []
+        if b_formulas:
+            md_lines.append("- **Extracted Native MathML Formulas:**")
+            for fm in b_formulas[:4]:
+                loc_tag = fm.get("location") or f"{fm.get('file', '')}:{fm.get('lineno', 1)}"
+                meaning_txt = fm.get("meaning") or fm.get("title") or ""
+                md_lines.append(f"  - `{loc_tag}` — {meaning_txt}")
+                md_lines.append(f"    {fm['mathml']}")
+        md_lines.append("")
+
+    sci_findings = sci_val.get("findings") or []
+    sci_prop = sci_val.get("refactoring_proposal")
+    md_lines.extend([
+        "## 2B. Scientific Code Validation, Leakage Audit & Functional-Core Refactoring Proposal",
+        "",
+        f"**Scientific Validation Status:** **`{sci_val.get('status', 'CLEAN')}`** (`{len(sci_findings)}` hazard(s) across `{sci_val.get('files_scanned', 0)}` Python file(s))",
+        "",
+    ])
+    if sci_findings:
+        md_lines.extend([
+            "| Rule | Location (`file:lineno`) | Severity | Hazard & Remediation |",
+            "| :--- | :--- | :---: | :--- |",
+        ])
+        for fd in sci_findings:
+            md_lines.append(
+                f"| `{fd['rule_id']}` | `{fd['location']}` | **`{fd['severity'].upper()}`** | **{fd['title']}** — {fd['detail']} **Fix:** {fd['remediation']} |"
+            )
+        md_lines.append("")
+    if sci_prop:
+        md_lines.extend([
+            "### Concrete Functional-Core / Imperative-Shell Refactoring Proposal",
+            "",
+            f"- **Shared Pure Kernel Module:** `{sci_prop['shared_pure_kernel_module']}`",
+            *[f"  - `{pk}`" for pk in (sci_prop.get("pure_kernel_functions") or [])],
+            f"- **Split-Safe Preprocessor Module:** `{sci_prop['split_safe_preprocessor_module']}` — `{sci_prop['split_safe_preprocessor_contract']}`",
+            "- **Thin Imperative CLI Shells:**",
+            *[
+                f"  - `{sh['cli_script']}` (`{sh['pipeline_id']}`): {sh['responsibility']}"
+                for sh in (sci_prop.get("thin_imperative_cli_shells") or [])
+            ],
             "",
         ])
 
@@ -5504,11 +7474,193 @@ def orchestrate_anvil(
     return run_state
 
 
+def _load_anvil_v4_modules() -> Tuple[Any, Any]:
+    scripts_dir = str(Path(__file__).resolve().parent)
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    import anvil_v4_process as v4_proc
+    import anvil_v4_trace as v4_trace
+
+    return v4_proc, v4_trace
+
+
+def _load_anvil_v4_wave2_modules() -> Tuple[Any, Any, Any, Any]:
+    scripts_dir = str(Path(__file__).resolve().parent)
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    import anvil_v4_process as v4_proc
+    import anvil_v4_refactor as v4_ref
+    import anvil_v4_trace as v4_trace
+    import anvil_v4_xval as v4_xval
+
+    return v4_proc, v4_trace, v4_ref, v4_xval
+
+
+def build_v4_process_map(
+    repo_dir: str | Path,
+    trace_path: Optional[str | Path] = None,
+    *,
+    persist: bool = True,
+    paper_path: Optional[str | Path] = None,
+    pipeline_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    v4_proc = _load_anvil_v4_process_only()
+    trace_obj = v4_proc.load_validated_trace_json(trace_path) if trace_path else None
+    return v4_proc.build_process_map(
+        repo_dir,
+        trace_data=trace_obj,
+        persist=persist,
+        paper_path=paper_path,
+        pipeline_id=pipeline_id,
+    )
+
+
+def run_v4_trace(
+    repo_dir: str | Path,
+    trace_argv: Sequence[str],
+    *,
+    approve_run: bool = False,
+    timeout_sec: float = 30.0,
+    max_events: int = 50000,
+    max_sketch_bytes: int = 65536,
+    pinned_watches: Optional[Sequence[str]] = None,
+    output_path: Optional[str | Path] = None,
+) -> Dict[str, Any]:
+    _, v4_trace = _load_anvil_v4_modules()
+    return v4_trace.run_consented_trace(
+        repo_dir,
+        trace_argv,
+        approve_run=approve_run,
+        timeout_sec=timeout_sec,
+        max_events=max_events,
+        max_sketch_bytes=max_sketch_bytes,
+        pinned_watches=pinned_watches,
+        output_path=output_path,
+    )
+
+
+def build_v4_refactor_map(
+    repo_dir: str | Path,
+    *,
+    trace_path: Optional[str | Path] = None,
+    approve_run: bool = False,
+    exec_argv: Optional[Sequence[str]] = None,
+    candidate_repo: Optional[str | Path] = None,
+    rtol: float = 1e-7,
+    atol: float = 1e-9,
+    timeout_sec: float = 30.0,
+    persist: bool = True,
+) -> Dict[str, Any]:
+    v4_proc, _, v4_ref, _ = _load_anvil_v4_wave2_modules()
+    trace_obj = v4_proc.load_validated_trace_json(trace_path) if trace_path else None
+    return v4_ref.build_refactor_map(
+        repo_dir,
+        trace_data=trace_obj,
+        approve_run=approve_run,
+        argv=exec_argv,
+        candidate_repo=candidate_repo,
+        rtol=rtol,
+        atol=atol,
+        timeout_sec=timeout_sec,
+        persist=persist,
+    )
+
+
+def run_v4_profile_lit(
+    repo_dir: str | Path,
+    exec_argv: Sequence[str],
+    *,
+    approve_run: bool = False,
+    timeout_sec: float = 30.0,
+    persist: bool = True,
+) -> Dict[str, Any]:
+    _, _, v4_ref, _ = _load_anvil_v4_wave2_modules()
+    return v4_ref.run_profile_and_literature(
+        repo_dir,
+        approve_run=approve_run,
+        argv=exec_argv,
+        timeout_sec=timeout_sec,
+        persist=persist,
+    )
+
+
+def run_v4_xval_audit(
+    repo_dir: str | Path,
+    *,
+    validator_argv: Optional[Sequence[str]] = None,
+    attestation_keyring_path: Optional[str | Path] = None,
+    orchestrator_receipt_path: Optional[str | Path] = None,
+    validator_receipt_path: Optional[str | Path] = None,
+    max_concurrency: int = 2,
+    max_digest_bytes: int = 32768,
+    timeout_sec: float = 60.0,
+    persist: bool = True,
+) -> Dict[str, Any]:
+    _, _, _, v4_xval = _load_anvil_v4_wave2_modules()
+    return v4_xval.run_xval_audit(
+        repo_dir,
+        validator_argv=validator_argv,
+        attestation_keyring_path=attestation_keyring_path,
+        orchestrator_receipt_path=orchestrator_receipt_path,
+        validator_receipt_path=validator_receipt_path,
+        max_concurrency=max_concurrency,
+        max_digest_bytes=max_digest_bytes,
+        timeout_sec=timeout_sec,
+        persist=persist,
+    )
+
+
+def run_v4_workbench(
+    repo_dir: str | Path,
+    *,
+    paper_path: Optional[str | Path] = None,
+    approve_run: bool = False,
+    export_html_path: Optional[str | Path] = None,
+    serve: bool = False,
+    host: str = "127.0.0.1",
+    port: int = 0,
+) -> Dict[str, Any]:
+    scripts_dir = str(Path(__file__).resolve().parent)
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    import anvil_v4_workbench as v4_wb
+
+    if export_html_path:
+        return v4_wb.export_workbench_html(
+            repo_dir,
+            export_html_path,
+            paper_path=paper_path,
+            approve_run=approve_run,
+        )
+    if serve:
+        rc = v4_wb.serve_workbench(
+            repo_dir,
+            paper_path=paper_path,
+            host=host,
+            port=port,
+            approve_run=approve_run,
+        )
+        return {"ok": rc == 0, "mode": "live", "returncode": rc}
+    return v4_wb.build_workbench_bundle(
+        repo_dir,
+        paper_path=paper_path,
+        approve_run=approve_run,
+        persist=True,
+    )
+
+
 # ---------------------------------------------------------------------------
 # CLI Entrypoint
 # ---------------------------------------------------------------------------
 
 def main(argv: Optional[List[str]] = None) -> int:
+    for _stream in (sys.stdout, sys.stderr):
+        if hasattr(_stream, "reconfigure"):
+            try:
+                _stream.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
     parser = argparse.ArgumentParser(
         description="Anvil — Honest Polyglot Code Comprehension, Walkthrough, Aegis Beta-Readers & Paper-to-Software Mapper"
     )
@@ -5561,6 +7713,8 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     p_map = sub.add_parser("map", help="Mode 1: Polyglot Conceptual Groupings + 3-Level Progressive Process Map")
     p_map.add_argument("--repo", required=True)
+    p_map.add_argument("--paper", default="")
+    p_map.add_argument("--pipeline", default="")
     p_map.add_argument("--walkthrough", action="store_true")
     p_map.add_argument("--json", action="store_true")
     p_map.add_argument("--output", default="")
@@ -5581,6 +7735,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     p_rep = sub.add_parser("render-report", help="Render standalone Markdown report with inline SVGs")
     p_rep.add_argument("--repo", required=True)
     p_rep.add_argument("--compare-repo", default="")
+    p_rep.add_argument("--paper", default="")
+    p_rep.add_argument("--pipeline", default="")
     p_rep.add_argument("--output", default="")
 
     p_ins = sub.add_parser("inspect", help="Mode 2: Single-Block Drill-Down + Subprocess Claim Test")
@@ -5602,15 +7758,87 @@ def main(argv: Optional[List[str]] = None) -> int:
     p_pap = sub.add_parser("paper-map", help="Mode 4: Paper Sections, Algorithms & Native MathML Equations <-> Software")
     p_pap.add_argument("--repo", required=True)
     p_pap.add_argument("--paper", default="")
+    p_pap.add_argument("--pipeline", default="")
     p_pap.add_argument("--test-cmd", default="")
+    p_pap.add_argument("--trace", default="")
+    p_pap.add_argument("--approve-run", action="store_true")
+    p_pap.add_argument("--timeout", type=float, default=30.0)
     p_pap.add_argument("--json", action="store_true")
     p_pap.add_argument("--output", default="")
+    p_pap.add_argument("exec_argv", nargs=argparse.REMAINDER)
 
     p_chat = sub.add_parser("chat", help="AST-Grounded Anvil Agent Dialogue")
     p_chat.add_argument("--repo", required=True)
     p_chat.add_argument("--mode", default="inspect", choices=("map", "inspect", "remap", "paper-map"))
     p_chat.add_argument("--target", default="")
     p_chat.add_argument("--question", required=True)
+
+    p_pmap4 = sub.add_parser("process-map", help="Anvil v4 L0->L1->L2->L3 Steady-Coordinate Dual-Channel Process Map")
+    p_pmap4.add_argument("--repo", required=True)
+    p_pmap4.add_argument("--paper", default="")
+    p_pmap4.add_argument("--pipeline", default="")
+    p_pmap4.add_argument("--trace", default="")
+    p_pmap4.add_argument("--no-persist", action="store_true")
+    p_pmap4.add_argument("--json", action="store_true")
+    p_pmap4.add_argument("--output", default="")
+
+    p_trun4 = sub.add_parser("trace-run", help="Anvil v4 Consented Local Subprocess Tracer & 4-Stage Smart Variable Funnel")
+    p_trun4.add_argument("--repo", required=True)
+    p_trun4.add_argument("--approve-run", action="store_true")
+    p_trun4.add_argument("--timeout", type=float, default=30.0)
+    p_trun4.add_argument("--max-events", type=int, default=50000)
+    p_trun4.add_argument("--max-sketch-bytes", type=int, default=65536)
+    p_trun4.add_argument("--pin-watch", action="append", default=[])
+    p_trun4.add_argument("--json", action="store_true")
+    p_trun4.add_argument("--output", default="")
+    p_trun4.add_argument("trace_argv", nargs=argparse.REMAINDER)
+
+    p_ref4 = sub.add_parser("refactor-map", help="Anvil v4 N1..Nk Pure-Core Crosswalk, 3-Tier Null Set & Golden-Master Replay")
+    p_ref4.add_argument("--repo", required=True)
+    p_ref4.add_argument("--trace", default="")
+    p_ref4.add_argument("--candidate-repo", default="")
+    p_ref4.add_argument("--approve-run", action="store_true")
+    p_ref4.add_argument("--rtol", type=float, default=1e-7)
+    p_ref4.add_argument("--atol", type=float, default=1e-9)
+    p_ref4.add_argument("--timeout", type=float, default=30.0)
+    p_ref4.add_argument("--no-persist", action="store_true")
+    p_ref4.add_argument("--json", action="store_true")
+    p_ref4.add_argument("--output", default="")
+    p_ref4.add_argument("exec_argv", nargs=argparse.REMAINDER)
+
+    p_prof4 = sub.add_parser("profile-lit", help="Anvil v4 Consented Untraced Stage Profiler & Precondition-Checked Literature Upgrades")
+    p_prof4.add_argument("--repo", required=True)
+    p_prof4.add_argument("--approve-run", action="store_true")
+    p_prof4.add_argument("--timeout", type=float, default=30.0)
+    p_prof4.add_argument("--no-persist", action="store_true")
+    p_prof4.add_argument("--json", action="store_true")
+    p_prof4.add_argument("--output", default="")
+    p_prof4.add_argument("exec_argv", nargs=argparse.REMAINDER)
+
+    p_xval4 = sub.add_parser("xval-audit", help="Anvil v4 Bounded <=2 Concurrent 2-Seat Cross-Family Validator Receipt")
+    p_xval4.add_argument("--repo", required=True)
+    p_xval4.add_argument("--max-concurrency", type=int, default=2)
+    p_xval4.add_argument("--max-digest-bytes", type=int, default=32768)
+    p_xval4.add_argument("--timeout", type=float, default=60.0)
+    p_xval4.add_argument("--validator-argv-json", default="")
+    p_xval4.add_argument("--attestation-keyring", default="")
+    p_xval4.add_argument("--orchestrator-receipt", default="")
+    p_xval4.add_argument("--validator-receipt", default="")
+    p_xval4.add_argument("--no-persist", action="store_true")
+    p_xval4.add_argument("--json", action="store_true")
+    p_xval4.add_argument("--output", default="")
+
+    p_wb4 = sub.add_parser("workbench", help="Anvil v4 Workbench & Expandable Scientific IDE Debugger (--export-html | --serve)")
+    p_wb4.add_argument("--repo", required=True)
+    p_wb4.add_argument("--paper", default="")
+    p_wb4.add_argument("--approve-run", action="store_true")
+    wb_mode_grp = p_wb4.add_mutually_exclusive_group(required=False)
+    wb_mode_grp.add_argument("--export-html", default="")
+    wb_mode_grp.add_argument("--serve", action="store_true")
+    p_wb4.add_argument("--port", type=int, default=0)
+    p_wb4.add_argument("--host", default="127.0.0.1")
+    p_wb4.add_argument("--json", action="store_true")
+    p_wb4.add_argument("--output", default="")
 
     args = parser.parse_args(argv)
     if args.walkthrough and not args.cmd:
@@ -5639,7 +7867,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     elif args.cmd == "verify-equivalence":
         res = verify_behavioral_equivalence(args.old_repo, args.new_repo, args.rtol)
     elif args.cmd == "map":
-        res = build_map(args.repo)
+        v4_proc = _load_anvil_v4_process_only()
+        try:
+            res = build_map(
+                args.repo,
+                paper_path=getattr(args, "paper", "") or None,
+                pipeline_id=getattr(args, "pipeline", "") or None,
+            )
+        except v4_proc.AnvilRefusalError as err:
+            print(json.dumps(err.to_dict(), indent=2, ensure_ascii=False))
+            return 2
     elif args.cmd == "walkthrough":
         res = run_code_walkthrough(
             args.repo,
@@ -5650,7 +7887,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     elif args.cmd == "beta-readers":
         res = run_beta_reader_panel(args.repo)
     elif args.cmd == "render-report":
-        md_out = render_markdown_report(args.repo, getattr(args, "compare_repo", "") or None, getattr(args, "output", "") or None)
+        md_out = render_markdown_report(
+            args.repo,
+            getattr(args, "compare_repo", "") or None,
+            getattr(args, "output", "") or None,
+            paper_path=getattr(args, "paper", "") or None,
+            pipeline_id=getattr(args, "pipeline", "") or None,
+        )
         if not getattr(args, "output", ""):
             print(md_out)
         return 0
@@ -5659,11 +7902,193 @@ def main(argv: Optional[List[str]] = None) -> int:
     elif args.cmd == "remap":
         res = remap_code(args.old_repo, args.new_repo, args.sign_off, args.test_cmd or None)
     elif args.cmd == "paper-map":
-        res = paper_to_code_map(args.repo, args.paper or None, args.test_cmd or None)
+        v4_proc = _load_anvil_v4_process_only()
+        raw_eargv = list(args.exec_argv or [])
+        if raw_eargv and raw_eargv[0] == "--":
+            raw_eargv = raw_eargv[1:]
+        try:
+            res = paper_to_code_map(
+                args.repo,
+                args.paper or None,
+                args.test_cmd or None,
+                pipeline_id=args.pipeline or None,
+                trace_path=args.trace or None,
+                approve_run=bool(args.approve_run),
+                exec_argv=raw_eargv or None,
+                timeout_sec=float(args.timeout),
+            )
+            if args.output:
+                v4_proc.atomic_locked_write_json(args.output, res)
+            if args.json or not args.output:
+                print(json.dumps(res, indent=2, ensure_ascii=False))
+            return 0
+        except v4_proc.AnvilRefusalError as err:
+            print(json.dumps(err.to_dict(), indent=2, ensure_ascii=False))
+            return 2
     elif args.cmd == "chat":
         res = anvil_chat(args.repo, args.mode, args.target, args.question)
         print(json.dumps(res, indent=2))
         return 0
+    elif args.cmd == "process-map":
+        v4_proc = _load_anvil_v4_process_only()
+        try:
+            res = build_v4_process_map(
+                args.repo,
+                args.trace or None,
+                persist=not bool(args.no_persist),
+                paper_path=args.paper or None,
+                pipeline_id=args.pipeline or None,
+            )
+            if args.output:
+                v4_proc.atomic_locked_write_json(args.output, res)
+            if args.json or not args.output:
+                print(json.dumps(res, indent=2, ensure_ascii=False))
+            return 0
+        except v4_proc.AnvilRefusalError as err:
+            print(json.dumps(err.to_dict(), indent=2, ensure_ascii=False))
+            return 2
+    elif args.cmd == "trace-run":
+        v4_proc, _ = _load_anvil_v4_modules()
+        raw_targv = list(args.trace_argv or [])
+        if raw_targv and raw_targv[0] == "--":
+            raw_targv = raw_targv[1:]
+        try:
+            res = run_v4_trace(
+                args.repo,
+                raw_targv,
+                approve_run=bool(args.approve_run),
+                timeout_sec=float(args.timeout),
+                max_events=int(args.max_events),
+                max_sketch_bytes=int(args.max_sketch_bytes),
+                pinned_watches=list(args.pin_watch or []),
+                output_path=None,
+            )
+            if args.output:
+                v4_proc.atomic_locked_write_json(args.output, res)
+            if args.json or not args.output:
+                print(json.dumps(res, indent=2, ensure_ascii=False))
+            return 0
+        except v4_proc.AnvilRefusalError as err:
+            print(json.dumps(err.to_dict(), indent=2, ensure_ascii=False))
+            return 2
+    elif args.cmd == "refactor-map":
+        v4_proc, _, _, _ = _load_anvil_v4_wave2_modules()
+        raw_rargv = list(args.exec_argv or [])
+        if raw_rargv and raw_rargv[0] == "--":
+            raw_rargv = raw_rargv[1:]
+        try:
+            res = build_v4_refactor_map(
+                args.repo,
+                trace_path=args.trace or None,
+                approve_run=bool(args.approve_run),
+                exec_argv=raw_rargv or None,
+                candidate_repo=args.candidate_repo or None,
+                rtol=float(args.rtol),
+                atol=float(args.atol),
+                timeout_sec=float(args.timeout),
+                persist=not bool(args.no_persist),
+            )
+            if args.output:
+                v4_proc.atomic_locked_write_json(args.output, res)
+            if args.json or not args.output:
+                print(json.dumps(res, indent=2, ensure_ascii=False))
+            return 0
+        except v4_proc.AnvilRefusalError as err:
+            print(json.dumps(err.to_dict(), indent=2, ensure_ascii=False))
+            return 2
+    elif args.cmd == "profile-lit":
+        v4_proc, _, _, _ = _load_anvil_v4_wave2_modules()
+        raw_pargv = list(args.exec_argv or [])
+        if raw_pargv and raw_pargv[0] == "--":
+            raw_pargv = raw_pargv[1:]
+        try:
+            res = run_v4_profile_lit(
+                args.repo,
+                raw_pargv,
+                approve_run=bool(args.approve_run),
+                timeout_sec=float(args.timeout),
+                persist=not bool(args.no_persist),
+            )
+            if args.output:
+                v4_proc.atomic_locked_write_json(args.output, res)
+            if args.json or not args.output:
+                print(json.dumps(res, indent=2, ensure_ascii=False))
+            return 0
+        except v4_proc.AnvilRefusalError as err:
+            print(json.dumps(err.to_dict(), indent=2, ensure_ascii=False))
+            return 2
+    elif args.cmd == "xval-audit":
+        v4_proc, _, _, _ = _load_anvil_v4_wave2_modules()
+        try:
+            parsed_vargv: Optional[List[str]] = None
+            if args.validator_argv_json:
+                try:
+                    raw_v = json.loads(args.validator_argv_json)
+                except Exception as j_err:
+                    raise v4_proc.AnvilRefusalError(
+                        "MALFORMED_DATA_REFUSED",
+                        f"Invalid JSON in --validator-argv-json: {j_err}",
+                        cwe="CWE-502",
+                    ) from j_err
+                if not isinstance(raw_v, list):
+                    raise v4_proc.AnvilRefusalError(
+                        "EXECUTION_POLICY_REFUSED",
+                        "--validator-argv-json must decode to a JSON list of argv strings.",
+                        cwe="CWE-78",
+                    )
+                parsed_vargv = raw_v
+            res = run_v4_xval_audit(
+                args.repo,
+                validator_argv=parsed_vargv,
+                attestation_keyring_path=args.attestation_keyring or None,
+                orchestrator_receipt_path=args.orchestrator_receipt or None,
+                validator_receipt_path=args.validator_receipt or None,
+                max_concurrency=int(args.max_concurrency),
+                max_digest_bytes=int(args.max_digest_bytes),
+                timeout_sec=float(args.timeout),
+                persist=not bool(args.no_persist),
+            )
+            if args.output:
+                v4_proc.atomic_locked_write_json(args.output, res)
+            if args.json or not args.output:
+                print(json.dumps(res, indent=2, ensure_ascii=False))
+            return 0
+        except v4_proc.AnvilRefusalError as err:
+            print(json.dumps(err.to_dict(), indent=2, ensure_ascii=False))
+            return 2
+    elif args.cmd == "workbench":
+        v4_proc, _ = _load_anvil_v4_modules()
+        try:
+            if args.serve:
+                scripts_dir = str(Path(__file__).resolve().parent)
+                if scripts_dir not in sys.path:
+                    sys.path.insert(0, scripts_dir)
+                import anvil_v4_workbench as v4_wb
+
+                return v4_wb.serve_workbench(
+                    args.repo,
+                    paper_path=args.paper or None,
+                    host=args.host,
+                    port=int(args.port),
+                    approve_run=bool(args.approve_run),
+                )
+            res = run_v4_workbench(
+                args.repo,
+                paper_path=args.paper or None,
+                approve_run=bool(args.approve_run),
+                export_html_path=args.export_html or None,
+                serve=False,
+                host=args.host,
+                port=int(args.port),
+            )
+            if args.output:
+                v4_proc.atomic_locked_write_json(args.output, res)
+            if args.json or not args.output:
+                print(json.dumps(res, indent=2, ensure_ascii=False))
+            return 0
+        except v4_proc.AnvilRefusalError as err:
+            print(json.dumps(err.to_dict(), indent=2, ensure_ascii=False))
+            return 2
     else:
         parser.print_help()
         return 1

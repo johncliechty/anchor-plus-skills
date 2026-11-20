@@ -30,6 +30,11 @@ EDGE = [r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
 
 PRINT_CSS = ("<style>body{background:#fff !important;color:#111 !important;max-width:none !important;"
              "padding:0 !important;font-size:11pt} h1,h2,h3,h4,a{color:#1a4fb5 !important}"
+             " h1,h2,h3,h4{break-after:avoid !important;page-break-after:avoid !important}"
+             " p,li,blockquote,tr{orphans:3;widows:3}"
+             " tr,blockquote{break-inside:avoid;page-break-inside:avoid}"
+             " thead{display:table-header-group} .tblwrap,pre{overflow:visible !important}"
+             " pre{white-space:pre-wrap !important;word-break:break-word}"
              " code,pre,th{background:#f2f4f8 !important;color:#111 !important} th,td{border-color:#bbb !important}"
              " @page{margin:18mm 16mm}</style>\n</head>")
 

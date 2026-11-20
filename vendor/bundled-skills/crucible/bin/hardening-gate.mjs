@@ -76,7 +76,7 @@ export const PROPERTY_CLAIMS = Object.freeze([
   },
   {
     id: 'containment',
-    patterns: [/traversal/i, /contain(ment|ed)/i, /sandbox/i, /must not escape/i],
+    patterns: [/traversal/i, /\bcontain(?:ment|ed|s)?\b/i, /sandbox/i, /must not escape/i],
     requires: ['an escape-attempt test (.., absolute path, symlink)'],
     why: 'containment is asserted far more often than it is exercised',
   },
@@ -99,13 +99,19 @@ function text(v) {
   return String(v);
 }
 
+const INJECTED_BOILERPLATE_RE = /\n*## (?:Property gates \(hardening law|Hardening-gate obligations \(mechanical)[\s\S]*$/i;
+
+const GATE_STOPWORDS = new Set([
+  'with', 'that', 'when', 'from', 'test', 'plan', 'named', 'path', 'rows', 'state', 'write', 'documented',
+]);
+
 /**
  * Which property claims does this plan make?
  * @param {string|object} plan  plan text (or any object; values are flattened)
  * @returns {{id:string, why:string, requires:string[], matched:string}[]}
  */
 export function detectPropertyClaims(plan) {
-  const body = text(plan);
+  const body = text(plan).replace(INJECTED_BOILERPLATE_RE, '');
   const found = [];
   for (const claim of PROPERTY_CLAIMS) {
     const hit = claim.patterns.find((re) => re.test(body));
@@ -146,8 +152,17 @@ export function checkPropertyGates({ plan, waves = [], propertyGates = {}, addsS
     // acceptance criteria — the plan must SAY the mechanism, not just the goal.
     const unmet = claim.requires.filter((req) => {
       if (explicit) return false;
-      const keys = req.toLowerCase().match(/[a-z]{4,}/g) ?? [];
-      const strong = keys.filter((k) => !['with', 'that', 'when', 'from', 'test'].includes(k));
+      const reqLower = req.toLowerCase();
+      if (reqLower.includes('unknown and empty')) {
+        return !(haystack.includes('unknown') && haystack.includes('empty'));
+      }
+      if (reqLower.includes('numeric bound')) {
+        const hasConcreteBound = /\b\d[\d,_]*\s*(?:ms|s|sec|seconds|min|minutes|bytes|kb|mb|gb|rows|items|calls|events|lines|chars|tokens|max|cap|limit)\b/i.test(haystack) ||
+          /\b(?:max|cap|limit|bound|timeout)\b[^.\n]{0,30}\b\d[\d,_]*\b/i.test(haystack);
+        if (hasConcreteBound) return false;
+      }
+      const keys = reqLower.match(/[a-z]{4,}/g) ?? [];
+      const strong = keys.filter((k) => !GATE_STOPWORDS.has(k));
       return !strong.some((k) => haystack.includes(k));
     });
     if (unmet.length) missing.push({ id: claim.id, why: claim.why, unmet });

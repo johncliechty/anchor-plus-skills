@@ -9,6 +9,58 @@ import crypto from 'node:crypto';
 import readline from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 import { HaltError } from './trio-core/contract-core.mjs';
+import { detectRegulatedDomain, REGULATED_DOMAIN_FLOOR } from './stakes.mjs';
+
+/**
+ * Parse a human gate reply (`y`/`yes`/`approve` -> 'APPROVE', `e`/`edit` -> 'EDIT',
+ * `n`/`no`/`abort`/`q` -> 'ABORT'; case-insensitive).
+ * @param {?string} raw
+ * @returns {'APPROVE'|'EDIT'|'ABORT'}
+ */
+export function parseHumanGateAnswer(raw) {
+  const norm = String(raw ?? '').trim().toLowerCase();
+  if (norm === 'y' || norm === 'yes' || norm === 'approve' || norm === 'approved') return 'APPROVE';
+  if (norm === 'e' || norm === 'edit') return 'EDIT';
+  if (norm === 'n' || norm === 'no' || norm === 'abort' || norm === 'q' || norm === 'quit') return 'ABORT';
+  return 'ABORT';
+}
+
+/**
+ * Read a single line from piped/non-TTY stdin without hanging or throwing
+ * ERR_USE_AFTER_CLOSE on immediate EOF. Returns null on empty/EOF stdin.
+ * @param {NodeJS.ReadableStream} [stream=process.stdin]
+ * @returns {Promise<?string>}
+ */
+export async function readSingleNonTtyLine(stream = process.stdin) {
+  if (!stream || stream.destroyed || stream.readableEnded) return null;
+  return new Promise((resolve) => {
+    let buf = '';
+    let settled = false;
+    const finish = (val) => {
+      if (settled) return;
+      settled = true;
+      stream.removeListener('data', onData);
+      stream.removeListener('end', onEnd);
+      stream.removeListener('error', onEnd);
+      resolve(val);
+    };
+    const onData = (chunk) => {
+      buf += String(chunk);
+      const nl = buf.indexOf('\n');
+      if (nl >= 0) {
+        if (typeof stream.pause === 'function') stream.pause();
+        finish(buf.slice(0, nl));
+      }
+    };
+    const onEnd = () => {
+      finish(buf.length > 0 ? buf : null);
+    };
+    stream.on('data', onData);
+    stream.on('end', onEnd);
+    stream.on('error', onEnd);
+    if (typeof stream.resume === 'function') stream.resume();
+  });
+}
 
 import { importFoundryTriage } from '../../drivers/foundry-triage-resolve.mjs';
 const {
@@ -221,11 +273,16 @@ export async function runIntake(inputs, {
   triageLock,
   headless,
   triageConfig,
+  autoApprove = false,
 } = {}) {
-  const recommendation = recommendResearchPrimeIntake(inputs || {});
+  const regulated = detectRegulatedDomain(inputs || {});
+  const effectiveInputs = regulated.matched
+    ? { ...(inputs || {}), highStakes: true }
+    : (inputs || {});
+  const recommendation = recommendResearchPrimeIntake(effectiveInputs);
 
   // Pre-prompt extension: advisory knobs; locked:false until Gate-1 APPROVE / explicit lock.
-  const preExtension = buildResearchPrimeIntakeExtension(inputs || {}, {
+  const preExtension = buildResearchPrimeIntakeExtension(effectiveInputs, {
     recommendation,
     confirmedDepth,
     confirmedTier,
@@ -235,10 +292,16 @@ export async function runIntake(inputs, {
     requireLock: false,
   });
 
+  const stakesTier = regulated.matched
+    ? REGULATED_DOMAIN_FLOOR
+    : (inputs?.stakesTier ?? inputs?.stakes?.declared_stakes ?? null);
+
   const triageData = {
     inputs,
     timestamp: new Date().toISOString(),
     stamp: NS01_WAVE5_STAMP,
+    ...(stakesTier ? { stakesTier } : {}),
+    ...(regulated.matched ? { regulatedDomain: regulated } : {}),
     extension: preExtension,
   };
 
@@ -260,27 +323,46 @@ export async function runIntake(inputs, {
   }
 
   let decision = 'ABORT';
-  if (promptHuman) {
-    decision = await promptHuman({ artifactPath, triageHash, extension: preExtension });
+  if (autoApprove === true) {
+    decision = 'APPROVE';
+  } else if (promptHuman) {
+    const rawDecision = await promptHuman({ artifactPath, triageHash, extension: preExtension });
+    decision = parseHumanGateAnswer(rawDecision);
+  } else if (!process.stdin.isTTY) {
+    const pipedLine = await readSingleNonTtyLine(process.stdin);
+    if (pipedLine === null || pipedLine.trim().length === 0) {
+      const nonTtyStatus = {
+        status: 'AWAITING_APPROVAL_NON_TTY',
+        gate: 'gate1',
+        triageHash,
+        artifactPath,
+        extensionPath,
+        stakesTier: stakesTier || preExtension.recommendation.tier,
+        remedy: 'Pass --auto-approve / autoApprove:true or supply promptHuman on non-TTY hosts.',
+      };
+      fs.writeFileSync(path.join(runDir, 'non-tty-gate-status.json'), JSON.stringify(nonTtyStatus, null, 2), 'utf8');
+      return { artifactPath, triageHash, decision: 'AWAITING_APPROVAL_NON_TTY', extension: preExtension, extensionPath, nonTtyStatus };
+    }
+    decision = parseHumanGateAnswer(pipedLine);
   } else {
-    // Default interactive prompt
+    // Default interactive TTY prompt
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    const answer = await rl.question(
-      `Triage artifact written to ${artifactPath} (hash: ${triageHash}).\n` +
-        `Advisory: tier=${preExtension.recommendation.tier} depth=${preExtension.recommendation.depth}\n` +
-        `Gate 1 Decision (APPROVE, EDIT, ABORT)? `,
-    );
-    rl.close();
-    decision = answer.trim().toUpperCase();
-    if (!['APPROVE', 'EDIT', 'ABORT'].includes(decision)) {
-      decision = 'ABORT';
+    try {
+      const answer = await rl.question(
+        `Triage artifact written to ${artifactPath} (hash: ${triageHash}).\n` +
+          `Advisory: tier=${preExtension.recommendation.tier} depth=${preExtension.recommendation.depth}\n` +
+          `Gate 1 Decision (APPROVE [y/yes], EDIT [e], ABORT [n])? `,
+      );
+      decision = parseHumanGateAnswer(answer);
+    } finally {
+      rl.close();
     }
   }
 
   // After Gate-1: lock extension when APPROVE (or when pre-locked via headless/lock).
   let extension = preExtension;
   if (decision === 'APPROVE' || triageLock || headless === true) {
-    extension = buildResearchPrimeIntakeExtension(inputs || {}, {
+    extension = buildResearchPrimeIntakeExtension(effectiveInputs, {
       recommendation,
       gate1Decision: decision === 'APPROVE' ? 'APPROVE' : undefined,
       confirmedDepth,
@@ -306,6 +388,7 @@ export async function runIntake(inputs, {
     triageExtensionStamp: extension?.stamp || NS01_WAVE5_STAMP,
     triageDepth: extension?.triage?.depth || extension?.recommendation?.depth || null,
     triageTier: extension?.triage?.tier || extension?.recommendation?.tier || null,
+    ...(stakesTier ? { stakesTier } : {}),
   };
   fs.writeFileSync(path.join(runDir, 'gate1-record.json'), JSON.stringify(governanceRecord, null, 2), 'utf8');
 
@@ -313,22 +396,34 @@ export async function runIntake(inputs, {
     throw new HaltError(`Run halted at Gate 1 with decision ABORT (Artifact: ${triageHash})`);
   }
 
-  return { artifactPath, triageHash, decision, extension, extensionPath };
+  return { artifactPath, triageHash, decision, extension, extensionPath, stakesTier };
 }
 
 function invokedDirectly() {
   const entry = process.argv[1];
   if (!entry) return false;
-  try { return path.resolve(fileURLToPath(import.meta.url)) === path.resolve(entry); } catch { return false; }
+  try {
+    return fs.realpathSync(fileURLToPath(import.meta.url)) === fs.realpathSync(path.resolve(entry));
+  } catch {
+    try { return path.resolve(fileURLToPath(import.meta.url)) === path.resolve(entry); } catch { return false; }
+  }
 }
 
 if (invokedDirectly()) {
-  const runDir = process.argv[2] || process.cwd();
-  // Collect stdin for inputs in a real scenario, but for now just mock it
-  const inputs = { note: 'interactive intake' };
-  runIntake(inputs, { runDir }).then(res => {
+  const argv = process.argv.slice(2);
+  const autoApprove = argv.includes('--auto-approve') || argv.includes('--yes') || argv.includes('-y');
+  const positional = argv.filter((a) => !a.startsWith('-'));
+  const runDir = positional[0] || process.cwd();
+  const queryIdx = argv.indexOf('--query');
+  const query = queryIdx >= 0 && argv[queryIdx + 1] ? argv[queryIdx + 1] : null;
+  const inputs = query ? { query, note: 'interactive intake' } : { note: 'interactive intake' };
+  runIntake(inputs, { runDir, autoApprove }).then((res) => {
+    if (res.decision === 'AWAITING_APPROVAL_NON_TTY') {
+      console.log(JSON.stringify(res.nonTtyStatus, null, 2));
+      process.exit(2);
+    }
     console.log('Intake complete:', res);
-  }).catch(err => {
+  }).catch((err) => {
     if (err instanceof HaltError) {
       console.error(err.message);
       process.exit(1);

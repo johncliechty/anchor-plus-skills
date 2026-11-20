@@ -13,11 +13,12 @@
 - You need research or deep critique rather than code execution
 
 ## What you get
-- Wave-by-wave (and **parallel orthogonal sub-wave `W.1`..`W.k`**) execution: implement → deterministic fast-gate (`pytest`/`node --test` + `Aegis` AST security + `Anvil` structural check) → single-pass cross-family diff review (on a green fast-gate) → fix → re-check
-- Parallel DAG dispatch for independent sub-waves with disjoint file write-sets so multi-subsystem builds don't bottleneck on serial cold starts
-- Orchestrator-run tests and AST gates (agents can’t fake the pass/fail)
-- Auto-advance immediately when the deterministic fast-gate is green and `BLOCKER == 0`; halt only on real blockers for you
-- Resume from checkpoint after a stop
+- Wave-by-wave and **parallel disjoint-write-set sub-wave (`W.1..W.k`)** execution: pre-execute `Anvil` AST slice → implement (isolated git worktrees for sibling sub-waves) → ground-truth test gate + deterministic fast-gates (`delta-coverage`, `Tidy-Idy` scratch hygiene, `Aegis` CWE security scan, `Anvil` AST syntax/diff check) → self-contained diff-scoped cross-family review → fast-close elegance pass
+- Parallel DAG dispatch (`Writes:` + optional `Depends-On:`, default concurrency `3`) for independent sub-waves with disjoint file write-sets, merging cleanly back into parent `HEAD` before running one combined wave gate
+- Pre-Wave-1 subscription CLI auth preflight (`claude`, `codex`, `agy`, `grok`) with 3rd-family verification failover, unified `onReceipt` cost/token telemetry, and SHA-256 `attested_review` manifests in `.foreman/run-record.json`
+- Orchestrator-run tests and deterministic fast-gates (agents can’t fake pass/fail, and broken hygiene/security/syntax never burns reviewer tokens)
+- Auto-advance immediately when the gate + fast-gates + review pass (`0` post-elegance double-review rounds); halt only on real blockers for you
+- Resume from checkpoint after a stop; run the full Foreman suite anytime via `npm test` (`node scripts/run-all-tests.mjs`)
 
 ## What it is not
 - Not a planner — it will not invent requirements or “improve” architecture for taste
@@ -25,7 +26,7 @@
 - Not a green light for empty work (vacuous “pass” when tests prove nothing is refused)
 
 ## How to start (human)
-1. Put description, implementation plan (with `## Wave N` sections), and test command in the project.
+1. Put description, implementation plan (with `## Wave N` sections and optional `### Wave N.k` sub-waves declaring disjoint `Writes:` and `Depends-On:`), and test command in the project.
 2. Confirm the contract Foreman reads back before build starts.
 3. Launch the run and watch status updates; act only when it halts for you.
 4. On halt, fix the named issue (or approve a plan amendment) and resume.

@@ -65,9 +65,10 @@ def resolve_artifact(folder_path, project_id: str, lane: str,
 # UNTOUCHED so KaTeX auto-render can typeset them client-side.
 
 _INLINE_CODE = re.compile(r"`([^`]+)`")
-_BOLD = re.compile(r"\*\*([^*]+)\*\*")
+_BOLD = re.compile(r"\*\*(?!\s)(.+?)(?<!\s)\*\*(?!\*)")
 _ITALIC = re.compile(r"(?<!\*)\*([^*]+)\*(?!\*)")
 _LINK = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+_HR_LINE = re.compile(r"^(?:-\s*-\s*-[\s-]*|\*\s*\*\s*\*[\s*]*|_\s*_\s*_[\s_]*)$")
 
 
 _SAFE_HREF = re.compile(r"^(?:https?://|mailto:|/|#|\./|\.\./|[\w .()%~-]+(?:/|$|\.))", re.I)
@@ -198,6 +199,16 @@ def markdown_to_html(md_text: str) -> str:
             close_list()
             i += 1
             continue
+
+        # Thematic break (<hr>): standalone --- / *** / ___ after a blank line, heading, or list item
+        # (avoids line-0 YAML frontmatter and paragraph Setext underlines).
+        if i > 0 and _HR_LINE.match(stripped):
+            prev_s = lines[i - 1].strip()
+            if not prev_s or prev_s.startswith("#") or list_open:
+                close_list()
+                out.append("<hr>")
+                i += 1
+                continue
 
         # GitHub tables: a header row, a |---| separator row, then body rows (2026-10-07: they rendered as
         # paragraphs of pipes).

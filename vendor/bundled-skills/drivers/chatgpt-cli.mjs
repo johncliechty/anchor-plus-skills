@@ -25,7 +25,7 @@ import { classifySubscriptionOutcome } from './subscription-outcome.mjs';
 export const DEFAULT_CODEX_CLI_TIMEOUT_MS = 45 * 60 * 1000;
 
 // Compatibility exports only. Production seats resolve the current catalog.
-export const CODEX_CLI_HEAVY_MODEL = null;
+export const CODEX_CLI_HEAVY_MODEL = 'gpt-5.6-sol';
 export const CODEX_CLI_STANDARD_MODEL = null;
 export const CODEX_REASONING_EFFORTS = Object.freeze([
   'none', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra',
@@ -292,6 +292,7 @@ export function buildCodexExecArgs({
   reasoningEffort = 'high',
   sandbox = 'read-only',
   target = null,
+  outputSchemaPath = null,
   platform = process.platform,
 } = {}) {
   if (!CODEX_REASONING_EFFORTS.includes(String(reasoningEffort))) {
@@ -312,20 +313,12 @@ export function buildCodexExecArgs({
     '-c', `agents.default_subagent_reasoning_effort=${JSON.stringify(reasoningEffort)}`,
     '-c', 'forced_login_method="chatgpt"',
   ];
-  // 2026-09-01 (Gate 5 Foreman wave 1, proven live): on Windows the workspace-write sandbox
-  // needs a Windows sandbox implementation selected; `--ignore-user-config` drops the user's
-  // `[windows] sandbox = "unelevated"`, so Codex 0.151 fell back to READ-ONLY and every execute
-  // seat answered "workspace is read-only" while Foreman logged "execute complete". Select the
-  // unelevated Windows sandbox inline for write seats only; read-only seats stay untouched.
-  // 2026-10-05 (Foreman code jobs, proven live): READ-ONLY seats need it too. Without a Windows
-  // sandbox implementation Codex refuses EVERY command ("rejected: blocked by policy"), so every
-  // ChatGPT reviewer/judge/refuter on Windows ran blind and still answered. The setting picks the
-  // enforcer, it does not widen: a read-only seat with it reads files and is still denied writes.
   if (String(platform) === 'win32' && String(sandbox) !== 'danger-full-access') {
     args.push('-c', 'windows.sandbox="unelevated"');
   }
   if (target) args.push('--cd', target);
   if (model) args.push('--model', model, '-c', `agents.default_subagent_model=${JSON.stringify(model)}`);
+  if (outputSchemaPath) args.push('--output-schema', String(outputSchemaPath));
   args.push('-');
   return args;
 }
@@ -378,13 +371,15 @@ export function defaultRunCodexCli(fullPrompt, label, {
   role = null,
   reasoningEffort = null,
   orchestrationMode = null,
+  jsonSchema = null,
+  repairOnly = false,
   timeoutMs = (Number(env.CODEX_CLI_TIMEOUT_MS) || DEFAULT_CODEX_CLI_TIMEOUT_MS),
   sandbox = null,
   signal = null,
   log = () => {},
   processRunner = runCloseBoundProcess,
   preflightImpl = preflightCodexSubscription,
-  policyResolver = resolveModelPolicy,
+  policyResolver = undefined,
   spawnImpl,
   spawnSyncImpl,
   platform = process.platform,
@@ -397,12 +392,23 @@ export function defaultRunCodexCli(fullPrompt, label, {
     );
   }
   const cmd = resolveCodexCmd(env);
-  const selection = policyResolver('chatgpt', { env });
-  const effort = selection.effort;
+  let selection;
+  if (typeof policyResolver === 'function') {
+    selection = policyResolver('chatgpt', { env });
+  } else if (processRunner === runCloseBoundProcess) {
+    selection = resolveModelPolicy('chatgpt', { env });
+  } else {
+    selection = {
+      family: 'chatgpt',
+      model: resolveCodexCliModel({ model, role, env }),
+      effort: resolveCodexReasoningEffort({ reasoningEffort, role, env }),
+    };
+  }
+  const effort = repairOnly ? 'low' : selection.effort;
   const mdl = selection.model;
   const orchestration = effort === 'ultra' ? 'ultra' : 'native';
   const seatRole = normalizeRole({ role, label });
-  const box = resolveCodexSandbox({ sandbox, role: seatRole, env });
+  const box = repairOnly ? 'read-only' : resolveCodexSandbox({ sandbox, role: seatRole, env });
   if (signal?.aborted) {
     return Promise.resolve({
       text: '',
@@ -416,11 +422,7 @@ export function defaultRunCodexCli(fullPrompt, label, {
       },
     });
   }
-  // (John, 2026-09-05) ChatGPT IS a reviewer/judge seat. The Codex JSONL still names no
-  // served model, so a verification call runs read-only (sandbox above) and its receipt is
-  // stamped family_attested:true / model_attested:false — the seat contract accepts that
-  // honestly and says so on the log. The old up-front refusal is gone.
-  const preflight = preflightImpl({ cmd, model: mdl, effort, env });
+  const preflight = preflightImpl({ cmd, model: mdl, effort: selection.effort, env });
   if (!preflight.ok) {
     return Promise.resolve({
       text: '',
@@ -435,10 +437,28 @@ export function defaultRunCodexCli(fullPrompt, label, {
       },
     });
   }
-  const args = buildCodexExecArgs({
-    model: mdl, reasoningEffort: effort, sandbox: box, target, platform,
-  });
-  return processRunner({
+  let tmpSchemaPath = null;
+  if (jsonSchema && typeof jsonSchema === 'object' && !Array.isArray(jsonSchema) && env.CODEX_OUTPUT_SCHEMA !== '0') {
+    tmpSchemaPath = path.join(os.tmpdir(), `codex-output-schema-${crypto.randomUUID()}.json`);
+    fs.writeFileSync(tmpSchemaPath, JSON.stringify(jsonSchema), 'utf8');
+  }
+  const cleanupSchemaFile = () => {
+    if (tmpSchemaPath) {
+      try { fs.unlinkSync(tmpSchemaPath); } catch { /* best effort */ }
+      tmpSchemaPath = null;
+    }
+  };
+  let args;
+  try {
+    args = buildCodexExecArgs({
+      model: mdl, reasoningEffort: effort, sandbox: box, target,
+      outputSchemaPath: tmpSchemaPath, platform,
+    });
+  } catch (err) {
+    cleanupSchemaFile();
+    throw err;
+  }
+  return Promise.resolve().then(() => processRunner({
     command: cmd,
     args,
     options: {
@@ -456,7 +476,7 @@ export function defaultRunCodexCli(fullPrompt, label, {
     ...(spawnSyncImpl ? { spawnSyncImpl } : {}),
     platform,
     ...(killImpl ? { killImpl } : {}),
-  }).then((result) => {
+  })).finally(cleanupSchemaFile).then((result) => {
     if (env.TRIO_CODEX_TRACE_DIR) {   // opt-in diagnosis (2026-10-05): what each Codex seat was given and did
       try {
         fs.mkdirSync(env.TRIO_CODEX_TRACE_DIR, { recursive: true });
@@ -540,6 +560,7 @@ export function makeChatgptCliAgentSeam(options = {}) {
       reasoningEffort: opts.reasoningEffort,
       orchestrationMode: opts.orchestrationMode,
       signal: opts.signal,
+      ...(opts.schema ? { jsonSchema: opts.schema } : {}),
     };
     return runCliSchemaAttempts({
       run,

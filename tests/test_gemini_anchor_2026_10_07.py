@@ -125,3 +125,119 @@ def test_the_drained_restart_counts_steward_code_jobs_and_holds_new_ones(monkeyp
     monkeypatch.setattr(maintenance, "is_active", lambda: True)
     out, code = steward_routes.handle_post("C:/nowhere", "code_job", {"action": "start", "repo": "r", "brief": "b"})
     assert code == 409 and "restart" in out["error"]
+
+
+def test_evicted_gemini_session_rolls_over_from_durable_history_and_replays_once(tmp_path, monkeypatch):
+    """2026-11-18: when an older Gemini conversation UUID is evicted from Antigravity CLI's local cache,
+    `agy --conversation <old>` emits a new UUID and triggers 'Gemini resumed an unexpected conversation'.
+    The engine must archive the old pointer in `provider_sessions`, clear `session_id`, wake fresh with
+    `.ecgberht/conversation-log.json` continuity, and replay the user's message at most once."""
+    monkeypatch.setattr(se, "STATE_FILE", tmp_path / "state.json")
+    effort = tmp_path / "Paper 1"
+    ecg = effort / ".ecgberht"
+    ecg.mkdir(parents=True)
+    (ecg / "conversation-log.json").write_text(
+        json.dumps({"turns": [{"role": "john", "text": "Bring Bell software into Anvil", "turn_id": "t1", "at": "2026-11-18T18:37:27+00:00"}]}),
+        encoding="utf-8",
+    )
+
+    eng = se.Engine(str(effort), fake=False)
+    eng.cli = "gemini"
+    eng.session_id = CONV
+    eng._turn_had_tools = False
+    eng._turn_words = "Bring Bell software into Anvil"
+    eng._last_submitted = "Bring Bell software into Anvil"
+    se._update_state(eng.skey(), {"cli": "gemini", "session_id": CONV, "retain_native_on_resume_failure": True})
+
+    killed = []
+    wakes = []
+
+    class _DummyProc:
+        def poll(self):
+            return None
+
+    eng.proc = _DummyProc()
+    monkeypatch.setattr(eng, "_kill_tree", lambda p: killed.append(p))
+    monkeypatch.setattr(eng, "_journal_receipt", lambda *a, **kw: None)
+
+    def _fake_wake(*, fresh=False, seed=None, **kw):
+        wakes.append({"fresh": fresh, "seed": seed})
+        return True, "awake"
+
+    monkeypatch.setattr(eng, "_wake_locked", _fake_wake)
+
+    assert eng._try_gemini_evicted_session_rollover("Gemini resumed an unexpected conversation") is True
+    assert len(killed) == 1
+    assert len(wakes) == 1
+    assert wakes[0]["fresh"] is True
+    assert ".ecgberht/conversation-log.json" in wakes[0]["seed"]
+    assert "Bring Bell software into Anvil" in wakes[0]["seed"]
+
+    saved = se._read_state_entry(eng.skey())
+    assert saved["session_id"] is None
+    assert any(r.get("session_id") == CONV and r.get("family") == "gemini" for r in (saved.get("provider_sessions") or []))
+
+    # Never loops a second time on the same evicted UUID
+    eng.session_id = CONV
+    assert eng._try_gemini_evicted_session_rollover("Gemini resumed an unexpected conversation") is False
+
+    # Universal across Codex, Grok, and Claude evicted/missing session errors as well
+    for fam, sid, err_msg in (
+        ("chatgpt", "22222222-2222-2222-2222-222222222222", "Codex resumed an unexpected thread"),
+        ("grok", "33333333-3333-3333-3333-333333333333", "Grok emitted an unexpected session identity"),
+        ("claude", "44444444-4444-4444-4444-444444444444", "No conversation found with session ID"),
+    ):
+        eng.cli = fam
+        eng.session_id = sid
+        eng.proc = _DummyProc()
+        se._update_state(eng.skey(), {"cli": fam, "session_id": sid, "retain_native_on_resume_failure": True})
+        assert eng._try_evicted_native_session_rollover(err_msg) is True
+        st_fam = se._read_state_entry(eng.skey())
+        assert st_fam["session_id"] is None
+        assert any(r.get("family") == fam and r.get("session_id") == sid for r in (st_fam.get("provider_sessions") or []))
+
+
+def test_proactive_reconcile_evicted_cockpit_sessions_preserves_history_and_skips_no_history(tmp_path, monkeypatch):
+    fake_brain = tmp_path / "agy_home" / "brain"
+    fake_conv = tmp_path / "agy_home" / "conversations"
+    fake_brain.mkdir(parents=True)
+    fake_conv.mkdir(parents=True)
+    live_uuid = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    evicted_uuid = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    no_hist_uuid = "cccccccc-cccc-cccc-cccc-cccccccccccc"
+    (fake_brain / live_uuid).mkdir()
+    monkeypatch.setenv("AGY_BRAIN_DIR", str(fake_brain))
+
+    eff_live = tmp_path / "LiveCockpit"
+    (eff_live / ".ecgberht").mkdir(parents=True)
+    (eff_live / ".ecgberht" / "conversation-log.json").write_text(
+        json.dumps({"turns": [{"role": "john", "text": "hello", "turn_id": "1", "at": "2026-11-18T18:00:00+00:00"}]}), encoding="utf-8"
+    )
+    eff_evicted = tmp_path / "EvictedCockpit"
+    (eff_evicted / ".ecgberht").mkdir(parents=True)
+    (eff_evicted / ".ecgberht" / "conversation-log.json").write_text(
+        json.dumps({"turns": [{"role": "john", "text": "keep working", "turn_id": "2", "at": "2026-11-18T18:05:00+00:00"}]}), encoding="utf-8"
+    )
+    eff_no_hist = tmp_path / "NoHistoryCockpit"
+    eff_no_hist.mkdir(parents=True)
+
+    st_file = tmp_path / "steward-cockpit-state.json"
+    st_file.write_text(
+        json.dumps({
+            str(eff_live): {"cli": "gemini", "session_id": live_uuid},
+            str(eff_evicted): {"cli": "gemini", "session_id": evicted_uuid, "retain_native_on_resume_failure": True},
+            str(eff_no_hist): {"cli": "gemini", "session_id": no_hist_uuid},
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(se, "STATE_FILE", st_file)
+    res = se.reconcile_evicted_cockpit_sessions(st_file)
+    assert res["ok"] is True and res["repaired_count"] == 1
+    assert res["skipped_no_history_count"] == 1
+    after = json.loads(st_file.read_text(encoding="utf-8"))
+    assert after[str(eff_live)]["session_id"] == live_uuid
+    assert after[str(eff_evicted)]["session_id"] is None
+    assert after[str(eff_evicted)]["provider_sessions"][0]["session_id"] == evicted_uuid
+    assert after[str(eff_no_hist)]["session_id"] == no_hist_uuid
+
+

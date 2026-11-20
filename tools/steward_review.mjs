@@ -12,11 +12,122 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { reviewDiff, largest } from './review_diff.mjs';
 
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 const MAX_DIFF = 800_000;
+const MAX_AGY_WHOLE_PROMPT_BYTES = 26_000;
 const FAMILIES = ['claude', 'chatgpt', 'grok', 'gemini'];
+
+function resolveAgyDispatchScript() {
+  const candidates = [
+    process.env.ANCHOR_AGY_DISPATCH,
+    process.env.ECGBERHT_AGY_DISPATCH,
+    process.env.SKILL_FOUNDRY_DIR && path.join(process.env.SKILL_FOUNDRY_DIR, 'tools', 'agy-dispatch.mjs'),
+    path.resolve(HERE, 'agy-dispatch.mjs'),
+    path.resolve(HERE, '..', '..', 'Skill Foundry', 'tools', 'agy-dispatch.mjs'),
+    path.resolve(HERE, '..', '..', 'skill-foundry', 'tools', 'agy-dispatch.mjs'),
+  ].filter(Boolean);
+  return candidates.find((p) => { try { return fs.statSync(p).isFile(); } catch { return false; } }) || null;
+}
+
+function isStandaloneClaudeAuthFailure(error) {
+  const seat = error && error.receipt;
+  const codes = ((seat && seat.attempts) || []).map((a) => a && a.error && a.error.code).filter(Boolean);
+  if (seat && seat.error && seat.error.code) codes.push(seat.error.code);
+  if (codes.some((c) => ['authentication_required', 'subscription_auth_required', 'spawn_error'].includes(c))) {
+    return true;
+  }
+  const msg = [
+    error && error.message,
+    seat && seat.error && seat.error.message,
+    ...(((seat && seat.attempts) || []).map((a) => (a && a.error && a.error.message) || '')),
+  ].filter(Boolean).join(' ');
+  return /oauth session expired|failed to authenticate|not logged in|authentication_required|login required/i.test(msg);
+}
+
+function extractStrictReviewJson(rawText) {
+  let t = String(rawText || '').trim();
+  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) t = fence[1].trim();
+  const cands = [t, (t.match(/\{[\s\S]*\}/) || [])[0]].filter(Boolean);
+  for (const c of cands) {
+    for (const v of [c, c.replace(/,(\s*[}\]])/g, '$1')]) {
+      try {
+        const parsed = JSON.parse(v);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+      } catch { /* next */ }
+    }
+  }
+  return null;
+}
+
+function tryAgyClaudeReviewFallback(prompt) {
+  if (process.env.ANCHOR_DISABLE_AGY_CLAUDE_FALLBACK === '1' || process.env.PYTEST_CURRENT_TEST || process.env.ANCHOR_HEALTHCHECK) {
+    return null;
+  }
+  const dispatchScript = resolveAgyDispatchScript();
+  if (!dispatchScript) return null;
+  const schemaFooter = [
+    '',
+    'OUTPUT FORMAT (MANDATORY): Reply with ONLY one valid JSON object matching this exact schema (no markdown fences, no commentary):',
+    '{"verdict":"PASS"|"FAIL","findings":[{"severity":"BLOCKER"|"MAJOR"|"MINOR","file":"...","line":1,"issue":"...","fix":"..."}],"elegance":"..."}',
+  ].join('\n');
+  const fullPrompt = prompt + schemaFooter;
+  const promptBytes = Buffer.byteLength(fullPrompt, 'utf8');
+  if (promptBytes > MAX_AGY_WHOLE_PROMPT_BYTES) {
+    throw new Error(
+      `standalone claude CLI is not logged in, and the review prompt (${promptBytes} bytes) exceeds the ${MAX_AGY_WHOLE_PROMPT_BYTES}-byte whole-read agy fallback bound; run "claude login" or choose another Reviewer seat`
+    );
+  }
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'anchor-agy-rev-'));
+  try {
+    const pFile = path.join(tmpDir, 'prompt.txt');
+    const oFile = path.join(tmpDir, 'reply.json');
+    fs.writeFileSync(pFile, fullPrompt, 'utf8');
+    let stdout = '';
+    try {
+      stdout = execFileSync(
+        process.execPath,
+        [dispatchScript, '--prompt-file', pFile, '--target', tmpDir, '--out', oFile, '--model', 'Claude Opus 5.5 (High)', '--readonly', '--json-safe', '--timeout-min', '4', '--label', 'steward-review-claude'],
+        { encoding: 'utf8', timeout: 255_000, windowsHide: true }
+      );
+    } catch {
+      return null;
+    }
+    const lines = String(stdout || '').trim().split(/\r?\n/).filter((l) => l.trim().startsWith('{'));
+    let meta = null;
+    try {
+      meta = lines.length ? JSON.parse(lines[lines.length - 1]) : null;
+    } catch {
+      return null;
+    }
+    if (!meta || meta.status !== 'success') {
+      return null;
+    }
+    const servedModel = String(meta.servedModel || meta.model || '');
+    if (!/^claude/i.test(servedModel)) {
+      throw new Error(`agy Claude review fallback refused non-Claude served model "${servedModel}"`);
+    }
+    const rawReply = fs.existsSync(oFile) ? fs.readFileSync(oFile, 'utf8') : '';
+    const parsed = extractStrictReviewJson(rawReply);
+    if (!parsed || !['PASS', 'FAIL'].includes(parsed.verdict) || !Array.isArray(parsed.findings) || typeof parsed.elegance !== 'string') {
+      return null;
+    }
+    for (const f of parsed.findings) {
+      if (!f || typeof f !== 'object' || !['BLOCKER', 'MAJOR', 'MINOR'].includes(f.severity) || typeof f.issue !== 'string') {
+        return null;
+      }
+    }
+    return {
+      result: parsed,
+      served: { family: 'claude', model: servedModel, model_attested: false, served_via: 'agy-dispatch' },
+    };
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+  }
+}
 
 function arg(name, fallback = '') {
   const i = process.argv.indexOf('--' + name);
@@ -139,6 +250,7 @@ async function main() {
   }
   let receipt = null;
   let result = null;
+  let triedAgyFallback = false;
   try {
     for (let attempt = 1; ; attempt++) {
       try {
@@ -150,6 +262,15 @@ async function main() {
         });
         break;
       } catch (error) {
+        if (!triedAgyFallback && reviewer === 'claude' && !authors.includes('claude') && isStandaloneClaudeAuthFailure(error)) {
+          triedAgyFallback = true;
+          const fallback = tryAgyClaudeReviewFallback(prompt);
+          if (fallback) {
+            result = fallback.result;
+            receipt = { served: fallback.served };
+            break;
+          }
+        }
         const seat = error && error.receipt;
         if (!seat || seat.status === 'aborted') throw error;
         if (attempt >= 2) throw new Error(`the reviewer (${reviewer}) could not give a review twice - ${seatCause(seat)}`);

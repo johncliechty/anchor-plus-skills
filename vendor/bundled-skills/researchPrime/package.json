@@ -5,7 +5,7 @@
   "type": "module",
   "description": "researchPrime Verification+Foresight upgrade — a Node engine that IMPORTS (never forks) the Crucible/Foreman trio machinery. Wave 1: import GO/NO-GO spike, frozen contract surface, fixture spec, pre-registration RED-gate.",
   "scripts": {
-    "test": "node --test test/"
+    "test": "node scripts/run-all-tests.mjs"
   },
   "imports": {
     "#trio-core/*": "./bin/trio-core/*"

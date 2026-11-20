@@ -57,27 +57,150 @@ export function elementsFromWaves(waves) {
   return out;
 }
 
-/** Apply verdicts to waves: CUT removes the deliverable; a wave whose deliverables are ALL cut is dropped; HOLD annotates. Pure. */
+const WAVE_NUM_PREFIX = /^\s*W\d+\s*[—–-]\s*/;
+const stripWaveNum = (t) => String(t ?? '').replace(WAVE_NUM_PREFIX, '').trim();
+const joinNonEmpty = (parts, sep) => parts.map((p) => String(p ?? '').trim()).filter(Boolean).join(sep);
+
+/**
+ * Remap a single `dependsOn` token/value across wave drops or merges without clobbering DAG edges.
+ * Supports number (`1`), `W1` / `Wave 1`, full/bare wave title, comma/semicolon lists, or arrays.
+ */
+function remapDependsOnValue(dep, resolveRef, selfNewN) {
+  if (dep == null || dep === '' || dep === '—') return dep === '' ? '' : null;
+  if (Array.isArray(dep)) {
+    const mapped = [];
+    for (const item of dep) {
+      const r = remapDependsOnValue(item, resolveRef, selfNewN);
+      const items = Array.isArray(r) ? r : (r != null ? [r] : []);
+      for (const x of items) {
+        const key = typeof x === 'number' ? `#${x}` : String(x);
+        if (!mapped.some((m) => (typeof m === 'number' ? `#${m}` : String(m)) === key)) {
+          mapped.push(x);
+        }
+      }
+    }
+    return mapped.length ? mapped : null;
+  }
+  if (typeof dep === 'number') {
+    const resolved = resolveRef(dep, 'number');
+    if (!resolved || resolved.newN === selfNewN) return null;
+    return resolved.newN;
+  }
+  const raw = String(dep).trim();
+  if (!raw || raw === '—') return null;
+
+  // Support comma- or semicolon-delimited multi-dependency strings ("W1, W2" or "A; B").
+  if (/[,;]/.test(raw) && !resolveRef(raw, 'string')) {
+    const sep = raw.includes(';') ? '; ' : ', ';
+    const parts = raw.split(/\s*[,;]\s*/).filter(Boolean);
+    const mappedParts = [];
+    for (const p of parts) {
+      const r = remapDependsOnValue(p, resolveRef, selfNewN);
+      if (r != null && r !== '' && !mappedParts.includes(String(r))) mappedParts.push(String(r));
+    }
+    return mappedParts.length ? mappedParts.join(sep) : null;
+  }
+
+  const resolved = resolveRef(raw, 'string');
+  if (!resolved) return raw; // external or unknown dependency reference preserved verbatim
+  if (resolved.droppedReplacement !== undefined) {
+    return remapDependsOnValue(resolved.droppedReplacement, resolveRef, selfNewN);
+  }
+  if (resolved.newN === selfNewN) return null;
+  if (/^\d+$/.test(raw)) return String(resolved.newN);
+  if (/^W\d+$/i.test(raw)) return `W${resolved.newN}`;
+  if (/^Wave\s+\d+$/i.test(raw)) return `Wave ${resolved.newN}`;
+  return resolved.newTitle;
+}
+
+function buildWaveRefResolver(oldRecords) {
+  const byOldN = new Map();
+  const byTitle = new Map();
+  for (const rec of oldRecords) {
+    byOldN.set(rec.oldN, rec);
+    if (rec.oldTitle) byTitle.set(rec.oldTitle.toLowerCase(), rec);
+    if (rec.oldBareTitle) byTitle.set(rec.oldBareTitle.toLowerCase(), rec);
+  }
+  return (token, kind) => {
+    if (kind === 'number') return byOldN.get(Number(token)) || null;
+    const s = String(token ?? '').trim();
+    if (!s) return null;
+    if (/^\d+$/.test(s)) return byOldN.get(Number(s)) || null;
+    const wShort = s.match(/^W(?:ave\s*)?(\d+)$/i);
+    if (wShort) return byOldN.get(Number(wShort[1])) || null;
+    const exact = byTitle.get(s.toLowerCase()) || byTitle.get(stripWaveNum(s).toLowerCase());
+    if (exact) return exact;
+    const wPrefixed = s.match(/^W(?:ave\s*)?(\d+)\s*[—–:-]/i);
+    if (wPrefixed) return byOldN.get(Number(wPrefixed[1])) || null;
+    return null;
+  };
+}
+
+/** Apply verdicts to waves: CUT removes the deliverable; a wave whose deliverables are ALL cut is dropped; HOLD annotates; surviving waves renumber 1..K and remap DAG dependsOn. Pure. */
 export function applyVerdictsToWaves(waves, verdicts) {
+  const src = Array.isArray(waves) ? waves : [];
   const byId = new Map((Array.isArray(verdicts) ? verdicts : []).map((v) => [v.id, v]));
+  const numbered = src.some((w) => WAVE_NUM_PREFIX.test(String(w?.title ?? '')));
+  const hasExplicitN = src.some((w) => typeof w?.n === 'number');
+  const records = [];
   const out = [];
-  (Array.isArray(waves) ? waves : []).forEach((w, i) => {
+
+  src.forEach((w, i) => {
+    const oldN = Number.isInteger(w?.n) ? w.n : i + 1;
+    const oldTitle = String(w?.title ?? '');
+    const oldBareTitle = stripWaveNum(oldTitle);
     const dels = Array.isArray(w?.deliverables) ? w.deliverables : [];
+
     if (!dels.length) {
       const v = byId.get(`W${i + 1}.1`);
-      if (v?.verdict === 'CUT') return;
-      out.push(v?.verdict === 'HOLD' ? { ...w, title: `${w.title} (HOLD — ${v.trigger || 'trigger to be named'})` } : w);
+      if (v?.verdict === 'CUT') {
+        records.push({ oldN, oldTitle, oldBareTitle, droppedReplacement: w?.dependsOn ?? null });
+        return;
+      }
+      const nextWave = v?.verdict === 'HOLD'
+        ? { ...w, title: `${w.title} (HOLD — ${v.trigger || 'trigger to be named'})` }
+        : { ...w };
+      const idx = out.push(nextWave) - 1;
+      records.push({ oldN, oldTitle, oldBareTitle, outIndex: idx });
       return;
     }
+
     const kept = [];
     dels.forEach((d, k) => {
       const v = byId.get(`W${i + 1}.${k + 1}`);
       if (v?.verdict === 'CUT') return;
       kept.push(v?.verdict === 'HOLD' ? `${d} (HOLD — ${v.trigger || v.needed_because || 'trigger to be named'})` : d);
     });
-    if (!kept.length) return;   // every deliverable cut ⇒ the wave is gone
-    out.push({ ...w, deliverables: kept });
+    if (!kept.length) {
+      records.push({ oldN, oldTitle, oldBareTitle, droppedReplacement: w?.dependsOn ?? null });
+      return; // every deliverable cut ⇒ the wave is gone
+    }
+    const idx = out.push({ ...w, deliverables: kept }) - 1;
+    records.push({ oldN, oldTitle, oldBareTitle, outIndex: idx });
   });
+
+  const anyDropped = out.length !== src.length;
+  for (let i = 0; i < out.length; i++) {
+    const newN = i + 1;
+    if (hasExplicitN || anyDropped) out[i].n = newN;
+    if (numbered && anyDropped) {
+      out[i].title = `W${newN} — ${stripWaveNum(out[i].title)}`;
+    }
+  }
+  for (const rec of records) {
+    if (rec.outIndex != null) {
+      rec.newN = rec.outIndex + 1;
+      rec.newTitle = out[rec.outIndex].title;
+    }
+  }
+  if (anyDropped) {
+    const resolveRef = buildWaveRefResolver(records);
+    for (let i = 0; i < out.length; i++) {
+      if ('dependsOn' in out[i] && out[i].dependsOn != null) {
+        out[i].dependsOn = remapDependsOnValue(out[i].dependsOn, resolveRef, i + 1);
+      }
+    }
+  }
   return out;
 }
 
@@ -136,15 +259,13 @@ export function elegancePassSection(result) {
 // ---------------------------------------------------------------------------------------------
 // RC-8 — the wave-count question, Stage 2 (John, 2026-09-05). Pure merge + the hook that asks it.
 // ---------------------------------------------------------------------------------------------
-const WAVE_NUM_PREFIX = /^\s*W\d+\s*[—–-]\s*/;
-const stripWaveNum = (t) => String(t ?? '').replace(WAVE_NUM_PREFIX, '').trim();
-const joinNonEmpty = (parts, sep) => parts.map((p) => String(p ?? '').trim()).filter(Boolean).join(sep);
 
 /**
  * Apply confirmed merges (`[{ waves: [n, n+1, ...] }]`, 1-based, adjacent) to a wave list. A merged
  * wave carries every member's deliverables and scenarios, its done-when joined, the first member's
- * dependency; titles keep their `W<n> —` numbering (renumbered) and a serial `dependsOn` chain is
- * rewritten to the new previous wave. Pure. Returns `{ waves, merged: [{ from, title }] }`.
+ * dependency; wave numbers `w.n` renumber contiguously `1..K`, titles keep their `W<n> —` numbering,
+ * and `dependsOn` wave IDs/titles are remapped accurately across DAGs (never clobbered to `i - 1`).
+ * Pure. Returns `{ waves, merged: [{ from, title }] }`.
  */
 export function applyWaveMerges(waves, merges) {
   const src = Array.isArray(waves) ? waves : [];
@@ -154,12 +275,26 @@ export function applyWaveMerges(waves, merges) {
     if (ws.length >= 2) groups.set(ws[0], ws);
   }
   const numbered = src.some((w) => WAVE_NUM_PREFIX.test(String(w?.title ?? '')));
+  const hasExplicitN = src.some((w) => typeof w?.n === 'number');
   const out = [];
   const merged = [];
+  const records = [];
+
   for (let i = 0; i < src.length; i++) {
     const n = i + 1;
     const g = groups.get(n);
-    if (!g) { out.push({ ...src[i] }); continue; }
+    if (!g) {
+      const oldW = src[i];
+      const oldN = Number.isInteger(oldW?.n) ? oldW.n : n;
+      const idx = out.push({ ...oldW }) - 1;
+      records.push({
+        oldN,
+        oldTitle: String(oldW?.title ?? ''),
+        oldBareTitle: stripWaveNum(oldW?.title),
+        outIndex: idx,
+      });
+      continue;
+    }
     const members = g.map((k) => src[k - 1]).filter(Boolean);
     const first = members[0] ?? src[i];
     const w = {
@@ -173,16 +308,43 @@ export function applyWaveMerges(waves, merges) {
       gwt: members.flatMap((x) => (Array.isArray(x?.gwt) ? x.gwt : [])),
     };
     if (!w.intent) delete w.intent;
-    out.push(w);
+    const idx = out.push(w) - 1;
+    for (const k of g) {
+      const member = src[k - 1];
+      if (!member) continue;
+      records.push({
+        oldN: Number.isInteger(member?.n) ? member.n : k,
+        oldTitle: String(member?.title ?? ''),
+        oldBareTitle: stripWaveNum(member?.title),
+        outIndex: idx,
+      });
+    }
     merged.push({ from: [...g], title: w.title });
     i += g.length - 1;
   }
-  // renumber + rewrite a serial chain
+
+  const anyMerged = merged.length > 0;
   for (let i = 0; i < out.length; i++) {
+    const newN = i + 1;
     const bare = stripWaveNum(out[i].title);
-    out[i].title = numbered ? 'W' + (i + 1) + ' — ' + bare : bare;
-    if (i === 0) { if (out[i].dependsOn) out[i].dependsOn = null; continue; }
-    if (out[i].dependsOn) out[i].dependsOn = out[i - 1].title;
+    out[i].title = numbered ? 'W' + newN + ' — ' + bare : bare;
+    if (hasExplicitN || anyMerged) out[i].n = newN;
+  }
+  for (const rec of records) {
+    rec.newN = rec.outIndex + 1;
+    rec.newTitle = out[rec.outIndex].title;
+  }
+
+  const resolveRef = buildWaveRefResolver(records);
+  for (let i = 0; i < out.length; i++) {
+    if (i === 0 && out[i].dependsOn != null) {
+      const remapped0 = remapDependsOnValue(out[i].dependsOn, resolveRef, 1);
+      out[i].dependsOn = remapped0 ?? null;
+      continue;
+    }
+    if ('dependsOn' in out[i] && out[i].dependsOn != null) {
+      out[i].dependsOn = remapDependsOnValue(out[i].dependsOn, resolveRef, i + 1);
+    }
   }
   return { waves: out, merged };
 }

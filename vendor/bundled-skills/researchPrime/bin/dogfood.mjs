@@ -1,4 +1,8 @@
-// bin/dogfood.mjs — Wave 11 DOGFOOD SELF-RUN (Phase F).
+// bin/dogfood.mjs — Wave 11 DOGFOOD SELF-RUN (Phase F) [HERMETIC BENCHMARK / SELF-RUN HARNESS].
+//
+// NOTE: This module is a deterministic, hermetic self-run harness for testing the engine's dry and
+// suspiciously-dry predicates without live network/LLM spend. The canonical production Phase-3 runner
+// is `bin/run-rounds.mjs` (documented in SKILL.md and HUMAN.md).
 //
 // IMPLEMENTATION-PLAN Wave 11 / MASTER-PLAN Phase F done-when: "a dogfood self-run proves the dry +
 // suspiciously-dry predicates." This module is that self-run: researchPrime drives its OWN Wave-7
@@ -17,6 +21,7 @@
 // NO threshold of its own (I6). It is PURE except for that one threshold read; the scenario data is a
 // fixed literal, so the self-run is deterministic and replayable.
 
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -52,17 +57,36 @@ export const DOGFOOD_FAMILY = 'rp-default';
 export function dogfoodAgent() {
   return async (_prompt, opts = {}) => {
     const role = opts.role || 'other';
-    if (role === 'judge') return { decision: 'NOT_CONVERGED', reasons: [] };
-    if (role === 'synthesizer') return { lean: 'unknown', suggestions: [] };
+    if (role === 'judge') return { decision: 'CONVERGED', reasons: ['dry round'] };
+    if (role === 'synthesizer') return { lean: 'lock', suggestions: [] };
     if (role === 'debate') return { survivor: DOGFOOD_FAMILY };
     return null;
   };
 }
 
-// A NON-EMPTY but DRY round: one same-lineage reviewer raises a single MINOR, AXIS-tracing nit — no new
-// blocker (⇒ dry) and at least one finding (⇒ not empty). This is the convergence signal a genuine run
-// emits once the substantive defects are resolved.
+// A NON-EMPTY, QUORUM-VERIFIED DRY round for Self-run A: two independent attested origins raise
+// distinct MINOR, AXIS-tracing nits — no new >=2-agree blocker (⇒ dry), non-empty, and quorum met.
 function dryReviews(round) {
+  return [
+    {
+      reviewer: 'Skeptic',
+      lineage: 'claude',
+      findings: [
+        { topic: `residual wording nit r${round}`, severity: 'MINOR', traces_to_north_star: 'yes' },
+      ],
+    },
+    {
+      reviewer: 'Contrarian',
+      lineage: 'gemini',
+      findings: [
+        { topic: `formatting detail r${round}`, severity: 'MINOR', traces_to_north_star: 'yes' },
+      ],
+    },
+  ];
+}
+
+// Single-family dry round for Self-run B (corroborates single-family un-mitigable blind-spot stamp).
+function singleFamilyDryReviews(round) {
   return [
     {
       reviewer: 'Skeptic',
@@ -133,7 +157,7 @@ export async function runDogfood({ agent = dogfoodAgent() } = {}) {
   // mitigation claim.
   const dryRound = await orchestrateRound({
     agent,
-    reviews: dryReviews(1),
+    reviews: singleFamilyDryReviews(1),
     round: 1,
     northStar: DOGFOOD_NORTH_STAR,
   });
@@ -169,6 +193,13 @@ export async function runDogfood({ agent = dogfoodAgent() } = {}) {
 }
 
 // CLI: `node bin/dogfood.mjs` runs the self-run and prints the report (human inspection).
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+function invokedDirectly() {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try { return fs.realpathSync(fileURLToPath(import.meta.url)) === fs.realpathSync(entry); } catch {
+    try { return path.resolve(fileURLToPath(import.meta.url)) === path.resolve(entry); } catch { return false; }
+  }
+}
+if (invokedDirectly()) {
   runDogfood().then((r) => console.log(JSON.stringify(r, null, 2)));
 }

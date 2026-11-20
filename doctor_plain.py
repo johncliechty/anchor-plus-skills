@@ -285,6 +285,7 @@ def _sync_live_steward_modules():
     saved_index_cache = dict(getattr(old_scr, "_USAGE_INDEX_CACHE", {}) or {})
     saved_agent_cache = dict(getattr(old_scr, "_CLAUDE_AGENT_USAGE_CACHE", {}) or {})
     for mod_name in (
+        "brownfield_scan",
         "deliverables_register",
         "usage_ledger",
         "usage_index",

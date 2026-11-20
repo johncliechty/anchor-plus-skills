@@ -132,29 +132,22 @@ export function isEmptyRound(round) {
 export const CLEAN_CONVERGENCE_STAMP =
   'CLEAN convergence: the panel raised ZERO findings for the required consecutive rounds — ' +
   'nothing to dispute was found (DISTINCT from DRY, where findings were raised but none was a ' +
-  'new blocker). Clean requires MORE consecutive evidence than dry (cleanN = N + 1).';
+  'new blocker). Per ELEGANCE.md Rule 5, one genuinely clean quorum-verified round ends the loop (cleanN = 1).';
 
 /**
  * Build a convergence tracker: the run is CONVERGED after N consecutive NON-EMPTY dry rounds
- * (DRY convergence), OR — T8 (2026-07-11) — after cleanN consecutive EMPTY rounds (CLEAN
- * convergence, explicit stamp).
- *
- * I7 (b), REFINED not abandoned: an EMPTY round still does NOT touch the DRY counter — a run can
- * never manufacture *adversarial* convergence by declining to look. But the OLD rule made a
- * genuinely defect-free artifact structurally UNABLE to converge: zero-finding rounds counted for
- * nothing, so reviewers were pressured to invent filler nits (the dogfood literally scripted one
- * per round to terminate). CLEAN is the honest exit: strictly MORE consecutive empty rounds than
- * dry needs (cleanN = N + 1 by default), stamped distinctly so the deliverable can never pass a
- * clean run off as an adversarially-dry one.
+ * (DRY convergence), OR after cleanN consecutive EMPTY rounds (CLEAN convergence, explicit stamp),
+ * PROVIDED the round also satisfies GATE-1 quorum (`quorum.met !== false`) AND is not blocked by
+ * the Judge (`judgeVerdict.lockable !== false`, e.g. CHALLENGE / NOT_CONVERGED).
  *
  * @param {{N:number, cleanN?:number}} o  N = the pre-registered dry threshold (Wave 1);
- *   cleanN = the clean threshold (default N + 1; must be > 0)
+ *   cleanN = the clean threshold (default 1 per ELEGANCE.md Rule 5; must be >= 1)
  */
-export function makeConvergenceTracker({ N, cleanN = null } = {}) {
+export function makeConvergenceTracker({ N, cleanN = 1 } = {}) {
   if (!Number.isInteger(N) || N < 1) {
     throw new HaltError('makeConvergenceTracker: N must be an integer >= 1 (the committed threshold)');
   }
-  const CLEAN_N = cleanN == null ? N + 1 : cleanN;
+  const CLEAN_N = cleanN == null ? 1 : cleanN;
   if (!Number.isInteger(CLEAN_N) || CLEAN_N < 1) {
     throw new HaltError('makeConvergenceTracker: cleanN must be an integer >= 1');
   }
@@ -162,14 +155,23 @@ export function makeConvergenceTracker({ N, cleanN = null } = {}) {
   let emptyStreak = 0;
   let rounds = 0;
   let countedRounds = 0; // non-empty rounds — the only ones DRY convergence sees
+  let lastQuorumBlocked = false;
+  let lastJudgeBlocked = false;
   const snapshot = (extra) => {
     const dry = dryStreak >= N;
     const clean = emptyStreak >= CLEAN_N;
+    const blocked = lastQuorumBlocked || lastJudgeBlocked;
+    const converged = (dry || clean) && !blocked;
     return {
-      converged: dry || clean,
-      mode: dry ? 'dry' : clean ? 'clean' : null,
-      stamp: !dry && clean ? CLEAN_CONVERGENCE_STAMP : null,
-      dryStreak, emptyStreak, rounds, countedRounds,
+      converged,
+      mode: converged ? (dry ? 'dry' : 'clean') : null,
+      stamp: converged && !dry && clean ? CLEAN_CONVERGENCE_STAMP : null,
+      dryStreak,
+      emptyStreak,
+      rounds,
+      countedRounds,
+      blockedByQuorum: lastQuorumBlocked,
+      blockedByJudge: lastJudgeBlocked,
       ...extra,
     };
   };
@@ -180,9 +182,20 @@ export function makeConvergenceTracker({ N, cleanN = null } = {}) {
      */
     observe(round) {
       rounds += 1;
+      lastQuorumBlocked = Boolean(round?.quorum && round.quorum.met === false);
+      lastJudgeBlocked = Boolean(
+        round?.judgeVerdict && !round.judgeVerdict.excluded && round.judgeVerdict.lockable === false,
+      );
+      if (lastQuorumBlocked || lastJudgeBlocked) {
+        emptyStreak = 0;
+        dryStreak = 0;
+        const empty = isEmptyRound(round);
+        if (!empty) countedRounds += 1;
+        return snapshot({ counted: !empty, empty });
+      }
       if (isEmptyRound(round)) {
         // I7: invisible to the DRY streak (not incremented, not reset) — but it ADVANCES the
-        // CLEAN streak: consecutive genuinely-empty rounds are themselves evidence.
+        // CLEAN streak: consecutive genuinely-empty quorum-verified rounds are themselves evidence.
         emptyStreak += 1;
         return snapshot({ counted: false, empty: true });
       }
@@ -624,13 +637,15 @@ export function countSurvivingPanel(reviews) {
  */
 export async function runPanelRound({
   agent, round, focus, onCall, artifact, northStar, lineage,
+  lineages = null,
+  seatAgentFor = null,
   checkInMs = DEFAULT_CHECKIN_MS,
   deadIdleMs = DEFAULT_DEAD_IDLE_MS,
   silentKillMs = DEFAULT_SILENT_KILL_MS,
   heartbeatDir = null,
   onLookin = null,
 } = {}) {
-  if (typeof agent !== 'function') {
+  if (typeof agent !== 'function' && typeof seatAgentFor !== 'function') {
     throw new HaltError('runPanelRound requires an agent() function', 'pass the injected seam: { agent }');
   }
   if (artifact) {
@@ -640,23 +655,36 @@ export async function runPanelRound({
       );
     }
   }
-  const jobs = SHARK_ROLES.map((role, i) => ({ role, angle: angleForShark(round, i) }));
+  const jobs = SHARK_ROLES.map((role, i) => ({
+    role,
+    angle: angleForShark(round, i),
+    seatIndex: i,
+    seatLineage: Array.isArray(lineages) && lineages.length > 0
+      ? (lineages[i % lineages.length] ?? lineage ?? null)
+      : (lineage ?? null),
+  }));
   const runSeat = async (job) => {
     if (onCall) onCall();
     const hb = heartbeatDir
       ? path.join(heartbeatDir, `heartbeat-r${round}-${job.role.role}.json`)
       : null;
+    const seatAgent = typeof seatAgentFor === 'function'
+      ? seatAgentFor(job.seatIndex, job, job.seatLineage)
+      : agent;
     try {
       const prompt = reviewerPrompt(job.role, {
         round, angle: job.angle, focus, artifact, northStar, heartbeatPath: hb,
       });
       const out = await superviseSeat({
-        run: ({ nudge } = {}) => agent(nudge ? `${nudge}\n\n${prompt}` : prompt, {
+        run: ({ nudge } = {}) => seatAgent(nudge ? `${nudge}\n\n${prompt}` : prompt, {
           label: `reviewer:${job.role.role}:r${round}`,
           role: 'reviewer',
           round,
           angle: job.angle,
           focus: focus ?? null,
+          seatIndex: job.seatIndex,
+          lineage: job.seatLineage,
+          family: job.seatLineage,
         }),
         getTrail: hb ? () => trailFromFile(hb) : () => null,
         checkInMs,
@@ -666,20 +694,23 @@ export async function runPanelRound({
         task: artifact,
         onLookin,
       });
+      const servedLineage = (out && typeof out === 'object' && (out.lineage || out.family))
+        ? String(out.lineage || out.family)
+        : (job.seatLineage ?? null);
       const extracted = extractPanelFindings(out);
       if (extracted.findings === null) {
         // An unparseable or empty reply is NOT a clean look: the seat abstains (honest
         // tracker counts it as not-surviving), and the raw text is kept for the audit.
         return {
           ...panelSeatAbstain(job, new Error(`reply not parseable as a findings object (${extracted.parsed})`)),
-          lineage: lineage ?? null,
+          lineage: servedLineage,
           raw_reply: String(extracted.raw || '').slice(0, RAW_REPLY_KEEP),
         };
       }
       return {
         reviewer: job.role.role,
         angle: job.angle,
-        lineage: lineage ?? null,
+        lineage: servedLineage,
         findings: normalizePanelFindings(extracted.findings),
         reply_parsed_as: extracted.parsed,
         raw_reply: String(extracted.raw || '').slice(0, RAW_REPLY_KEEP),

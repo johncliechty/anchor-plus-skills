@@ -243,3 +243,16 @@ def test_grass_doc_kind_is_idea_doc(tmp_path):
     assert len(grass) == 1
     assert grass[0]["kind"] == "idea-doc"
     assert grass[0]["lane"] == "grass"
+
+
+def test_build_subdir_is_not_skipped(tmp_path):
+    """Regression: <project>/build/<run>/foreman.config.json must be discovered
+    into the build lane (never pruned by SKIP_DIRS)."""
+    root = tmp_path / "bsub"
+    bd = root / "build" / "hc-v5-build"
+    bd.mkdir(parents=True)
+    (bd / "foreman.config.json").write_text("{}\n", encoding="utf-8")
+    res = bscan.scan(str(root))
+    rels = {a["rel"] for a in res.by_lane["build"]}
+    assert "build/hc-v5-build/foreman.config.json" in rels
+

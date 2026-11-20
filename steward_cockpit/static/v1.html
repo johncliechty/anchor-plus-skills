@@ -22,10 +22,24 @@
     <div class="top-spacer" style="flex:1"></div>
     <button type="button" class="anvil-tile-btn" data-anvil-toggle title="Launch Anvil for this effort — Anvil takes over and collapses this AI Cockpit into a small clickable tile at the top"><img src="/vendor/brand/anvil-option-2-sword-crystal-v1.jpg" alt="Anvil" width="20" height="20"><span>Anvil</span></button>
     <button type="button" class="aegis-tile-btn" data-aegis-toggle title="Launch Aegis Security Audit & Auto-Remediation for this effort"><img src="/vendor/brand/aegis-icon.jpg" data-fallback="/vendor/brand/aegis-icon.svg" alt="Aegis" width="20" height="20" style="border-radius:4px;object-fit:cover"><span>Aegis</span></button>
+    <button type="button" class="aegis-tile-btn" data-poincare-toggle style="padding-left:9px;border-color:rgba(56,189,248,0.55)" title="Explore this AI Cockpit's interactive 2D Möbius-Zoomable Poincaré History & Deep-Memory State Map"><span>🧭 Poincaré Map</span></button>
     <span class="chip" data-spend></span>
     <button data-drive>▶ Go</button>
     <button data-boneyard title="archive this effort to the boneyard">🪦</button>
     <button data-min title="collapse back to the cockpit">—</button>
+  </div>
+  <div class="anvil-takeover-live" data-poincare-takeover hidden>
+    <div class="anvil-takeover-live-bar">
+      <button type="button" class="cockpit-return-tile" data-poincare-return title="Click to reopen the AI Cockpit and collapse the Poincaré History Map back into the top bar">
+        <span>▴ AI Cockpit · <strong data-poincare-cockpit-name>Aladdin</strong> — Click to Return to Cockpit</span>
+      </button>
+      <span class="anvil-takeover-sub">🧭 Poincaré Deep-Memory &amp; History Map · Click any node to Möbius-zoom</span>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button type="button" data-poincare-split title="Dock Poincaré History Map side-by-side next to Steward Dialogue">🗔 Side-by-Side</button>
+        <button type="button" data-poincare-return2>↩ Back to AI Cockpit</button>
+      </div>
+    </div>
+    <iframe class="anvil-takeover-live-frame" data-poincare-frame src="about:blank"></iframe>
   </div>
   <div class="anvil-takeover-live" data-aegis-takeover hidden>
     <iframe class="anvil-takeover-live-frame" data-aegis-frame src="about:blank"></iframe>
@@ -134,6 +148,7 @@
           <span data-statetext hidden>…</span>
         </span>
         <div style="display:flex;align-items:center;gap:6px;">
+          <button type="button" data-poincare-toggle2 style="font-size:11px;padding:2px 8px;border-radius:6px;border:1px solid rgba(56,189,248,0.45);background:rgba(56,189,248,0.12);color:#7dd3fc;cursor:pointer" title="Explore this AI Cockpit's interactive Poincaré History & Context Map">🧭 History Map</button>
           <span class="sc-timer-pill" data-statusstamp>Live · 10m cadence</span>
           <button data-statustoggle2 title="collapse">Close »</button>
         </div>
@@ -192,7 +207,6 @@
 <script src="/static/skill-icons.js"></script>
 <script src="/static/shared.js?v=f7fac0ad1590"></script>
 <script>
-Proto.init({ statusPane: true });
 const app = document.querySelector(".app");
 const _v1Params = new URLSearchParams(location.search || "");
 const isEmbeddedTile = window.STEWARD_EMBED === true ||
@@ -225,8 +239,11 @@ document.querySelectorAll("[data-statustoggle],[data-statustoggle2]").forEach(b 
         app.classList.contains("statusopen") ? "open" : "shut");
     } catch (e) { /* no-op */ }
   });
+const t1Rail = document.querySelector("[data-railtoggle]");
+if (t1Rail) t1Rail.onclick = () => { if (isEmbeddedTile) return; app.classList.toggle("railhide"); };
 const t2 = document.querySelector("[data-railtoggle2]");
 if (t2) t2.onclick = () => { if (isEmbeddedTile) return; app.classList.toggle("railhide"); };
+try { Proto.init({ statusPane: true }); } catch (e) { console.error("Proto.init error:", e); }
 const planGrip=document.querySelector('[data-plangrip]');
 const setPlanWidth=w=>{const other=app.classList.contains('statusopen')?document.querySelector('.rightcol').offsetWidth:0;
   const width=Math.min(620,Math.max(340,window.innerWidth-other-320),Math.max(340,w));document.documentElement.style.setProperty('--planw',width+'px');
@@ -401,6 +418,7 @@ const NARROW=1100;
 function fitConversation(){
   if(isEmbeddedTile||app.classList.contains('tileview')||app.classList.contains('talkview')){app.classList.add('railhide');app.classList.remove('statusopen');return;}
   if(app.dataset.secondwin) return;
+  if(!innerWidth || innerWidth < 120) return;   // hidden iframe in WebKit has innerWidth === 0; never treat as narrow
   // 2026-10-07 (John, evidence E6: a narrow cockpit squeezed the dialogue to a sliver): below 1100 px the plan rail
   // AND the status pane close - in memory only, never written to his preferences - and both come back as they were
   // above it. Reopened while narrow, the status pane overlays the dialogue (the 1099px media query).
@@ -413,7 +431,7 @@ function fitConversation(){
   else {
     if(app.dataset.narrow){delete app.dataset.narrow;
       app.classList.toggle('railhide',app.dataset.wideRail==='hide');
-      app.classList.toggle('statusopen',app.dataset.wideStatus==='open');}
+      app.classList.toggle('statusopen',app.dataset.wideStatus!=='shut');}
     const left=app.classList.contains('railhide')?0:document.querySelector('.leftcol').offsetWidth;
     const maximum=Math.max(280,innerWidth-left-320);
     const right=Math.min(document.querySelector('.rightcol').offsetWidth||380,maximum);
@@ -421,7 +439,9 @@ function fitConversation(){
     if(planGrip)setPlanWidth(document.querySelector('.leftcol').offsetWidth||300);
   }
 }
-window.addEventListener('resize',fitConversation);fitConversation();
+window.addEventListener('resize',fitConversation);
+window.addEventListener('anchor-app-visibility',ev=>{if(ev&&ev.detail&&!ev.detail.hidden)requestAnimationFrame(fitConversation);});
+fitConversation();
 // 2026-10-14 (John): Launch Anvil from within an AI Cockpit — Anvil takes over and the AI Cockpit
 // collapses into a small clickable tile at the top of Anvil; clicking that tile reopens the AI Cockpit
 // and collapses Anvil back into the small tile inside the AI Cockpit top bar.
@@ -505,6 +525,66 @@ if (anvilToggleBtn) anvilToggleBtn.addEventListener("click", () => setAnvilTakeo
 const anvilWtBtn = document.querySelector("[data-anvil-walkthrough-toggle]");
 if (anvilWtBtn) anvilWtBtn.addEventListener("click", () => { setAnvilTakeover(true); setTimeout(() => { try { if (anvilFrame && anvilFrame.contentWindow) anvilFrame.contentWindow.postMessage({ type: "anvil-open-walkthrough" }, window.location.origin); } catch (_) {} }, 350); });
 if (aegisToggleBtn) aegisToggleBtn.addEventListener("click", () => setAegisTakeover(true));
+const poincareTakeover = document.querySelector("[data-poincare-takeover]");
+const poincareFrame = document.querySelector("[data-poincare-frame]");
+const poincareCockpitName = document.querySelector("[data-poincare-cockpit-name]");
+const poincareStorageKey = "anchor_poincare_open:" + (_anvilQ.get("pid") || "") + ":" + (_anvilQ.get("dir") || "");
+
+function buildPoincareHref() {
+  const p = new URLSearchParams(location.search || "");
+  if (!p.get("pid") && window.STEWARD_PID) p.set("pid", window.STEWARD_PID);
+  if (!p.get("token") && window.STEWARD_TOKEN) p.set("token", window.STEWARD_TOKEN);
+  p.set("from", "cockpit");
+  p.delete("tool");
+  return "/steward-static/poincare.html?" + p.toString();
+}
+
+function setPoincareTakeover(open) {
+  if (!poincareTakeover || _isEmbeddedAnvilDock) return;
+  const shouldOpen = typeof open === "boolean" ? open : poincareTakeover.hidden;
+  try {
+    sessionStorage.setItem(poincareStorageKey, shouldOpen ? "1" : "0");
+    if (shouldOpen) {
+      sessionStorage.setItem(anvilStorageKey, "0");
+      sessionStorage.setItem(aegisStorageKey, "0");
+    }
+  } catch (_) {}
+  if (shouldOpen) {
+    if (anvilTakeover) anvilTakeover.hidden = true;
+    if (aegisTakeover) aegisTakeover.hidden = true;
+    const titleEl = document.querySelector("[data-name]");
+    if (poincareCockpitName && titleEl && titleEl.textContent) {
+      poincareCockpitName.textContent = titleEl.textContent.trim();
+    }
+    if (poincareFrame) {
+      const targetSrc = buildPoincareHref();
+      if (poincareFrame.getAttribute("src") !== targetSrc) {
+        poincareFrame.setAttribute("src", targetSrc);
+      }
+    }
+    poincareTakeover.hidden = false;
+    app.classList.add("anvil-mode");
+  } else {
+    poincareTakeover.hidden = true;
+    if ((!anvilTakeover || anvilTakeover.hidden) && (!aegisTakeover || aegisTakeover.hidden)) {
+      app.classList.remove("anvil-mode");
+    }
+  }
+}
+
+document.querySelectorAll("[data-poincare-toggle],[data-poincare-toggle2]").forEach(btn => {
+  btn.addEventListener("click", () => setPoincareTakeover(true));
+});
+document.querySelectorAll("[data-poincare-return],[data-poincare-return2]").forEach(btn => {
+  btn.addEventListener("click", () => setPoincareTakeover(false));
+});
+const poincareSplitBtn = document.querySelector("[data-poincare-split]");
+if (poincareSplitBtn) {
+  poincareSplitBtn.addEventListener("click", () => {
+    setPoincareTakeover(false);
+    enterSecondWindowMode("🧭 Poincaré Deep-Memory State Map", buildPoincareHref());
+  });
+}
 document.querySelectorAll("[data-anvil-return],[data-anvil-return2]").forEach(btn => {
   btn.addEventListener("click", () => setAnvilTakeover(false));
 });
@@ -519,6 +599,11 @@ window.addEventListener("message", (ev) => {
       setAegisTakeover(false);
     } else if (ev.data.type === "aegis-switch-to-anvil") {
       setAnvilTakeover(true);
+    } else if (ev.data.type === "poincare-return-cockpit") {
+      setPoincareTakeover(false);
+    } else if (ev.data.type === "poincare-split-right") {
+      setPoincareTakeover(false);
+      enterSecondWindowMode("🧭 Poincaré Deep-Memory State Map", buildPoincareHref());
     }
   }
 });
@@ -527,10 +612,13 @@ if (!_isEmbeddedAnvilDock) {
   try {
     const savedAegis = sessionStorage.getItem(aegisStorageKey);
     const savedAnvil = sessionStorage.getItem(anvilStorageKey);
+    const savedPoincare = sessionStorage.getItem(poincareStorageKey);
     if (savedAegis === "1" || _anvilQ.get("tool") === "aegis") {
       setAegisTakeover(true);
     } else if (savedAnvil === "1" || _anvilQ.get("tool") === "anvil") {
       setAnvilTakeover(true);
+    } else if (savedPoincare === "1" || _anvilQ.get("tool") === "poincare") {
+      setPoincareTakeover(true);
     }
   } catch (_) {}
 }

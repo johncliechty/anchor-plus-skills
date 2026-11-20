@@ -20,8 +20,10 @@ import { classifyExit, makeTelemetryRecord } from './transport.mjs';
 import { spawnGuarded, makeChildRegistry, acquireLock } from './proc-guard.mjs';
 import { resolveClaudeModel } from '../../drivers/claude.mjs';
 import { installProcessLifetimeGuards } from '../../drivers/process-lifetime.mjs';
+import { PHYSICAL_RECEIPT_HOOK } from '../../drivers/seat-contract.mjs';
 import { phaseWalls } from './phase-report.mjs';
 import { flushOpenPhases } from './wave-engine.mjs';
+import { normalizeReceiptTelemetry, buildAttestedRunManifest } from './fast-gates.mjs';
 
 const argv = process.argv.slice(2);
 function flag(name, def) { const i = argv.indexOf(name); return i >= 0 && i + 1 < argv.length ? argv[i + 1] : def; }
@@ -35,7 +37,9 @@ if (PROFILE === 'slim') REVIEWERS = 1;   // review r2: slim is exactly one revie
 const CAP = Number(flag('--cap', PROFILE === 'slim' ? '2' : '3'));
 const MAX_WAVES = flag('--max-waves', null);
 const MAX_WALL_MIN = flag('--max-wallclock-min', null);
-const USE_GIT = argv.includes('--git');
+let USE_GIT = argv.includes('--git');
+let GIT_DIFF = argv.includes('--no-git-diff') ? false : (argv.includes('--git-diff') ? true : undefined);
+let INITIAL_HEAD = null;
 const RESUME = argv.includes('--resume');
 // --clear-halt: human acknowledgment that a HALTED checkpoint's blocker is handled.
 // Idempotent no-op on non-halted checkpoints; resume still re-proves GREEN at the gate.
@@ -96,16 +100,30 @@ function finishRun({ stage, status, haltReason = null, recommend = null, exitCod
   RUN_RECORDED = true;
   try {
     const tot = calls.reduce((a, c) => ({
-      out: a.out + (c.output_tokens || 0), cost: a.cost + (c.cost_usd || 0),
-      ms: a.ms + (c.duration_ms || 0), denials: a.denials + (c.permission_denials || 0),
-    }), { out: 0, cost: 0, ms: 0, denials: 0 });
+      in: a.in + (c.input_tokens || 0),
+      out: a.out + (c.output_tokens || 0),
+      cost: a.cost + (c.cost_usd || 0),
+      ms: a.ms + (c.duration_ms || 0),
+      denials: a.denials + (c.permission_denials || 0),
+    }), { in: 0, out: 0, cost: 0, ms: 0, denials: 0 });
     const reason = haltReason ?? result?.haltReason ?? (threw ? `${threw.name}: ${threw.message}${threw.reason ? ' — ' + threw.reason : ''}` : null);
     const tag = /\[taxonomy:([a-z0-9-]+)\]/i.exec(String(reason || ''));
     // review r1: an untagged stop still gets a class - its stage and status - never null
     const fine = ['go', 'done', 'attested', 'running', 'n/a'].includes(String(status).toLowerCase()) && !reason;
     const tax = tag ? [null, tag[1]] : (fine ? null : [null, `${stage}-${String(status || 'unknown').toLowerCase()}`]);
     try { flushOpenPhases(); } catch { /* a phase still open at exit is timed up to now */ }
-    const waves = (result?.waveResults || []).map((w) => ({ wave: w.wave, title: w.title, status: w.status, green: w.green, tap: w.tap, iterations: w.iterations, halt: w.haltReason || null }));
+    const waves = (result?.waveResults || []).map((w) => ({
+      wave: w.wave, title: w.title, status: w.status, green: w.green, tap: w.tap,
+      iterations: w.iterations, halt: w.haltReason || null,
+    }));
+    const manifest = buildAttestedRunManifest({
+      projectDir: PROJECT,
+      foremanDir: path.join(PROJECT, '.foreman'),
+      initialHead: INITIAL_HEAD,
+      result,
+      calls,
+      codingFamily: process.env.CODING_FAMILY || null,
+    });
     const record = {
       schema: 'foreman-run-record/v1', skill: 'foreman', tier: process.env.TRIO_TIER || 'standard',
       started: new Date(RUN_T0).toISOString(), ended: new Date().toISOString(),
@@ -113,9 +131,12 @@ function finishRun({ stage, status, haltReason = null, recommend = null, exitCod
       input: PROJECT, stage, status, exit_code: exitCode,
       halt_reason: reason, taxonomy: tax ? tax[1].toLowerCase() : null,
       recommend: recommend ?? result?.recommend ?? null,
-      params: { reviewers: REVIEWERS, fixIterCap: CAP, maxWaves: MAX_WAVES, git: USE_GIT, resume: RESUME, clearHalt: CLEAR_HALT },
+      params: { reviewers: REVIEWERS, fixIterCap: CAP, maxWaves: MAX_WAVES, git: USE_GIT, gitDiff: GIT_DIFF ?? null, resume: RESUME, clearHalt: CLEAR_HALT },
       stoppedAt: result?.stoppedAt ?? null, totalWaves: result?.totalWaves ?? null, waves,
-      agent_calls: calls.length, totals: tot, phases: runPhases(), threw,
+      agent_calls: calls.length, calls, totals: tot, phases: runPhases(),
+      changed_files: manifest.changed_files,
+      attested_review: manifest.attested_review,
+      threw,
     };
     if (PROJECT_RECORD_OK) {
       try { writeJsonAtomic(path.join(PROJECT, '.foreman', 'run-record.json'), record); } catch { /* best-effort */ }
@@ -129,8 +150,8 @@ function finishRun({ stage, status, haltReason = null, recommend = null, exitCod
         JSON.stringify({
           ...record, output: STATUS_FILE,
           result: `${status}: ${waves.map((w) => `${w.wave}:${w.status}`).join(',') || 'none'}` + (reason ? ` — ${String(reason).slice(0, 200)}` : ''),
-          cross_model: ['REVIEW', 'SHARK', 'REVIEWER', 'DEBATE'].some((r) => String(process.env[`TRIO_DRIVER_${r}`] || '').startsWith('gemini')),
-          models: null, journal_ref: null,
+          cross_model: manifest.attested_review?.cross_model ?? (process.env.CROSS_MODEL === 'true'),
+          models: [...new Set(calls.map((c) => c.served_model).filter(Boolean))], journal_ref: null,
         }, null, 2) + '\n');
     } catch { /* capture is best-effort by design */ }
     if (reason) emit(`HALT/STOP reason: ${reason}`);
@@ -142,6 +163,7 @@ function finishRun({ stage, status, haltReason = null, recommend = null, exitCod
       threw, status: result?.status ?? status, stoppedAt: record.stoppedAt, totalWaves: record.totalWaves,
       haltReason: reason, recommend: record.recommend, taxonomy: record.taxonomy, stage, exit_code: exitCode,
       waveResults: waves, agent_calls: calls.length, totals: tot, phases: record.phases,
+      changed_files: manifest.changed_files, attested_review: manifest.attested_review,
     }, null, 2));
     console.log('RUN_JSON_END');
   } catch { /* the record is never worth a crash */ }
@@ -195,6 +217,7 @@ export { seatLastWords, USAGE_LIMIT_RE, isUsageLimitText };
 // CLAUDE_MODEL_<ROLE> for claude, TRIO_DRIVER_<ROLE>+TRIO_MODEL_<ROLE> for another
 // backend — which both the bespoke transport below and the registry drivers resolve.
 // Pre-set env always wins (config never overrides an explicit operator choice).
+const _configPinnedDrivers = new Map();
 try {
   const cfg = JSON.parse(fs.readFileSync(path.join(PROJECT, 'foreman.config.json'), 'utf8'));
 
@@ -217,6 +240,9 @@ try {
     }
   }
 
+  if (!argv.includes('--git') && typeof cfg.gitCommit === 'boolean') USE_GIT = cfg.gitCommit;
+  if (GIT_DIFF === undefined && typeof cfg.gitDiff === 'boolean') GIT_DIFF = cfg.gitDiff;
+
   for (const [role, spec] of Object.entries(cfg.models || {})) {
     const s = String(spec); const i = s.indexOf(':');
     const drv = i > 0 ? s.slice(0, i) : 'claude';
@@ -226,9 +252,15 @@ try {
       if (!process.env[`CLAUDE_MODEL_${R}`]) process.env[`CLAUDE_MODEL_${R}`] = model;
       // (0106 E3) pin the DRIVER too: a `claude:` entry used to set only the model, so the
       // dashboard's coding_family (chatgpt) filled the empty driver slot and re-seated execute.
-      if (!process.env[`TRIO_DRIVER_${R}`]) process.env[`TRIO_DRIVER_${R}`] = 'claude';
+      if (!process.env[`TRIO_DRIVER_${R}`]) {
+        process.env[`TRIO_DRIVER_${R}`] = 'claude';
+        _configPinnedDrivers.set(R, 'claude');
+      }
     } else {
-      if (!process.env[`TRIO_DRIVER_${R}`]) process.env[`TRIO_DRIVER_${R}`] = drv;
+      if (!process.env[`TRIO_DRIVER_${R}`]) {
+        process.env[`TRIO_DRIVER_${R}`] = drv;
+        _configPinnedDrivers.set(R, drv);
+      }
       if (!process.env[`TRIO_MODEL_${R}`]) process.env[`TRIO_MODEL_${R}`] = model;
     }
   }
@@ -239,6 +271,9 @@ try {
 try {
   const { applyFamilyPrefsToEnv } = await import('../../drivers/index.mjs');
   applyFamilyPrefsToEnv(process.env);
+  for (const [R, drv] of _configPinnedDrivers.entries()) {
+    process.env[`TRIO_DRIVER_${R}`] = drv;
+  }
 } catch { /* registry optional at this load point — env-only */ }
 
 // Once: never let a broken parent pipe kill the engine (canonical onboard 2026-07-24
@@ -375,54 +410,129 @@ function runClaude(fullPrompt, label) {
   });
 }
 
-// C1: retry-then-abstain on a malformed schema (review) reply.
+function appendCallTiming(rec) {
+  try {
+    fs.mkdirSync(path.join(PROJECT, '.foreman'), { recursive: true });
+    fs.appendFileSync(
+      path.join(PROJECT, '.foreman', 'phase-timings.jsonl'),
+      JSON.stringify({
+        kind: 'call',
+        label: rec.label,
+        role: rec.role,
+        family: rec.family,
+        model_served: rec.served_model,
+        duration_ms: rec.duration_ms,
+        input_tokens: rec.input_tokens,
+        output_tokens: rec.output_tokens,
+        cost_usd: rec.cost_usd,
+        cross_model: rec.cross_model,
+        ts: Date.now(),
+      }) + '\n',
+    );
+  } catch { /* never crash the run on logging */ }
+}
+
+// Unified live agent seam: routes ALL roles (`claude`, `gemini-cli`, `chatgpt-cli`,
+// `grok-cli`, `host-ipc`) through `drivers/index.mjs` (`runAgent` + `onReceipt` +
+// `PHYSICAL_RECEIPT_HOOK`) so every call records full token, model, family, duration,
+// and cost receipts into `calls[]`, `phase-timings.jsonl`, and `.foreman/run-record.json`.
 async function agent(prompt, opts = {}) {
   const label = opts.label || '(unlabeled)';
-  // Per-role backend dispatch (the 5:1 seam): a TRIO_DRIVER_<ROLE> env (typically set
-  // from foreman.config.json's "models" block above) routes THIS role to another
-  // registry backend — e.g. review → gemini-cli while execute/fix stay on the bespoke
-  // claude transport below. The registry driver owns its own schema/retry/abstain.
   const role = String(opts.role || label).split(/[:#.\s]/)[0].toLowerCase();
-  const roleDriver = process.env[`TRIO_DRIVER_${role.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}`];
-  if (roleDriver && roleDriver !== 'claude') {
+  const roleKey = role.toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+  const roleDriver = process.env[`TRIO_DRIVER_${roleKey}`] || undefined;
+  const roleModel = roleDriver === 'claude'
+    ? (process.env[`CLAUDE_MODEL_${roleKey}`] || undefined)
+    : (process.env[`TRIO_MODEL_${roleKey}`] || undefined);
+  const callT0 = Date.now();
+  const physicalEntries = [];
+  let finalSeatReceipt = null;
+  const liveEnv = {
+    ...process.env,
+    CRUCIBLE_AGENT_LIVE: process.env.CRUCIBLE_AGENT_LIVE || '1',
+  };
+
+  emit(`┌ ${label} … launching agent via ${roleDriver || 'default'}` + (CALL_TIMEOUT_MS ? ` (per-call timeout ${CALL_TIMEOUT_MIN}m)` : ''));
+
+  try {
     const out = await runAgent({
-      prompt, schema: opts.schema, label, role, driver: roleDriver,
-      freshContext: true, target: PROJECT, log: (s) => emit(s),
+      prompt,
+      schema: opts.schema,
+      label,
+      role,
+      driver: roleDriver,
+      model: opts.model || roleModel,
+      freshContext: true,
+      target: PROJECT,
+      allowedTools: ALLOWED,
+      timeoutMs: CALL_TIMEOUT_MS || undefined,
+      env: liveEnv,
+      log: (s) => emit(s),
+      [PHYSICAL_RECEIPT_HOOK]: (entry) => {
+        physicalEntries.push(entry);
+      },
+      onReceipt: async (seatReceipt) => {
+        finalSeatReceipt = seatReceipt;
+      },
     });
-    // 2026-10-05: an authoring seat that answers BLOCKED (as the prompt tells it to) is a stop,
-    // never "complete" - a ChatGPT execute said "BLOCKED: no tool can read files" four times
-    // while the run logged "agent execute complete" and burned its fix budget.
+
+    const rec = normalizeReceiptTelemetry({
+      label,
+      role,
+      physicalEntries,
+      seatReceipt: finalSeatReceipt,
+      wallDurationMs: Date.now() - callT0,
+      codingFamily: process.env.CODING_FAMILY || null,
+    });
+    calls.push(rec);
+    appendCallTiming(rec);
+    emit(
+      `└ ${label} done — family ${rec.family ?? '?'} (${rec.served_model ?? 'unattested'}), ok ${rec.ok}, ` +
+      `${rec.tools} tools, in ${rec.input_tokens}tok, out ${rec.output_tokens}tok, ` +
+      `~$${(rec.cost_usd ?? 0).toFixed(4)} est, ${rec.duration_ms}ms`,
+    );
+
     const said = typeof out === 'string' ? out : String(out?.text ?? '');
     if (!opts.schema && /^\s*\**BLOCKED\b/m.test(said)) {
       const lastWords = seatLastWords(said);
-      emit(`   !! ${label} (${roleDriver}) answered BLOCKED - typed failure, never "complete" - said: ${lastWords}`);
+      const usageLimit = isUsageLimitText(lastWords);
+      emit(`   !! ${label} (${rec.driver || roleDriver || 'agent'}) answered BLOCKED - typed failure, never "complete" - said: ${lastWords}`);
       return {
-        agent_failed: true, exit_class: 'SEAT_BLOCKED', label, tools: null, duration_ms: null,
-        last_words: lastWords, usage_limit: isUsageLimitText(lastWords),
-        detail: `agent ${label} (${roleDriver}) answered BLOCKED; it said: ${lastWords}`,
+        agent_failed: true, exit_class: 'SEAT_BLOCKED', label,
+        tools: rec.tools ?? 0, duration_ms: rec.duration_ms ?? null,
+        last_words: lastWords, usage_limit: usageLimit,
+        detail: `agent ${label} (${rec.driver || roleDriver || 'agent'}) answered BLOCKED; it said: ${lastWords}`,
       };
     }
     return out;
-  }
-  const schemaSuffix = opts.schema
-    ? `\n\nRespond with ONLY a single raw JSON object (no markdown fences, no prose) ` +
-      `that conforms to this JSON Schema:\n${JSON.stringify(opts.schema)}`
-    : '';
-  const { text, rec } = await runClaude(prompt + schemaSuffix, label);
-  // 0102: THE DISCRIMINATING FIELD IS ok:false, FULL STOP. A per-call-timeout
-  // SIGKILL of a 20-minute, 60-tool execute was logged "execute complete" and
-  // auto-advanced to a gate that would have gone GREEN on the previous wave's
-  // tree — because this function destructured only { text } and the rec died
-  // here. A dead agent now returns a TYPED failure marker (never bare '') so
-  // the engine can HALT loudly instead of blessing an empty step. Deliberately
-  // a marker, not a throw: a timeout re-run dies at the same cap, so the right
-  // move is a deterministic [taxonomy:agent-died] HALT with the cap named —
-  // not a reliability-wrapper retry that pays for the same death twice.
-  if (rec && rec.ok === false) {
-    // (2026-09-04, John) the seat's own last words ride the halt — a model
-    // session limit above all — so the stop is TOLD, never just a class name.
-    const lastWords = seatLastWords(text);
-    const usageLimit = isUsageLimitText(lastWords);
+  } catch (err) {
+    const errReceipt = err?.receipt || finalSeatReceipt || null;
+    const rec = normalizeReceiptTelemetry({
+      label,
+      role,
+      physicalEntries,
+      seatReceipt: errReceipt,
+      wallDurationMs: Date.now() - callT0,
+      codingFamily: process.env.CODING_FAMILY || null,
+      error: err,
+    });
+    calls.push(rec);
+    appendCallTiming(rec);
+    const rawDetail = String(err?.reason || errReceipt?.error?.message || err?.message || '');
+    const lastWords = seatLastWords(rawDetail);
+    const usageLimit = isUsageLimitText(lastWords)
+      || /usage_limit|quota|rate_limit|credits_required/i.test(String(err?.provider_status || errReceipt?.error?.code || ''));
+
+    if (opts.schema) {
+      emit(`   !! ${label} failed (${rec.exit_class}, ${rec.duration_ms}ms) — marking transport_failed so surviving reviewers can proceed: ${lastWords || rawDetail.slice(0, 160)}`);
+      return {
+        answerable: 'transport-failed',
+        transport_failed: true,
+        note: `reviewer ${label} failed (${rec.exit_class}): ${lastWords || rawDetail.slice(0, 200)}`,
+        findings: [],
+      };
+    }
+
     emit(`   !! ${label} agent DIED (class ${rec.exit_class}, ${rec.tools ?? 0} tools, ` +
       `${rec.duration_ms ?? '?'}ms) — typed failure, never "complete"` +
       (lastWords ? ` — said: ${lastWords}` : ''));
@@ -434,23 +544,6 @@ async function agent(prompt, opts = {}) {
         (lastWords ? `; it said: ${lastWords}` : ''),
     };
   }
-  if (!opts.schema) return text;
-  let obj = extractJson(text);
-  if (!obj) {
-    emit(`   !! ${label} reply was not valid JSON — retrying once (strict reprompt)`);
-    const strict = `${prompt}\n\nYour previous reply was NOT valid JSON. Respond with ONLY a single raw JSON ` +
-      `object conforming to this JSON Schema — no prose, no fences:\n${JSON.stringify(opts.schema)}`;
-    obj = extractJson((await runClaude(strict, `${label}#retry`)).text);
-  }
-  if (!obj) {
-    // T10 (2026-07-11): an unparseable reply is a TRANSPORT failure, not a plan
-    // problem — it must never masquerade as the §4.7 "docs don't answer" ambiguity
-    // HALT (observed live: one agy hiccup halted a whole run). Marked so the engine
-    // DROPS this reviewer and proceeds with survivors; only ALL-failed halts.
-    emit(`   !! ${label} still unparseable after one retry — marking transport_failed (engine proceeds with surviving reviewers)`);
-    return { answerable: 'transport-failed', transport_failed: true, note: `reviewer ${label} response was not parseable JSON after one retry`, findings: [] };
-  }
-  return obj;
 }
 
 // BLOCKER-1 fix (Phase 1.1): resolve the engine TREE-RELATIVE to this file, never via
@@ -463,7 +556,7 @@ const { runProject, clearHaltedCheckpoint } = await import(new URL('./project-en
 // above is injected unchanged, so the live `claude -p` path stays byte-for-byte
 // equivalent; the registry is the seam through which a future TRIO_DRIVER selection
 // would swap the backend.
-const { makeForemanDriver, runAgent } = await import('../../drivers/index.mjs');
+const { makeForemanDriver, runAgent, familyToDriverName } = await import('../../drivers/index.mjs');
 
 try { fs.writeFileSync(STATUS_FILE, ''); } catch { /* fresh log */ }
 emit(`=== FOREMAN LIVE RUN ===`);
@@ -579,7 +672,7 @@ try {
   // home and the user's own containers are never "dirty siblings"; a missing path listed under Inputs stops here.
   const { siblingPlan } = await import(new URL('./preflight.mjs', import.meta.url));
   const commonDirOf = (repo) => {
-    const r = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: repo, encoding: 'utf8', timeout: 20000 });
+    const r = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: repo, encoding: 'utf8', timeout: 20000, windowsHide: true, shell: false });
     if (r.status !== 0) return null;
     try { return fs.realpathSync(r.stdout.trim()); } catch { return r.stdout.trim() || null; }
   };
@@ -601,7 +694,7 @@ try {
   if (checked.length) emit(`sibling-repos: checked ${checked.length} plan-named repo(s): ${checked.join(' · ')}`);
   const dirty = [];
   for (const repo of checked) {
-    const r = spawnSync('git', ['status', '--porcelain'], { cwd: repo, encoding: 'utf8', timeout: 20000 });
+    const r = spawnSync('git', ['status', '--porcelain'], { cwd: repo, encoding: 'utf8', timeout: 20000, windowsHide: true, shell: false });
     if (r.error || r.status !== 0) {
       // Review fix: a git failure was silently counted CLEAN — say it, don't bless it.
       emit(`sibling-repos: git status FAILED in ${repo} (${r.error?.message || `exit ${r.status}`}) — repo NOT verified clean`);
@@ -721,6 +814,53 @@ if (RESUME && CLEAR_HALT) {
   }
 }
 
+// Subscription CLI Auth Preflight across all 4 families (`claude`, `codex`, `agy`, `grok`)
+// before Wave 1 begins: catches expired OAuth / login_required immediately and routes
+// verification seats cleanly to a healthy 3rd non-coding family when needed.
+if (process.env.FOREMAN_SKIP_AUTH_PREFLIGHT !== '1') {
+  try {
+    const { preflightCliAuth } = await import(new URL('./preflight.mjs', import.meta.url));
+    const execDrv = String(process.env.TRIO_DRIVER_EXECUTE || '').toLowerCase();
+    const revDrv = String(process.env.TRIO_DRIVER_REVIEW || '').toLowerCase();
+    const nonSubscriptionDrv = new Set(['host-ipc', 'openai', 'gemini', 'grok']);
+    const codingFamily = nonSubscriptionDrv.has(execDrv) ? null : (process.env.CODING_FAMILY || 'claude');
+    const reviewFamily = nonSubscriptionDrv.has(revDrv) ? null : (process.env.REVIEW_FAMILY || 'claude');
+    if (codingFamily || reviewFamily) {
+      const auth = preflightCliAuth({
+        codingFamily,
+        reviewFamily,
+        crossModel: process.env.CROSS_MODEL !== 'false',
+        env: process.env,
+      });
+      if (!auth.ok) {
+        emit(auth.haltReason);
+        stopEarly('pre-flight', 'HALT', auth.haltReason);
+      }
+      if (auth.failoverReviewFamily) {
+        const fbDrv = familyToDriverName(auth.failoverReviewFamily);
+        process.env.REVIEW_FAMILY = auth.failoverReviewFamily;
+        process.env.REVIEWER_FAMILY = auth.failoverReviewFamily;
+        if (fbDrv) {
+          process.env.TRIO_DRIVER_REVIEW = fbDrv;
+          process.env.TRIO_DRIVER_REVIEWER = fbDrv;
+        }
+        emit(`auth-preflight: primary review family "${reviewFamily}" unavailable -> pre-routed verification to healthy 3rd family "${auth.failoverReviewFamily}" (${fbDrv || auth.failoverReviewFamily})`);
+      } else {
+        emit(`auth-preflight: coding=${codingFamily || 'custom'} review=${reviewFamily || 'custom'} READY`);
+      }
+    }
+  } catch (e) {
+    emit(`auth-preflight: probe skipped (non-fatal) — ${e?.message || e}`);
+  }
+}
+
+try {
+  const headProbe = spawnSync('git', ['rev-parse', '--verify', 'HEAD'], {
+    cwd: PROJECT, encoding: 'utf8', timeout: 10000, windowsHide: true, shell: false,
+  });
+  if (headProbe.status === 0) INITIAL_HEAD = headProbe.stdout.trim() || null;
+} catch { /* non-git project */ }
+
 let result, threw = null;
 try {
   result = await runProject({
@@ -735,6 +875,8 @@ try {
     budgetConfig,
     resume: RESUME,
     git: USE_GIT ? (BRANCH ? { branch: BRANCH } : true) : false,
+    gitDiff: GIT_DIFF,
+    profile: PROFILE,
     log: (s) => emit(s),
   });
 } catch (e) {

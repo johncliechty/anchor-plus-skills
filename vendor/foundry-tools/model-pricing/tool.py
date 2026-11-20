@@ -23,8 +23,9 @@ TIERS_FILE = FT / "tiers.json"
 ANCHOR_PRICES = Path(os.environ.get("ANCHOR_API_LIST_PRICES") or "C:/dev/Anchor/steward_cockpit/api_list_prices.json")
 
 # Canonical baseline USD per 1M tokens (input, cached_input, output).
-# NOTE: "best" is intentionally omitted so un-attested alias turns never invent a guess.
+# "best" maps to Claude frontier Opus pricing per Wave 5 cost-accounting contract.
 BASELINE_USD_PER_MILLION = {
+    "best": {"input": 15.0, "cached_input": 1.5, "output": 75.0, "family": "claude", "tier": "frontier"},
     "gpt-6-astra": {"input": 10.0, "cached_input": 1.0, "output": 50.0, "family": "chatgpt", "tier": "frontier"},
     "gpt-5.6-sol": {"input": 4.0, "cached_input": 0.4, "output": 20.0, "family": "chatgpt", "tier": "standard"},
     "gpt-6.1-sol": {"input": 4.0, "cached_input": 0.4, "output": 20.0, "family": "chatgpt", "tier": "frontier"},
@@ -88,7 +89,6 @@ def sync_prices(target: Path):
                 if is_flash else {"input": 2.5, "cached_input": 0.25, "output": 15.0}
             )
             added_or_updated.append(agy_model)
-    table.pop("best", None)
     today = datetime.date.today().isoformat()
     payload = {
         "as_of": today,

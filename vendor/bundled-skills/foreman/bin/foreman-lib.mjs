@@ -152,14 +152,214 @@ export function locateDocs(projectDir) {
 //   ## Wave 1 — Bootstrap
 //   ## Wave 2: MoE judge wiring
 //   ## Sprint 3 Foo
-const WAVE_RE = /^##\s+(Wave|Sprint|Section)\s+(\d+)\b[ \t]*[—:\-.]?[ \t]*(.*)$/i;
+const WAVE_RE = /^##\s+(Wave|Sprint|Section)\s+(\d+)(?!\.\d)\b[ \t]*[—:\-.]?[ \t]*(.*)$/i;
+const SUBWAVE_RE = /^#{2,3}\s+(Wave|Sprint|Section)\s+(\d+)\.(\d+)\b[ \t]*[—:\-.]?[ \t]*(.*)$/i;
+
+function normalizePlanRelPath(raw) {
+  return String(raw || '')
+    .trim()
+    .replace(/\\/g, '/')
+    .replace(/^\.\//, '')
+    .replace(/^\/+/, '')
+    .replace(/\/+$/, '');
+}
+
+/** True when two repo-relative paths (or directory/glob prefixes) can touch the same file. */
+export function pathsOverlap(aRaw, bRaw) {
+  const a = normalizePlanRelPath(aRaw).replace(/\/?\*\*.*$/, '').replace(/\/?\*.*$/, '');
+  const b = normalizePlanRelPath(bRaw).replace(/\/?\*\*.*$/, '').replace(/\/?\*.*$/, '');
+  if (!a || !b) return false;
+  const al = a.toLowerCase();
+  const bl = b.toLowerCase();
+  return al === bl || al.startsWith(`${bl}/`) || bl.startsWith(`${al}/`);
+}
+
+function parseListField(rawVal) {
+  const cleaned = String(rawVal || '').trim();
+  if (!cleaned || /^(?:none|n\/a|nil|\[\]|[-—])$/i.test(cleaned)) return [];
+  return [...cleaned.matchAll(/`([^`]+)`|"([^"]+)"|'([^']+)'|([^\s,;`"']+)/g)]
+    .map((x) => (x[1] ?? x[2] ?? x[3] ?? x[4] ?? '').trim())
+    .filter((tok) => tok && !/^(?:none|n\/a|nil|\[\]|[-—]|and)$/i.test(tok));
+}
+
+function normalizeDepRef(rawDep, parentN) {
+  const s = String(rawDep || '').trim().replace(/^(?:wave|sprint|section)\s+/i, '');
+  if (/^\d+\.\d+$/.test(s)) return s;
+  if (/^\d+$/.test(s)) return `${parentN}.${s}`;
+  return s;
+}
 
 /**
- * Parse waves from plan markdown text.
+ * Validate a parent wave's sub-waves (`W.1..W.k`), enforce DAG acyclicity + pairwise
+ * disjoint write-sets across concurrent siblings, and return topological execution batches.
+ */
+export function computeSubwaveBatches(subwaves = [], parentWaveNum = 1) {
+  if (!Array.isArray(subwaves) || subwaves.length === 0) return [];
+
+  // Contiguous 1..k ascending sub-wave numbering within parent wave W
+  const subs = subwaves.map((sw) => sw.sub);
+  for (let i = 0; i < subs.length; i++) {
+    if (subs[i] !== i + 1) {
+      throw new HaltError(
+        `sub-wave numbers under Wave ${parentWaveNum} are not contiguous ${parentWaveNum}.1..${parentWaveNum}.${subs.length}`,
+        `found sub-waves [${subwaves.map((s) => s.id).join(', ')}] — number sub-waves contiguously in ascending order`,
+      );
+    }
+  }
+
+  const byId = new Map(subwaves.map((sw) => [sw.id, sw]));
+  for (const sw of subwaves) {
+    for (const dep of sw.dependsOn || []) {
+      if (dep === sw.id) {
+        throw new HaltError(
+          `[taxonomy:subwave-cycle] sub-wave ${sw.id} depends on itself`,
+          `remove self-dependency on Wave ${sw.id}`,
+        );
+      }
+      if (!byId.has(dep)) {
+        throw new HaltError(
+          `[taxonomy:invalid-subwave-dep] sub-wave ${sw.id} depends on unknown sibling "${dep}"`,
+          `Depends-On under Wave ${parentWaveNum} must reference sibling sub-waves in [${subwaves.map((s) => s.id).join(', ')}]`,
+        );
+      }
+    }
+  }
+
+  // Kahn topological batches
+  const inDegree = new Map(subwaves.map((sw) => [sw.id, (sw.dependsOn || []).length]));
+  const dependents = new Map(subwaves.map((sw) => [sw.id, []]));
+  for (const sw of subwaves) {
+    for (const dep of sw.dependsOn || []) {
+      dependents.get(dep).push(sw.id);
+    }
+  }
+
+  const batches = [];
+  let visited = 0;
+  let ready = subwaves.filter((sw) => inDegree.get(sw.id) === 0).map((sw) => sw.id);
+  while (ready.length > 0) {
+    batches.push(ready);
+    visited += ready.length;
+    const nextReady = [];
+    for (const id of ready) {
+      for (const childId of dependents.get(id) || []) {
+        const deg = inDegree.get(childId) - 1;
+        inDegree.set(childId, deg);
+        if (deg === 0) nextReady.push(childId);
+      }
+    }
+    ready = nextReady;
+  }
+
+  if (visited !== subwaves.length) {
+    throw new HaltError(
+      `[taxonomy:subwave-cycle] cyclic Depends-On graph in Wave ${parentWaveNum}`,
+      `sub-waves [${subwaves.map((s) => s.id).join(', ')}] contain a dependency cycle`,
+    );
+  }
+
+  // Transitive reachability: reaches.get(a).has(b) === true iff a ->+ b (b runs strictly after a)
+  const reaches = new Map(subwaves.map((sw) => [sw.id, new Set()]));
+  for (const sw of subwaves) {
+    const seen = new Set();
+    const stack = [...(dependents.get(sw.id) || [])];
+    while (stack.length > 0) {
+      const cur = stack.pop();
+      if (seen.has(cur)) continue;
+      seen.add(cur);
+      for (const nxt of dependents.get(cur) || []) stack.push(nxt);
+    }
+    reaches.set(sw.id, seen);
+  }
+
+  // Pairwise disjoint write-set enforcement across any two concurrent (unordered) sibling sub-waves
+  for (let i = 0; i < subwaves.length; i++) {
+    for (let j = i + 1; j < subwaves.length; j++) {
+      const a = subwaves[i];
+      const b = subwaves[j];
+      const ordered = reaches.get(a.id).has(b.id) || reaches.get(b.id).has(a.id);
+      if (ordered) continue;
+      if (!a.writes?.length || !b.writes?.length) {
+        throw new HaltError(
+          `[taxonomy:missing-subwave-writes] concurrent sub-waves ${a.id} and ${b.id} must declare explicit Writes:/Files:`,
+          `parallel sibling sub-waves require explicit disjoint file write-sets (or add Depends-On: ${a.id} on Wave ${b.id} to serialize them)`,
+        );
+      }
+      for (const pa of a.writes) {
+        for (const pb of b.writes) {
+          if (pathsOverlap(pa, pb)) {
+            throw new HaltError(
+              `[taxonomy:overlapping-subwave-writes] concurrent sub-waves ${a.id} and ${b.id} have overlapping write-sets ("${pa}" vs "${pb}")`,
+              `writes(${a.id}) ∩ writes(${b.id}) must be empty — split "${pa}"/"${pb}" cleanly or add Depends-On: ${a.id} on Wave ${b.id}`,
+            );
+          }
+        }
+      }
+    }
+  }
+
+  return batches;
+}
+
+function parseSectionMetadata(lines, startLine1Based, endLine1Based, { stopAtSubwaves = false, parentN = null } = {}) {
+  const section = [];
+  let fenced = false;
+  let gateCommand;
+  let waveKind;
+  const outputs = [];
+  const writes = [];
+  const dependsOn = [];
+
+  for (let li = startLine1Based; li < endLine1Based - 1 && li < lines.length; li++) {
+    const body = lines[li];
+    if (!fenced && stopAtSubwaves && SUBWAVE_RE.test(body)) break;
+    const gm = body.match(/^\s*(?:wave[-_ ]?)?gate[-_ ]?command\s*[:=]\s*(.+)$/i);
+    if (gm) {
+      const cmd = gm[1].replace(/^`+|`+$/g, '').trim();
+      if (cmd) gateCommand = cmd;
+    }
+    if (/^\s*(```|~~~)/.test(body)) { fenced = !fenced; continue; }
+    if (fenced) continue;
+    section.push(body);
+    const km = body.match(/^\s*\*{0,2}(?:wave[-_ ]?)?kind\*{0,2}\s*[:=]\s*`?([a-z][a-z-]*)`?\s*$/i);
+    if (km) waveKind = km[1].toLowerCase();
+    const om = body.match(/^\s*[-*+]?\s*\*{0,2}(?:(?:declared|wave)[-_ ]?outputs?|outputs)\*{0,2}\s*[:=]\s*(.+)$/i);
+    if (om) {
+      outputs.push(...parseListField(om[1]));
+    }
+    const wm = body.match(/^\s*[-*+]?\s*\*{0,2}(?:writes?|files?|write[-_ ]?set|target[-_ ]?files?)\*{0,2}\s*[:=]\s*(.+)$/i);
+    if (wm) {
+      for (const p of parseListField(wm[1])) {
+        const norm = normalizePlanRelPath(p);
+        if (norm && !writes.includes(norm)) writes.push(norm);
+      }
+    }
+    const dm = body.match(/^\s*[-*+]?\s*\*{0,2}(?:depends[-_ ]?on|after|needs)\*{0,2}\s*[:=]\s*(.+)$/i);
+    if (dm && parentN !== null) {
+      for (const d of parseListField(dm[1])) {
+        const normDep = normalizeDepRef(d, parentN);
+        if (normDep && !dependsOn.includes(normDep)) dependsOn.push(normDep);
+      }
+    }
+  }
+
+  return {
+    acceptance: section.join('\n').trim(),
+    gateCommand,
+    waveKind,
+    outputs,
+    writes,
+    dependsOn,
+  };
+}
+
+/**
+ * Parse waves (and optional `W.1..W.k` sub-waves) from plan markdown text.
  * @returns {Array<{n:number, title:string, kind:string, line:number, gateCommand?:string, waveKind?:string,
- *   outputs?:string[], acceptance:string, oracles:{item:string, oracle:string}[]}>}
- *   `kind` is the heading word (wave/sprint/section); `waveKind` is a declared non-code kind (S3).
- * @throws HaltError if zero waves found, or wave numbers are not 1..N contiguous.
+ *   outputs?:string[], writes?:string[], subwaves?:object[], subwaveBatches?:string[][],
+ *   acceptance:string, oracles:{item:string, oracle:string}[]}>}
+ * @throws HaltError if zero waves found, wave numbers are not 1..N contiguous/ascending,
+ *   or concurrent sibling sub-waves have overlapping/missing write-sets.
  */
 export function parseWaves(planText) {
   const lines = planText.split(/\r?\n/);
@@ -167,8 +367,36 @@ export function parseWaves(planText) {
   let inFence = false;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    if (/^\s*```/.test(line)) { inFence = !inFence; continue; }
+    if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; continue; }
     if (inFence) continue; // ignore headings inside code fences
+    const sm = SUBWAVE_RE.exec(line);
+    if (sm) {
+      const kind = sm[1].toLowerCase();
+      const parent = Number(sm[2]);
+      const sub = Number(sm[3]);
+      const subObj = {
+        id: `${parent}.${sub}`,
+        parent,
+        sub,
+        kind,
+        title: (sm[4] || '').trim(),
+        line: i + 1,
+      };
+      const lastWave = waves[waves.length - 1];
+      if (lastWave && lastWave.n === parent) {
+        lastWave.subwaves.push(subObj);
+      } else {
+        waves.push({
+          kind,
+          n: parent,
+          title: `Wave ${parent} (parallel sub-waves)`,
+          line: i + 1,
+          implicitParent: true,
+          subwaves: [subObj],
+        });
+      }
+      continue;
+    }
     const m = WAVE_RE.exec(line);
     if (m) {
       waves.push({
@@ -176,6 +404,7 @@ export function parseWaves(planText) {
         n: Number(m[2]),
         title: (m[3] || '').trim(),
         line: i + 1,
+        subwaves: [],
       });
     }
   }
@@ -200,13 +429,6 @@ export function parseWaves(planText) {
     );
   }
 
-  // Finding I (Phase 0.5): the *set* is now known to be exactly {1..N}, but the
-  // engine iterates the array in its *declared* order. A non-ascending
-  // declaration (e.g. `## Wave 2` above `## Wave 1`) would otherwise be returned
-  // as [2,1] and silently run out of intended order. Foreman must not guess the
-  // author's intent: §4.3 already states it "will not reorder or fill gaps" and
-  // §4 says "never guess". So HALT on a non-ascending declaration rather than
-  // silently sorting (which would invent an order the author may not have meant).
   const ascending = nums.every((v, idx) => idx === 0 || v > nums[idx - 1]);
   if (!ascending) {
     throw new HaltError(
@@ -215,40 +437,57 @@ export function parseWaves(planText) {
     );
   }
 
-  // Declared order is validated as a strictly-ascending, contiguous 1..N run.
-  // Per-wave optional gate-command (0082 P1.6): scan body until next wave heading.
   for (let wi = 0; wi < waves.length; wi++) {
-    const start = waves[wi].line; // 1-based
+    const w = waves[wi];
+    const start = w.line; // 1-based
     const end = wi + 1 < waves.length ? waves[wi + 1].line : lines.length + 1;
-    const section = [];      // S6: the wave's own text, fenced examples left out
-    let fenced = false;
-    for (let li = start; li < end - 1 && li < lines.length; li++) {
-      const body = lines[li];
-      const gm = body.match(/^\s*(?:wave[-_ ]?)?gate[-_ ]?command\s*[:=]\s*(.+)$/i);
-      if (gm) {
-        const cmd = gm[1].replace(/^`+|`+$/g, '').trim();
-        if (cmd) waves[wi].gateCommand = cmd;
-      }
-      if (/^\s*(```|~~~)/.test(body)) { fenced = !fenced; continue; }
-      if (fenced) continue;
-      section.push(body);
-      // S3 (2026-10-10, slim plan): a wave that makes no code - docs, a landing, a verification, a render, data -
-      // says so (`kind:`) and names its outputs (`outputs:`); its gate is those outputs (wave-engine outputsGate),
-      // not a test suite with nothing to test (W0: two "vacuous GREEN" halts were waves of 24 rendered images).
-      const km = body.match(/^\s*(?:wave[-_ ]?)?kind\s*[:=]\s*`?([a-z][a-z-]*)`?\s*$/i);
-      if (km) waves[wi].waveKind = km[1].toLowerCase();
-      const om = body.match(/^\s*(?:(?:declared|wave)[-_ ]?outputs?|outputs)\s*[:=]\s*(.+)$/i);
-      if (om) {
-        const outs = [...om[1].matchAll(/`([^`]+)`|"([^"]+)"|'([^']+)'|([^\s,`"']+)/g)]
-          .map((x) => (x[1] ?? x[2] ?? x[3] ?? x[4]).trim()).filter(Boolean);
-        waves[wi].outputs = [...(waves[wi].outputs || []), ...outs];
-      }
+
+    // Whole-wave metadata (acceptance spans entire parent wave including sub-waves so
+    // required-test oracles & review prompts see the complete parent wave contract).
+    const fullMeta = parseSectionMetadata(lines, w.implicitParent ? start - 1 : start, end, {
+      stopAtSubwaves: false,
+      parentN: null,
+    });
+    const headerMeta = w.subwaves.length > 0 && !w.implicitParent
+      ? parseSectionMetadata(lines, start, w.subwaves[0].line, { stopAtSubwaves: true, parentN: null })
+      : fullMeta;
+
+    if (headerMeta.gateCommand || fullMeta.gateCommand) {
+      w.gateCommand = headerMeta.gateCommand || fullMeta.gateCommand;
     }
-    // S6 (2026-10-10, final review 10-10 finding 8): the acceptance text rides WITH the wave. Crucible's hardening
-    // lint reads `acceptance`, the review reads it, and wave-engine's required-test guard reads the same
-    // `(oracle: ...)` items - one representation, never a second parse of the plan.
-    waves[wi].acceptance = section.join('\n').trim();
-    waves[wi].oracles = parseWaveOracles(waves[wi].acceptance);
+    if (headerMeta.waveKind) w.waveKind = headerMeta.waveKind;
+    else if (!w.subwaves.length && fullMeta.waveKind) w.waveKind = fullMeta.waveKind;
+    if (fullMeta.outputs.length) w.outputs = fullMeta.outputs;
+    if (fullMeta.writes.length) w.writes = fullMeta.writes;
+    w.acceptance = fullMeta.acceptance;
+    w.oracles = parseWaveOracles(w.acceptance);
+
+    if (w.subwaves.length > 0) {
+      for (let si = 0; si < w.subwaves.length; si++) {
+        const sw = w.subwaves[si];
+        const swEnd = si + 1 < w.subwaves.length ? w.subwaves[si + 1].line : end;
+        const swMeta = parseSectionMetadata(lines, sw.line, swEnd, {
+          stopAtSubwaves: false,
+          parentN: w.n,
+        });
+        if (swMeta.gateCommand) sw.gateCommand = swMeta.gateCommand;
+        if (swMeta.waveKind) sw.waveKind = swMeta.waveKind;
+        if (swMeta.outputs.length) sw.outputs = swMeta.outputs;
+        sw.writes = swMeta.writes;
+        sw.dependsOn = swMeta.dependsOn;
+        sw.acceptance = swMeta.acceptance;
+        sw.oracles = parseWaveOracles(sw.acceptance);
+      }
+      w.subwaveBatches = computeSubwaveBatches(w.subwaves, w.n);
+      const unionWrites = [...new Set([
+        ...(w.writes || []),
+        ...w.subwaves.flatMap((sw) => sw.writes || []),
+      ])];
+      if (unionWrites.length) w.writes = unionWrites;
+    } else {
+      delete w.subwaves;
+    }
+    delete w.implicitParent;
   }
   return waves;
 }

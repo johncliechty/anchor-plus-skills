@@ -37,11 +37,13 @@ const USAGE_CODES = new Set([
 const AUTH_CODES = new Set([
   'authentication_error', 'authentication_required', 'authentication_failed',
   'unauthenticated', 'unauthorized', 'not_authenticated', 'login_required',
-  'session_expired', 'invalid_authentication', 'invalid_api_key',
+  'session_expired', 'auth_expired', 'invalid_authentication', 'invalid_api_key',
 ]);
 
-const USAGE_TEXT = /^(?:error:\s*)?(?:you(?:['’]ve| have) (?:hit|reached|exceeded) (?:your|the) (?:usage |rate )?limit|you (?:have )?(?:hit|reached|exceeded) your (?:usage |rate )?limit|you(?:['’]re| are) out of (?:extra )?usage|(?:claude ai )?usage limit (?:reached|exceeded)|rate limit (?:reached|exceeded)|too many requests|insufficient (?:quota|credits)|quota (?:exceeded|exhausted)|credit balance (?:is )?too low|model requires (?:extra )?usage credits|[a-z0-9][a-z0-9._ -]{0,60} requires (?:extra )?usage credits(?:\.\s*switch to another model)?)\b/i;
-const AUTH_TEXT = /^(?:error:\s*)?(?:not logged in|authentication (?:required|failed)|failed to authenticate|login required|please (?:log|sign) in|your (?:login )?session has expired|invalid authentication credentials|unauthorized(?: request)?)\b/i;
+const USAGE_TEXT = /^(?:error:\s*)?(?:you(?:['’]ve| have) (?:hit|reached|exceeded) (?:your|the) (?:(?:free )?grok build )?(?:usage |rate )?limit|you (?:have )?(?:hit|reached|exceeded) your (?:(?:free )?grok build )?(?:usage |rate )?limit|you(?:['’]re| are) out of (?:extra )?usage|(?:claude ai |grok build )?usage limit (?:reached|exceeded)|rate limit (?:reached|exceeded)|too many requests|insufficient (?:quota|credits)|quota (?:exceeded|exhausted)|credit balance (?:is )?too low|model requires (?:extra )?usage credits|[a-z0-9][a-z0-9._ -]{0,60} requires (?:extra )?usage credits(?:\.\s*switch to another model)?)\b/i;
+const GROK_USAGE_SUBTEXT = /\b(?:reached your (?:free )?Grok Build usage limit|usage limit reached)\b/i;
+const AUTH_TEXT = /^(?:error:\s*)?(?:not logged in|authentication (?:required|failed)|failed to authenticate|login required|please (?:log|sign) in|your (?:login )?session has expired|oauth (?:session|token) (?:has )?expired|invalid authentication credentials|unauthorized(?: request)?)\b/i;
+const CLAUDE_OAUTH_SUBTEXT = /(?:OAuth (?:session|token) (?:has )?expired|\bnot logged in\b|loggedIn["']?\s*:\s*false)/i;
 
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const integer = value => typeof value === 'number' && Number.isFinite(value) && Number.isInteger(value);
@@ -64,8 +66,8 @@ function finiteTree(value, depth = 0) {
 function category(value) {
   if (typeof value === 'string') {
     const text = value.trim();
-    if (USAGE_TEXT.test(text)) return 'usage_limit';
-    if (AUTH_TEXT.test(text)) return 'auth_error';
+    if (USAGE_TEXT.test(text) || GROK_USAGE_SUBTEXT.test(text)) return 'usage_limit';
+    if (AUTH_TEXT.test(text) || CLAUDE_OAUTH_SUBTEXT.test(text)) return 'auth_error';
     return null;
   }
   if (!object(value)) return null;
@@ -85,6 +87,10 @@ function errorCategories(frame) {
   if (frame.code !== undefined) values.push({ code: frame.code });
   if (frame.api_error_code !== undefined) values.push({ code: frame.api_error_code });
   if (typeof frame.result === 'string' && frame.result.trim()) values.push(frame.result);
+  if ((frame.is_error === true || frame.isError === true || frame.stopReason === 'error' || frame.stop_reason === 'error')
+      && typeof frame.text === 'string' && frame.text.trim()) {
+    values.push(frame.text);
+  }
   return values.map(category).filter(Boolean);
 }
 
@@ -262,6 +268,27 @@ function inspectGrok(frames) {
   };
 }
 
+function inspectGemini(frames) {
+  const init = frames[0];
+  const resultFrame = [...frames].reverse().find(f => object(f) && f.event === 'result' && object(f.result));
+  const result = resultFrame?.result ?? null;
+  const success = object(result) && result.status === 'SUCCESS';
+  const isError = object(result) && result.status !== 'SUCCESS';
+  const cats = isError ? errorCategories(result) : [];
+  const activity = frames.some(f => object(f) && f.event === 'step_update'
+    && ['tool', 'agent_response'].includes(f.step_update?.step_type));
+  const unique = [...new Set(cats)];
+  const proof = frames.length === 2
+    && init?.event === 'init'
+    && isError
+    && !activity
+    && unique.length === 1;
+  return {
+    success, terminal: object(result), categories: cats,
+    activity, proof, evidence: 'agy_stream_zero_step_rejection',
+  };
+}
+
 /**
  * @param {{family:string,stdout:string,stderr:string,code:number|null,
  *   terminal:string,kill_status:unknown,spawned?:boolean}} receipt
@@ -293,6 +320,7 @@ export function classifySubscriptionOutcome(receipt = {}) {
   if (family === 'chatgpt') inspection = inspectCodex(parsed.frames);
   else if (family === 'claude') inspection = inspectClaude(parsed.frames);
   else if (family === 'grok') inspection = inspectGrok(parsed.frames);
+  else if (family === 'gemini') inspection = inspectGemini(parsed.frames);
   else return outcome('protocol_error', false, 'unsupported_subscription_family');
 
   // A provider can report a transient error and then finish successfully. Never

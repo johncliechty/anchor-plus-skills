@@ -14,8 +14,8 @@
 
 ## What you get
 - A structured research report at three levels (full, executive, agent-ready)
-- Evidence weighted by how it was checked, with honesty stamps when checks didn’t fully run
-- Multi-round adversarial review when the host can run the Node engine; a clearly labeled lighter pass otherwise
+- Evidence weighted by how it was checked (`OBSERVED` > `CORROBORATED` > `CLAIMED` > `UNVERIFIED` > `REFUTED`), with question-decomposed sub-claims, falsifiers, and automatic domain certifier routing (`Ramanujan`, `Literature-Review`, `Financial-Analyst`, `Legal-Beagle`)
+- Multi-family adversarial review via the canonical `node bin/run-rounds.mjs <runDir> --live` runner (one clean quorum-verified round converges; unexecuted offline replays and single-family hosts are stamped `verified: false` honestly, and clinical/legal/financial queries automatically escalate to high-stakes verification)
 
 ## What it is not
 - Not a flattering “agree with the user” brief

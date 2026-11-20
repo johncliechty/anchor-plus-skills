@@ -37,6 +37,13 @@ import { HaltError } from '#trio-core/contract-core.mjs';
  */
 export const HONESTY_STAMP = 'schema conforms; adversarial verification did NOT run';
 
+/** Honest stamp emitted when recorded round inputs are replayed offline without live model execution. */
+export const REPLAY_HONESTY_STAMP =
+  'replay mode — recorded inputs replayed offline; live adversarial verification did NOT execute';
+
+/** Accepted deliverable modes (`MODES` stays the locked 2-mode core taxonomy; `'replay'` is the honest offline run-rounds mode). */
+export const DELIVERABLE_MODES = Object.freeze([...MODES, 'replay']);
+
 /** researchPrime's three deliverable summary levels — the user-facing surfaces (the prose check's scope). */
 export const SUMMARY_LEVELS = Object.freeze(['full', 'executive', 'agent-implementation']);
 
@@ -132,25 +139,27 @@ export function assembleDeliverable({
   calibration = null,
   substrateFamilies = [],
   northStar = null,
+  degradedQuorum = false,
 } = {}) {
-  if (!MODES.includes(mode)) {
-    throw new HaltError(`assembleDeliverable: mode must be one of ${MODES.join(' | ')}, got ${JSON.stringify(mode)}`);
+  if (!DELIVERABLE_MODES.includes(mode)) {
+    throw new HaltError(`assembleDeliverable: mode must be one of ${DELIVERABLE_MODES.join(' | ')}, got ${JSON.stringify(mode)}`);
   }
   const cross_model = crossModelFor(mode, substrateFamilies);
   const base = {
     mode,
     north_star: northStar ?? null,
     cross_model,
-    // ρ̂ + learned-quorum state — carried in BOTH modes (default-mode calibration is pure-of-inputs).
+    // ρ̂ + learned-quorum state — carried in ALL modes (default-mode calibration is pure-of-inputs).
     calibration: calibration ?? null,
     rho_hat: calibration?.rho_hat ?? null,
   };
 
-  if (mode !== 'engine') {
+  if (mode === 'degraded') {
     // Non-engine / prose / degraded: the adversarial loop did NOT run on this host. Say so, honestly.
     return {
       ...base,
       verified: false,
+      degraded_quorum: false,
       honesty_stamp: HONESTY_STAMP,
       round_history: [],
       judge_verdict: null,
@@ -159,12 +168,39 @@ export function assembleDeliverable({
     };
   }
 
-  // Engine mode: the full, adversarially-verified deliverable.
   const finalRound = rounds.length ? rounds[rounds.length - 1] : null;
+  const quorumFailed = Boolean(finalRound?.quorum && finalRound.quorum.met === false);
+  const judgeBlocked = Boolean(
+    finalRound?.judgeVerdict && !finalRound.judgeVerdict.excluded && finalRound.judgeVerdict.lockable === false,
+  );
+  const notConverged = Boolean(convergence && convergence.converged === false);
+  const isDegradedQuorum = Boolean(degradedQuorum || quorumFailed);
+
+  if (mode === 'replay') {
+    // Offline replay: preserves the replayed round trail + calibration, never claims live verification.
+    return {
+      ...base,
+      verified: false,
+      degraded_quorum: isDegradedQuorum,
+      honesty_stamp: REPLAY_HONESTY_STAMP,
+      round_history: deriveRoundHistory(rounds),
+      judge_verdict: engineJudgeVerdict(finalRound),
+      convergence_proof: convergence ?? null,
+      synthesizer_brief: buildSynthesizerBrief(rounds),
+    };
+  }
+
+  // Engine mode: verified ONLY when quorum is met, Judge did not reject/challenge, and convergence held.
+  const isVerified = !(isDegradedQuorum || judgeBlocked || notConverged);
   return {
     ...base,
-    verified: true,
-    honesty_stamp: null,
+    verified: isVerified,
+    degraded_quorum: isDegradedQuorum,
+    honesty_stamp: isVerified
+      ? null
+      : (isDegradedQuorum
+        ? 'degraded quorum — insufficient independent origins; deliverable is NOT verified'
+        : 'adjudication incomplete or challenged — deliverable is NOT verified'),
     round_history: deriveRoundHistory(rounds),
     judge_verdict: engineJudgeVerdict(finalRound),
     convergence_proof: convergence ?? null,
@@ -230,12 +266,12 @@ export function renderSurface(deliverable, level) {
   if (!SUMMARY_LEVELS.includes(level)) {
     throw new HaltError(`renderSurface: level must be one of ${SUMMARY_LEVELS.join(' | ')}, got ${JSON.stringify(level)}`);
   }
-  if (!deliverable || typeof deliverable !== 'object' || !MODES.includes(deliverable.mode)) {
+  if (!deliverable || typeof deliverable !== 'object' || !DELIVERABLE_MODES.includes(deliverable.mode)) {
     throw new HaltError('renderSurface requires a deliverable from assembleDeliverable');
   }
   const ns = deliverable.north_star ? `North Star: ${deliverable.north_star}` : 'North Star: (unset)';
 
-  if (deliverable.mode !== 'engine') {
+  if (deliverable.mode === 'degraded') {
     // Prose / degraded mode. HONEST: leads with the stamp; makes NO equivalence/"parity" claim.
     const stamp = `Honesty: ${deliverable.honesty_stamp}`;
     const xm = `cross_model: ${deliverable.cross_model}`;
@@ -266,16 +302,45 @@ export function renderSurface(deliverable, level) {
     ].join('\n');
   }
 
-  // Engine mode: the verified surfaces.
+  if (deliverable.mode === 'replay') {
+    const stamp = `Honesty: ${deliverable.honesty_stamp}`;
+    const xm = `cross_model: ${deliverable.cross_model}`;
+    const rounds = `rounds: ${Array.isArray(deliverable.round_history) ? deliverable.round_history.length : 0}`;
+    if (level === 'executive') {
+      return [`researchPrime (REPLAY mode) — UNVERIFIED.`, stamp, xm, fmtConvergence(deliverable.convergence_proof)].join('\n');
+    }
+    if (level === 'agent-implementation') {
+      return [
+        `# researchPrime deliverable [mode=replay verified=false]`,
+        stamp,
+        xm,
+        rounds,
+        fmtConvergence(deliverable.convergence_proof),
+        fmtCalibration(deliverable),
+      ].join('\n');
+    }
+    return [
+      `# researchPrime Deliverable — REPLAY (offline, unverified)`,
+      stamp,
+      xm,
+      ns,
+      rounds,
+      fmtConvergence(deliverable.convergence_proof),
+      fmtCalibration(deliverable),
+    ].join('\n');
+  }
+
+  // Engine mode surfaces (honestly reflecting deliverable.verified).
   const j = deliverable.judge_verdict;
   const jline = `Judge verdict: ${j ? (j.verdict ?? j.decision ?? JSON.stringify(j)) : '(none)'}`;
   const rounds = `rounds: ${deliverable.round_history.length}`;
+  const isVer = deliverable.verified !== false;
   if (level === 'executive') {
-    return [`researchPrime (engine, VERIFIED).`, jline, fmtConvergence(deliverable.convergence_proof)].join('\n');
+    return [`researchPrime (engine, ${isVer ? 'VERIFIED' : 'UNVERIFIED'}).`, jline, fmtConvergence(deliverable.convergence_proof)].join('\n');
   }
   if (level === 'agent-implementation') {
     return [
-      `# researchPrime deliverable [mode=engine verified=true]`,
+      `# researchPrime deliverable [mode=engine verified=${isVer}]`,
       `cross_model: ${deliverable.cross_model}`,
       jline,
       rounds,
@@ -286,7 +351,7 @@ export function renderSurface(deliverable, level) {
   }
   // full
   return [
-    `# researchPrime Deliverable — ENGINE (adversarially verified)`,
+    `# researchPrime Deliverable — ENGINE (${isVer ? 'adversarially verified' : 'unverified / degraded quorum or challenged'})`,
     ns,
     `cross_model: ${deliverable.cross_model}`,
     jline,
@@ -323,12 +388,12 @@ export function containsForbiddenProse(text) {
  */
 export function checkOutputConformance(deliverable) {
   const violations = [];
-  if (!deliverable || typeof deliverable !== 'object' || !MODES.includes(deliverable.mode)) {
+  if (!deliverable || typeof deliverable !== 'object' || !DELIVERABLE_MODES.includes(deliverable.mode)) {
     return { ok: false, violations: ['not a deliverable (missing/invalid mode)'] };
   }
   const surfaces = renderAllSurfaces(deliverable);
 
-  if (deliverable.mode !== 'engine') {
+  if (deliverable.mode === 'degraded') {
     if (deliverable.honesty_stamp !== HONESTY_STAMP) {
       violations.push('non-engine deliverable must carry the exact honesty stamp');
     }
@@ -343,12 +408,50 @@ export function checkOutputConformance(deliverable) {
     return { ok: violations.length === 0, violations };
   }
 
+  if (deliverable.mode === 'replay') {
+    if (deliverable.verified !== false) {
+      violations.push('replay deliverable must force verified:false');
+    }
+    if (deliverable.cross_model !== false) {
+      violations.push('replay deliverable must force cross_model:false');
+    }
+    if (deliverable.honesty_stamp !== REPLAY_HONESTY_STAMP) {
+      violations.push('replay deliverable must carry REPLAY_HONESTY_STAMP');
+    }
+    if (deliverable.calibration == null) {
+      violations.push('replay deliverable missing required section: calibration');
+    }
+    for (const [level, text] of Object.entries(surfaces)) {
+      if (containsForbiddenProse(text)) {
+        violations.push(`replay surface '${level}' claims "${FORBIDDEN_PROSE_WORD}" (forbidden)`);
+      }
+    }
+    return { ok: violations.length === 0, violations };
+  }
+
   // Engine mode: every section must be carried.
   for (const k of ['round_history', 'judge_verdict', 'convergence_proof', 'calibration', 'synthesizer_brief']) {
     if (deliverable[k] == null) violations.push(`engine deliverable missing required section: ${k}`);
   }
   if (deliverable.synthesizer_brief && deliverable.synthesizer_brief.decides !== false) {
     violations.push('Synthesizer Brief must be SEPARATE from the Judge verdict (decides must be false)');
+  }
+  if (deliverable.verified === true) {
+    if (deliverable.degraded_quorum === true) {
+      violations.push('engine deliverable cannot claim verified:true under degraded_quorum:true');
+    }
+    const lastHist = Array.isArray(deliverable.round_history) && deliverable.round_history.length
+      ? deliverable.round_history[deliverable.round_history.length - 1]
+      : null;
+    if (lastHist?.quorum && lastHist.quorum.met === false) {
+      violations.push('engine deliverable cannot claim verified:true when GATE-1 quorum.met === false');
+    }
+    if (deliverable.judge_verdict && !deliverable.judge_verdict.excluded && deliverable.judge_verdict.lockable === false) {
+      violations.push('engine deliverable cannot claim verified:true when Judge lockable === false');
+    }
+    if (deliverable.convergence_proof && deliverable.convergence_proof.converged === false) {
+      violations.push('engine deliverable cannot claim verified:true when convergence_proof.converged === false');
+    }
   }
   return { ok: violations.length === 0, violations };
 }

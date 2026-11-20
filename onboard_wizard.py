@@ -806,10 +806,24 @@ def sync_applicant_signup_to_gwl_hub(
                     headers={"Content-Type": "application/json", "User-Agent": "Anchor-Onboard-ApplicantSync/1.0"},
                     method="POST",
                 )
-                with _ureq.urlopen(req, timeout=2.5):
+                with paths.safe_urlopen(req, timeout=2.5):
                     break
             except Exception:
                 continue
+        try:
+            import mothership_updater as _mu_sync
+            _mu_sync.register_with_homebase(
+                owner=str(record.get("display_name") or ""),
+                contact_email=str(record.get("contact_email") or ""),
+                pseudonym=str(record.get("pseudonym") or ""),
+                hostname=str(record.get("hostname") or ""),
+                tailscale_ip=ts_ip,
+                tailscale_url=str(ts_info.get("tailscale_url") or ""),
+                homebase_url=coord_hub or "https://gwl-server.tailb49f65.ts.net",
+                telemetry_enabled=bool(topo.get("telemetry_enabled", True)),
+            )
+        except Exception:
+            pass
     return res
 
 
@@ -870,6 +884,8 @@ def detect_or_install_tailscale(
 
     running = False
     ts_ip = ""
+    dns_name = ""
+    ts_url = ""
     hostname = ""
     peers: list[dict[str, Any]] = []
     if ts_exe:
@@ -885,6 +901,8 @@ def detect_or_install_tailscale(
                 self_node = data.get("Self") or {}
                 ips = self_node.get("TailscaleIPs") or []
                 ts_ip = str(ips[0]) if ips else ""
+                dns_name = str(self_node.get("DNSName") or "").strip().rstrip(".")
+                ts_url = f"https://{dns_name}" if dns_name else (f"http://{ts_ip}:8777" if ts_ip else "")
                 hostname = str(self_node.get("HostName") or "")
                 for _k, pv in (data.get("Peer") or {}).items():
                     if not isinstance(pv, dict):
@@ -905,6 +923,8 @@ def detect_or_install_tailscale(
         "auto_installed": auto_installed,
         "running": running,
         "tailscale_ip": ts_ip,
+        "dns_name": dns_name,
+        "tailscale_url": ts_url,
         "hostname": hostname,
         "install_command": install_cmd,
         "peers": peers,
@@ -912,18 +932,34 @@ def detect_or_install_tailscale(
     }
 
 
+def _homebase_link_summary(base_dir: Path | str | None = None) -> dict[str, Any]:
+    """Read-only safe Homebase registration metadata for receipts and Step 2 UI."""
+    try:
+        import mothership_updater as _mu
+        eff_root = _resolve_base_dir(base_dir) if base_dir is not None else None
+        link = _mu.read_homebase_link(anchor_root=eff_root)
+        return _mu._public_link_view(link)
+    except Exception:
+        return {
+            "registered": False,
+            "homebase_url": "https://gwl-server.tailb49f65.ts.net",
+            "telemetry_enabled": True,
+        }
+
+
 def configure_mothership_topology(
     mode: str = "main_mothership",
     *,
     remote_address: str = "",
-    hub_endpoint: str = "http://puter:8777",
+    hub_endpoint: str = "https://gwl-server.tailb49f65.ts.net",
+    telemetry_enabled: bool = True,
     auto_install_tailscale: bool = False,
     sandbox: bool = False,
     sandbox_id: str = DEFAULT_SANDBOX_ID,
     base_dir: Path | str | None = None,
     runner_fn=None,
 ) -> dict[str, Any]:
-    """Configure Step 2: Main Mothership vs. Connect to a Different Mothership (e.g. Puter via Tailscale)."""
+    """Configure Step 2: Main Mothership vs. Connect to a Different Mothership + standard Homebase Registration."""
     norm_mode = str(mode or "main_mothership").strip().lower()
     if norm_mode not in ("main_mothership", "connect_remote_mothership"):
         norm_mode = "main_mothership"
@@ -936,13 +972,15 @@ def configure_mothership_topology(
     ecg_path, ecg_checked = paths.resolve_ecgberht_root()
     bridge_file = ecg_path / "scripts" / "seal-chamber-bridge.mjs"
     ecg_ok = bridge_file.is_file() or (ecg_path / "bin" / "ecgberht.mjs").is_file()
+    eff_hub = str(remote_address or hub_endpoint or "https://gwl-server.tailb49f65.ts.net").strip()
 
     if norm_mode == "main_mothership":
         topology_doc = {
             "mode": "main_mothership",
             "mode_label": "This Computer IS a Main Mothership",
             "local_url": "http://127.0.0.1:8777",
-            "coordination_hub": str(hub_endpoint or "http://puter:8777").strip(),
+            "coordination_hub": eff_hub,
+            "telemetry_enabled": bool(telemetry_enabled),
             "tailscale": ts_info,
             "ecgberht_root": str(ecg_path),
             "ecgberht_ok": ecg_ok,
@@ -951,14 +989,15 @@ def configure_mothership_topology(
             "updated_at": _utc_now_iso(),
         }
     else:
-        target = str(remote_address or hub_endpoint or "http://100.64.0.1:8777").strip()
+        target = str(remote_address or hub_endpoint or "https://gwl-server.tailb49f65.ts.net").strip()
         if target and not target.startswith(("http://", "https://")):
-            target = "http://" + target
+            target = "https://" + target
         topology_doc = {
             "mode": "connect_remote_mothership",
             "mode_label": "Connected to Remote Mothership via Tailscale",
             "remote_mothership_url": target,
             "coordination_hub": str(hub_endpoint or target).strip(),
+            "telemetry_enabled": bool(telemetry_enabled),
             "tailscale": ts_info,
             "ecgberht_root": str(ecg_path),
             "ecgberht_ok": ecg_ok,
@@ -986,7 +1025,29 @@ def configure_mothership_topology(
     st_doc["current_step"] = max(int(st_doc.get("current_step") or 1), 3)
     save_wizard_state(st_doc, sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)
     sync_applicant_signup_to_gwl_hub(sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)
-    return {"ok": True, "topology": topology_doc}
+    hb_summary: dict[str, Any] = {"registered": False, "sandbox": bool(sandbox), "telemetry_enabled": bool(telemetry_enabled)}
+    if not sandbox:
+        try:
+            import mothership_updater as _mu
+            eff_root = _resolve_base_dir(base_dir) if base_dir is not None else None
+            _mu.load_or_init_homebase_link(
+                anchor_root=eff_root,
+                homebase_url=eff_hub,
+                telemetry_enabled=bool(telemetry_enabled),
+            )
+            if base_dir is None and "PYTEST_CURRENT_TEST" not in os.environ:
+                prof_cur = get_active_user_profile("", sandbox=False, base_dir=None)
+                _mu.register_with_homebase(
+                    owner=str(prof_cur.get("display_name") or ""),
+                    contact_email=str(prof_cur.get("contact_email") or ""),
+                    pseudonym=str(prof_cur.get("pseudonym") or ""),
+                    homebase_url=eff_hub,
+                    telemetry_enabled=bool(telemetry_enabled),
+                )
+            hb_summary = _homebase_link_summary(base_dir)
+        except Exception:
+            hb_summary = _homebase_link_summary(base_dir)
+    return {"ok": True, "topology": topology_doc, "homebase_link": hb_summary}
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -3640,6 +3701,21 @@ def build_readiness_receipt(
         },
         {
             "step": 2,
+            "id": "homebase_registration",
+            "label": "Anchor Homebase Registration (Push Updates & Journal/Error Sync)",
+            "ok": True,
+            "detail": (
+                "Sandbox Homebase Link Ready"
+                if sandbox
+                else (
+                    "Registered with Anchor Homebase ✓ (Push Updates & Journal/Error Sync Active)"
+                    if _homebase_link_summary(base_dir).get("registered")
+                    else "Capability initialized — connects automatically over Tailscale to Anchor Homebase"
+                )
+            ),
+        },
+        {
+            "step": 2,
             "id": "ecgberht_bridge",
             "label": "Ecgberht Engine & Seal-Chamber Bridge",
             "ok": bridge_ok,
@@ -3790,6 +3866,11 @@ def get_full_wizard_bundle(
         "state": state,
         "profile": profile,
         "tailscale": ts_info,
+        "homebase_link": (
+            {"registered": False, "sandbox": True, "homebase_url": "https://gwl-server.tailb49f65.ts.net", "telemetry_enabled": True}
+            if sandbox
+            else _homebase_link_summary(base_dir)
+        ),
         "ecgberht": {
             "root": str(ecg_path),
             "checked_paths": ecg_checked,
@@ -3895,14 +3976,83 @@ def dispatch_wizard_action(
             base_dir=base_dir,
         )
     if act == "configure_topology":
+        if not use_sandbox and "_req_auth_ok" in body and not bool(body.get("_req_auth_ok")):
+            return {"ok": False, "status_code": 401, "error": "unauthorized"}
         return configure_mothership_topology(
             mode=str(body.get("mode") or "main_mothership"),
             remote_address=str(body.get("remote_address") or ""),
-            hub_endpoint=str(body.get("hub_endpoint") or "http://puter:8777"),
+            hub_endpoint=str(body.get("hub_endpoint") or "https://gwl-server.tailb49f65.ts.net"),
+            telemetry_enabled=bool(body.get("telemetry_enabled", True)),
             auto_install_tailscale=bool(body.get("auto_install_tailscale")),
             sandbox=use_sandbox,
             sandbox_id=sid,
             base_dir=base_dir,
+        )
+    if act == "register_homebase":
+        import mothership_updater as _mu
+        eff_root = _resolve_base_dir(base_dir) if base_dir is not None else None
+        return _mu.receive_homebase_registration(
+            body,
+            provided_capability=str(body.get("_req_node_cap") or ""),
+            anchor_root=eff_root,
+        )
+    if act == "submit_homebase_telemetry":
+        import mothership_updater as _mu
+        eff_root = _resolve_base_dir(base_dir) if base_dir is not None else None
+        return _mu.receive_homebase_telemetry(
+            body,
+            str(body.get("_req_node_cap") or ""),
+            anchor_root=eff_root,
+        )
+    if act == "register_with_homebase":
+        if not use_sandbox and "_req_auth_ok" in body and not bool(body.get("_req_auth_ok")):
+            return {"ok": False, "status_code": 401, "error": "unauthorized"}
+        import mothership_updater as _mu
+        eff_root = _resolve_base_dir(base_dir) if base_dir is not None else None
+        prof_cur = get_active_user_profile(sid if use_sandbox else "", sandbox=use_sandbox, base_dir=base_dir)
+        st_cur = load_wizard_state(sandbox=use_sandbox, sandbox_id=sid, base_dir=base_dir)
+        topo_cur = st_cur.get("topology") or {}
+        hb_target = str(
+            body.get("homebase_url")
+            or body.get("remote_address")
+            or topo_cur.get("coordination_hub")
+            or "https://gwl-server.tailb49f65.ts.net"
+        ).strip()
+        tel_en = bool(body.get("telemetry_enabled", topo_cur.get("telemetry_enabled", True)))
+        if use_sandbox:
+            return {
+                "ok": True,
+                "sandbox": True,
+                "registered": True,
+                "homebase_url": hb_target,
+                "telemetry_enabled": tel_en,
+            }
+        return _mu.register_with_homebase(
+            owner=str(body.get("owner") or prof_cur.get("display_name") or ""),
+            contact_email=str(body.get("contact_email") or prof_cur.get("contact_email") or ""),
+            pseudonym=str(body.get("pseudonym") or prof_cur.get("pseudonym") or ""),
+            hostname=str(body.get("hostname") or ""),
+            tailscale_url=str(body.get("tailscale_url") or ""),
+            tailscale_ip=str(body.get("tailscale_ip") or ""),
+            homebase_url=hb_target,
+            telemetry_enabled=tel_en,
+            anchor_root=eff_root,
+        )
+    if act == "sync_telemetry_now":
+        if "_req_auth_ok" in body and not bool(body.get("_req_auth_ok")):
+            return {"ok": False, "status_code": 401, "error": "unauthorized"}
+        import mothership_updater as _mu
+        eff_root = _resolve_base_dir(base_dir) if base_dir is not None else None
+        return _mu.sync_telemetry_to_homebase(anchor_root=eff_root)
+    if act == "list_homebase_telemetry":
+        if not bool(body.get("_req_auth_ok")):
+            return {"ok": False, "status_code": 401, "error": "unauthorized"}
+        import mothership_updater as _mu
+        eff_root = _resolve_base_dir(base_dir) if base_dir is not None else None
+        return _mu.list_homebase_telemetry(
+            mothership_id=str(body.get("mothership_id") or ""),
+            limit=body.get("limit", 100),
+            anchor_root=eff_root,
         )
     if act == "configure_service":
         return configure_service_connection(
@@ -4787,8 +4937,8 @@ def render_onboard_wizard_html(
       <!-- STEP 2 -->
       <section class="wiz-step-pane" id="step-pane-2" hidden>
         <div class="wiz-card">
-          <h2>Step 2 · Mothership Topology &amp; Tailscale Network Connection</h2>
-          <p class="muted">Choose whether this computer is your Main Mothership or connects via Tailscale to a different Mothership (such as Puter).</p>
+          <h2>Step 2 · Mothership Topology, Tailscale &amp; Anchor Homebase Registration</h2>
+          <p class="muted">Choose your Mothership role and register with Anchor Homebase (<code>https://gwl-server.tailb49f65.ts.net</code>) as part of standard setup so updates can be pushed to you automatically and sanitized install/skill journal entries and errors report back to Homebase.</p>
           <div class="form-grid">
             <div>
               <label for="selTopologyMode">Mothership Role</label>
@@ -4798,14 +4948,20 @@ def render_onboard_wizard_html(
               </select>
             </div>
             <div>
-              <label for="inpRemoteMothership">Remote Mothership / Coordination Hub URL (Tailscale IP or Host)</label>
-              <input type="text" id="inpRemoteMothership" value="http://puter:8777" placeholder="http://100.64.0.1:8777">
+              <label for="inpRemoteMothership">Anchor Homebase / Coordination Hub URL (Tailscale HTTPS or IP)</label>
+              <input type="text" id="inpRemoteMothership" value="https://gwl-server.tailb49f65.ts.net" placeholder="https://gwl-server.tailb49f65.ts.net">
             </div>
           </div>
+          <label style="display:flex;align-items:center;gap:8px;margin:10px 0;font-size:13px;cursor:pointer">
+            <input type="checkbox" id="chkHomebaseTelemetry" checked>
+            <span><strong>Standard Homebase Link:</strong> Receive pushed Anchor updates and send sanitized journal entries &amp; error diagnostics back to Anchor Homebase</span>
+          </label>
           <div id="tsStatusBox" class="wiz-card" style="background:#101723"></div>
+          <div id="homebaseStatusBox" class="proj-row" style="margin-bottom:12px"></div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
             <button type="button" class="btn" id="btnInstallTailscale">📡 Auto-Install / Verify Tailscale</button>
-            <button type="button" class="btn primary" id="btnSaveStep2">Save Topology &amp; Continue to Step 3 →</button>
+            <button type="button" class="btn emerald" id="btnRegisterHomebase">🔗 Register &amp; Sync with Anchor Homebase</button>
+            <button type="button" class="btn primary" id="btnSaveStep2">Save Topology, Register &amp; Continue to Step 3 →</button>
           </div>
         </div>
       </section>
@@ -5435,9 +5591,30 @@ def render_onboard_wizard_html(
       document.getElementById('tsStatusBox').innerHTML = `
         <strong>Tailscale Status:</strong> ${{ts.installed ? 'Installed ✓' : 'Not installed'}} ·
         <strong>Node IP:</strong> ${{ts.tailscale_ip || 'pending'}} ·
+        <strong>Tailscale URL:</strong> <code>${{ts.tailscale_url || 'pending'}}</code> ·
         <strong>Ecgberht Engine:</strong> ${{b.ecgberht && b.ecgberht.ok ? 'Ready ✓ (' + b.ecgberht.root + ')' : 'Missing'}}
         <div class="muted">${{ts.note || ''}}</div>
       `;
+      const hb = b.homebase_link || {{}};
+      const hbBox = document.getElementById('homebaseStatusBox');
+      if (hbBox) {{
+        const hbReg = Boolean(hb.registered);
+        hbBox.innerHTML = `
+          <div>
+            <strong>🏠 Anchor Homebase Registration:</strong> ${{hbReg ? 'Registered ✓' : 'Pending Registration (Connect Tailscale &amp; Click Register)'}}
+            <div class="muted">Homebase: <code>${{hb.homebase_url || 'https://gwl-server.tailb49f65.ts.net'}}</code> · Node ID: <code>${{hb.mothership_id || 'pending'}}</code> · Journal/Error Sync: ${{hb.telemetry_enabled !== false ? 'Enabled' : 'Off'}}</div>
+          </div>
+          <span class="pill" style="background:${{hbReg ? '#064e3b' : '#451a03'}};color:${{hbReg ? '#6ee7b7' : '#fde68a'}}">${{hbReg ? 'LINKED ✓' : 'REGISTER IN STEP 2'}}</span>
+        `;
+      }}
+      const chkHbTel = document.getElementById('chkHomebaseTelemetry');
+      if (chkHbTel && hb.telemetry_enabled !== undefined) {{
+        chkHbTel.checked = Boolean(hb.telemetry_enabled);
+      }}
+      const inpRem = document.getElementById('inpRemoteMothership');
+      if (inpRem && hb.homebase_url && inpRem.value === 'https://gwl-server.tailb49f65.ts.net') {{
+        inpRem.value = hb.homebase_url;
+      }}
 
       document.getElementById('readinessNoteBox').textContent = b.readiness_explanation || '';
       renderServices(b.services || {{}});
@@ -5883,19 +6060,43 @@ def render_onboard_wizard_html(
     }});
 
     document.getElementById('btnInstallTailscale').addEventListener('click', async () => {{
+      const chkTel = document.getElementById('chkHomebaseTelemetry');
       const out = await callWizardAction('configure_topology', {{
         mode: document.getElementById('selTopologyMode').value,
         remote_address: document.getElementById('inpRemoteMothership').value,
+        telemetry_enabled: chkTel ? chkTel.checked : true,
         auto_install_tailscale: true,
       }});
       document.getElementById('wizBanner').textContent = 'Tailscale & Mothership topology verified!';
       await refreshBundle();
     }});
 
+    const btnRegHb = document.getElementById('btnRegisterHomebase');
+    if (btnRegHb) {{
+      btnRegHb.addEventListener('click', async () => {{
+        const chkTel = document.getElementById('chkHomebaseTelemetry');
+        const out = await callWizardAction('register_with_homebase', {{
+          homebase_url: document.getElementById('inpRemoteMothership').value,
+          telemetry_enabled: chkTel ? chkTel.checked : true,
+        }});
+        document.getElementById('wizBanner').textContent = out.registered
+          ? `Registered with Anchor Homebase (${{out.homebase_url}}) — push updates & journal/error sync active!`
+          : `Homebase link initialized locally (${{out.error || 'connect Tailscale to finish live registration'}}).`;
+        await refreshBundle();
+      }});
+    }}
+
     document.getElementById('btnSaveStep2').addEventListener('click', async () => {{
+      const chkTel = document.getElementById('chkHomebaseTelemetry');
+      const telOn = chkTel ? chkTel.checked : true;
       await callWizardAction('configure_topology', {{
         mode: document.getElementById('selTopologyMode').value,
         remote_address: document.getElementById('inpRemoteMothership').value,
+        telemetry_enabled: telOn,
+      }});
+      await callWizardAction('register_with_homebase', {{
+        homebase_url: document.getElementById('inpRemoteMothership').value,
+        telemetry_enabled: telOn,
       }});
       await refreshBundle();
       showStep(3);

@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Anchor — Poincaré Deep-Memory State Observatory</title>
+<link rel="icon" href="/anchor.ico" type="image/x-icon">
+<style>
+  :root {
+    --bg: #070b14;
+    --panel: #0f172a;
+    --border: #1e293b;
+    --ink: #f1f5f9;
+    --muted: #94a3b8;
+    --sky: #38bdf8;
+    --emerald: #10b981;
+    --amber: #f59e0b;
+    --purple: #a78bfa;
+    --rose: #fb7185;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 13.5px; line-height: 1.5;
+  }
+  .top-bar {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    padding: 12px 20px; background: #0b1120; border-bottom: 1px solid var(--border);
+  }
+  .top-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .top-title h1 { margin: 0; font-size: 16px; font-weight: 800; letter-spacing: -0.01em; color: #f8fafc; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px;
+    font-size: 11px; font-weight: 700; font-family: var(--mono);
+    background: rgba(56,189,248,0.13); color: #7dd3fc; border: 1px solid rgba(56,189,248,0.35);
+  }
+  .badge.emerald { background: rgba(16,185,129,0.14); color: #6ee7b7; border-color: rgba(16,185,129,0.38); }
+  .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  select, input[type="search"], button, a.nav-btn {
+    padding: 6px 10px; border-radius: 7px; border: 1px solid #334155;
+    background: #0f172a; color: #f1f5f9; font-size: 12.5px; font-weight: 600;
+    text-decoration: none; cursor: pointer;
+  }
+  button:hover, a.nav-btn:hover { border-color: var(--sky); color: #7dd3fc; }
+  button.primary { background: rgba(16,185,129,0.16); border-color: rgba(16,185,129,0.5); color: #6ee7b7; }
+  .layout {
+    display: grid; grid-template-columns: minmax(440px, 640px) 1fr; gap: 18px;
+    padding: 18px 20px; max-width: 1640px; margin: 0 auto; align-items: start;
+  }
+  @media (max-width: 1080px) { .layout { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px;
+  }
+  .disk-wrap { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  svg#poincareDiskSvg {
+    width: 100%; max-width: 600px; height: auto; aspect-ratio: 1 / 1;
+    border-radius: 50%; background: radial-gradient(circle at 50% 50%, #111c33 0%, #09101f 68%, #050811 100%);
+    box-shadow: 0 0 0 1px rgba(56,189,248,0.28), 0 18px 42px rgba(0,0,0,0.55);
+    user-select: none;
+  }
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; font-size: 11.5px; color: var(--muted);
+  }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .inspector-col { display: flex; flex-direction: column; gap: 14px; }
+  .node-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .node-card-head h2 { margin: 0; font-size: 15.5px; color: #f8fafc; }
+  .meta-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin: 10px 0;
+  }
+  .meta-cell {
+    padding: 7px 9px; border-radius: 8px; background: #080e1a; border: 1px solid #1e293b;
+  }
+  .meta-cell .k { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .meta-cell .v { font-size: 13px; font-weight: 700; font-family: var(--mono); color: #e2e8f0; margin-top: 2px; }
+  .node-full-box {
+    padding: 10px 12px; border-radius: 8px; background: #070c16; border: 1px solid #1e293b;
+    font-size: 12.5px; color: #cbd5e1; white-space: pre-wrap; max-height: 180px; overflow-y: auto;
+  }
+  .pack-list { display: flex; flex-direction: column; gap: 6px; max-height: 350px; overflow-y: auto; margin-top: 8px; }
+  .pack-row {
+    padding: 7px 10px; border-radius: 7px; background: #080e1a; border: 1px solid #1e293b;
+    display: flex; flex-direction: column; gap: 3px; cursor: pointer;
+  }
+  .pack-row:hover { border-color: rgba(56,189,248,0.5); }
+  .pack-row-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .bc-strip { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .bc-chip {
+    padding: 3px 8px; border-radius: 6px; font-size: 11.5px; background: rgba(167,139,250,0.12);
+    border: 1px solid rgba(167,139,250,0.35); color: #ddd6fe; cursor: pointer;
+  }
+  .bc-chip:hover { background: rgba(167,139,250,0.24); }
+</style>
+</head>
+<body>
+<header class="top-bar">
+  <div class="top-title">
+    <h1 id="pmPageTitle">&#129517; Loading Poincaré State Map…</h1>
+    <span class="badge" id="pmStatsBadge">…</span>
+    <span class="badge emerald" id="pmFocusBadge">Origin (0, 0)</span>
+  </div>
+  <div class="controls">
+    <select id="pmScopeSelect" title="Switch Poincaré State Map Scope">
+      <option value="/steward-static/poincare.html?mode=fleet">🌌 Fleet Atlas (Star Chart + Cave + All Cockpits)</option>
+    </select>
+    <input type="search" id="pmQueryInput" placeholder="Focus / query deep memory..." style="min-width:190px">
+    <select id="pmBudgetSelect" title="Active Context Window Token Budget">
+      <option value="4096">Budget: 4K tok</option>
+      <option value="8192">Budget: 8K tok</option>
+      <option value="16384" selected>Budget: 16K tok</option>
+      <option value="32768">Budget: 32K tok</option>
+      <option value="65536">Budget: 64K tok</option>
+    </select>
+    <button type="button" class="primary" id="pmResetOriginBtn" title="Möbius-translate root North Star back to (0, 0)">&#8634; Reset Origin (0,0)</button>
+    <button type="button" id="pmReturnCockpitBtn" style="display:none;border-color:rgba(56,189,248,0.55);color:#7dd3fc" title="Return to AI Cockpit">&#8617; Back to Cockpit</button>
+    <a class="nav-btn" href="/high-seat">&#8592; Cave of Wonders</a>
+    <a class="nav-btn" href="/?view=starchart">&#127775; Star Chart</a>
+  </div>
+</header>
+
+<main class="layout">
+  <section class="card disk-wrap">
+    <div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center" id="pmFilterBar">
+      <button type="button" class="primary" data-kind-filter="all" style="font-size:11.5px;padding:4px 9px">All Nodes</button>
+      <button type="button" data-kind-filter="history" style="font-size:11.5px;padding:4px 9px">💬 Dialogue History</button>
+      <button type="button" data-kind-filter="plan" style="font-size:11.5px;padding:4px 9px">🎯 Plan &amp; Decisions</button>
+      <button type="button" data-kind-filter="deliverable" style="font-size:11.5px;padding:4px 9px">📄 Deliverables</button>
+      <button type="button" data-kind-filter="boneyard" style="font-size:11.5px;padding:4px 9px">🪦 Boneyard</button>
+    </div>
+    <div style="font-size:12px;color:#94a3b8;text-align:center">
+      <b>Click any node</b> to execute an isometric <b>M&ouml;bius gyrovector translation</b> <code>T<sub>-a</sub>(z) = (z - a)/(1 - &overline;a&middot;z)</code>, bringing that branch to full center resolution.
+    </div>
+    <svg id="poincareDiskSvg" viewBox="-1.06 -1.06 2.12 2.12" aria-label="Interactive 2D Poincaré Disk State Map"></svg>
+    <div class="legend">
+      <span><i class="dot" style="background:#f59e0b"></i> North Star / Origin</span>
+      <span><i class="dot" style="background:#a78bfa"></i> Star Chart Goal</span>
+      <span><i class="dot" style="background:#38bdf8"></i> AI Cockpit / Wave</span>
+      <span><i class="dot" style="background:#10b981"></i> Deliverable</span>
+      <span><i class="dot" style="background:#fb7185"></i> Decision / Invariant</span>
+      <span><i class="dot" style="background:#64748b"></i> Outer Boneyard / Superseded</span>
+    </div>
+  </section>
+
+  <section class="inspector-col">
+    <div class="card" id="pmNodeInspector">
+      <div class="node-card-head">
+        <div>
+          <span class="badge" id="pmSelKind">north_star</span>
+          <h2 id="pmSelTitle" style="margin-top:5px">Loading Poincaré Disk…</h2>
+        </div>
+        <div id="pmSelLinks" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+      </div>
+      <div class="meta-grid">
+        <div class="meta-cell"><div class="k">Effective Radius r_eff</div><div class="v" id="pmSelReff">0.00</div></div>
+        <div class="meta-cell"><div class="k">Importance I(u)</div><div class="v" id="pmSelImp">1.00</div></div>
+        <div class="meta-cell"><div class="k">Survival &psi;(u, t)</div><div class="v" id="pmSelSurv">1.00</div></div>
+        <div class="meta-cell"><div class="k">Tokens (Sum / Full)</div><div class="v" id="pmSelTok">0 / 0</div></div>
+      </div>
+      <div class="node-full-box" id="pmSelBody"></div>
+    </div>
+
+    <div class="card">
+      <div class="node-card-head">
+        <div>
+          <h2 style="margin:0;font-size:14.5px">&#9889; MERA-Poincar&eacute; Deep-Memory Context Window</h2>
+          <div style="font-size:11.5px;color:#94a3b8;margin-top:2px" id="pmPackStats"></div>
+        </div>
+      </div>
+      <div class="pack-list" id="pmPackList"></div>
+      <div style="margin-top:10px;padding-top:8px;border-top:1px solid #1e293b">
+        <div style="font-size:11px;font-weight:700;color:#c4b5fd;text-transform:uppercase;letter-spacing:.04em">
+          &#128301; 12-Token Horizon Breadcrumbs (Click to M&ouml;bius-Zoom Peripheral Subtree)
+        </div>
+        <div class="bc-strip" id="pmBreadcrumbs"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+(function() {
+  const COLORS = {
+    north_star: '#f59e0b',
+    star_chart_goal: '#a78bfa',
+    gandalf_situate: '#a78bfa',
+    cave_list_item: '#38bdf8',
+    cockpit: '#38bdf8',
+    wave: '#0ea5e9',
+    deliverable: '#10b981',
+    gandalf_elevation: '#10b981',
+    decision: '#fb7185',
+    gandalf_diagnose: '#fb7185',
+    gandalf_anticipate: '#f97316',
+    turn: '#94a3b8',
+    boneyard: '#475569'
+  };
+
+  let MAP = { nodes: [], corpus_raw_tokens: 1 };
+  let curPack = { selected_nodes: [], horizon_breadcrumbs: [], used_tokens: 0, budget_tokens: 16384, compression_ratio: 1, parse_ms: 0 };
+  let baseNodes = [];
+  let byId = {};
+  let dispCoords = {};
+  let selectedId = '';
+  let activeFilter = 'all';
+
+  function matchesFilter(nd) {
+    if (activeFilter === 'all') return true;
+    if (nd.kind === 'north_star') return true;
+    if (activeFilter === 'history') return nd.kind === 'turn' || nd.kind === 'decision';
+    if (activeFilter === 'plan') return nd.kind === 'wave' || nd.kind === 'decision' || nd.kind === 'star_chart_goal' || nd.kind === 'cave_list_item';
+    if (activeFilter === 'deliverable') return nd.kind === 'deliverable' || nd.kind === 'gandalf_elevation';
+    if (activeFilter === 'boneyard') return Boolean(nd.superseded) || nd.kind === 'boneyard';
+    return true;
+  }
+
+  function getAuthToken() {
+    const q = new URLSearchParams(location.search || '');
+    let tok = q.get('token') || '';
+    if (!tok) {
+      try { tok = sessionStorage.getItem('anchor_token') || localStorage.getItem('anchor_token') || ''; } catch (_) {}
+    }
+    return tok;
+  }
+
+  function withTokenHref(href) {
+    const tok = getAuthToken();
+    if (!tok || !href || href.startsWith('http')) return href;
+    try {
+      const u = new URL(href, location.origin);
+      if (!u.searchParams.has('token')) u.searchParams.set('token', tok);
+      return u.pathname + u.search + u.hash;
+    } catch (_) {
+      return href;
+    }
+  }
+
+  function mobiusTranslate(zx, zy, fx, fy) {
+    const nr = zx - fx, ni = zy - fy;
+    const dr = 1.0 - (fx * zx + fy * zy);
+    const di = -(fx * zy - fy * zx);
+    const den = dr * dr + di * di;
+    if (den < 1e-12) return [0, 0];
+    let ox = (nr * dr + ni * di) / den;
+    let oy = (ni * dr - nr * di) / den;
+    const m = Math.hypot(ox, oy);
+    if (m > 0.975) { ox *= 0.975 / m; oy *= 0.975 / m; }
+    return [ox, oy];
+  }
+
+  function geodesicPathD(x1, y1, x2, y2) {
+    const cross = x1 * y2 - y1 * x2;
+    const dSeg = Math.hypot(x2 - x1, y2 - y1);
+    if (Math.abs(cross) < 1e-3 || dSeg < 0.03) {
+      return `M ${x1.toFixed(4)} ${y1.toFixed(4)} L ${x2.toFixed(4)} ${y2.toFixed(4)}`;
+    }
+    const r1sq = 0.5 * (x1 * x1 + y1 * y1 + 1.0);
+    const r2sq = 0.5 * (x2 * x2 + y2 * y2 + 1.0);
+    const cx = (r1sq * y2 - r2sq * y1) / cross;
+    const cy = (x1 * r2sq - x2 * r1sq) / cross;
+    const R = Math.sqrt(Math.max(0.0001, cx * cx + cy * cy - 1.0));
+    if (!isFinite(R) || R > 25.0) {
+      return `M ${x1.toFixed(4)} ${y1.toFixed(4)} L ${x2.toFixed(4)} ${y2.toFixed(4)}`;
+    }
+    const sweep = cross > 0 ? 0 : 1;
+    return `M ${x1.toFixed(4)} ${y1.toFixed(4)} A ${R.toFixed(4)} ${R.toFixed(4)} 0 0 ${sweep} ${x2.toFixed(4)} ${y2.toFixed(4)}`;
+  }
+
+  function clientParsePack(focusId, queryStr, budgetTok) {
+    const t0 = performance.now();
+    const fq = byId[focusId] || baseNodes[0];
+    if (!fq) return curPack;
+    const rq = Number(fq.r_eff || 0), thq = Number(fq.theta || 0);
+    const qToks = String(queryStr || '').toLowerCase().match(/[a-z0-9]{3,}/g) || [];
+
+    function hypDist(r1, t1, r2, t2) {
+      let ang = Math.abs(t1 - t2) % (2 * Math.PI);
+      if (ang > Math.PI) ang = 2 * Math.PI - ang;
+      const sd = Math.sinh(Math.abs(r1 - r2) / 2);
+      const sa = Math.sqrt(Math.max(0, Math.sinh(r1) * Math.sinh(r2))) * Math.abs(Math.sin(ang / 2));
+      return 2 * Math.asinh(Math.hypot(sd, sa));
+    }
+
+    function ancestors(id) {
+      const out = [];
+      let cur = byId[id];
+      const seen = new Set();
+      while (cur && !seen.has(cur.id)) {
+        seen.add(cur.id);
+        out.push(cur);
+        cur = cur.parent_id ? byId[cur.parent_id] : null;
+      }
+      return out;
+    }
+
+    const sel = {};
+    let used = 0;
+    ancestors(fq.id).reverse().forEach(a => {
+      const cs = Number(a.summary_tokens || 16);
+      if (used + cs <= budgetTok) { sel[a.id] = 1; used += cs; }
+    });
+
+    const items = [];
+    const cands = [];
+    baseNodes.forEach(nd => {
+      if (nd.superseded) return;
+      const imp = Number(nd.importance || 0.5);
+      if (imp < 0.20 && !sel[nd.id]) return;
+      const dh = hypDist(rq, thq, Number(nd.r_eff || 0), Number(nd.theta || 0));
+      let qb = 1.0;
+      if (qToks.length) {
+        const hay = ((nd.title || '') + ' ' + (nd.summary || '')).toLowerCase();
+        qToks.forEach(t => { if (hay.includes(t)) qb += 0.65; });
+      }
+      const u = Math.pow(imp, 2.5) * Number(nd.survival || imp) * Math.exp(-0.28 * dh) * qb;
+      cands.push([u, nd]);
+      const cs = Math.max(8, Number(nd.summary_tokens || 16));
+      const cf = Math.max(cs, Number(nd.full_tokens || cs));
+      if (!sel[nd.id]) items.push([(0.55 * u) / cs, nd, 1, cs]);
+      if (cf > cs) items.push([(0.45 * u) / (cf - cs), nd, 2, cf - cs]);
+      else if (sel[nd.id]) sel[nd.id] = 2;
+    });
+    items.sort((a, b) => b[0] - a[0]);
+    items.forEach(([_, nd, tm, dt]) => {
+      if (tm === 1 && !sel[nd.id]) {
+        const miss = ancestors(nd.id).filter(a => !sel[a.id]);
+        const ac = miss.reduce((s, a) => s + Number(a.summary_tokens || 16), 0);
+        if (used + ac + dt <= budgetTok) {
+          miss.reverse().forEach(a => { sel[a.id] = 1; });
+          sel[nd.id] = Number(nd.full_tokens || dt) > dt ? 1 : 2;
+          used += ac + dt;
+        }
+      } else if (tm === 2 && sel[nd.id] === 1) {
+        if (used + dt <= budgetTok) { sel[nd.id] = 2; used += dt; }
+      }
+    });
+
+    cands.sort((a, b) => b[0] - a[0]);
+    const bcs = [];
+    for (const [_, nd] of cands) {
+      if (!sel[nd.id]) {
+        bcs.push({ id: nd.id, title: nd.title || nd.id, source_ref: nd.source_ref || '' });
+        if (bcs.length >= 8) break;
+      }
+    }
+    const selectedNodes = Object.keys(sel).map(k => {
+      const nd = byId[k];
+      const m = sel[k];
+      return {
+        id: nd.id, kind: nd.kind, title: nd.title,
+        resolution: m === 2 ? 'verbatim' : 'summary',
+        tokens: m === 2 ? nd.full_tokens : nd.summary_tokens,
+        r_eff: nd.r_eff, text: m === 2 ? nd.full_text : nd.summary,
+        source_ref: nd.source_ref || ''
+      };
+    });
+    const rawTot = Math.max(1, Number(MAP.corpus_raw_tokens || 1));
+    return {
+      focus_node_id: fq.id, focus_title: fq.title,
+      budget_tokens: budgetTok, used_tokens: used, corpus_raw_tokens: rawTot,
+      compression_ratio: (rawTot / Math.max(1, used)).toFixed(1),
+      parse_ms: (performance.now() - t0).toFixed(2),
+      selected_nodes: selectedNodes, horizon_breadcrumbs: bcs
+    };
+  }
+
+  function renderDisk() {
+    const svg = document.getElementById('poincareDiskSvg');
+    const parts = [];
+    parts.push('<circle cx="0" cy="0" r="1.0" fill="none" stroke="#334155" stroke-width="0.008"/>');
+    [0.32, 0.62, 0.84, 0.93].forEach((r, idx) => {
+      const dash = idx === 3 ? '0.02,0.02' : '0.012,0.016';
+      const col = idx === 3 ? 'rgba(251,113,133,0.28)' : 'rgba(56,189,248,0.16)';
+      parts.push(`<circle cx="0" cy="0" r="${r}" fill="none" stroke="${col}" stroke-width="0.004" stroke-dasharray="${dash}"/>`);
+    });
+
+    const selSet = new Set((curPack.selected_nodes || []).map(x => String(x.id)));
+    baseNodes.forEach(nd => {
+      if (!nd.parent_id || !dispCoords[nd.parent_id] || !dispCoords[nd.id]) return;
+      const [x1, y1] = dispCoords[nd.parent_id];
+      const [x2, y2] = dispCoords[nd.id];
+      const inPack = selSet.has(String(nd.id)) && selSet.has(String(nd.parent_id));
+      const stroke = nd.superseded ? 'rgba(100,116,139,0.22)' : (inPack ? 'rgba(56,189,248,0.58)' : 'rgba(148,163,184,0.20)');
+      const sw = inPack ? '0.0065' : '0.0032';
+      parts.push(`<path d="${geodesicPathD(x1, y1, x2, y2)}" fill="none" stroke="${stroke}" stroke-width="${sw}"/>`);
+    });
+
+    const sorted = baseNodes.slice().sort((a, b) => {
+      const da = Math.hypot(...(dispCoords[a.id] || [0, 0]));
+      const db = Math.hypot(...(dispCoords[b.id] || [0, 0]));
+      return db - da;
+    });
+
+    sorted.forEach(nd => {
+      const [x, y] = dispCoords[nd.id] || [0, 0];
+      const r2 = Math.min(0.96, x * x + y * y);
+      const conformal = Math.pow(1.0 - r2, 0.52);
+      const baseR = 0.016 + 0.030 * Number(nd.importance || 0.5);
+      const rad = Math.max(0.009, baseR * conformal);
+      const col = nd.superseded ? COLORS.boneyard : (COLORS[nd.kind] || '#38bdf8');
+      const isSel = String(nd.id) === String(selectedId);
+      const visMatch = matchesFilter(nd) || isSel;
+      const fillOp = !visMatch ? '0.12' : (nd.superseded ? '0.52' : '0.92');
+      const ring = isSel ? `<circle cx="${x.toFixed(4)}" cy="${y.toFixed(4)}" r="${(rad + 0.016).toFixed(4)}" fill="none" stroke="#f8fafc" stroke-width="0.006"/>` : '';
+      const escTitle = String(nd.title || nd.id).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+      let lbl = '';
+      if (visMatch && (Math.sqrt(r2) < 0.56 || isSel)) {
+        const shortLbl = escTitle.length > 28 ? escTitle.slice(0, 27) + '…' : escTitle;
+        lbl = `<text x="${x.toFixed(4)}" y="${(y - rad - 0.012).toFixed(4)}" text-anchor="middle" fill="#e2e8f0" font-size="0.036" font-weight="600" pointer-events="none">${shortLbl}</text>`;
+      }
+      parts.push(
+        `<g class="pm-node" data-node-id="${nd.id}" style="cursor:pointer">` +
+          ring +
+          `<circle cx="${x.toFixed(4)}" cy="${y.toFixed(4)}" r="${rad.toFixed(4)}" fill="${col}" fill-opacity="${fillOp}" stroke="#0f172a" stroke-width="0.004">` +
+            `<title>${escTitle} (r_eff=${nd.r_eff}, I=${nd.importance})</title>` +
+          `</circle>` +
+          lbl +
+        `</g>`
+      );
+    });
+    svg.innerHTML = parts.join('');
+  }
+
+  function renderInspector() {
+    const nd = byId[selectedId] || baseNodes[0];
+    if (!nd) return;
+    document.getElementById('pmFocusBadge').textContent = 'Focus: ' + String(nd.title || nd.id).slice(0, 42);
+    document.getElementById('pmSelKind').textContent = (nd.superseded ? 'boneyard / superseded · ' : '') + (nd.kind || 'node');
+    document.getElementById('pmSelTitle').textContent = nd.title || nd.id;
+    document.getElementById('pmSelReff').textContent = Number(nd.r_eff || 0).toFixed(3);
+    document.getElementById('pmSelImp').textContent = Number(nd.importance || 0).toFixed(2);
+    document.getElementById('pmSelSurv').textContent = Number(nd.survival || 0).toFixed(3);
+    document.getElementById('pmSelTok').textContent = `${nd.summary_tokens || 0} / ${nd.full_tokens || 0}`;
+    document.getElementById('pmSelBody').textContent = nd.full_text || nd.summary || '';
+
+    const linksBox = document.getElementById('pmSelLinks');
+    const links = [];
+    if (nd.poincare_href) {
+      links.push(`<a class="nav-btn" href="${withTokenHref(nd.poincare_href)}">&#129517; Open Cockpit Map</a>`);
+    }
+    if (nd.href) {
+      links.push(`<a class="nav-btn" href="${withTokenHref(nd.href)}" target="_blank" rel="noopener">&#8599; Open Surface</a>`);
+    }
+    linksBox.innerHTML = links.join('');
+
+    document.getElementById('pmPackStats').textContent =
+      `Used ${Number(curPack.used_tokens || 0).toLocaleString()} / ${Number(curPack.budget_tokens || 16384).toLocaleString()} tok · ${curPack.compression_ratio}x compression · parsed in ${curPack.parse_ms} ms (${(curPack.selected_nodes || []).length} nodes)`;
+
+    const packList = document.getElementById('pmPackList');
+    packList.innerHTML = (curPack.selected_nodes || []).map(it => {
+      const pillCol = it.resolution === 'verbatim' ? 'emerald' : '';
+      const escT = String(it.title || it.id).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+      const escB = String(it.text || '').slice(0, 170).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+      return (
+        `<div class="pack-row" data-zoom-id="${it.id}">` +
+          `<div class="pack-row-top">` +
+            `<b style="font-size:12.5px;color:#f1f5f9">${escT}</b>` +
+            `<span class="badge ${pillCol}">${String(it.resolution || '').toUpperCase()} &middot; ${it.tokens} tok</span>` +
+          `</div>` +
+          `<div style="font-size:11.5px;color:#94a3b8">${escB}</div>` +
+        `</div>`
+      );
+    }).join('');
+
+    const bcHost = document.getElementById('pmBreadcrumbs');
+    const bcs = curPack.horizon_breadcrumbs || [];
+    bcHost.innerHTML = bcs.length
+      ? bcs.map(b => `<button type="button" class="bc-chip" data-zoom-id="${b.id}">&#128301; ${String(b.title || b.id).slice(0, 44).replace(/&/g, '&amp;').replace(/</g, '&lt;')}</button>`).join('')
+      : '<span style="font-size:11.5px;color:#64748b">Entire active campaign fits inside current token budget.</span>';
+  }
+
+  function animateMobiusFocus(targetId) {
+    const target = byId[targetId];
+    if (!target) return;
+    selectedId = String(targetId);
+    const [fx, fy] = dispCoords[targetId] || [0, 0];
+    const startCoords = Object.assign({}, dispCoords);
+    const endCoords = {};
+    baseNodes.forEach(nd => {
+      const [sx, sy] = startCoords[nd.id] || [0, 0];
+      endCoords[nd.id] = mobiusTranslate(sx, sy, fx, fy);
+    });
+    const budget = parseInt(document.getElementById('pmBudgetSelect').value || '16384', 10);
+    const q = document.getElementById('pmQueryInput').value || '';
+    curPack = clientParsePack(selectedId, q, budget);
+
+    const dur = 240;
+    const tStart = performance.now();
+    function frame(now) {
+      const t = Math.min(1, (now - tStart) / dur);
+      const ease = 1 - Math.pow(1 - t, 3);
+      baseNodes.forEach(nd => {
+        const [sx, sy] = startCoords[nd.id];
+        const [ex, ey] = endCoords[nd.id];
+        dispCoords[nd.id] = [sx + (ex - sx) * ease, sy + (ey - sy) * ease];
+      });
+      renderDisk();
+      if (t < 1) requestAnimationFrame(frame);
+      else renderInspector();
+    }
+    requestAnimationFrame(frame);
+  }
+
+  async function boot() {
+    const q = new URLSearchParams(location.search || '');
+    const apiQ = new URLSearchParams();
+    apiQ.set('view', 'poincare');
+    if (q.get('pid')) apiQ.set('pid', q.get('pid'));
+    if (q.get('dir')) apiQ.set('dir', q.get('dir'));
+    if (q.get('mode')) apiQ.set('mode', q.get('mode'));
+    const tok = getAuthToken();
+    const headers = {};
+    if (tok) {
+      headers['Authorization'] = 'Bearer ' + tok;
+      headers['X-Anchor-Token'] = tok;
+    }
+    const resp = await fetch('/api/steward/comms?' + apiQ.toString(), { headers, credentials: 'same-origin' });
+    const data = await resp.json();
+    if (!data || !data.ok || !data.map) {
+      document.getElementById('pmPageTitle').textContent = 'Poincaré State Map Error';
+      document.getElementById('pmSelTitle').textContent = (data && data.error) || 'Failed to load Poincaré state map';
+      return;
+    }
+    MAP = data.map;
+    curPack = data.window;
+    baseNodes = (MAP.nodes || []).map(n => Object.assign({}, n));
+    byId = {};
+    dispCoords = {};
+    baseNodes.forEach(n => {
+      byId[String(n.id)] = n;
+      dispCoords[n.id] = [Number(n.disk_x || 0), Number(n.disk_y || 0)];
+    });
+    selectedId = String(MAP.default_focus_id || (baseNodes[0] && baseNodes[0].id) || '');
+
+    document.getElementById('pmPageTitle').textContent = '🧭 ' + (MAP.title || 'Poincaré State Map');
+    document.getElementById('pmStatsBadge').textContent =
+      `${baseNodes.length} nodes · ${Number(MAP.corpus_raw_tokens || 0).toLocaleString()} raw tok · build ${MAP.build_ms || 0}ms`;
+
+    const selEl = document.getElementById('pmScopeSelect');
+    const opts = ['<option value="' + withTokenHref('/steward-static/poincare.html?mode=fleet') + '">🌌 Fleet Atlas (Star Chart + Cave + All Cockpits)</option>'];
+    const curDir = String(MAP.effort_dir || '');
+    (data.cockpit_options || []).forEach(opt => {
+      const isCur = curDir && opt.effort_dir === curDir ? ' selected' : '';
+      const escLbl = String(opt.label || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+      opts.push(`<option value="${withTokenHref(opt.href)}"${isCur}>🛸 ${escLbl}</option>`);
+    });
+    selEl.innerHTML = opts.join('');
+
+    renderDisk();
+    renderInspector();
+  }
+
+  document.getElementById('poincareDiskSvg').addEventListener('click', e => {
+    const g = e.target.closest('[data-node-id]');
+    if (g) animateMobiusFocus(g.getAttribute('data-node-id'));
+  });
+  document.addEventListener('click', e => {
+    const z = e.target.closest('[data-zoom-id]');
+    if (z) animateMobiusFocus(z.getAttribute('data-zoom-id'));
+  });
+  document.getElementById('pmResetOriginBtn').addEventListener('click', () => {
+    baseNodes.forEach(n => { dispCoords[n.id] = [Number(n.disk_x || 0), Number(n.disk_y || 0)]; });
+    selectedId = String((baseNodes[0] && baseNodes[0].id) || '');
+    const budget = parseInt(document.getElementById('pmBudgetSelect').value || '16384', 10);
+    curPack = clientParsePack(selectedId, document.getElementById('pmQueryInput').value || '', budget);
+    renderDisk();
+    renderInspector();
+  });
+  document.getElementById('pmBudgetSelect').addEventListener('change', () => {
+    const budget = parseInt(document.getElementById('pmBudgetSelect').value || '16384', 10);
+    curPack = clientParsePack(selectedId, document.getElementById('pmQueryInput').value || '', budget);
+    renderDisk();
+    renderInspector();
+  });
+  document.getElementById('pmQueryInput').addEventListener('input', e => {
+    const budget = parseInt(document.getElementById('pmBudgetSelect').value || '16384', 10);
+    curPack = clientParsePack(selectedId, e.target.value || '', budget);
+    renderDisk();
+    renderInspector();
+  });
+  document.getElementById('pmScopeSelect').addEventListener('change', e => {
+    if (e.target.value) window.location.href = e.target.value;
+  });
+  document.querySelectorAll('[data-kind-filter]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      activeFilter = btn.getAttribute('data-kind-filter') || 'all';
+      document.querySelectorAll('[data-kind-filter]').forEach(b => b.classList.toggle('primary', b === btn));
+      renderDisk();
+    });
+  });
+  if (new URLSearchParams(location.search || '').get('from') === 'cockpit' && window.parent && window.parent !== window) {
+    const retBtn = document.getElementById('pmReturnCockpitBtn');
+    if (retBtn) {
+      retBtn.style.display = 'inline-flex';
+      retBtn.addEventListener('click', () => {
+        try { window.parent.postMessage({ type: 'poincare-return-cockpit' }, location.origin); } catch (_) {}
+      });
+    }
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>

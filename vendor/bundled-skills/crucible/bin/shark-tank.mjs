@@ -93,7 +93,7 @@ export const SHARK_SCHEMA = {
           claim_id: { type: ['string', 'null'] },
           section: { type: 'string' },
           tag: { enum: ['refinement', 'out-of-scope'] },
-          traces_to_north_star: { enum: ['yes', 'no'] },
+          traces_to_north_star: { type: ['boolean', 'string'] },
           criterion: { type: ['string', 'null'] },
           message: { type: 'string' },
         },
@@ -157,6 +157,20 @@ export function normalizeFindingId(f) {
 const SEV_RANK = { BLOCKER: 4, MAJOR: 3, MINOR: 2, NIT: 1 };
 const sevRank = (s) => SEV_RANK[String(s || '').toUpperCase()] || 0;
 
+/**
+ * Accept boolean `true`, `'yes'`, or any non-empty North-Star trace explanation string
+ * (excluding explicit negative tokens `'false'`, `'no'`, `'0'`, `'none'`, `'n/a'`).
+ */
+export function tracesToNorthStar(value) {
+  if (value === true) return true;
+  if (value === false || value == null) return false;
+  if (typeof value === 'string') {
+    const s = value.trim();
+    return s.length > 0 && !/^(false|no|0|none|n\/a)$/i.test(s);
+  }
+  return false;
+}
+
 // ---------------------------------------------------------------------------
 // Tally: normalize → reuse Foreman agreement count → inclusion-test demote →
 // ≥2-agree BLOCKER → dry-round.
@@ -194,7 +208,7 @@ export function tallyFindings(reviews, { priorBlockerIds = [] } = {}) {
         roles: new Set(), tags: new Set(), criteria: new Set(),
         messages: [], section: f.section || f.file || null,
       };
-      if (String(f.traces_to_north_star).toLowerCase() === 'yes') e.anyTraces = true;
+      if (tracesToNorthStar(f.traces_to_north_star)) e.anyTraces = true;
       if (sevRank(f.severity) > sevRank(e.severity)) e.severity = String(f.severity).toUpperCase();
       if (rv.reviewer != null) e.roles.add(rv.reviewer);
       if (f.tag) e.tags.add(f.tag);

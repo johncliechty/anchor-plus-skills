@@ -9,7 +9,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync as nodeSpawnSync } from 'node:child_process';
 import { reconcileCodexCatalog } from './codex-catalog.mjs';
 
 export const DEFAULT_POLICY = Object.freeze({
@@ -114,7 +114,8 @@ function validatePrefs(raw, source) {
 }
 
 function profileDirectory(env) {
-  return env.USERPROFILE || env.HOME || os.homedir();
+  if (env && env !== process.env && !env.USERPROFILE && !env.HOME) return '';
+  return env?.USERPROFILE || env?.HOME || os.homedir();
 }
 
 function readJson(filename, family, errorCode = 'model_policy_unavailable') {
@@ -146,10 +147,12 @@ function present(filename) {
  * Anchor itself has a stricter first-run setup gate before launching a seat.
  */
 export function loadPolicyPrefs(env = process.env) {
-  const mirror = path.join(profileDirectory(env), '.anchor', 'model_prefs.json');
-  const primary = env.ANCHOR_DATA_DIR ? path.join(env.ANCHOR_DATA_DIR, 'settings.json') : null;
+  const profile = profileDirectory(env);
+  const mirror = profile ? path.join(profile, '.anchor', 'model_prefs.json') : null;
+  const settingsRoot = env.ANCHOR_SETTINGS_DIR || env.ANCHOR_DATA_DIR;
+  const primary = settingsRoot ? path.join(settingsRoot, 'settings.json') : null;
   if (primary && present(primary)) return validatePrefs(readJson(primary, null, 'settings_invalid'), 'primary');
-  if (present(mirror)) return validatePrefs(readJson(mirror, null, 'settings_invalid'), 'mirror');
+  if (mirror && present(mirror)) return validatePrefs(readJson(mirror, null, 'settings_invalid'), 'mirror');
   return validatePrefs({
     coding_family: 'claude', review_family: 'claude', default_cli: 'claude',
     model_policy: DEFAULT_POLICY, settings_revision: 0,
@@ -390,6 +393,108 @@ function semver(value) {
   return typeof value === 'string' ? value.match(/\b\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?(?:\+[A-Za-z0-9.-]+)?\b/)?.[0] : undefined;
 }
 
+/**
+ * Deterministic subscription CLI authentication preflight across all 4 families
+ * (`claude auth status --json`, `codex login status`, `agy models`, `grok models`).
+ */
+export function preflightSubscriptionCli(family, {
+  env = process.env,
+  executable = executableFor(family, env),
+  spawnSyncImpl = nodeSpawnSync,
+} = {}) {
+  familyName(family);
+  if (!executable) {
+    return {
+      ok: false, family, status: 'cli_unavailable', login_required: false,
+      subscription_auth: null, replay_safe: true,
+      error: `${family} native subscription CLI is not available on PATH`,
+    };
+  }
+  const args = family === 'claude' ? ['auth', 'status', '--json']
+    : family === 'chatgpt' ? ['login', 'status']
+      : ['models'];
+  const run = spawnSyncImpl(executable, args, {
+    env: Object.assign({}, policyEnvironment(env), { NO_COLOR: '1', CI: '1' }),
+    shell: false, windowsHide: true, encoding: 'utf8', timeout: 15_000,
+  });
+  const detail = `${run?.error?.message || ''}\n${run?.stdout || ''}\n${run?.stderr || ''}`.trim();
+  if (run?.error?.code === 'ETIMEDOUT') {
+    return {
+      ok: false, family, status: 'preflight_timeout', login_required: false,
+      subscription_auth: null, replay_safe: true,
+      error: `${family} auth preflight timed out`.slice(0, 300),
+    };
+  }
+  if (run?.error || run?.status == null) {
+    return {
+      ok: false, family, status: 'spawn_error', login_required: false,
+      subscription_auth: null, replay_safe: true,
+      error: `${family} auth preflight could not start: ${detail}`.slice(0, 300),
+    };
+  }
+  if (family === 'claude') {
+    let parsed = null;
+    try { parsed = JSON.parse(String(run.stdout || '').trim()); } catch { parsed = null; }
+    if (parsed && typeof parsed === 'object') {
+      if (parsed.loggedIn === true) {
+        return { ok: true, family, status: 'ready', login_required: false, subscription_auth: true };
+      }
+      return {
+        ok: false, family, status: 'auth_expired', login_required: true,
+        subscription_auth: false, replay_safe: true,
+        error: String(parsed.error || detail || 'Claude CLI loggedIn:false').slice(0, 300),
+      };
+    }
+    if (run.status === 0 && /\blogged\s*in\b/i.test(detail) && !/\bnot\s+logged\s+in\b/i.test(detail)) {
+      return { ok: true, family, status: 'ready', login_required: false, subscription_auth: true };
+    }
+    return {
+      ok: false, family, status: 'auth_expired', login_required: true,
+      subscription_auth: false, replay_safe: true,
+      error: detail.slice(0, 300) || 'Claude CLI authentication required',
+    };
+  }
+  if (family === 'chatgpt') {
+    if (run.status === 0 && /logged in using chatgpt/i.test(detail)) {
+      return { ok: true, family, status: 'ready', login_required: false, subscription_auth: true };
+    }
+    return {
+      ok: false, family, status: 'auth_expired', login_required: true,
+      subscription_auth: false, replay_safe: true,
+      error: detail.slice(0, 300) || 'Codex CLI is not logged in using ChatGPT',
+    };
+  }
+  const authFailed = /not logged in|login required|authentication|please (?:log|sign) in|oauth.*expired|session.*expired|unauthenticated|unauthorized/i.test(detail);
+  if (run.status !== 0 || authFailed || (family === 'gemini' && !/\bgemini-/i.test(String(run.stdout || '')))) {
+    return {
+      ok: false, family, status: 'auth_expired', login_required: true,
+      subscription_auth: false, replay_safe: true,
+      error: detail.slice(0, 300) || `${family} CLI authentication required`,
+    };
+  }
+  return { ok: true, family, status: 'ready', login_required: false, subscription_auth: true };
+}
+
+export function preflightAllSubscriptionClis(
+  families = ['claude', 'chatgpt', 'gemini', 'grok'],
+  opts = {},
+) {
+  const unique = [...new Set(families)];
+  const results = {};
+  const failed = [];
+  for (const fam of unique) {
+    const customExec = opts.executables?.[fam]
+      ?? (typeof opts.executableForImpl === 'function' ? opts.executableForImpl(fam, opts.env) : undefined);
+    const res = preflightSubscriptionCli(fam, {
+      ...opts,
+      ...(customExec !== undefined ? { executable: customExec } : {}),
+    });
+    results[fam] = res;
+    if (!res.ok) failed.push(res);
+  }
+  return { ok: failed.length === 0, results, byFamily: results, failed };
+}
+
 export function discoverModelCapabilities(family, { env = process.env, executable = executableFor(family, env) } = {}) {
   familyName(family);
   if (!executable) fail(family, 'A native subscription CLI is not available on PATH.', 'cli_unavailable');
@@ -407,7 +512,15 @@ export function discoverModelCapabilities(family, { env = process.env, executabl
     raw = reconcileCodexCatalog(raw, bundled);
     return normalizeCatalog(family, raw);
   }
-  if (family === 'claude') return normalizeCatalog(family, probe(family, executable, ['--help'], env));
+  if (family === 'claude') {
+    if (env.TRIO_SKIP_AUTH_PREFLIGHT !== '1') {
+      const auth = preflightSubscriptionCli('claude', { env, executable });
+      if (!auth.ok && (auth.status === 'auth_expired' || auth.login_required)) {
+        fail('claude', 'Claude subscription CLI is not authenticated (run `claude auth login`).', 'auth_expired');
+      }
+    }
+    return normalizeCatalog(family, probe(family, executable, ['--help'], env));
+  }
   const version = semver(probe(family, executable, ['--version'], env));
   if (!version) fail(family, 'The installed Grok version could not be verified.');
   probe(family, executable, ['models'], env);

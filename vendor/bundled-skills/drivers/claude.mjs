@@ -18,6 +18,7 @@
 // spawns a fresh sub-agent process, so `freshContext` is satisfied natively
 // (subAgentCapable: true) and the flag is accepted as a no-op for this backend.
 
+import { spawnSync } from 'node:child_process';
 import { HaltError } from '../foreman/bin/foreman-lib.mjs';
 import { attestStamp } from './attest.mjs';
 import { isVerificationRole, normalizeRole } from './roles.mjs';
@@ -82,6 +83,7 @@ export function extractJson(text) {
  */
 const CLAUDE_ENTITLEMENT_FALLBACK_LADDER = Object.freeze({
   best: Object.freeze(['opus', 'sonnet']),
+  'claude-fable-5-2': Object.freeze(['claude-opus-5-5', 'opus', 'sonnet']),
   opus: Object.freeze(['sonnet']),
 });
 
@@ -188,9 +190,9 @@ export function parseClaudeFrames(stdout, {
  * without unpinning machine-wide env. Update ids when a new frontier ships.
  */
 const TIER_CLAUDE_MODELS = {
-  heavy: 'best',
-  // one notch below frontier (2026-07-27): Opus 5 — was claude-opus-4-8 until Opus 5 shipped
-  standard: 'best',
+  heavy: 'claude-fable-5-2',
+  // one notch below frontier (2026-11-19): Opus 5.5 — below Fable 5.2
+  standard: 'claude-opus-5-5',
 };
 
 /** The Claude model ONE NOTCH BELOW frontier (the `standard` tier) — the failover target when a
@@ -207,6 +209,74 @@ export function resolveClaudeModel({ model, role, label, env = process.env } = {
   return (roleKey && env[roleKey]) || env.CLAUDE_MODEL || null;
 }
 
+const CLAUDE_PREFLIGHT_CACHE = new Map();
+const CLAUDE_PREFLIGHT_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * Deterministic `claude auth status --json` preflight (`loggedIn === true`).
+ * Surfaces an immediate typed `auth_expired` / `login_required` status before
+ * Wave 1 or a live turn spawns, authorizing clean failover (`replay_safe: true`).
+ */
+export function preflightClaudeSubscription({
+  cmd = process.platform === 'win32' ? 'claude.exe' : 'claude',
+  env = process.env,
+  spawnSyncImpl = spawnSync,
+  cache = CLAUDE_PREFLIGHT_CACHE,
+  now = Date.now,
+} = {}) {
+  const key = `${cmd}\0${env.CLAUDE_CONFIG_DIR || env.USERPROFILE || env.HOME || ''}`;
+  const nowMs = Number(now());
+  const cached = cache?.get(key);
+  if (cached && Number.isFinite(nowMs) && nowMs - cached.checked_at_ms < CLAUDE_PREFLIGHT_TTL_MS) {
+    return cached.result;
+  }
+  if (cached) cache.delete(key);
+  const childEnv = policyEnvironment(env);
+  const probe = spawnSyncImpl(cmd, ['auth', 'status', '--json'], {
+    env: childEnv, shell: false, windowsHide: true, encoding: 'utf8', timeout: 15_000,
+  });
+  const detail = `${probe?.error?.message || ''}\n${probe?.stdout || ''}\n${probe?.stderr || ''}`.trim();
+  if (probe?.error?.code === 'ETIMEDOUT' || /timed out|timeout/i.test(String(probe?.error?.message || ''))) {
+    return {
+      ok: false, status: 'preflight_timeout', subscription_auth: null, replay_safe: true,
+      error: `Claude auth status probe timed out${detail ? `: ${detail}` : ''}`.slice(0, 500),
+    };
+  }
+  if (probe?.error || probe?.status == null) {
+    return {
+      ok: false, status: 'spawn_error', subscription_auth: null, replay_safe: true,
+      error: `Claude auth status probe could not start${detail ? `: ${detail}` : ''}`.slice(0, 500),
+    };
+  }
+  let parsed = null;
+  try { parsed = JSON.parse(String(probe.stdout || '').trim()); } catch { parsed = null; }
+  if (parsed && typeof parsed === 'object') {
+    if (parsed.loggedIn === true) {
+      const result = {
+        ok: true, status: 'ready', subscription_auth: true,
+        auth_method: parsed.authMethod ?? null,
+      };
+      cache?.set(key, { checked_at_ms: nowMs, result });
+      return result;
+    }
+    return {
+      ok: false, status: 'auth_expired', login_required: true,
+      subscription_auth: false, replay_safe: true,
+      error: (parsed.error || detail || 'Claude CLI is not logged in (loggedIn:false)').slice(0, 300),
+    };
+  }
+  if (probe.status === 0 && /\blogged\s*in\b/i.test(detail) && !/\bnot\s+logged\s+in\b/i.test(detail)) {
+    const result = { ok: true, status: 'ready', subscription_auth: true };
+    cache?.set(key, { checked_at_ms: nowMs, result });
+    return result;
+  }
+  return {
+    ok: false, status: 'auth_expired', login_required: true,
+    subscription_auth: false, replay_safe: true,
+    error: detail.slice(0, 300) || 'Claude CLI authentication required (run `claude auth login`)',
+  };
+}
+
 /**
  * Live transport: spawn `claude -p` and resolve `{ text, rec }` once the stream's
  * result envelope arrives. ENV-GATED — throws unless CRUCIBLE_AGENT_LIVE=1 so it
@@ -219,11 +289,13 @@ export function defaultRunClaude(fullPrompt, label, {
   model = null,
   role = null,
   sandbox = null,
+  repairOnly = false,
   timeoutMs = (Number(env.CLAUDE_CALL_TIMEOUT_MS) || 20 * 60000),
   signal = null,
   log = () => {},
   processRunner = runCloseBoundProcess,
-  policyResolver = resolveModelPolicy,
+  preflightImpl = undefined,
+  policyResolver = undefined,
   spawnImpl,
   spawnSyncImpl,
   platform = process.platform,
@@ -236,19 +308,73 @@ export function defaultRunClaude(fullPrompt, label, {
     );
   }
   const baseArgs = [...BASE_ARGS, '--allowedTools', allowedTools];
-  if (sandbox === 'read-only' || isVerificationRole({ role, label })) {
+  if (repairOnly || allowedTools === '') {
+    const modeIndex = baseArgs.indexOf('--permission-mode');
+    if (modeIndex !== -1) baseArgs[modeIndex + 1] = 'plan';
+    const toolsIndex = baseArgs.indexOf('--allowedTools');
+    if (toolsIndex !== -1) baseArgs[toolsIndex + 1] = '';
+  } else if (sandbox === 'read-only' || isVerificationRole({ role, label })) {
     const modeIndex = baseArgs.indexOf('--permission-mode');
     if (modeIndex !== -1) baseArgs[modeIndex + 1] = 'plan';
     const toolsIndex = baseArgs.indexOf('--allowedTools');
     if (toolsIndex !== -1) baseArgs[toolsIndex + 1] = 'Read,Glob,Grep';
   }
-  const selection = policyResolver('claude', { env });
+  let selection;
+  if (typeof policyResolver === 'function') {
+    selection = policyResolver('claude', { env });
+  } else if (processRunner === runCloseBoundProcess) {
+    selection = resolveModelPolicy('claude', { env });
+  } else {
+    selection = {
+      family: 'claude',
+      model: resolveClaudeModel({ model, role, label, env }),
+      effort: null,
+    };
+  }
   const mdl = selection.model;
   const cmdName = platform === 'win32' ? 'claude.exe' : 'claude';
   const childEnv = policyEnvironment(env);
 
+  if (signal?.aborted) {
+    return Promise.resolve({
+      text: '',
+      rec: {
+        label, cli_status: null, ok: false, status: 'aborted', aborted: true,
+        requested_model: mdl, model_served: null, model_family: null,
+        family_attested: false, model_attested: false, degraded: true,
+      },
+    });
+  }
+
+  if (typeof preflightImpl === 'function' || processRunner === runCloseBoundProcess) {
+    const preflightFn = typeof preflightImpl === 'function' ? preflightImpl : preflightClaudeSubscription;
+    const preflight = preflightFn({
+      cmd: cmdName, env, ...(spawnSyncImpl ? { spawnSyncImpl } : {}),
+    });
+    if (!preflight.ok) {
+      return Promise.resolve({
+        text: '',
+        rec: {
+          label, cli_status: null, ok: false,
+          status: preflight.status || 'auth_expired',
+          login_required: preflight.login_required === true,
+          error: preflight.error || 'Claude subscription authentication required',
+          requested_model: mdl, requested_effort: selection.effort ?? null,
+          model_served: null, model_family: null,
+          family_attested: false, model_attested: false, degraded: true,
+          subscription_cli: true, subscription_auth: preflight.subscription_auth ?? false,
+          timed_out: false, replay_safe: true,
+          replay_evidence: 'subscription_preflight_rejected_before_prompt_spawn',
+        },
+      });
+    }
+  }
+
   const invokeModel = (activeSelection) => {
-    const launchArgs = [...baseArgs, ...modelLaunchArgs(activeSelection)];
+    const modelArgs = activeSelection.effort
+      ? modelLaunchArgs(activeSelection)
+      : (activeSelection.model ? ['--model', activeSelection.model] : []);
+    const launchArgs = [...baseArgs, ...modelArgs];
     return processRunner({
       command: cmdName,
       args: launchArgs,

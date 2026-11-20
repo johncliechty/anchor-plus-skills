@@ -96,7 +96,7 @@ Emit the RAW draft per `runtime/RAW-DRAFT-CONTRACT.md` (no self-assigned tiers/s
 discussion:
 
 1. **The real path (stakes ≥ medium, any `-Heavy`, or on request) — LIVE cross-family grade:**
-   `node runtime/gandalf-run.mjs --live --input draft.json --output read.json [--budget N]`
+   `node runtime/gandalf-run.mjs --live --input draft.json --output read.json [--budget N] [--report-html report.html] [--report-md report.md] [--title "<title>"]`
    Fires independent refuters on the dashboard's `review_family` seat (never a hardwired family; agy only when
    that family is gemini) on every firing elevation (value_if_true ≥ HIGH / severity ≥ major), CONCURRENT under
    the host cap, mints claim-bound commissions, grades against the shared ledger — `cross_model:true` and
@@ -105,13 +105,16 @@ discussion:
    excess ships SPECULATIVE, each named in the dispatch log; re-run with `--budget N` to cover all. A live
    HALT's stderr names its ACTUAL cause — read it; "seat down" is one cause among several (0300 lesson).
 2. **Light regular-tier asks / review seat down — Tier-1 deterministic grade:**
-   `node runtime/gandalf-run.mjs --input draft.json --output read.json`
+   `node runtime/gandalf-run.mjs --input draft.json --output read.json [--report-html report.html] [--report-md report.md] [--title "<title>"]`
    Zero model calls; every elevation floors at SPECULATIVE with the "no independent refutation ran" stamp
    and `cross_model:false`. Honest and cheap — the stakes gate makes this the correct light path, not a tier-break.
 3. **Big codebase read — scaled analyze:**
-   `node runtime/gandalf-run.mjs --analyze --project <dir> --objective "<question>" [--output out.md]`
+   `node runtime/gandalf-run.mjs --analyze --project <dir> --objective "<question>" [--output out.json] [--report-html report.html] [--report-md report.md]`
    Context-size routed: small target → one frontier pass; large → scout → map (parallel) → reduce, honest
    degraded stamps throughout. Whole-repo fan-out stays behind `GANDALF_ALLOW_REPO_SCALE=1`.
+4. **Standalone executive report render (from any existing graded `read.json`):**
+   `node runtime/render-report.mjs --input read.json [--html report.html] [--md report.md] [--poincare-html report-poincare-map.html] [--title "<title>"] [--subject "<subject>"]`
+   Whenever `--report-html`/`--report-md` (on `gandalf-run.mjs`) or `--html`/`--md` (on `render-report.mjs`) runs, Gandalf automatically emits the companion **Interactive Gandalf Poincaré Map Supplement** (`<stem>-poincare-map.html`) right alongside the report and links directly to it so the reader can click any finding, elevation, premortem, or refuted hypothesis to Möbius-zoom the hyperbolic risk map.
 
 Every run auto-writes a training record to `journal/runs/` (engine-side; see AGENTS.md "Run capture") and a
 long run emits the LOCKED global status table every ~10 min without being asked.
@@ -232,6 +235,24 @@ future_state_condition + enabling_assumption (subject_cardinality 1)}, nitpicks[
 elevations[]{id, tier, value_if_true, rung, reasoning, verdict, what_would_refute_it, refutation_provenance},
 risk_labels[]{leg, tier, rung} (one per leg present — an anticipate leg requires ≥1 anticipate finding) }`. If
 any leg degraded, set top-level `degraded:true` and enumerate it (no silent degradation).
+
+## Executive Human-Facing Report Standard
+Human-facing Gandalf deliverables MUST lead with clean, jargon-free executive prose rendered deterministically
+from the graded `read.json` via `runtime/render-report.mjs` (`--report-html` / `--report-md` on `gandalf-run.mjs`,
+or standalone `node runtime/render-report.mjs --input read.json --html report.html --md report.md`):
+- **Deterministic & anti-laundering:** Zero post-grade LLM calls; never rewrite graded claims with an ungraded
+  model. Every `gandalf-advisor-1` JSON schema field remains 100% backward-compatible with historical runs.
+- **Honest human translation of earned stamps:** Translate `GROUNDED` (`cross_model:true`) → *"Cross-Family
+  Verified (Independent Refuter Could Not Falsify)"*, `PROMISING` → *"Single-Family Checked (Unverified Across
+  Families)"*, `SPECULATIVE` → *"Unverified Hypothesis (No Independent Refutation Ran)"*, and evidence rungs into
+  plain-English pills. Whenever `degraded:true` or `cross_model:false`, surface a prominent **Scope & Verification
+  Qualification** callout at the top.
+- **Visible adversarial rejections:** Render `kill_log` in the executive body under **Ideas Tested & Rejected by
+  Adversarial Review** with each concrete defeater that landed, so rejected ideas are never silent omissions.
+- **Machine tokens in the collapsed appendix only:** Write `verdict`, `reasoning`, and `what_would_refute_it` in
+  clear human language from the draft onward. Keep internal IDs (`d-1`, `e-2`), raw JSON schema keys, digests,
+  and commission hashes (`gcl1...`) in `read.json` and the collapsed `<details>` **Verification & Machine
+  Provenance Appendix** linked by numbered footnotes `[1..N]`.
 
 ## Boundary — composes, does NOT reimplement (machine-checked canaries)
 - **B1** Gandalf emits ZERO divergent/brainstorm "ideate" findings — generation of new ideas is **Jumper**, a

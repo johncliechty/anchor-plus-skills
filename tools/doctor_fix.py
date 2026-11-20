@@ -129,10 +129,18 @@ def ensure_cockpit_tools() -> dict:
 
 def repair_cockpits() -> list[dict]:
     from steward_cockpit import steward_campaign as sc
+    from steward_cockpit import steward_engine as se
+    import paths as _paths
     import rnd_registry as rnd
 
     ensure_cockpit_tools()
     repaired = []
+    try:
+        evict_res = se.reconcile_evicted_cockpit_sessions(_paths.data_dir() / "steward-cockpit-state.json")
+        if evict_res.get("repaired_count"):
+            repaired.append({"evicted_sessions_repaired": evict_res["repaired_count"], "sample": evict_res.get("repaired_keys", [])[:5]})
+    except Exception as exc:
+        repaired.append({"evicted_sessions_error": str(exc)})
     seen_dirs = set()
     try:
         projects = rnd.list_projects() or []

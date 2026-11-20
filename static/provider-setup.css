@@ -22,7 +22,19 @@
 .provider-rail-head{display:flex;align-items:center;gap:4px;padding:0 8px 12px}.provider-rail-brand{font-size:18px;font-weight:700;display:flex;align-items:center;gap:6px}.provider-rail-brand img{width:26px;height:26px}.provider-history{margin-top:0!important;font-size:10px}.provider-history summary{cursor:pointer;color:var(--ps-muted)}
 .provider-controls{margin-top:6px;padding:10px 14px;border-top:1px solid var(--ps-line);display:grid;gap:6px;font-size:11px;color:var(--text,var(--ps-text))}.provider-controls label{display:block;color:var(--ps-muted);font-size:10px}.provider-controls select{width:100%;padding:6px}.provider-controls button{padding:7px;font-size:11px}.provider-controls .provider-control-message{overflow-wrap:anywhere}
 .provider-capacity{flex:none;width:100%;margin:8px 0;background:var(--ps-panel);color:var(--ps-text);border:1px solid var(--ps-line);border-radius:9px;padding:10px 12px;text-align:left;font-size:12px;cursor:pointer}.provider-capacity strong,.provider-capacity span{display:block}.provider-capacity span{font-size:11px;color:var(--ps-muted)}.provider-capacity.near_limit{border-color:var(--ps-amber)}.provider-capacity.exhausted{border-color:var(--ps-red)}
-.provider-dialog{position:fixed;inset:0;margin:auto;border:1px solid var(--ps-line);padding:0;width:min(1360px,96vw);height:94dvh;max-width:96vw;max-height:94dvh;border-radius:12px;background:var(--ps-bg)}.provider-dialog::backdrop{background:#000a}.provider-dialog iframe{display:block;border:0;width:100%;height:100%}
+.provider-dialog{position:fixed;inset:0;margin:auto;border:1px solid var(--ps-line);padding:0;width:min(1360px,96vw);height:94dvh;max-width:96vw;max-height:94dvh;border-radius:12px;background:var(--ps-bg);overflow:hidden}.provider-dialog::backdrop{background:#000a}.provider-dialog iframe{display:block;border:0;width:100%;height:100%}
+.provider-dialog-close-x,.anchor-overlay-close-x{width:34px;height:32px;min-width:34px;min-height:32px;padding:0;border-radius:8px;border:1px solid rgba(255,255,255,0.22);background:rgba(15,20,30,0.92);color:#f8fafc;font-size:15px;font-weight:800;line-height:1;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;z-index:80;transition:background .15s,border-color .15s,color .15s}
+.provider-dialog-close-x{position:absolute;top:9px;right:12px;box-shadow:0 4px 14px rgba(0,0,0,0.55)}
+.provider-dialog-close-x:hover,.anchor-overlay-close-x:hover{background:#dc2626!important;border-color:#dc2626!important;color:#fff!important}
+body.is-embedded .setup-winctl [data-winctl="minimize"],body.is-embedded .setup-winctl [data-winctl="maximize"]{display:none!important}
+.logged-in-services-card{margin:12px 0 16px;padding:14px 16px;border-radius:11px;background:linear-gradient(180deg,rgba(21,27,38,0.98),rgba(14,18,26,0.98));border:1px solid rgba(79,209,165,0.38)}
+.lis-role-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:10px 0}
+.lis-role-box{padding:10px 12px;border-radius:8px;background:#0b0f16;border:1px solid var(--ps-line);display:grid;gap:4px}
+.lis-role-box.is-warn{border-color:rgba(237,193,122,0.55);background:rgba(237,193,122,0.06)}
+.lis-pills-wrap{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.lis-pill{display:inline-flex;align-items:center;gap:6px;padding:4px 9px;border-radius:999px;font-size:11.5px;border:1px solid var(--ps-line);background:#101520;color:var(--ps-text)}
+.lis-pill.ok{border-color:rgba(79,209,165,0.45);color:#a7f3d0;background:rgba(16,185,129,0.1)}
+.lis-pill.warn{border-color:rgba(237,193,122,0.5);color:#fde68a;background:rgba(245,158,11,0.12)}
 
 /* ── Wave 1, Wave 2 & Wave 3 Cave of Wonders Setup Layout ─────────────── */
 .provider-setup .setup-app-frame{display:grid;grid-template-columns:228px minmax(0,1fr);min-height:calc(100vh - 57px);max-width:100%}
@@ -162,9 +174,15 @@
 .cave-account-summary .ec-top{display:flex;align-items:center;gap:4px;min-width:0}
 .cave-account-summary .ec-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;background:#64748b}
 .cave-account-summary .ec-dot.active{background:#10b981;box-shadow:0 0 5px rgba(16,185,129,0.55)}
+.cave-account-summary .ec-dot.warn{background:#f59e0b;box-shadow:0 0 5px rgba(245,158,11,0.55)}
+.cave-account-summary.is-fallback{border-color:rgba(245,158,11,0.45)}
+.cave-account-summary .ec-role{font-size:8px;font-weight:800;padding:0 4px;border-radius:3px;text-transform:uppercase;letter-spacing:.03em;flex-shrink:0}
+.cave-account-summary .ec-role.is-coding{background:rgba(56,189,248,0.15);color:#7dd3fc;border:1px solid rgba(56,189,248,0.35)}
+.cave-account-summary .ec-role.is-review{background:rgba(217,184,108,0.16);color:#f3d285;border:1px solid rgba(217,184,108,0.4)}
 .cave-account-summary .ec-name{font-weight:700;color:var(--ps-text,#eef1f5);font-size:10.5px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cave-account-summary.is-ready .ec-name{color:#eef1f5}
 .cave-account-summary .ec-mode{font-size:8.5px;font-weight:700;padding:0 4px;border-radius:3px;background:rgba(16,185,129,0.14);color:#34d399;border:1px solid rgba(16,185,129,0.3);text-transform:uppercase;flex-shrink:0}
+.cave-account-summary .ec-mode.is-warn{background:rgba(245,158,11,0.16);color:#fbbf24;border-color:rgba(245,158,11,0.4)}
 .cave-account-summary .ec-spend{font-size:9.5px;font-weight:700;color:#34d399;font-variant-numeric:tabular-nums;flex-shrink:0}
 .cave-account-summary .ec-spend.is-low{color:var(--ps-amber,#f59e0b)}
 .cave-account-summary .ec-frontier{font-size:9px;color:#cbd5e1;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

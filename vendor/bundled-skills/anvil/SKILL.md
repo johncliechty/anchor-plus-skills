@@ -1,6 +1,6 @@
 ---
 name: Anvil
-description: Programmatic codebase comprehension, Parable-of-the-Oranges proactive one-trip complete staff work, 3-Level Progressive Abstraction Map (Level 1 Role & I/O -> Level 2 Sub-flow, Native MathML Formulas, Explicit Assumptions & Old-to-New Diff -> Level 3 Full Numbered Source), Isolated Subprocess Polyglot Code Walkthrough (Claimed vs. Actual Runtime Verification), 5-Seat Software Beta-Reader Panel (grounded in Cal Newport cognitive-load reduction, John Ousterhout Deep Modules, Gary Bernhardt Functional Core / Imperative Shell, and Aegis CWE security scanning), scope-safe LibCST remapping with explicit Null Space, and Paper Section/Algorithm/MathML-to-Software verification.
+description: Human-first polyglot software process comprehension, Paper-Matched Replication Scoping (--pipeline) with historical-clutter quarantine, PyTorch/NumPy AST -> Native MathML Formula Extraction, Dual-Channel Process Schematic (L0 Scenarios -> L1 Macro Stages -> L2 Sub-Steps -> L3 Line-Numbered Code), Pure-Core Refactoring Crosswalk & 3-Tier Null Set with Golden-Master stage-boundary replay, Operator-Grounded Dual-Target Paper <-> Software Crosswalk, Static Scientific Bug/Leakage Validation (SCI-01..SCI-03) & Concrete Functional-Core Proposals, Consented Local Subprocess Tracer + 4-Stage Smart Variable Funnel + Expandable 3-Column Scientific IDE Debugger Workbench, Bounded 2-Seat Cross-Family Validator, and preserved fast AST/LibCST/Beta-Reader/Aegis primitives.
 ---
 
 <!-- ELEGANCE-LAW v2 -->
@@ -74,36 +74,44 @@ something else" — options are a convenience, never a cage).
 <!-- /ELEGANCE-V2.1 -->
 <!-- /ELEGANCE-LAW -->
 
-> **Humans:** read `HUMAN.md` first. This file is the agent/engine protocol; the locked objective lives in `NORTH-STAR.md`.
+> **Humans:** read `HUMAN.md` first, plus `LESSONS.md` for operational lessons. This file is the agent/engine protocol; the locked objective lives in `NORTH-STAR.md`.
 
-# Anvil — Honest Polyglot Code Comprehension, Progressive Abstraction, Subprocess Walkthrough, Beta-Reader & Paper-to-Software Engine
+# Anvil — Human-First Software Process Comprehension, Paper-Matched Replication Scoping, Native MathML & Consented Scientific IDE Debugger Workbench
 
 ## North Star
 
-`Anvil` is the human-centered polyglot code comprehension, isolated empirical verification, scope-safe refactoring, and paper-to-software mapping engine. Every claim Anvil makes is earned in deterministic AST/CST code or an isolated child subprocess (`shell=False`), never fabricated:
-- **Polyglot Import-Graph Clustering & Full-Repo Reference Indexing:** Clusters Python, JavaScript/TypeScript (`.js`/`.mjs`/`.cjs`/`.ts`/`.tsx`), R, and C/C++ repositories into 4–9 coherent Deep Modules, indexing 100% of cross-repo + `tests/` symbol references so `∅ Null Space` flags only genuinely unreferenced non-entrypoint helpers.
-- **Honest Runtime Verdicts (`EXECUTED_PASS` | `STATIC_ONLY` | `DIVERGENCE`):** Runs runtime probes and test commands strictly in isolated child subprocesses (`shell=False`, zero in-process module execution), stamping `EXECUTED_PASS` (`validated: true`) only when a child process exits `0`.
-- **Rich Paper Sections, Step-by-Step Algorithms & Native MathML Equations ⇄ Companion Software (`paper-map`):** Recursively parses `.tex` trees (`\input`/`\include`), arXiv `/e-print/` source bundles, `.md`, and `.pdf` manuscripts into `sections[]`, `algorithms[]` (with step-by-step code ties), and `equations[]` (compiled into native `<math>` MathML with zero raw `$...$` LaTeX), scoring every paper artifact against companion software modules, functions, AST variables, and math operators.
-- **Fast Sub-2s Agent Primitives (`facts`, `slice`, `verify-diff`):** Gives Crucible, Foreman, and code-job workers compact `<50 KB` architectural JSON, `<15 KB` file AST slices, and deterministic post-edit syntax/duplicate-def/dead-helper/Aegis CWE verification.
+`Anvil` enables a human investigator to rapidly understand, validate, debug, and modernize trusted or operator-inspected software repositories (with or without a companion scientific paper) through an intuitive graphical workbench backed by a bounded 2-Seat Orchestrator ↔ Cross-Family Adversarial Validator pipeline plus deterministic AST/CST, runtime-trace, and numeric gates (`shell=False`, zero unconsented target code execution):
+
+- **Paper-Matched Replication Scoping & Multi-Pipeline Discovery (`discover_paper_matched_scopes`, `--pipeline`):** Inspects `.tex` trees (`\input{Tables/...}`, `\includegraphics{...}`, `\label{tab:...}`), `.md`, `.pdf`, and workflow manifests (`workflow.sh`, `Makefile`, `REPLICATION.md`, `README*.md`) to compute intra-repo import-reachability closures per coherent pipeline (`predictive_tables`, `policy_targeting`, `simulations`, `verification_checks`), quarantining unreachable historical trial scripts and clustering active modules by scientific role (`Data Prep & Covariates`, `Core Choice & Panel Estimation`, `Table / Metric Builders`, `Policy / Counterfactual Evaluation`, `Verification Checks`; never `>40` modules per bucket).
+- **PyTorch / NumPy Tensor AST → Native MathML & Static Scientific Validation (`_extract_real_code_mathml`, `run_scientific_validation`):** Extracts `einsum` bilinear utilities, `log_softmax` / `softmax` choice probabilities, `logsumexp` panel mixture likelihoods, `tanh` / `ReLU` covariate adapters, z-score standardization, doubly-robust AIPW contrasts, and quadratic shrinkage penalties into native `<math>` MathML (`file:lineno` + plain-English meaning), while auditing for pre-split normalization leaks (`SCI-01`), collinear `nn.Linear(..., bias=True)` + `nn.Parameter` heads (`SCI-02`), and cross-script likelihood duplication (`SCI-03`) with concrete Functional-Core / Imperative-Shell refactoring proposals.
+- **Multi-Level Dual-Channel Process Schematic (`process-map`):** Synthesizes repeat-invocation-identical stage IDs (`S1..Sk`) and steady spatial `(x, y)` coordinates across `L0 Scenarios → L1 3–5 Macro Stages → L2 Sub-Steps → L3 Line-Numbered Code` using pure static AST analysis (**zero** target code executed), leading with plain-English **Purpose**, **What Enters**, **Actions Run**, and **What Exits**, and distinguishing static-only AST edges (`dashed` + `dynamic_blind_spots` `⋯?`) from runtime-witnessed execution (`solid`) and iterative loops.
+- **Pure-Core Refactoring Crosswalk & 3-Tier Null Set (`refactor-map`):** Synthesizes an `N1..Nk` Functional-Core / Imperative-Shell target process map, visual Old ↔ New (`S1..Sk ↔ N1..Nk`) stage crosswalk, 100% symbol conservation across `null_proven` dead code, `null_unexercised` CLI-guarded paths, and `null_redundant` clones, plus consented data-only Golden-Master stage-boundary equivalence replay (`rtol=1e-7`, `atol=1e-9`).
+- **Operator-Grounded Dual-Target Paper ⇄ Software Visual Crosswalk (`paper-map`):** Auto-hidden when `has_paper: false`; compiles `.tex`, multi-file `.tex` trees (`\input`/`\include`), arXiv `/e-print/` bundles, `.md`, and `.pdf` manuscripts into `sections[]`, `algorithms[].steps[]`, and native `<math>` MathML `equations[]` (zero raw `$...$` LaTeX) aligned via structural mathematical operators onto active replication code across **both** As-Built (`S1..Sk`) and Proposed Refactored (`N1..Nk`) stages with `VERIFIED-NUMERIC`, `VERIFIED-TRACE`, and `MAP_DRIFT` stamps.
+- **Consented Local Subprocess Tracer (`trace-run`), 4-Stage Smart Variable Funnel & Scientific IDE Debugger (`workbench`):** Executes only with explicit `--approve-run` consent under `isolation_boundary: "consented_local_subprocess"` inside an isolated temp copy, capturing observer-safe O(1) variable sketches, `NaN`/`+/-Infinity` tripwires, 3-way verdicts (`CODE_VIOLATES_SPEC`, `MAP_DRIFT`, `UNEXERCISED`, `VERIFIED_TRACE`), and monotonic 5-scope 4-stage Smart Variable Funnel counts across the `48% / 52%` Process Workbench and expandable `25% / 45% / 30%` `Open IDE Debugger`.
+- **Untraced Stage Profiler, Precondition-Checked Literature Enhancer & 2-Seat Cross-Validator (`profile-lit`, `xval-audit`):** Separates Imperative-Shell I/O bottlenecks from AST/shape precondition-checked Functional-Core kernel upgrades, and reconciles claims via bounded (`<= 2` concurrent, `<= 32 KB` digest) cross-family validation with atomic file-locked receipts.
+- **Preserved v3 Polyglot & Fast Trio Primitives (`facts`, `slice`, `verify-diff`, `map`, `walkthrough`, `beta-readers`, `orange-split`, `cst-rewrite`):** Retains `<2s` Trio architectural slices, 5-Seat Beta-Reader + Aegis (`AEG-01..AEG-06`) scanning, and scope-safe `LibCST` codemods.
 
 ---
 
 ## 1. Mission & Core Architecture
 
-1. **3-Level Progressive Abstraction on Every Process-Map Module**:
-   - **Level 1 (`level1_summary` — High-Level Role & I/O):** Plain-English purpose, typed inputs/outputs, pipeline stage (`INGEST` / `COMPUTE` / `EMIT`), Functional-Core purity percentage, AI/LLM touchpoint count, and Orange role (`CORE` Juice vs. `CONTRACT` Peel vs. `SCAFFOLDING` Null Space).
-   - **Level 2 (`level2_mechanics` — Member Files, Sub-Flow, State Contracts & Native MathML):** Complete list of member files, intra-module call edges, typed class/function state contracts, explicit engineering invariants, and native `<math>` formulas (emitted only when actual mathematical AST operations or mapped paper equations exist).
-   - **Level 3 (`level3_code` — Full On-Demand Per-File Numbered Source):** Complete per-file index (`files_index`) plus untruncated line-numbered source, AST symbol table, callers, and callees via `get_file_level3_source`.
-2. **Isolated Subprocess Polyglot Code Walkthrough (`walkthrough` / `--walkthrough`):**
-   - Steps through modules in execution order (`Ingest` → `Compute` → `Emit`) inside isolated child subprocesses (`python -c`, `pytest`, `node --test`, `Rscript`) with `shell=False` and `CREATE_NO_WINDOW`, stamping `EXECUTED_PASS`, `STATIC_ONLY`, or `DIVERGENCE`.
-3. **5-Seat Software Beta-Reader Panel (`beta-readers`):**
-   - `cal_newport_cognitive_load` — Cal Newport & John Ousterhout Cognitive Load & Deep Modules Auditor
-   - `functional_core_architect` — Gary Bernhardt Functional Core / Imperative Shell Architect
-   - `numerical_verification_auditor` — Empirical & Reference Hygiene Auditor
-   - `systems_performance_specialist` — Systems Performance & Idiom Specialist
-   - `security_boundary_auditor` — Deterministic Aegis CWE/OWASP (`AEG-01..AEG-06`) Security Boundary Auditor (`../aegis/scripts/aegis_engine.py`)
-4. **Parable of the Oranges One-Trip Staff Work, Scope-Safe `LibCST` & Explicit Null Space (`orange-split` / `remap` / `cst-rewrite`):**
-   - Separates **Juice** (Pure Domain Compute), **Peel** (Surface I/O Contracts), and **Pith & Seeds** (`truly_unreferenced` non-entrypoint Null Space), and rewrites Python modules via `libcst` + `MetadataWrapper` + `ScopeProvider` (preserving comments, strings, `obj.attr`, `fn(kw=1)`, and shadowed locals; refusing cleanly without regex fallback if `libcst` is absent).
+1. **Paper-Matched Replication Scope, Dual-Channel Process Schematic (`scripts/anvil_v4_process.py`) & 3-Level Progressive Map (`map`):**
+   - **Replication Scope (`discover_paper_matched_scopes`, `--pipeline <id>`):** Partitions multi-pipeline research repos by manuscript table/figure targets and workflow scripts, quarantining `unreferenced_historical_files[]` when `>15` files contain historical clutter and recording `paper_matched_scopes` in JSON and `ANVIL-REPORT.md`.
+   - **v4 Dual-Channel Map (`process-map`):** Pure static polyglot AST scanner (`Python`, `JS/TS/MJS`, `R`, `C/C++`) emitting `L0` entry scenarios, `L1` macro stages (`S1..Sk` with steady `(x, y)` coordinates, `purpose`, `what_enters`, `actions_run`, `what_exits`), `L2` intra-stage call sub-steps, and on-demand `L3` line-numbered source (`get_l3_numbered_file`), overlaying runtime traces when supplied.
+   - **v3 Progressive Map (`map`):** Role-clustered / import-graph-clustered Deep Modules with `level1_summary`, `level2_mechanics` (including PyTorch/NumPy native MathML equations and `scientific_validation`), `level3_code`, and AI Agent Touchpoint badges.
+2. **Pure-Core Refactoring Crosswalk, Scientific Validation, The Parable of the Oranges & Scope-Safe `LibCST` (`scripts/anvil_v4_refactor.py`, `orange-split`, `remap`, `cst-rewrite`):**
+   - Applies **The Parable of the Oranges** (gathering pure-core vs. imperative-shell boundaries, variety, price, and what the boss's wife needs in **one trip** via `orange-split` rather than repeated round-trips).
+   - Flags `SCI-01` pre-split full-sample normalization leaks, `SCI-02` collinear `nn.Linear(..., bias=True)` + unfrozen `nn.Parameter` heads, and `SCI-03` cross-script `logsumexp` + `log_softmax` choice-loss duplication, proposing concrete shared pure kernel modules, split-safe preprocessors, and thin CLI shells.
+   - Synthesizes `N1..Nk` Functional-Core / Imperative-Shell stages and enforces 100% symbol conservation (`mapped_to_new + null_proven + null_unexercised + null_redundant == total_symbols`), protecting `null_unexercised` CLI/test-guarded handlers from false dead-code cuts.
+   - Verifies numeric equivalence at stage boundaries via data-only Golden-Master replay (`allow_pickle=False` / strict JSON) and rewrites Python ASTs via `libcst` + `MetadataWrapper` + `ScopeProvider` (refusing cleanly without regex fallback if `libcst` is absent).
+3. **Consented Local Subprocess Tracer & 4-Stage Smart Variable Funnel (`scripts/anvil_v4_trace.py`):**
+   - Captures O(1) structural tensor/array/collection/scalar sketches without invoking custom `__repr__`, `__str__`, or `@property` descriptors; trips `NaN` / `+/-Infinity` detectors at exact line/stage boundaries; and filters 5 scopes (`function_locals`, `closure_nonlocals`, `instance_attrs`, `module_globals`, `stage_io_contracts`) monotonically through `All State → Stage Scope → Delta Mutated → Anomalies & Pinned Watches`.
+4. **Untraced Stage Profiler, Literature Enhancer & 5-Seat Beta-Reader Panel (`profile-lit`, `beta-readers`):**
+   - `profile-lit` runs an untraced `perf_counter_ns` stage timer under `--approve-run` and checks AST/shape preconditions before recommending Functional-Core literature kernel upgrades.
+   - `beta-readers` runs the 5-Seat panel (`cal_newport_cognitive_load`, `functional_core_architect`, `numerical_verification_auditor`, `systems_performance_specialist`, and `security_boundary_auditor` wired to `../aegis/scripts/aegis_engine.py`).
+5. **Bounded 2-Seat Cross-Validator & Merged Graphical Workbench (`scripts/anvil_v4_xval.py`, `scripts/anvil_v4_workbench.py`, `static/anvil_v4_workbench.html`):**
+   - **Posture 1 (`48% / 52%` Process Workbench):** Steady-coordinate Dual-Channel Map paired with the 4-mode right pane (`Story Stream`, `IDE + Watch Split`, `Smart Funnel`, `Cross-Validator`) and Grounded Steward Co-Pilot.
+   - **Posture 2 (`25% / 45% / 30%` `Open IDE Debugger`, `Esc` toggle):** Compact Live Process Rail + L2 file jumpers (`25%`), Multi-Tab Code Window with gutter breakpoints, `Paper Light / Studio Dark` toggle, active line `▶`, inline runtime ghost values, and clickable pin-watch tokens (`45%`), plus synced Smart Variable Funnel & Steward Co-Debugger (`30%`), persisted via cross-process file lock + `temp` + `fsync` + `rename`.
 
 ---
 
@@ -112,43 +120,73 @@ something else" — options are a convenience, never a cage).
 Run from the `anvil` skill root (or pass the path to `scripts/anvil_engine.py`):
 
 ```powershell
+# Anvil v4 Process Schematic, Paper-Matched Scoping (--pipeline), Tracer, Refactor Crosswalk, Profiler, XVal & Workbench
+python scripts/anvil_engine.py process-map --repo "<repo>" [--paper "<main.tex>"] [--pipeline "<id>"] [--trace "<trace.json>"] --json
+python scripts/anvil_engine.py trace-run --repo "<repo>" --approve-run [--pin-watch "loss"] --json -- python run_pipeline.py
+python scripts/anvil_engine.py refactor-map --repo "<repo>" [--trace "<trace.json>"] [--approve-run] --json [-- python run_pipeline.py]
+python scripts/anvil_engine.py paper-map --repo "<repo>" [--paper "<main.tex_or_dir>"] [--pipeline "<id>"] [--trace "<trace.json>"] [--approve-run] --json
+python scripts/anvil_engine.py profile-lit --repo "<repo>" --approve-run --json -- python run_pipeline.py
+python scripts/anvil_engine.py xval-audit --repo "<repo>" --max-concurrency 2 --json
+python scripts/anvil_engine.py workbench --repo "<repo>" [--paper "<main.tex>"] --export-html "<out>/anvil_workbench.html"
+python scripts/anvil_engine.py workbench --repo "<repo>" [--paper "<main.tex>"] --serve --port 0
+
 # Fast Trio / Code-Job Primitives (<2s)
 python scripts/anvil_engine.py facts --repo "<repo>" --json
 python scripts/anvil_engine.py slice --repo "<repo>" --files "<rel1>" "<rel2>" --json
 python scripts/anvil_engine.py verify-diff --repo "<repo>" --files "<rel1>" --json
 
-# Mode 4: Paper Sections, Step-by-Step Algorithms & Native MathML <-> Software
-python scripts/anvil_engine.py paper-map --repo "<code_dir>" --paper "<main.tex_or_dir>" --json
-
-# Mode 1–3: Progressive Map, Subprocess Walkthrough, Beta-Readers, CST Rewrite & Orchestrator
-python scripts/anvil_engine.py map --repo "<repo>" --json
-python scripts/anvil_engine.py walkthrough --repo "<repo>" --block "<block_id>" --json
+# Preserved Mode 1-3 Progressive Map, Scientific Validation Report, Walkthrough, Beta-Readers, LibCST & Orchestrator
+python scripts/anvil_engine.py map --repo "<repo>" [--paper "<main.tex>"] [--pipeline "<id>"] --json
+python scripts/anvil_engine.py walkthrough --repo "<repo>" [--block "<block_id>"] [--test-cmd "pytest -q"] --json
 python scripts/anvil_engine.py beta-readers --repo "<repo>" --json
-python scripts/anvil_engine.py inspect --repo "<repo>" --block "<block_id>" --test-cmd "pytest -q" --json
+python scripts/anvil_engine.py inspect --repo "<repo>" --block "<block_id>" [--test-cmd "pytest -q"] --json
+python scripts/anvil_engine.py remap --old-repo "<old_dir>" --new-repo "<new_dir>" --json
 python scripts/anvil_engine.py orange-split --repo "<repo>" --json
 python scripts/anvil_engine.py cst-rewrite --source "<file.py>" --rename "old_fn:new_fn" --drop "dead_helper"
-python scripts/anvil_engine.py orchestrate --old-repo "<old_dir>" --new-repo "<new_dir>"
-python scripts/anvil_engine.py render-report --repo "<repo>" --output "<out>/ANVIL-REPORT.md"
+python scripts/anvil_engine.py verify-equivalence --old-repo "<old_dir>" --new-repo "<new_dir>" --rtol 1e-7
+python scripts/anvil_engine.py orchestrate --old-repo "<old_dir>" [--new-repo "<new_dir>"]
+python scripts/anvil_engine.py render-report --repo "<repo>" [--paper "<main.tex>"] [--pipeline "<id>"] --output "<out>/ANVIL-REPORT.md"
+python scripts/anvil_engine.py chat --repo "<repo>" --mode inspect --target "<block_id>" --question "<question>"
 ```
 
 ---
 
-## 3. Paper Sections, Step-by-Step Algorithms & Native MathML Equations ⇄ Companion Software
+## 3. Execution Trust Contract (`isolation_boundary: "consented_local_subprocess"`) & Surface Failure States
 
-`paper-map` (`paper_to_code_map`) extracts three first-class hierarchies from single `.tex` files, multi-file `.tex` trees (`\input`/`\include`), extracted arXiv `/e-print/` tarballs, `.md`, or `.pdf` manuscripts and aligns them deterministically against companion code without round-robin/modulo assignment:
-1. **`sections[]`:** Manuscript section hierarchy (`\section`, `\subsection`, `\subsubsection`), prose summary, child `equation_ids` and `algorithm_ids`, matched software modules/functions, and verification status.
-2. **`algorithms[]`:** Formal `\begin{algorithm}` / `\begin{algorithmic}` blocks and procedural numbered derivations (`procedural_section`), decomposed into ordered `steps[]` with inline `<math>` fragments, matched functions, file/line spans, matched variables, and step confidence.
-3. **`equations[]`:** Display equations (`equation`, `align`, `gather`, `\[...\]`, `$$...$$`) compiled via recursive-descent LaTeX-to-MathML into valid `<math xmlns="http://www.w3.org/1998/Math/MathML" display="block">`, symbol-to-variable tables, ranked `matched_functions` (scored by symbol overlap, math operator AST signatures, docstring citations, and domain terminology), and honest alignment verdicts (`EXECUTED_PASS`, `STATIC_ALIGNED`, `PARTIAL_OR_DRIFT`, `UNMAPPED_PAPER_CLAIM`), plus `code_only_modules[]` for software infrastructure not described in the manuscript.
+### Explicit Non-VM Execution Trust Contract
+Whenever Anvil executes target repository code (`trace-run`, `refactor-map --approve-run`, `paper-map --approve-run`, `profile-lit --approve-run`, or Workbench trace/profile POSTs), it enforces seven fail-closed invariants:
+1. **Zero-Execution Static Default & Explicit Consent Gate:** `process-map` executes **zero** target code. Any runtime execution without `--approve-run` (or explicit UI Trace Consent confirmation displaying the exact `argv` and temp-copy path) fails closed with `CONSENT_REQUIRED_REFUSED` (`403`).
+2. **Isolated Ephemeral Temp Copy:** Tracked/contained source files (excluding `.env` and credential/key files) are staged into a fresh ephemeral temp directory (`anvil_v4_trace_*`) so the operator's working tree is never mutated in place.
+3. **Canonical Path Containment (`CWE-22`):** All paths resolve strictly inside `repo_root.resolve()`, rejecting `..` traversals, unauthorized absolute paths, and escaping symlinks or NTFS junctions (`PATH_ESCAPE_REFUSED`).
+4. **Policy-Validated `argv` Allowlist (`CWE-78`):** Accepts only an explicit `list[str]` `argv` array (`shell=False`), allowing resolved `python`, `python3`, `pytest`, `node`, or `Rscript` binaries on repo-contained scripts while refusing shell binaries (`cmd`, `powershell`, `pwsh`, `sh`, `bash`, `wsl`) and inline code flags (`-c`, `-e`, `--eval`, `--command`) with `EXECUTION_POLICY_REFUSED`.
+5. **Scrubbed Credential Environment & Process-Tree Kill:** Strips `ANCHOR_TOKEN` and all `*KEY*`, `*SECRET*`, `*TOKEN*`, `*PASSWORD*`, and `*CREDENTIAL*` variables, redirects `TEMP`/`TMP`/`HOME`/`USERPROFILE` inside the scratch copy, and kills the full child process tree on wall-clock timeout (`TRACE_TIMEOUT_REFUSED` / `TRACE_TIMEOUT_KILLED`, HTTP `504`).
+6. **Data-Only JSON & Explicit Bounds (`CWE-94` / `CWE-502`):** Uses strict `json.loads` / `json.dumps` with cross-process file locking + `temp` + `fsync` + `rename` (zero `eval`, `exec`, `pickle`, `marshal`, or `shelve`), enforcing `max_events=50000` and `max_sketch_bytes=65536` (`64 KB`) with `BOUND_EXCEEDED_REFUSAL`.
+7. **Honest Non-Sandbox Boundary:** `"isolation_boundary": "consented_local_subprocess"` isolates local process state, environment variables, and working files for **trusted or operator-inspected code**. It is **NOT an OS kernel sandbox, container, or hypervisor VM** against hostile untrusted malware; hostile binaries or untrusted code must only be run inside an external VM or isolated container.
+
+### Mandatory 5-Row HTTP / UI Failure-State Table (`unknown` ≠ `empty`)
+`workbench --serve` binds strictly on `127.0.0.1` (never port `8777`), enforces `Content-Security-Policy` + per-launch capability tokens on mutating POSTs, pauses client requests when hidden (`document.visibilityState === 'visible'`) with `AbortController` + exponential backoff (`1s → 2s → 4s → 8s`), and keeps **unknown** and **empty** strictly distinct across all five surface states:
+
+| Failure / Surface State | HTTP Status | User-Visible Workbench Banner / Message | UI Badge & Semantics |
+| :--- | :---: | :--- | :--- |
+| **`dependency-missing`** | `503` | `"Required runtime/tracer unavailable — showing static AST map"` | Degrades cleanly to static `process-map`; never claims runtime pass |
+| **`dependency-slow-or-killed`** | `504` | `"Trace subprocess timed out or was terminated — partial trace preserved"` | Process tree reaped; partial trace retained with timeout stamp |
+| **`dependency-returns-garbage`** | `502` | `"Malformed trace/validator payload — rejected fail-closed"` | Rejects non-JSON / schema-invalid output fail-closed |
+| **`backing-store-unreadable`** | `500` | `"Session/trace store unreadable (unknown state, not empty)"` | Badged **`UNKNOWN`** — never rendered as `0` / empty state |
+| **`empty-but-valid`** | `200` | `"Repository parsed cleanly with 0 matched items"` | Valid zero-match state (`0` items after clean parse) |
 
 ---
 
-## 4. Mandatory Pedagogical & Visual Report Standard
+## 4. Dual-Target Paper ⇄ Software Crosswalk, Replication Scoping & Scientific Validation Standard
 
-Every human-facing `ANVIL-REPORT.md` (and companion paper-to-software audit report) MUST include:
-1. **Up-Front Plain-English Glossary & Visual Concept Primer:** Define central domain, mathematical, and architectural terms in plain English with a concrete miniature example before diving into internals.
-2. **Genuine Graphical Diagrams (`figure-designer` Compliance — Never Text-Wall SVG Cards):** Render clean, high-contrast vector flowcharts, coordinate plots, and proportional module diagrams (`<= 6` words per label, `>= 10px` sans-serif typography).
-3. **End-to-End Execution & Complexity Trace:** Trace both forward data transformations and reverse/feedback or error-propagation paths across modules with explicit time/space complexity notes.
-4. **Dual Canonical Maps for Scientific Software:**
-   - **Map 1 — Paper-to-Software Map (`sections[]` & `equations[]` ⇄ Files & Symbols)** with explicit side-by-side comparison of paper notation vs. code implementation.
-   - **Map 2 — Step-by-Step Algorithm Math ⇄ Verbatim Code Execution Map (`algorithms[].steps[]`)** tracing Step 1 → Step $K$ against exact files and line spans.
-5. **Einstein 4-Block Pedagogical Progression:** Structure sections as *(a) Plain-English Intuition → (b) Small Worked Example → (c) Visual Diagram → (d) Verified Codebase Evidence & One-Line Takeaway*.
+### Paper-Matched Replication Scoping & Operator-Grounded Crosswalk (`paper-map`)
+When no manuscript is supplied, `paper-map` returns `has_paper: false` cleanly with zero fabricated sections or formulas (and the Workbench hides the Paper Crosswalk tab). When a `.tex` file, multi-file `.tex` tree (`\input`/`\include`), arXiv `/e-print/` bundle, `.md`, or `.pdf` manuscript is provided, `paper-map`:
+1. Runs `discover_paper_matched_scopes` across manuscript table/figure inclusions and `workflow.sh` / `Makefile` / `REPLICATION.md` / `README*.md`, partitioning entrypoints into named `pipelines[]` (`--pipeline <id>`) and quarantining unreachable historical scripts on cluttered repos (`>15` files).
+2. Extracts `sections[]`, ordered `algorithms[].steps[]`, and display `equations[]` compiled into native `<math xmlns="http://www.w3.org/1998/Math/MathML" display="block">` (zero raw `$...$` LaTeX), aligning equations to active replication code via structural AST operators (`logsumexp` + `.sum(` for panel likelihoods, `tanh` + `Linear` for covariate adapters, `log_softmax` / `softmax` for logit probabilities, `einsum` for bilinear utilities) while penalizing prototype scripts and pure `load_*` / `read_csv` data loaders.
+3. Links every claim to **both** `maps_to_old` (`S1..Sk`) and `maps_to_new` (`N1..Nk`) with `VERIFIED-NUMERIC`, `VERIFIED-TRACE`, `STATIC_ALIGNED`, or `MAP_DRIFT` stamps, plus `scientific_validation` (`SCI-01..SCI-03`) and concrete Functional-Core refactoring proposals.
+
+### Mandatory Pedagogical & Visual Report Standard (`ANVIL-REPORT.md` & Workbench)
+1. **Up-Front Plain-English Glossary & Visual Concept Primer** before low-level internals.
+2. **Genuine Graphical Schematics (`figure-designer` Compliance — Never Text-Wall SVG Cards):** Clean high-contrast vector process schematics (`<= 6` words per diagram node label, `>= 11px` typography, zero SVG label overlaps).
+3. **End-to-End Execution, Scientific Leakage/Collinearity Audit & Complexity Trace** across forward, loop, and error-propagation paths, paired with concrete shared-kernel + split-safe preprocessor + thin CLI shell refactoring plans.
+4. **Dual Canonical Maps for Scientific Software:** Paper Sections/Equations ⇄ As-Built & Refactored Stages (`maps_to_old` / `maps_to_new`) and Step-by-Step Algorithm Math ⇄ Verbatim Code spans.
+5. **Einstein 4-Block Pedagogical Progression:** *(a) Plain-English Intuition → (b) Small Worked Example → (c) Visual Diagram → (d) Verified Codebase Evidence & One-Line Takeaway*.

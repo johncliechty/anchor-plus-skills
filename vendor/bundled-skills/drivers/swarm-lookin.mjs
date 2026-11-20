@@ -22,12 +22,25 @@ export const DEFAULT_DEAD_IDLE_MS = 90 * 1000;
 export const DEFAULT_MAX_RESPAWN = 1;
 
 /**
- * Prompt fragment every swarm seat carries. The agent writes a heartbeat the
- * orchestrator can read; if it notices a rabbit hole it cuts itself.
- * @param {{ heartbeatPath?: string, northStar?: string }} [o]
+ * Deterministic per-seat heartbeat filename (`seat-heartbeat-<role>-<id>.json`)
+ * so concurrent write seats never clobber one shared `.foreman/seat-heartbeat.json`.
  */
-export function lookinAppendix({ heartbeatPath, northStar } = {}) {
-  const hb = heartbeatPath || 'heartbeat.json';
+export function seatHeartbeatFilename({ role = null, seatId = null } = {}) {
+  const cleanRole = String(role || '').trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-') || null;
+  const cleanId = seatId !== null && seatId !== undefined && String(seatId).trim() !== ''
+    ? String(seatId).trim().toLowerCase().replace(/[^a-z0-9._-]+/g, '-')
+    : null;
+  if (!cleanRole && !cleanId) return 'seat-heartbeat.json';
+  return `seat-heartbeat-${cleanRole || 'seat'}-${cleanId || '0'}.json`;
+}
+
+/**
+ * Prompt fragment every writable swarm seat carries. The agent writes a heartbeat the
+ * orchestrator can read; if it notices a rabbit hole it cuts itself.
+ * @param {{ heartbeatPath?: string, role?: string, seatId?: string|number, northStar?: string }} [o]
+ */
+export function lookinAppendix({ heartbeatPath, role = null, seatId = null, northStar } = {}) {
+  const hb = heartbeatPath || ((role || seatId !== null) ? `.foreman/${seatHeartbeatFilename({ role, seatId })}` : 'heartbeat.json');
   return [
     `LOOK-IN: you MUST write ${hb} as JSON {doing, why, next, load_bearing:true|false, rabbit:false, ts} within the first look-in window. Silence is treated as death — the orchestrator will kill and respawn you.`,
     `Keep refreshing that file every few actions while you work.`,

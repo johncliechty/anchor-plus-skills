@@ -1039,3 +1039,40 @@ def test_wave3_five_failure_states_unknown_not_equal_empty(isolated_w3, monkeypa
     assert deliv_500["ok"] is False
     assert deliv_500["failure_state"] == "backing-store-unreadable"
     assert deliv_500["message"] == "Plan/Deliverables unreadable (unknown) — inspect roadmap.json"
+
+
+def test_key_deliverables_subdir_version_agnostic_fallback_and_inline_accept_controls(isolated_w3):
+    cdir = _make_campaign(isolated_w3, "version_fallback_effort")
+    kd_dir = cdir / "Key Deliverables"
+    kd_dir.mkdir(parents=True, exist_ok=True)
+    v5_bytes = b"%PDF-1.4 superseded v5 deck payload\n"
+    (kd_dir / "Strategy_Deck (v5).pdf").write_bytes(v5_bytes)
+    (cdir / "DELIVERABLES.md").write_text(
+        "# Deliverables\n\n"
+        "| What | Where | Date | Step |\n"
+        "|---|---|---|---|\n"
+        "| FINAL — Strategy Deck | `Key Deliverables/Strategy_Deck (v5).pdf` | 2026-11-16 | s1 |\n",
+        encoding="utf-8",
+    )
+    routes._DELIV_CACHE.clear()
+    campaign._JSON_FILE_CACHE.clear()
+
+    # Requesting an older `(v4).pdf` link resolves cleanly to the registered `(v5).pdf` inside `Key Deliverables/`
+    resp, status = routes.handle_get(
+        str(cdir),
+        "deliverable-file",
+        {
+            "pid": "proj-1",
+            "dir": "version_fallback_effort",
+            "path": "Strategy_Deck (v4).pdf",
+        },
+    )
+    assert status == 200
+    assert Path(resp["__file__"]).name == "Strategy_Deck (v5).pdf"
+
+    # Inline For Review `✓ Accept` button and `✓ Review Done` top-bar button exist in shared.js
+    shared_js = (REPO_ROOT / "steward_cockpit" / "static" / "shared.js").read_text(encoding="utf-8")
+    assert "deliv-unit-accept-btn" in shared_js
+    assert 'post("/api/approve-deliverable"' in shared_js
+    assert "review-done-btn" in shared_js
+

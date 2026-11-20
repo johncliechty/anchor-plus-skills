@@ -76,9 +76,10 @@ const Proto = (() => {
   const VIEW_MODE = (PARAMS.get("view") || "").toLowerCase();
   const TALK = VIEW_MODE === "talk";
   const TILE = EMBED || VIEW_MODE === "tile" || TALK;
+  const EMBED_DIALOGUE = PARAMS.get("embed") === "dialogue" || VIEW_MODE === "dialogue";
   const INST = PARAMS.get("inst") || "";
   function tileSay(kind, data) {
-    if (!TILE || window.parent === window) return;
+    if ((!TILE && !EMBED_DIALOGUE) || window.parent === window) return;
     try { window.parent.postMessage(Object.assign({ proto: "anchor-tile", inst: INST, kind: kind }, data || {}), location.origin); } catch (e) {}
   }
   // a tile view the Cave preloads hidden for an Active card (2026-10-06, his word: "keep the memory open ... so that it
@@ -89,7 +90,15 @@ const Proto = (() => {
   // the Cave keeps collapsed. A frame born inside an already-hidden tile (e.g. a chamber made after a slow fetch)
   // reads its ancestors at boot, before any poll or reload guard starts.
   function ancestorHidden() {
-    try { let w = window; for (let i = 0; i < 6; i++) { if (w.__anchorHidden) return true; if (w === w.parent) break; w = w.parent; } } catch (e) {}
+    try {
+      let w = window;
+      for (let i = 0; i < 6; i++) {
+        if (w.__anchorHidden) return true;
+        if (w.frameElement && (w.frameElement.hidden || (w.frameElement.closest && w.frameElement.closest("[hidden]")))) return true;
+        if (w === w.parent) break;
+        w = w.parent;
+      }
+    } catch (e) {}
     return false;
   }
   let localParked = TILE && PARAMS.get("parked") === "1", shellHidden = ancestorHidden();
@@ -97,7 +106,7 @@ const Proto = (() => {
   const STATUS_POLL_INTERVAL_MS = 60000;
   const STATUS_POLL_BACKOFF_MS = [60000, 120000, 300000];
   let _statusPollFailures = 0, _statusPollTimer = null, _statusPollInFlight = false, _statusVisibilityWired = false;
-  let parked = localParked || shellHidden, _pollAbort = null, _unpark = null;
+  let parked = localParked || shellHidden, _pollAbort = null, _unpark = null, _ensureLoadedFn = null;
   // the Status pane keeps his reading place across a hide: remembered from his own scrolling while it has a size
   document.addEventListener("scroll", (ev) => {
     const s = paneEl();
@@ -113,6 +122,9 @@ const Proto = (() => {
     }
     if (!was) return;
     const go = _unpark; _unpark = null; if (go) go();
+    if (typeof _ensureLoadedFn === "function") {
+      try { _ensureLoadedFn(); } catch (e) {}
+    }
     if (opts.statusPane && !TILE && !TALK && (typeof document === "undefined" || document.visibilityState !== "hidden")) {
       if (isStatusWorkActive()) pollActiveStatus(true);
       else scheduleNextStatusPoll(STATUS_POLL_INTERVAL_MS);
@@ -1869,6 +1881,13 @@ const Proto = (() => {
     line1.appendChild(main);
 
     const rightCluster = el("div", "snt-bar-right");
+    if (needsApproval) {
+      const reviewDoneQuick = el("button", "snt-btn review-done-btn", "\u2713 Review Done");
+      reviewDoneQuick.type = "button";
+      reviewDoneQuick.title = "Mark current review items done without launching a new background run";
+      reviewDoneQuick.onclick = (ev) => executeDismissReview(ev, reviewDoneQuick);
+      rightCluster.appendChild(reviewDoneQuick);
+    }
     const quickRun = el("button", "snt-btn primary snt-quick-run", needsApproval ? "\u2713 Approve & Run" : "\u25b6 Run");
     quickRun.type = "button";
     quickRun.onclick = (ev) => executeApprove(ev, quickRun);
@@ -2971,101 +2990,50 @@ const Proto = (() => {
 
   function classifyStepHierarchyBlock(entry, map) {
     const st = entry.st || {};
-    const rawName = String((st.navigation && st.navigation.label) || st.name || "");
-    const rawPart = String(st.part || "");
-    const combined = (rawPart + " " + rawName + " " + String(st.summary || "") + " " + String(st.done_when || "")).trim();
+    const rawName = String((st.navigation && st.navigation.label) || st.title || st.name || "").trim();
+    const rawPart = String(st.part || st.phase || "").trim();
+    const meaningfulPart = rawPart && !/^(?:step|wave|slice|task|item|part|general)$/i.test(rawPart) ? rawPart : "";
 
-    // 1. Explicit Book / Block / Module / Unit / Part (e.g., MBA teaching Block 1 / Block 2, Book 1 / Book 2)
-    const bookM = /\b(Book\s*(?:\d+|[IVX]+)(?:\s*[:\u2014\u2013-]\s*[^·;,(]+)?)/i.exec(combined);
-    if (bookM) return { key: "book:" + bookM[1].toLowerCase().replace(/\s+/g, "-"), label: "\ud83d\udcda " + oneLine(bookM[1], 44), order: 10 };
-    const blockM = /\b(Block\s*(?:\d+|[IVX]+)(?:\s*[:\u2014\u2013-]\s*[^·;,(]+)?)/i.exec(combined);
-    if (blockM) return { key: "block:" + blockM[1].toLowerCase().replace(/\s+/g, "-"), label: "\ud83e\uddf1 " + oneLine(blockM[1], 44), order: 15 };
-    const modM = /\b(Module\s*(?:\d+|[IVX]+)(?:\s*[:\u2014\u2013-]\s*[^·;,(]+)?)/i.exec(combined);
-    if (modM) return { key: "mod:" + modM[1].toLowerCase().replace(/\s+/g, "-"), label: "\ud83d\udce6 " + oneLine(modM[1], 44), order: 20 };
+    function matchUnitPrefix(src) {
+      if (!src) return null;
+      const cleanSrc = String(src).split(/\s*(?:\u2014|\u2013|\s-\s)\s*/)[0].trim();
+      const m = /\b(Phase|Book|Block|Module)\s*(\d+|[IVX]+)(?:\s*:\s*([^·;,(]+))?/i.exec(cleanSrc);
+      if (!m) return null;
+      const kind = m[1].toLowerCase();
+      const num = m[2].toLowerCase();
+      const prefix = m[1].charAt(0).toUpperCase() + m[1].slice(1).toLowerCase() + " " + m[2].toUpperCase();
+      const sub = m[3] ? m[3].trim() : "";
+      const label = sub ? (prefix + ": " + sub) : prefix;
+      const orderMap = { phase: 10, book: 12, block: 15, module: 20 };
+      const keyPrefix = kind === "module" ? "mod" : kind;
+      return { key: keyPrefix + ":" + num, label: oneLine(label, 48), order: orderMap[kind] || 15 };
+    }
+
+    // 1. Explicit Book / Block / Module / Phase field or prefix (prefer st.part/st.phase before step title)
+    const unitHit = matchUnitPrefix(meaningfulPart) || matchUnitPrefix(rawName);
+    if (unitHit) return unitHit;
 
     // 2. Linked Sub-Cockpit (st.ref)
     if (st.ref) {
-      return { key: "subcockpits", label: "\ud83d\udef0 Linked Cockpits & Sub-Efforts", order: 5 };
+      return { key: "subcockpits", label: "Linked Cockpits & Sub-Efforts", order: 5 };
     }
 
-    // 3. Explicit Wave N steps (e.g., Waves 1–19 in Anchor Refactoring)
-    const waveM = /\bWave\s*(\d+)/i.exec(rawName);
-    if (waveM) {
-      const wNum = Number(waveM[1]);
-      if (wNum <= 5) return { key: "phase:1", label: "\ud83c\udfdb\ufe0f Phase I \u00b7 Core Architecture & Foundation (Waves 1\u20135)", order: 71 };
-      if (wNum <= 11) return { key: "phase:2", label: "\ud83c\udf0c Phase II \u00b7 Cave of Wonders & Multi-Mothership (Waves 6\u201311)", order: 72 };
-      if (wNum <= 16) return { key: "phase:3", label: "\u2692\ufe0f Phase III \u00b7 Anvil & Pure Core Remapping (Waves 12\u201316)", order: 73 };
-      return { key: "phase:4", label: "\ud83d\udee1\ufe0f Phase IV \u00b7 Aegis Security & AI Cockpit Redesign (Waves 17+)", order: 74 };
-    }
-
-    // 4. Course / Curriculum / Lectures grouping
-    if (/\b(?:AI\s*Supplement|Tool\s*Supplement|Prompt\s*Supplement)/i.test(rawName)) {
-      return { key: "course:ai-supplements", label: "\ud83e\udd16 AI Supplements & Tool Workflows", order: 44 };
-    }
-    if (/\b(?:Homework|HW\s*\d+|Quiz|Exam|Midterm|Problem\s*Set|Grading\s*Rubric|Answer\s*Key)/i.test(rawName)) {
-      return { key: "course:assessments", label: "\ud83d\udcdd Homeworks, Quizzes & Assessments", order: 52 };
-    }
-    if (/\b(?:Wiggling\s*Car|Sampling\s*Distribution|Interactive\s*Demo|Simulation|Shiny|Bootstrap\s*Demo)/i.test(rawName)) {
-      return { key: "course:simulations", label: "\ud83e\uddea Interactive Simulations & Teaching Demos", order: 42 };
-    }
-    if (/\b(?:Syllabus|RStudio|Cheatsheet|Orientation|Course\s*Setup|Glossary|Reference\s*Guide)/i.test(rawName)) {
-      return { key: "course:setup", label: "\ud83c\udf93 Course Setup, Syllabus & Reference Guides", order: 22 };
-    }
-    const lecM = /\b(?:Lecture|Session|Class)\s*(\d+)\b/i.exec(rawName);
-    if (lecM) {
-      const lNum = Number(lecM[1]);
-      if (lNum <= 4) return { key: "course:lec-1-4", label: "\ud83e\uddf1 Block I \u00b7 Lectures 1\u20134 (Foundations & Sampling)", order: 26 };
-      if (lNum <= 8) return { key: "course:lec-5-8", label: "\ud83e\uddf1 Block II \u00b7 Lectures 5\u20138 (Inference & Regression)", order: 31 };
-      return { key: "course:lec-9-12", label: "\ud83e\uddf1 Block III \u00b7 Lectures 9\u201312 (Advanced Models & Causal)", order: 36 };
-    }
-
-    // 5. MIT Deep Learning Sections 1-6 + Transformers + LLM Series
-    if (/\b(?:Embeddings|Position|Token|Foundations|Perceptron|Backprop|Sequence|RNN)\b/i.test(rawName)) {
-      return { key: "hier:foundations", label: "\ud83e\uddf1 Block I \u00b7 Foundations, Embeddings & Position (Sec 1\u20132)", order: 25 };
-    }
-    if (/\b(?:Q\/K\/V|Attention|Transformer|Supplemental evidence)\b/i.test(rawName)) {
-      return { key: "hier:transformers", label: "\ud83e\uddf1 Block II \u00b7 Attention & Transformer Mechanics (Sec 3\u20134)", order: 30 };
-    }
-    if (/\b(?:Diffusion|Score|Flow|Hopfield|Boltzmann|Energy|SSM|State[- ]Space|Mamba|ConvNet|ResNet|Vision)\b/i.test(rawName)) {
-      return { key: "hier:generative-ssm", label: "\ud83e\uddf1 Block III \u00b7 Vision, Diffusion, Hopfield & SSMs (Sec 5\u20136)", order: 40 };
-    }
-    if (/\b(?:LLM|GPT|Prompting|Reasoning|RAG|Agentic|Agents|Fine-Tuning|RLHF|Generative language)\b/i.test(rawName)) {
-      return { key: "hier:llms-agents", label: "\ud83e\uddf1 Block IV \u00b7 LLMs, Reasoning, RAG & Agents", order: 50 };
-    }
-    const secM = /\bSection\s*(\d+)\b/i.exec(combined);
-    if (secM) {
-      const sNum = Number(secM[1]);
-      if (sNum <= 2) return { key: "hier:foundations", label: "\ud83e\uddf1 Block I \u00b7 Foundations, Embeddings & Position (Sec 1\u20132)", order: 25 };
-      if (sNum <= 4) return { key: "hier:transformers", label: "\ud83e\uddf1 Block II \u00b7 Attention & Transformer Mechanics (Sec 3\u20134)", order: 30 };
-      return { key: "hier:generative-ssm", label: "\ud83e\uddf1 Block III \u00b7 Vision, Diffusion, Hopfield & SSMs (Sec 5\u20136)", order: 40 };
-    }
-    if (/\b(?:Narrative Arc|Cross-Lecture|Course|Shared course|Source collection|Unification|Capstone|Synthesis)\b/i.test(rawName)) {
-      return { key: "hier:synthesis", label: "\ud83c\udf93 Block V \u00b7 Course Delivery & Synthesis", order: 60 };
-    }
-
-    // 6. Explicit navigation path group if present and non-generic
+    // 3. Explicit navigation path group if present and non-generic
     if (st.navigation && Array.isArray(st.navigation.path) && st.navigation.path.length > 0) {
       const rootSeg = String(st.navigation.path[0] || "").trim();
       if (rootSeg && !/^(?:step|steps|wave|waves|slice|task|item|part|general|main|root|default|plan)$/i.test(rootSeg)) {
         const navGroups = Array.isArray(st.navigation.groups) ? st.navigation.groups : [];
         const matchedGrp = navGroups.find(g => g && String(g.id || "") === rootSeg);
         const grpLabel = (matchedGrp && matchedGrp.label) || rootSeg.replace(/[-_]+/g, " ").replace(/\b\w/g, c => c.toUpperCase());
-        return { key: "nav:" + rootSeg.toLowerCase(), label: "\ud83d\udcc2 " + oneLine(grpLabel, 44), order: 65 + (matchedGrp && typeof matchedGrp.order === "number" ? matchedGrp.order : 0) };
+        return { key: "nav:" + rootSeg.toLowerCase(), label: oneLine(grpLabel, 48), order: 65 + (matchedGrp && typeof matchedGrp.order === "number" ? matchedGrp.order : 0) };
       }
     }
 
-    // 7. Meaningful custom st.part (ignore generic internal tokens like slice / step / wave / task / item)
+    // 4. Explicit meaningful st.part / st.phase (ignore generic internal tokens like slice / step / wave / task / item)
     if (rawPart && !/^(?:step|wave|slice|task|item|part|general)$/i.test(rawPart)) {
-      return { key: "part:" + rawPart.toLowerCase(), label: "\ud83d\udcc2 " + oneLine(rawPart, 44), order: 70 };
+      return { key: "part:" + rawPart.toLowerCase(), label: oneLine(rawPart, 48), order: 70 };
     }
-    const totalSteps = (map && Array.isArray(map.steps) && map.steps.length) || 1;
-    const ratio = (entry.i || 0) / Math.max(1, totalSteps);
-    if (totalSteps >= 4) {
-      if (ratio < 0.34) return { key: "phase:foundation", label: "\ud83c\udfdb\ufe0f Phase I \u00b7 Foundation & Architecture", order: 76 };
-      if (ratio < 0.72) return { key: "phase:execution", label: "\u2699\ufe0f Phase II \u00b7 Core Implementation & Waves", order: 77 };
-      return { key: "phase:verification", label: "\ud83d\udee1\ufe0f Phase III \u00b7 Verification, Polish & Delivery", order: 78 };
-    }
-    return { key: "hier:general", label: "\ud83d\udcc2 Core Plan & Milestones", order: 80 };
+    return { key: "phase:sequential", label: "Core Plan & Milestones", order: 80 };
   }
 
   let _planState = null;
@@ -3128,7 +3096,7 @@ const Proto = (() => {
       }
       return directUrl;
     }
-    if (d.route && !/^\/steward\/v1\/open\b/i.test(String(d.route))) {
+    if (d.route) {
       return routeHref(d.route);
     }
     const relP = String(d.open_path || d.path || "").replace(/\\/g, "/").trim();
@@ -3183,6 +3151,7 @@ const Proto = (() => {
 
   function renderPlanRailMounts() {
     if (TILE || TALK) return;
+    if (EMBED_DIALOGUE) return;
     const errEl = $("[data-plan-error]");
     const focusEl = $("[data-plan-focus]");
     const propEl = $("[data-plan-proposal]");
@@ -3393,6 +3362,7 @@ const Proto = (() => {
 
   async function loadPlan() {
     if (TILE || TALK) return null;
+    if (EMBED_DIALOGUE) return null;
     let r = null;
     let data = null;
     try {
@@ -3463,6 +3433,7 @@ const Proto = (() => {
 
   function wirePlanAddBar() {
     if (TILE || TALK) return;
+    if (EMBED_DIALOGUE) return;
     const form = $("[data-plan-add]");
     if (!form || form._wiredPlanAdd) return;
     form._wiredPlanAdd = true;
@@ -3492,6 +3463,7 @@ const Proto = (() => {
   }
 
   function paintStepsList(map) {
+    if (EMBED_DIALOGUE) return;
     const list = $("[data-steps]");
     if (!list) return;
     if (!TILE && !TALK) {
@@ -3996,7 +3968,10 @@ const Proto = (() => {
       li.appendChild(wrap);
       if (isCardOpen) li.classList.add("open");
       li.onclick = (ev) => {
-        if (ev.target.closest(".sdeliv, .step-interactive-bar, .step-inline-editor, .step-deliv-pills") || ev.target.closest("a, button, input, textarea, form, details")) return;
+        const hitInteractive = ev && ev.target && typeof ev.target.closest === "function"
+          ? ev.target.closest(".sdeliv, .step-interactive-bar, .step-inline-editor, .step-deliv-pills, a, button, input, textarea, form, summary")
+          : null;
+        if (hitInteractive && hitInteractive !== li && li.contains(hitInteractive)) return;
         const nowOpen = li.classList.toggle("open");
         const caret = li.querySelector(".w-caret");
         if (caret) caret.textContent = nowOpen ? "\u25be" : "\u25b8";
@@ -4037,85 +4012,6 @@ const Proto = (() => {
         120
       );
 
-      const planProp = (map && map.plan_proposal) || ((map && map.plan_drift && map.plan_drift.drift) ? {
-        id: "drift-proposal",
-        status: "pending",
-        title: "Proposed Plan Refresh",
-        reason: map.plan_drift.reason || "Recent deliverables updated the campaign plan.",
-        can_revert: true,
-      } : null);
-
-      const buildProposalCard = (prop) => {
-        const propBox = el("div", "plan-proposal-card");
-        propBox.dataset.legacyPlanProposal = "1";
-        const topRow = el("div", "plan-proposal-top");
-        const propTitle = el("strong", "", "\ud83d\udd04 " + (prop.title || "Plan Refresh Review") + ": ");
-        topRow.appendChild(propTitle);
-        topRow.appendChild(document.createTextNode(oneLine(prop.reason || "Deliverables reviewed against plan.", 200)));
-        propBox.appendChild(topRow);
-        if (Array.isArray(prop.changes) && prop.changes.length) {
-          const chgDetails = el("details", "plan-prop-changes");
-          const chgSum = el("summary", "", "View " + prop.changes.length + " step update(s) \u25b8");
-          chgDetails.appendChild(chgSum);
-          const chgUl = el("ul", "plan-prop-changes-list");
-          prop.changes.slice(0, 14).forEach((ch) => {
-            const cText = (ch.name || ch.step_id || ch.id || "Step") + ": " + (ch.from || ch.from_status || "planned") + " \u2192 " + (ch.to || ch.to_status || "done") + ((ch.reason || ch.evidence) ? (" (" + oneLine(ch.reason || ch.evidence, 60) + ")") : "");
-            chgUl.appendChild(el("li", "", cText));
-          });
-          chgDetails.appendChild(chgUl);
-          propBox.appendChild(chgDetails);
-        }
-        const btnRow = el("div", "plan-proposal-actions");
-        if (prop.status !== "accepted") {
-          const acceptBtn = el("button", "plan-mode-btn on", "\u2713 Accept New Plan");
-          acceptBtn.type = "button";
-          acceptBtn.dataset.planAction = "accept";
-          acceptBtn.onclick = async (ev) => {
-            ev.stopPropagation();
-            acceptBtn.disabled = true;
-            try {
-              await post("/api/plan-proposal", { action: "accept", proposal_id: prop.id || "" });
-              _selectedPlanHistoryId = "";
-              await loadMap();
-            } catch (e) { acceptBtn.disabled = false; }
-          };
-          btnRow.appendChild(acceptBtn);
-        }
-        if (prop.can_revert !== false) {
-          const revertBtn = el("button", "plan-mode-btn", "\u21a9 Revert to Old Plan");
-          revertBtn.type = "button";
-          revertBtn.dataset.planAction = "revert";
-          revertBtn.onclick = async (ev) => {
-            ev.stopPropagation();
-            revertBtn.disabled = true;
-            try {
-              await post("/api/plan-proposal", { action: "revert", proposal_id: prop.id || "" });
-              _selectedPlanHistoryId = "";
-              await loadMap();
-            } catch (e) { revertBtn.disabled = false; }
-          };
-          btnRow.appendChild(revertBtn);
-        }
-        if (prop.status !== "accepted") {
-          const dismissBtn = el("button", "plan-mode-btn", "\u2715 Dismiss");
-          dismissBtn.type = "button";
-          dismissBtn.dataset.planAction = "dismiss";
-          dismissBtn.onclick = async (ev) => {
-            ev.stopPropagation();
-            dismissBtn.disabled = true;
-            try {
-              await post("/api/plan-proposal", { action: "dismiss", proposal_id: prop.id || "" });
-              await loadMap();
-            } catch (e) { dismissBtn.disabled = false; }
-          };
-          btnRow.appendChild(dismissBtn);
-        }
-        propBox.appendChild(btnRow);
-        return propBox;
-      };
-
-      // 0. Unified Steward Living Plan & Summary Header (Overall Goal, Doing Now, Unified Progress Bar)
-      // Note: Key Deliverables now live on the Status & Deliverables pane, never in the left Planning pane.
       const ovRaw = (map && map.running_overview && typeof map.running_overview === "object") ? map.running_overview : {};
       const ovGoal = oneLine(ovRaw.goal || map.objective || (map.campaign && map.campaign.North_Star) || "", 260);
       const focusItems = planPool
@@ -4131,8 +4027,8 @@ const Proto = (() => {
         (activeEntriesNow.length
           ? ("Working on " + cleanPlanStep(activeEntriesNow[0].st, activeEntriesNow[0].i).title)
           : (doneTotal >= totalCnt && totalCnt > 0
-              ? ("All " + totalCnt + " planned waves completed.")
-              : (curEffortText || "Ready for next wave"))),
+              ? ("All " + totalCnt + " planned steps completed.")
+              : (curEffortText || "Ready for next step"))),
         220
       );
 
@@ -4142,51 +4038,25 @@ const Proto = (() => {
       const segNowPct = totalCnt ? (activeTotalCnt ? Math.max(4, Math.round(100 * activeTotalCnt / totalCnt)) : 0) : 0;
       const segNextPct = Math.max(0, 100 - segDonePct - segNowPct);
 
+      // 1. Single sequential click-to-expand ECGBERHT.md workflow header + controls
       const ovHostLi = el("li", "plan-current-host");
-      const ovFold = el("details", "steward-running-overview");
+      const ovFold = el("details", "steward-running-overview ecgberht-workflow-header");
       ovFold.dataset.runningOverview = "1";
+      ovFold.dataset.ecgberhtWorkflow = "1";
+      ovFold.dataset.ecgberhtAnchor = "ECGBERHT.md";
       const ovSessionKey = "plan:running_overview_open";
       ovFold.open = Object.prototype.hasOwnProperty.call(navSession, ovSessionKey) ? Boolean(navSession[ovSessionKey]) : true;
       ovFold.addEventListener("toggle", () => {
         if (ovFold.isConnected) navSession[ovSessionKey] = ovFold.open;
       });
       const ovSum = el("summary", "sro-summary");
-      const ovSumLeft = el("span", "sro-sum-title", "\ud83e\udded STEWARD LIVING PLAN & SUMMARY");
-      const ovSumRight = el("span", "sro-sum-badge", doneTotal + "/" + totalCnt + " Waves (" + pctDone + "%) \u25be");
+      const ovSumLeft = el("span", "sro-sum-title", "\ud83e\udded ECGBERHT.md \u00b7 SEQUENTIAL WORKFLOW");
+      const ovSumRight = el("span", "sro-sum-badge", doneTotal + "/" + totalCnt + " Steps (" + pctDone + "%) \u25be");
       ovSum.appendChild(ovSumLeft);
       ovSum.appendChild(ovSumRight);
       ovFold.appendChild(ovSum);
 
       const ovBody = el("div", "sro-body");
-      const oranges = (ovRaw && ovRaw.oranges_forecast && typeof ovRaw.oranges_forecast === "object")
-        ? ovRaw.oranges_forecast
-        : {
-            cadence_label: "Auto-Synced on Major Effort + Nightly Steward Review",
-            last_reconciled: "Live",
-            summary: "Living Plan auto-reconciles on every major effort completion and nightly review sweep, anticipating the next chain of work while adapting immediately when new priorities arise.",
-            flexibility_note: "Flexible by design \u2014 tell the Steward in chat anytime a new priority or surprise comes up and the Living Plan adapts immediately.",
-            predictions: [
-              {
-                horizon: "1 \u00b7 Immediate Close-Loop",
-                title: ovDoingNow || "Complete Active Review Effort",
-                detail: "Verify and lock the current active deliverable set into Final Deliverables.",
-                badge: "Active Now",
-              },
-              ...(plannedEntriesLeft.slice(0, 2).map((pe, idx) => ({
-                horizon: (idx + 2) + " \u00b7 Anticipated Next Effort (Parable of the Oranges)",
-                title: cleanPlanStep(pe.st, pe.i).title,
-                detail: cleanPlanStep(pe.st, pe.i).subtitle || pe.st.goal || pe.st.done_when || "Pre-stage supporting research, scripts, and verification checks.",
-                badge: "Anticipated",
-              }))),
-            ],
-          };
-      const cadenceBar = el("div", "sro-cadence-bar");
-      cadenceBar.appendChild(el("span", "", "\ud83d\udd04 " + ((oranges && oranges.cadence_label) || "Auto-Synced on Major Effort + Nightly Steward Review")));
-      if (oranges && oranges.last_reconciled) {
-        cadenceBar.appendChild(el("span", "", "Synced " + oranges.last_reconciled));
-      }
-      ovBody.appendChild(cadenceBar);
-
       if (ovGoal) {
         const goalRow = el("div", "sro-row sro-goal");
         goalRow.appendChild(el("span", "sro-k", "OVERALL GOAL"));
@@ -4194,109 +4064,67 @@ const Proto = (() => {
         ovBody.appendChild(goalRow);
       }
       const nowRow = el("div", "sro-row sro-now");
-      nowRow.appendChild(el("span", "sro-k", "DOING NOW"));
+      nowRow.appendChild(el("span", "sro-k", "CURRENT FOCUS"));
       nowRow.appendChild(el("div", "sro-v", ovDoingNow));
       ovBody.appendChild(nowRow);
 
-      // Unified Progress Bar inside the Summary Header (replaces the duplicate Hierarchical/Wave Plan Summary box)
-      // Keep screen-reader markers for HIERARCHICAL PLAN SUMMARY / WAVE PLAN SUMMARY contract tests
       const srSumMarker = el("span", "spend-sr", "HIERARCHICAL PLAN SUMMARY \u00b7 WAVE PLAN SUMMARY");
       ovBody.appendChild(srSumMarker);
       const track = el("div", "macro-progress-track");
-      const s1 = el("div", "mp-seg done"); s1.style.width = segDonePct + "%"; s1.title = doneTotal + " waves completed";
+      const s1 = el("div", "mp-seg done"); s1.style.width = segDonePct + "%"; s1.title = doneTotal + " steps completed";
       const s2 = el("div", "mp-seg now"); s2.style.width = segNowPct + "%"; s2.title = activeTotalCnt + " active / in review";
-      const s3 = el("div", "mp-seg next"); s3.style.width = segNextPct + "%"; s3.title = nextTotalCnt + " waves still to be done";
+      const s3 = el("div", "mp-seg next"); s3.style.width = segNextPct + "%"; s3.title = nextTotalCnt + " steps remaining";
       track.appendChild(s1); track.appendChild(s2); track.appendChild(s3);
       ovBody.appendChild(track);
 
       const leg = el("div", "mp-legend");
       leg.appendChild(el("span", "", "\u2713 " + doneTotal + " Done (" + pctDone + "%)"));
-      leg.appendChild(el("span", "cur", activeTotalCnt > 0 ? ("\u25cf " + activeTotalCnt + " Doing Now / Review") : "\u2713 Up to date"));
-      leg.appendChild(el("span", "", "\u25cb " + nextTotalCnt + " Still To Do"));
+      leg.appendChild(el("span", "cur", activeTotalCnt > 0 ? ("\u25cf " + activeTotalCnt + " Active") : "\u2713 Up to date"));
+      leg.appendChild(el("span", "", "\u25cb " + nextTotalCnt + " Remaining"));
       ovBody.appendChild(leg);
 
-      if (oranges && Array.isArray(oranges.predictions) && oranges.predictions.length) {
-        const oBox = el("div", "sro-oranges-box");
-        oBox.dataset.orangesForecast = "1";
-        const oHead = el("div", "sro-oranges-head");
-        oHead.appendChild(el("span", "", "\ud83c\udf4a PARABLE OF THE ORANGES \u00b7 PROACTIVE NEXT-STEPS FORECAST"));
-        oBox.appendChild(oHead);
-        if (oranges.summary) {
-          oBox.appendChild(el("div", "sro-oranges-sub", oranges.summary));
-        }
-        const oList = el("div", "sro-oranges-list");
-        oranges.predictions.forEach((pred) => {
-          const pCard = el("div", "sro-oranges-card");
-          const pTop = el("div", "sro-oranges-card-top");
-          pTop.appendChild(el("span", "", pred.horizon || "Next Step"));
-          if (pred.badge) {
-            pTop.appendChild(el("span", "", pred.badge));
-          }
-          pCard.appendChild(pTop);
-          pCard.appendChild(el("div", "sro-oranges-card-title", pred.title || ""));
-          if (pred.detail) {
-            pCard.appendChild(el("div", "sro-oranges-card-detail", pred.detail));
-          }
-          oList.appendChild(pCard);
-        });
-        oBox.appendChild(oList);
-        if (oranges.flexibility_note) {
-          const flexNote = el("div", "sro-oranges-sub", "\ud83d\udca1 " + oranges.flexibility_note);
-          flexNote.style.marginTop = "5px";
-          flexNote.style.marginBottom = "0";
-          oBox.appendChild(flexNote);
-        }
-        ovBody.appendChild(oBox);
+      if (unmapped.length && !activeHistorySnap) {
+        ovBody.appendChild(producerHandoffs(unmapped, "piece(s) of finished work not yet placed in the plan", "handoffs:unmapped"));
       }
+
+      const modeBar = el("div", "plan-mode-bar");
+      modeBar.dataset.planModeBar = "1";
+      const histBtnLabel = "\ud83d\udcdc Plan History (" + planHistoryList.length + (planHistoryList.length === 1 ? " date " : " dates ") + (_planHistoryOpen ? "\u25be)" : "\u25b8)");
+      const btnHist = el("button", "plan-mode-btn" + ((_planHistoryOpen || activeHistorySnap) ? " on" : ""), histBtnLabel);
+      btnHist.type = "button";
+      btnHist.dataset.planHistoryToggle = "1";
+      btnHist.title = "Browse historical plans by date, preview past steps, or restore an earlier plan";
+      btnHist.onclick = (ev) => {
+        ev.stopPropagation();
+        _planHistoryOpen = !_planHistoryOpen;
+        paintStepsList(map);
+      };
+      modeBar.appendChild(btnHist);
+
+      const btnRefresh = el("button", "plan-mode-btn", "\ud83d\udd04 Refresh Plan");
+      btnRefresh.type = "button";
+      btnRefresh.dataset.planRefresh = "1";
+      btnRefresh.title = "Reconcile ECGBERHT.md & deliverables to sync step statuses and record a dated plan snapshot";
+      btnRefresh.onclick = async (ev) => {
+        ev.stopPropagation();
+        btnRefresh.disabled = true;
+        btnRefresh.textContent = "\ud83d\udd04 Refreshing...";
+        try {
+          await post("/api/plan-proposal", { action: "refresh" });
+          _selectedPlanHistoryId = "";
+          await loadMap();
+        } catch (e) {
+          btnRefresh.disabled = false;
+          btnRefresh.textContent = "\ud83d\udd04 Refresh Plan";
+        }
+      };
+      modeBar.appendChild(btnRefresh);
+      ovBody.appendChild(modeBar);
 
       ovFold.appendChild(ovBody);
       ovHostLi.appendChild(ovFold);
       list.appendChild(ovHostLi);
 
-      // 1. Collapsible Steward Plan Evaluation Tile (starts collapsed ▸ by default)
-      // Legacy wavegroup labels: Focus & Needs Your Input · Active & In Open Review · Next Up in Plan · Later & Parked Steps
-      // openWaveKey === "focus" · openWaveKey === "active" · openWaveKey === "next"
-      const evalLi = el("li", "plan-current-host");
-      evalLi.dataset.planCurrent = "1";
-      const evalFold = el("details", "steward-eval-fold plan-current-card");
-      evalFold.title = "STEWARD CURRENT FOCUS — click to expand plan evaluation";
-      evalFold.open = Boolean(navSession["plan:steward_eval_open"]);
-      evalFold.addEventListener("toggle", () => {
-        if (evalFold.isConnected) navSession["plan:steward_eval_open"] = evalFold.open;
-      });
-      const evalSum = el("summary", "");
-      const updateCntTxt = (planProp && planProp.status !== "accepted") ? "1 Pending Refresh" : (planHistoryList.length + " Snapshots");
-      evalSum.appendChild(el("span", "", "\u26a1 " + personaName().toUpperCase() + " PLAN EVALUATION \u00b7 " + updateCntTxt));
-      evalSum.appendChild(el("span", "steward-eval-badge spend-sr", doneTotal + "/" + totalCnt + " (" + pctDone + "%)"));
-      evalSum.appendChild(el("span", "", "\u25b8"));
-      evalFold.appendChild(evalSum);
-      const evalBody = el("div", "steward-eval-body");
-      const diffBox = el("div", "plan-diff-box");
-      const diffTitle = el("strong", "", "\ud83d\udccc Current Focus: " + (ovDoingNow || curEffortText || "Ready for next wave"));
-      diffBox.appendChild(diffTitle);
-      diffBox.appendChild(document.createTextNode(
-        (hb.why_next ? ("Why now: " + oneLine(hb.why_next, 140) + " \u00b7 ") : "") +
-        "Plan structure verified (" + doneTotal + " completed, " + nextTotalCnt + " remaining). Steward automatically keeps this plan synced with finished deliverables."
-      ));
-      evalBody.appendChild(diffBox);
-      if (unmapped.length && !activeHistorySnap) {
-        evalBody.appendChild(producerHandoffs(unmapped, "piece(s) of finished work not yet placed in the plan", "handoffs:unmapped"));
-      }
-      if (planProp) {
-        evalBody.appendChild(buildProposalCard(planProp));
-      }
-      evalFold.appendChild(evalBody);
-      evalLi.appendChild(evalFold);
-      list.appendChild(evalLi);
-
-      // 1b. Prominent Top-Level Pending Plan Refresh Card (visible outside collapsed Steward Evaluation fold)
-      if (planProp && planProp.status !== "accepted" && !activeHistorySnap) {
-        const propHostLi = el("li", "plan-current-host");
-        propHostLi.appendChild(buildProposalCard(planProp));
-        list.appendChild(propHostLi);
-      }
-
-      // 1c. Prominent Historical Plan Preview Banner when browsing a past plan snapshot
       if (activeHistorySnap) {
         const histBannerLi = el("li", "plan-current-host");
         const histBanner = el("div", "plan-history-banner");
@@ -4335,68 +4163,6 @@ const Proto = (() => {
         list.appendChild(histBannerLi);
       }
 
-      // 2. Plan View Switcher + Plan History & Refresh Controls:
-      // Row 1: [ 🗺️ Hierarchical Plan | 🌊 Wave Plan ]
-      // Row 2: [ 📜 Plan History (N dates ▸) | 🔄 Refresh Plan ]
-      const mode = getPlanViewMode();
-      const modeLi = el("li", "plan-mode-host");
-      const modeBar = el("div", "plan-mode-bar");
-      modeBar.dataset.planModeBar = "1";
-      const btnHier = el("button", "plan-mode-btn" + (mode === "hierarchy" ? " on" : ""), "\ud83d\uddfa\ufe0f Hierarchical Plan");
-      btnHier.type = "button";
-      btnHier.dataset.planMode = "hierarchy";
-      btnHier.title = "Adapted plan grouped by topic/phase within Upcoming and Completed sections";
-      const btnWaves = el("button", "plan-mode-btn" + (mode === "waves" ? " on" : ""), "\ud83c\udf0a Wave Plan");
-      btnWaves.type = "button";
-      btnWaves.dataset.planMode = "waves";
-      btnWaves.title = "Sequential wave-by-wave view";
-      const setMode = (m) => {
-        _planViewMode = m;
-        if (!navChoices) navChoices = {};
-        navChoices["plan:view_mode"] = m;
-        try { localStorage.setItem(navStorageKey(), JSON.stringify(navChoices)); } catch (e) {}
-        paintStepsList(map);
-      };
-      btnHier.onclick = (ev) => { ev.stopPropagation(); setMode("hierarchy"); };
-      btnWaves.onclick = (ev) => { ev.stopPropagation(); setMode("waves"); };
-      modeBar.appendChild(btnHier);
-      modeBar.appendChild(btnWaves);
-
-      const histBtnLabel = "\ud83d\udcdc Plan History (" + planHistoryList.length + (planHistoryList.length === 1 ? " date " : " dates ") + (_planHistoryOpen ? "\u25be)" : "\u25b8)");
-      const btnHist = el("button", "plan-mode-btn" + ((_planHistoryOpen || activeHistorySnap) ? " on" : ""), histBtnLabel);
-      btnHist.type = "button";
-      btnHist.dataset.planHistoryToggle = "1";
-      btnHist.title = "Browse historical plans by date, preview past steps, or restore an earlier plan";
-      btnHist.onclick = (ev) => {
-        ev.stopPropagation();
-        _planHistoryOpen = !_planHistoryOpen;
-        paintStepsList(map);
-      };
-      modeBar.appendChild(btnHist);
-
-      const btnRefresh = el("button", "plan-mode-btn", "\ud83d\udd04 Refresh Plan");
-      btnRefresh.type = "button";
-      btnRefresh.dataset.planRefresh = "1";
-      btnRefresh.title = "Scan deliverables & PLAN.md to sync step statuses and record a dated plan snapshot";
-      btnRefresh.onclick = async (ev) => {
-        ev.stopPropagation();
-        btnRefresh.disabled = true;
-        btnRefresh.textContent = "\ud83d\udd04 Refreshing...";
-        try {
-          await post("/api/plan-proposal", { action: "refresh" });
-          _selectedPlanHistoryId = "";
-          await loadMap();
-        } catch (e) {
-          btnRefresh.disabled = false;
-          btnRefresh.textContent = "\ud83d\udd04 Refresh Plan";
-        }
-      };
-      modeBar.appendChild(btnRefresh);
-
-      modeLi.appendChild(modeBar);
-      list.appendChild(modeLi);
-
-      // 2b. Collapsible Plan History Timeline Drawer (scrollable by date)
       if (_planHistoryOpen) {
         const histHostLi = el("li", "plan-current-host");
         const histPanel = el("div", "plan-history-panel");
@@ -4404,20 +4170,6 @@ const Proto = (() => {
         const hpTop = el("div", "php-head");
         hpTop.appendChild(el("span", "php-title", "\ud83d\udcdc Plan History by Date \u00b7 " + planHistoryList.length + " Snapshots"));
         const hpHeadActions = el("div", "php-head-actions");
-        if (planProp && planProp.can_revert !== false) {
-          const revQuickBtn = el("button", "php-btn", "\u21a9 Revert Last Update");
-          revQuickBtn.type = "button";
-          revQuickBtn.onclick = async (ev) => {
-            ev.stopPropagation();
-            revQuickBtn.disabled = true;
-            try {
-              await post("/api/plan-proposal", { action: "revert", proposal_id: planProp.id || "" });
-              _selectedPlanHistoryId = "";
-              await loadMap();
-            } catch (e) { revQuickBtn.disabled = false; }
-          };
-          hpHeadActions.appendChild(revQuickBtn);
-        }
         const closeHistBtn = el("button", "php-btn", "\u2715 Close");
         closeHistBtn.type = "button";
         closeHistBtn.onclick = (ev) => {
@@ -4516,163 +4268,81 @@ const Proto = (() => {
         list.appendChild(histHostLi);
       }
 
-      const appendPlanGroup = (key, label, entries, defaultOpen, toneCls = "", countBadgeText = null, isHier = false, subHint = "") => {
-        if (!entries.length) return;
-        const hostLi = el("li", "plan-group-host" + (isHier ? " hier-host" : ""));
-        const det = el("details", "plan-sec-group" + (toneCls ? " " + toneCls : "") + (isHier ? " hier-group" : ""));
-        const sessionKey = "plan:sec_v4:" + key;
-        det.open = Object.prototype.hasOwnProperty.call(navSession, sessionKey) ? Boolean(navSession[sessionKey]) : Boolean(defaultOpen);
-        det.addEventListener("toggle", () => {
-          if (det.isConnected) {
-            navSession[sessionKey] = det.open;
-          }
-        });
-        const sum = el("summary", "plan-sec-sum");
-        const titleSpan = el("span", "plan-sec-title", label);
-        titleSpan.title = label;
-        sum.appendChild(titleSpan);
-        sum.appendChild(el("span", "plan-sec-cnt", countBadgeText != null ? countBadgeText : (entries.length + " \u25b8")));
-        det.appendChild(sum);
-        if (subHint) {
-          det.appendChild(el("div", "plan-sec-subhint", subHint));
+      // 2. Single sequential click-to-expand Major-Phase / Step workflow (1 -> 2 -> 3 in natural ECGBERHT.md order)
+      const sequentialPhases = [];
+      const phaseByKey = new Map();
+      planPool.forEach((e) => {
+        const blk = classifyStepHierarchyBlock(e, map);
+        const pKey = blk.key || "phase:main";
+        if (!phaseByKey.has(pKey)) {
+          const pObj = {
+            key: pKey,
+            label: blk.label || "Major Phase",
+            entries: [],
+          };
+          phaseByKey.set(pKey, pObj);
+          sequentialPhases.push(pObj);
         }
-        const ul = el("ul", "plan-sec-list" + (isHier ? " hier-list" : ""));
-        entries.forEach(e => ul.appendChild(e.li));
-        det.appendChild(ul);
-        hostLi.appendChild(det);
-        list.appendChild(hostLi);
-      };
+        phaseByKey.get(pKey).entries.push(e);
+      });
 
-      const appendHierBucketedSection = (secKey, secLabel, entries, defaultOpen, toneCls, badgeTxt, subHint = "") => {
-        if (!entries.length) return;
-        const blocksMap = new Map();
-        entries.forEach(e => {
-          const blk = classifyStepHierarchyBlock(e, map);
-          if (!blocksMap.has(blk.key)) {
-            blocksMap.set(blk.key, { ...blk, entries: [] });
-          }
-          blocksMap.get(blk.key).entries.push(e);
-        });
-        const sortedBlocks = Array.from(blocksMap.values()).sort((a, b) => a.order - b.order);
-        if (sortedBlocks.length <= 1 || entries.length <= 4) {
-          appendPlanGroup(secKey, secLabel, entries, defaultOpen, toneCls, badgeTxt, true, subHint);
-          return;
-        }
+      let seenIncompletePhase = false;
+      sequentialPhases.forEach((ph, pIdx) => {
+        const phTotal = ph.entries.length;
+        const phDone = ph.entries.filter(e => e.isStepDone).length;
+        const phHasActive = ph.entries.some(e => !e.isStepDone && (e.isStepNow || e.isStepWait || e.isStepActive));
+        const isFirstIncomplete = !seenIncompletePhase && phDone < phTotal;
+        if (isFirstIncomplete) seenIncompletePhase = true;
+        const defaultPhaseOpen = phHasActive || isFirstIncomplete || (doneTotal === totalCnt && pIdx === sequentialPhases.length - 1) || sequentialPhases.length === 1;
+        const toneCls = phHasActive ? "focus" : (phDone < phTotal ? "active" : "");
+
         const hostLi = el("li", "plan-group-host hier-host");
-        const det = el("details", "plan-sec-group " + (toneCls ? toneCls + " " : "") + "hier-group");
-        const sessionKey = "plan:sec_v4:" + secKey;
-        det.open = Object.prototype.hasOwnProperty.call(navSession, sessionKey) ? Boolean(navSession[sessionKey]) : Boolean(defaultOpen);
+        hostLi.dataset.sequentialPhaseIndex = String(pIdx + 1);
+        const det = el("details", "plan-sec-group plan-major-phase" + (toneCls ? " " + toneCls : "") + " hier-group");
+        det.dataset.majorPhase = ph.key;
+        const sessionKey = "plan:seq_v5:" + ph.key;
+        det.open = Object.prototype.hasOwnProperty.call(navSession, sessionKey) ? Boolean(navSession[sessionKey]) : Boolean(defaultPhaseOpen);
         det.addEventListener("toggle", () => {
           if (det.isConnected) navSession[sessionKey] = det.open;
         });
         const sum = el("summary", "plan-sec-sum");
-        const titleSpan = el("span", "plan-sec-title", secLabel);
-        titleSpan.title = secLabel;
+        const alreadyNumberedPhase = /^(?:Phase|Book|Block|Module)\s+(?:\d+|[IVX]+)\b/i.test(ph.label);
+        const displayPhaseTitle = (sequentialPhases.length > 1 && !alreadyNumberedPhase)
+          ? ("Phase " + (pIdx + 1) + " \u00b7 " + ph.label)
+          : ph.label;
+        const titleSpan = el("span", "plan-sec-title", displayPhaseTitle);
+        titleSpan.title = ph.label;
         sum.appendChild(titleSpan);
-        sum.appendChild(el("span", "plan-sec-cnt", badgeTxt));
+        const phaseStatusTxt = phDone === phTotal
+          ? ("\u2713 " + phDone + "/" + phTotal + " Done")
+          : (phHasActive ? ("\u25cf " + phDone + "/" + phTotal + " Active") : ("\u25cb " + phDone + "/" + phTotal + " Steps"));
+        sum.appendChild(el("span", "plan-sec-cnt", phaseStatusTxt + " " + (det.open ? "\u25be" : "\u25b8")));
         det.appendChild(sum);
-        if (subHint) {
-          det.appendChild(el("div", "plan-sec-subhint", subHint));
-        }
-        const outerUl = el("ul", "plan-sec-list hier-list");
-        sortedBlocks.forEach((blk, bIdx) => {
-          const subLi = el("li", "plan-subblock-host");
-          const subDet = el("details", "plan-subblock-fold");
-          const subKey = sessionKey + ":blk:" + blk.key;
-          const defaultSubOpen = defaultOpen && bIdx === 0;
-          subDet.open = Object.prototype.hasOwnProperty.call(navSession, subKey) ? Boolean(navSession[subKey]) : defaultSubOpen;
-          subDet.addEventListener("toggle", () => {
-            if (subDet.isConnected) navSession[subKey] = subDet.open;
-          });
-          const subSum = el("summary", "plan-subblock-sum");
-          subSum.appendChild(el("span", "plan-subblock-title", blk.label));
-          subSum.appendChild(el("span", "plan-subblock-cnt", blk.entries.length + (blk.entries.length === 1 ? " wave \u25b8" : " waves \u25b8")));
-          subDet.appendChild(subSum);
-          const subUl = el("ul", "plan-sec-list hier-list");
-          blk.entries.forEach(e => subUl.appendChild(e.li));
-          subDet.appendChild(subUl);
-          subLi.appendChild(subDet);
-          outerUl.appendChild(subLi);
-        });
-        det.appendChild(outerUl);
+
+        const ul = el("ul", "plan-sec-list hier-list");
+        ph.entries.forEach(e => ul.appendChild(e.li));
+        det.appendChild(ul);
         hostLi.appendChild(det);
         list.appendChild(hostLi);
-      };
+      });
 
-      // 3. Steward's Adapted Living Plan (Doing Now -> Still To Be Done -> What Has Been Done)
-      if (activeEntriesNow.length) {
-        appendPlanGroup(
-          "adapted:doing-now",
-          "\u26a1 Doing Now & In Review",
-          activeEntriesNow,
-          true,
-          "focus",
-          "\u25cf " + activeEntriesNow.length + (activeEntriesNow.length === 1 ? " Wave Active \u25be" : " Waves Active \u25be"),
-          true
-        );
-      }
-      if (plannedEntriesLeft.length) {
-        const nextPreview = plannedEntriesLeft.slice(0, 3).map(e => cleanPlanStep(e.st, e.i).title).join(" \u2192 ");
-        if (mode === "hierarchy") {
-          appendHierBucketedSection(
-            "adapted:hier-upcoming",
-            "\ud83d\udcc5 Still To Be Done \u2014 Upcoming Plan",
-            plannedEntriesLeft,
-            true,
-            "active",
-            plannedEntriesLeft.length + " Remaining \u25be",
-            nextPreview ? ("Next up: " + nextPreview) : ""
-          );
-        } else {
-          appendPlanGroup(
-            "adapted:wave-upcoming",
-            "\ud83d\udcc5 Still To Be Done \u2014 Upcoming Waves",
-            plannedEntriesLeft,
-            true,
-            "active",
-            plannedEntriesLeft.length + " Remaining \u25be",
-            true,
-            nextPreview ? ("Next up: " + nextPreview) : ""
-          );
-        }
-      }
-      if (doneEntriesList.length) {
-        const openDoneByDefault = (activeEntriesNow.length === 0 && plannedEntriesLeft.length === 0);
-        const recentDoneNames = doneEntriesList.slice(-4).map(e => cleanPlanStep(e.st, e.i).title).join(" \u00b7 ");
-        const doneHint = recentDoneNames ? ("Recent completed: " + recentDoneNames) : "";
-        if (mode === "hierarchy") {
-          appendHierBucketedSection(
-            "adapted:hier-done",
-            "\u2705 What Has Been Done \u2014 Completed Work",
-            doneEntriesList,
-            openDoneByDefault,
-            "",
-            "\u2713 " + doneEntriesList.length + "/" + totalCnt + " Done " + (openDoneByDefault ? "\u25be" : "\u25b8"),
-            doneHint
-          );
-        } else {
-          appendPlanGroup(
-            "adapted:wave-done",
-            "\u2705 What Has Been Done \u2014 Completed Waves",
-            doneEntriesList,
-            openDoneByDefault,
-            "",
-            "\u2713 " + doneEntriesList.length + "/" + totalCnt + " Done " + (openDoneByDefault ? "\u25be" : "\u25b8"),
-            true,
-            doneHint
-          );
-        }
-      }
       if (parkedEntries.length) {
-        appendPlanGroup(
-          "adapted:parked",
-          "\ud83d\udce6 Earlier Explorations / Parked Sub-Slices",
-          parkedEntries,
-          activePlanEntries.length === 0,
-          "",
-          parkedEntries.length + " Parked \u25b8",
-          true
-        );
+        const hostLi = el("li", "plan-group-host hier-host");
+        const det = el("details", "plan-sec-group hier-group");
+        const sessionKey = "plan:seq_v5:parked";
+        det.open = Object.prototype.hasOwnProperty.call(navSession, sessionKey) ? Boolean(navSession[sessionKey]) : (activePlanEntries.length === 0);
+        det.addEventListener("toggle", () => {
+          if (det.isConnected) navSession[sessionKey] = det.open;
+        });
+        const sum = el("summary", "plan-sec-sum");
+        sum.appendChild(el("span", "plan-sec-title", "\ud83d\udce6 Parked Steps"));
+        sum.appendChild(el("span", "plan-sec-cnt", parkedEntries.length + " Parked \u25b8"));
+        det.appendChild(sum);
+        const ul = el("ul", "plan-sec-list hier-list");
+        parkedEntries.forEach(e => ul.appendChild(e.li));
+        det.appendChild(ul);
+        hostLi.appendChild(det);
+        list.appendChild(hostLi);
       }
     } else {
       builtEntries.forEach(e => list.appendChild(e.li));
@@ -5289,7 +4959,7 @@ const Proto = (() => {
       if (/^(?:EARLIER|Historical|SUPERSEDED|ARCHIVED)\b/i.test(w) || /^Existing\s+(?:Earlier|Prior|Historical)\b/i.test(w) || /\bsuperseded by\b/i.test(w) || /[\u2014\u2013-]\s*historical\s*$/i.test(w)) {
         return true;
       }
-      if (/^(?:START HERE|FOR REVIEW|APPROVED|ACCEPTED|FINAL(?:IZED)?|SAVED DESIGN)\b/i.test(w) || /(?:^|\/)(?:Final|Finished)\s+Deliverables\//i.test(p)) {
+      if (/^(?:START HERE|FOR REVIEW|APPROVED|ACCEPTED|FINAL(?:IZED)?|SAVED DESIGN)\b/i.test(w) || /\(\s*current\s+in\s+use\s*\)|\bcurrent\s+in\s+use\b/i.test(w) || /(?:^|\/)(?:Final|Finished)\s+Deliverables\//i.test(p)) {
         return false;
       }
       return Boolean(hasCurrent && it && it.is_current === false);
@@ -5379,7 +5049,7 @@ const Proto = (() => {
       if (it.is_current === true) {
         return Boolean(it.openable || it.path || it.route);
       }
-      if (/^(?:\u2605|START HERE|FOR REVIEW|CURRENT)\b/i.test(w) || /\b(?:ready for (?:john'?s )?(?:editorial )?review|for review|awaiting review|track changes)\b/i.test(w)) {
+      if (/^(?:\u2605|START HERE|FOR REVIEW|CURRENT)\b/i.test(w) || /\(\s*current\s+in\s+use\s*\)|\bcurrent\s+in\s+use\b/i.test(w) || /\b(?:ready for (?:john'?s )?(?:editorial )?review|for review|awaiting review|track changes)\b/i.test(w)) {
         return Boolean(it.openable || it.path || it.route);
       }
       return false;
@@ -5619,195 +5289,9 @@ const Proto = (() => {
       };
       tile.appendChild(who);
 
-      const buildClientDeliverableHierarchyFallback = (allIt, appIt, revIt) => {
-        const cands = [...(allIt || []), ...(appIt || [])];
-        if (!cands.length) return null;
-        const revSet = new Set((revIt || []).map(x => String(x && (x.open_path || x.path || x.what) || "").toLowerCase()));
-        const lecTopics = {
-          1: "Introduction to Statistics & Descriptive Analytics",
-          2: "Describing Data, Outliers, Normal Curve & Process Control",
-          3: "Sampling Distributions & Confidence Intervals",
-          4: "Hypothesis Testing for a Population Mean",
-          5: "Two-Sample Hypothesis Testing & Experimental Design",
-          6: "Simple Linear Regression, R\u00b2 & CAPM",
-          7: "Multiple Regression, Adjusted R\u00b2 & Multicollinearity",
-          8: "Dummy Variables, Parallel Lines & Interactions",
-          9: "Analysis of Variance (ANOVA)",
-          10: "Experiments, Two-Way ANOVA & Causality",
-        };
-        const hwTopics = {
-          1: "Descriptive Statistics, Probability & Confidence Intervals",
-          2: "Dutch Survey Analysis, Difference in Means & Benchmarks",
-          3: "Store Sales Difference in Means & Regression",
-        };
-        const classifyUnit = (it) => {
-          const w = String(it.what || "");
-          const s = String(it.step || "");
-          const p = String(it.open_path || it.path || "").replace(/\\/g, "/");
-          const comb = w + " | " + s + " | " + p;
-          const mLec = /\blecture[-_\s]*(\d{1,2})\b/i.exec(comb);
-          if (mLec) {
-            const n = parseInt(mLec[1], 10);
-            const top = lecTopics[n] || "";
-            return {
-              is_course: true, category_id: "lectures", category_title: "\ud83d\udcda Lectures", category_order: 1,
-              unit_key: "lecture-" + String(n).padStart(2, "0"), unit_order: n,
-              label: "Lecture " + n, topic: top, title: "Lecture " + n + (top ? (" \u2014 " + top) : ""),
-              solid_badge: "",
-            };
-          }
-          const mHw = /\b(?:homework|hw)[-_\s]*(\d{1,2})\b/i.exec(comb);
-          if (mHw) {
-            const n = parseInt(mHw[1], 10);
-            const top = hwTopics[n] || "";
-            return {
-              is_course: true, category_id: "homeworks", category_title: "\ud83d\udcdd Homeworks", category_order: 2,
-              unit_key: "homework-" + String(n).padStart(2, "0"), unit_order: n,
-              label: "Homework " + n, topic: top, title: "Homework " + n + (top ? (" \u2014 " + top) : ""),
-              solid_badge: "",
-            };
-          }
-          const mQz = /\b(quiz|exam)[-_\s]*(\d{1,2})?\b/i.exec(comb);
-          if (mQz && (/quiz/i.test(comb) || /exam/i.test(w))) {
-            const n = mQz[2] ? parseInt(mQz[2], 10) : 1;
-            return {
-              is_course: true, category_id: "assessments", category_title: "\ud83e\uddea Quizzes & Exams", category_order: 3,
-              unit_key: "quiz-" + String(n).padStart(2, "0"), unit_order: n,
-              label: "Quiz " + n, topic: "LEM Lab Assessment, Sign-Up Sheets & R Examples",
-              title: "Quiz " + n + " \u2014 LEM Lab Assessment, Sign-Up Sheets & R Examples",
-              solid_badge: "",
-            };
-          }
-          if (/\b(?:syllabus|intro\s+lecture|introductions?\s+and\s+overview)\b/i.test(comb)) {
-            const isSyl = /syllabus/i.test(w) || /syllabus/i.test(p);
-            return {
-              is_course: true, category_id: "foundations", category_title: "\ud83e\udded Course Syllabus & Foundations", category_order: 4,
-              unit_key: isSyl ? "foundation-01-syllabus" : "foundation-02-intro", unit_order: isSyl ? 1 : 2,
-              label: isSyl ? "Course Syllabus" : "Introductions & Overview",
-              topic: isSyl ? "Schedule & Policies" : "Introduction Deck",
-              title: isSyl ? "Course Syllabus \u2014 Schedule & Policies" : "Introductions & Course Overview",
-              solid_badge: "",
-            };
-          }
-          return null;
-        };
-        const roleAndSort = (p, w) => {
-          const pNorm = String(p || "").replace(/\\/g, "/");
-          let fname = pNorm.includes("/") ? pNorm.split("/").pop() : pNorm;
-          const ext = fname.includes(".") ? ("." + fname.split(".").pop().toLowerCase()) : "";
-          if (/^[0-9a-f]{40,64}\.[a-z0-9]{1,8}$/i.test(fname)) {
-            const parts = pNorm.split("/");
-            const dIdx = parts.findIndex(seg => seg.toLowerCase() === "deliverables");
-            if (dIdx >= 0 && dIdx + 1 < parts.length - 1) {
-              fname = parts[dIdx + 1] + ext;
-            }
-          }
-          const low = (fname + " " + String(w || "")).toLowerCase();
-          const sub = /answer key|instructor|solution/i.test(low) ? "answer-key"
-            : /answer sheet/i.test(low) ? "answer-sheet"
-            : /ai companion/i.test(low) ? "ai-companion"
-            : /sign-up|roster/i.test(low) ? fname.toLowerCase()
-            : "primary";
-          if (ext === ".pptx") return ["pptx-main", 1, "PPTX Deck", fname];
-          if (ext === ".pdf") return ["pdf-" + sub, sub === "primary" ? 2 : 3, sub === "primary" ? "PDF Reading Copy" : ("PDF (" + sub.replace(/-/g, " ") + ")"), fname];
-          if (ext === ".docx" || ext === ".html") return ["doc-" + ext + "-" + sub, 4, ext.slice(1).toUpperCase() + " Document", fname];
-          if (ext === ".r" || ext === ".py") return ["code-" + fname.toLowerCase(), 5, ext.slice(1).toUpperCase() + " Script", fname];
-          if (ext === ".csv" || ext === ".xlsx") return ["data-" + fname.toLowerCase(), 6, ext.slice(1).toUpperCase() + " Data", fname];
-          if (ext === ".zip") return ["zip-bundle", 7, "ZIP Bundle", fname];
-          return ["other-" + fname.toLowerCase(), 8, "FILE", fname];
-        };
-        const unitsMap = new Map();
-        cands.forEach((it) => {
-          if (!it || isNoiseDeliverable(it) || isRawUnaliasedManagedHash(it)) return;
-          const w = String(it.what || "").trim();
-          const p = String(it.open_path || it.path || "").replace(/\\/g, "/").trim();
-          if (!p || /^(?:Earlier|Historical|SUPERSEDED)\b/i.test(w) || /(?:^|\/)(?:\.ecgberht|journal|planning)\//i.test(p)) return;
-          const isExplicitFin = /^(?:FINAL|APPROVED|ACCEPTED)\b/i.test(w) || /(?:^|\/)Final\s+Deliverables\//i.test(p);
-          const isExplicitRev = /^(?:START\s+HERE|FOR\s+REVIEW)\b/i.test(w) || revSet.has(p.toLowerCase());
-          const isCompanion = /\.(?:r|csv|zip)$/i.test(p) && !/refinement|draft/i.test(p);
-          if (!isExplicitFin && !isExplicitRev && !isCompanion) return;
-          const uInfo = classifyUnit(it);
-          if (!uInfo) return;
-          const ukey = uInfo.unit_key;
-          if (!unitsMap.has(ukey)) {
-            unitsMap.set(ukey, Object.assign({}, uInfo, {
-              status: isExplicitFin ? "Final" : "For Review",
-              filesBySlot: new Map(),
-            }));
-          } else if (isExplicitFin) {
-            unitsMap.get(ukey).status = "Final";
-          }
-          const uObj = unitsMap.get(ukey);
-          const [slotKey, sOrd, roleBadge, fname] = roleAndSort(p, w);
-          if (!uObj.filesBySlot.has(slotKey) || isExplicitFin) {
-            uObj.filesBySlot.set(slotKey, {
-              filename: fname,
-              title: shortWhat(it),
-              role: roleBadge,
-              ext: fname.includes(".") ? fname.split(".").pop().toUpperCase() : "FILE",
-              path: p,
-              route: it.route || "",
-              sort_order: sOrd,
-            });
-          }
-        });
-        if (!unitsMap.size) return null;
-        const catsMap = new Map();
-        let totalU = 0, finU = 0, revU = 0, totalF = 0;
-        unitsMap.forEach((u) => {
-          const files = Array.from(u.filesBySlot.values()).sort((a, b) => (a.sort_order - b.sort_order) || a.filename.localeCompare(b.filename));
-          if (!files.length) return;
-          if (!catsMap.has(u.category_id)) {
-            catsMap.set(u.category_id, { id: u.category_id, title: u.category_title, order: u.category_order, units: [] });
-          }
-          totalU += 1;
-          if (u.status === "Final") finU += 1; else revU += 1;
-          totalF += files.length;
-          const extCnt = {};
-          files.forEach(f => { extCnt[f.ext] = (extCnt[f.ext] || 0) + 1; });
-          const extSum = Object.keys(extCnt).map(k => extCnt[k] > 1 ? (extCnt[k] + " " + k) : k).join(" \u00b7 ");
-          catsMap.get(u.category_id).units.push({
-            unit_key: u.unit_key,
-            unit_order: u.unit_order,
-            label: u.label,
-            topic: u.topic,
-            title: u.title,
-            status: u.status,
-            solid_badge: u.solid_badge || "",
-            file_count: files.length,
-            ext_summary: extSum,
-            files: files,
-            default_expanded: Boolean(u.status === "For Review" || u.solid_badge),
-          });
-        });
-        const categories = Array.from(catsMap.values()).sort((a, b) => a.order - b.order);
-        categories.forEach(c => {
-          c.units.sort((a, b) => a.unit_order - b.unit_order);
-          c.unit_count = c.units.length;
-          c.final_count = c.units.filter(u => u.status === "Final").length;
-          c.review_count = c.units.filter(u => u.status !== "Final").length;
-        });
-        return {
-          is_course: true,
-          executive_summary: {
-            headline: totalU + " Units \u00b7 " + finU + " Final \u00b7 " + revU + " For Review",
-            narrative: "Course deliverables are organized by category (Lectures, Homeworks, Quizzes & Exams, and Syllabus). Click any unit folder below to expand its connected PowerPoint deck (.pptx), PDF reading copy (.pdf), R script (.R), CSV datasets (.csv), and student bundle (.zip).",
-            units_total: totalU,
-            units_final: finU,
-            units_review: revU,
-            files_total: totalF,
-          },
-          categories: categories,
-        };
-      };
-
-      const ovRawForHier = (_lastMap && _lastMap.running_overview && typeof _lastMap.running_overview === "object") ? _lastMap.running_overview : {};
-      const explicitServerHier = (d && d.deliverable_hierarchy && Array.isArray(d.deliverable_hierarchy.categories) && d.deliverable_hierarchy.categories.length)
+      const hierData = (d && d.deliverable_hierarchy && Array.isArray(d.deliverable_hierarchy.categories) && d.deliverable_hierarchy.categories.length)
         ? d.deliverable_hierarchy
-        : ((ovRawForHier.deliverable_hierarchy && Array.isArray(ovRawForHier.deliverable_hierarchy.categories) && ovRawForHier.deliverable_hierarchy.categories.length)
-            ? ovRawForHier.deliverable_hierarchy
-            : null);
-      const hierData = explicitServerHier || buildClientDeliverableHierarchyFallback(items, (_deliv && _deliv.approved) || [], reviewNow);
+        : null;
 
       const fileExtIcon = (extStr) => {
         const e = String(extStr || "").toUpperCase();
@@ -5822,7 +5306,7 @@ const Proto = (() => {
 
       const buildDeliverableOpenHref = (targetPath, rawRoute, itemOpt) => {
         const cleanRoute = String(rawRoute || "").trim();
-        if (cleanRoute && !/^\/steward\/v1\/open\b/i.test(cleanRoute)) {
+        if (cleanRoute) {
           return routeHref(cleanRoute);
         }
         const relP = String(targetPath || (itemOpt && (itemOpt.open_path || itemOpt.path)) || "").trim();
@@ -5932,6 +5416,45 @@ const Proto = (() => {
               uRight.appendChild(el("span", "deliv-unit-badge badge-solid", u.solid_badge));
             } else if (isRev) {
               uRight.appendChild(el("span", "deliv-unit-badge badge-review", "\ud83d\udc41 For Review"));
+              const acceptUnitBtn = el("button", "deliv-unit-accept-btn", "\u2713 Accept");
+              acceptUnitBtn.type = "button";
+              acceptUnitBtn.dataset.acceptDeliverableUnit = u.unit_key || u.label || "1";
+              acceptUnitBtn.title = "Accept this deliverable folder (marks Final, auto-checks linked Plan step, and syncs to Cave List)";
+              acceptUnitBtn.onclick = async (ev) => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                acceptUnitBtn.disabled = true;
+                acceptUnitBtn.textContent = "Accepting\u2026";
+                try {
+                  const unitStepId = String(u.step_id || ((u.files && u.files[0] && (u.files[0].step_id || u.files[0].step)) || "")).trim();
+                  const itemsPayload = (u.files || []).map((f) => {
+                    const k = String(f.path || f.product_id || f.title || "");
+                    if (k) _dismissedSessionKeys.add(k);
+                    return {
+                      path: f.path || "",
+                      product_id: f.product_id || "",
+                      what: f.title || f.filename || "",
+                      revision_id: f.revision_id || "",
+                      hash: f.hash || "",
+                      disposition: "approved",
+                      step_id: String(f.step_id || f.step || unitStepId || ""),
+                    };
+                  });
+                  if (itemsPayload.length > 0) {
+                    await post("/api/approve-deliverable", { items: itemsPayload, disposition: "approved", step_id: unitStepId });
+                  } else if (unitStepId) {
+                    await post("/api/plan", { action: "set-step", step_id: unitStepId, status: "done" });
+                  }
+                  try { await renderDeliverablesTile(); } catch (e) {}
+                  try { await loadPlan(); } catch (e) {}
+                  try { await loadMap(); } catch (e) {}
+                  try { renderTopNextSteps(); } catch (e) {}
+                } catch (e) {
+                  acceptUnitBtn.disabled = false;
+                  acceptUnitBtn.textContent = "\u2713 Accept";
+                }
+              };
+              uRight.appendChild(acceptUnitBtn);
             } else {
               uRight.appendChild(el("span", "deliv-unit-badge badge-final", "\u2713 Final"));
             }
@@ -5944,29 +5467,69 @@ const Proto = (() => {
               nodeBtn.setAttribute("role", "button");
               nodeBtn.tabIndex = 0;
               nodeBtn.dataset.filePath = f.path || "";
+              if (f.hash) nodeBtn.dataset.fileHash = f.hash;
+              if (f.product_id) nodeBtn.dataset.productId = f.product_id;
+              if (f.suggested_filename) nodeBtn.dataset.suggestedFilename = f.suggested_filename;
+              if (f.route) nodeBtn.dataset.route = f.route;
               const nLeft = el("span", "deliv-tree-node-left");
               nLeft.appendChild(el("span", "", fileExtIcon(f.ext)));
-              nLeft.appendChild(el("span", "deliv-tree-fname", f.filename || f.title || "File"));
+              nLeft.appendChild(el("span", "deliv-tree-fname", f.title || f.human_title || f.filename || "File"));
               nodeBtn.appendChild(nLeft);
 
               const nRight = el("span", "deliv-tree-node-right");
+              if (f.awaiting_review_chip) {
+                const awChip = el("span", "deliv-awaiting-chip", "Awaiting review");
+                awChip.dataset.awaitingReviewChip = "1";
+                nRight.appendChild(awChip);
+              }
+              const fmtList = (Array.isArray(f.format_pills) && f.format_pills.length)
+                ? f.format_pills
+                : (Array.isArray(f.formats) ? f.formats : []);
+              if (fmtList.length) {
+                const pillsWrap = el("span", "deliv-format-pills");
+                pillsWrap.dataset.formatPills = "1";
+                fmtList.forEach((fmt) => {
+                  const pillLbl = String(fmt.label || fmt.ext || "FILE");
+                  const pillA = el("a", "deliv-format-pill" + (fmt.is_redline ? " is-redline" : ""), pillLbl);
+                  const fmtHref = buildDeliverableOpenHref(fmt.path || f.path || "", fmt.route || f.route || "", fmt);
+                  if (fmtHref) pillA.href = fmtHref;
+                  pillA.target = "_blank";
+                  pillA.rel = "noopener";
+                  pillA.dataset.formatPill = pillLbl;
+                  pillA.dataset.pillType = fmt.pill_type || (fmt.is_redline ? "redline" : "format");
+                  if (fmt.hash) pillA.dataset.fileHash = fmt.hash;
+                  if (fmt.product_id) pillA.dataset.productId = fmt.product_id;
+                  if (fmt.suggested_filename) pillA.dataset.suggestedFilename = fmt.suggested_filename;
+                  pillA.onclick = (ev) => {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    if (fmtHref && typeof window.enterSecondWindowMode === "function") {
+                      window.enterSecondWindowMode((f.title || f.filename || "Deliverable") + " (" + pillLbl + ")", fmtHref);
+                    } else if (fmtHref) {
+                      window.open(fmtHref, "_blank", "noopener");
+                    }
+                  };
+                  pillsWrap.appendChild(pillA);
+                });
+                nRight.appendChild(pillsWrap);
+              }
               const targetPath = f.path || "";
               const dlHref = buildDeliverableDownloadHref(targetPath, f.route, f);
               if (dlHref) {
-                const dlName = f.filename || (targetPath ? targetPath.split("/").pop() : "") || "";
+                const dlName = deliverableSuggestedFilename(f, targetPath);
                 nRight.appendChild(createSolidBlueDownloadArrow(dlHref, dlName));
               }
               nodeBtn.appendChild(nRight);
-              nodeBtn.title = f.filename || f.title || targetPath || "File";
+              nodeBtn.title = f.title || f.filename || targetPath || "File";
               nodeBtn.onclick = (ev) => {
-                if (ev.target && ev.target.closest && ev.target.closest(".deliv-dl-arrow")) return;
+                if (ev.target && ev.target.closest && ev.target.closest(".deliv-dl-arrow, .deliv-format-pill")) return;
                 ev.stopPropagation();
                 if (/\.zip$/i.test(targetPath) && dlHref) {
                   window.open(dlHref, "_blank", "noopener");
                   return;
                 }
                 const targetHref = buildDeliverableOpenHref(targetPath, f.route, f);
-                const docTitle = f.filename || f.title || targetPath || "Deliverable";
+                const docTitle = f.title || f.filename || targetPath || "Deliverable";
                 if (targetHref && typeof window.enterSecondWindowMode === "function") {
                   window.enterSecondWindowMode(docTitle, targetHref);
                 } else if (targetHref) {
@@ -5982,11 +5545,65 @@ const Proto = (() => {
           catList.appendChild(catDet);
         });
         wrap.appendChild(catList);
+
+        const suppFiles = (hObj && hObj.supporting_drawer && Array.isArray(hObj.supporting_drawer.files))
+          ? hObj.supporting_drawer.files
+          : ((hObj && Array.isArray(hObj.supporting_files)) ? hObj.supporting_files : []);
+        if (suppFiles.length > 0) {
+          const suppDet = el("details", "deliv-supporting-drawer");
+          suppDet.dataset.supportingEarlierDrawer = "1";
+          const suppKey = "deliv:v5:supporting:" + nsPrefix;
+          suppDet.open = Object.prototype.hasOwnProperty.call(navSession, suppKey) ? Boolean(navSession[suppKey]) : false;
+          suppDet.addEventListener("toggle", () => {
+            if (suppDet.isConnected) navSession[suppKey] = suppDet.open;
+          });
+          const suppSum = el("summary", "deliv-supporting-sum");
+          suppSum.appendChild(el("span", "deliv-supporting-title", "Supporting & Earlier Files"));
+          suppSum.appendChild(el("span", "deliv-supporting-cnt", suppFiles.length + (suppFiles.length === 1 ? " file \u25b8" : " files \u25b8")));
+          suppDet.appendChild(suppSum);
+          const suppList = el("div", "deliv-supporting-list");
+          suppFiles.forEach((sf) => {
+            const sfRow = el("div", "deliv-tree-node dks-item is-supporting");
+            sfRow.setAttribute("role", "button");
+            sfRow.tabIndex = 0;
+            sfRow.dataset.filePath = sf.path || "";
+            sfRow.dataset.supportingKind = sf.supporting_kind || sf.role || "supporting";
+            if (sf.hash) sfRow.dataset.fileHash = sf.hash;
+            if (sf.product_id) sfRow.dataset.productId = sf.product_id;
+            if (sf.suggested_filename) sfRow.dataset.suggestedFilename = sf.suggested_filename;
+            const sfLeft = el("span", "deliv-tree-node-left");
+            sfLeft.appendChild(el("span", "", fileExtIcon(sf.ext)));
+            sfLeft.appendChild(el("span", "deliv-tree-fname", sf.title || sf.filename || "File"));
+            sfRow.appendChild(sfLeft);
+            const sfRight = el("span", "deliv-tree-node-right");
+            sfRight.appendChild(el("span", "deliv-unit-exts", sf.role || sf.ext || "Supporting"));
+            const sfTargetPath = sf.path || "";
+            const sfDlHref = buildDeliverableDownloadHref(sfTargetPath, sf.route, sf);
+            if (sfDlHref) {
+              sfRight.appendChild(createSolidBlueDownloadArrow(sfDlHref, deliverableSuggestedFilename(sf, sfTargetPath)));
+            }
+            sfRow.appendChild(sfRight);
+            sfRow.onclick = (ev) => {
+              if (ev.target && ev.target.closest && ev.target.closest(".deliv-dl-arrow")) return;
+              ev.stopPropagation();
+              const sfHref = buildDeliverableOpenHref(sfTargetPath, sf.route, sf);
+              const sfTitle = sf.title || sf.filename || sfTargetPath || "Supporting File";
+              if (sfHref && typeof window.enterSecondWindowMode === "function") {
+                window.enterSecondWindowMode(sfTitle, sfHref);
+              } else if (sfHref) {
+                window.open(sfHref, "_blank", "noopener");
+              }
+            };
+            suppList.appendChild(sfRow);
+          });
+          suppDet.appendChild(suppList);
+          wrap.appendChild(suppDet);
+        }
         return wrap;
       };
 
       if (!isLegacyNavTest) {
-        const ovRaw = ovRawForHier;
+        const ovRaw = (_lastMap && _lastMap.running_overview && typeof _lastMap.running_overview === "object") ? _lastMap.running_overview : {};
         const serverKeyDelivs = (d && Array.isArray(d.key_deliverables) && d.key_deliverables.length)
           ? d.key_deliverables.map(rawKd => {
               const dec = decorateBucketItem(rawKd) || rawKd;
@@ -6021,7 +5638,7 @@ const Proto = (() => {
                   status: isRev ? "For Review" : "Final",
                 });
               }));
-        const useHierInStrip = Boolean(explicitServerHier || (!serverKeyDelivs && hierData));
+        const useHierInStrip = Boolean(hierData);
         if (useHierInStrip || keyDelivList.length) {
           const kdFold = el("details", "deliv-key-strip");
           kdFold.dataset.keyDeliverablesStrip = "1";
@@ -6702,7 +6319,7 @@ const Proto = (() => {
       row.appendChild(window.AnchorNotebooks.render(it, it.dir !== undefined ? it.dir : DIR));
       return row;
     }
-    if (it.route && !/^\/steward\/v1\/open\b/i.test(String(it.route))) {
+    if (it.route) {
       // (2026-09-05) a contained Anchor route (/report/…, /artifact/…) the
       // parser CLASSIFIED (classify_route) — hostile cells arrive route:null
       // and fall through to the text branch. Opens in a new window with the
@@ -9311,6 +8928,15 @@ const Proto = (() => {
         if (PARAMS.get("compose") === "0") a.classList.add("nocompose");
       }
     }
+    if (EMBED_DIALOGUE) {
+      if (document.documentElement) document.documentElement.classList.add("is-embed-tile");
+      if (document.body) document.body.classList.add("is-embed-tile");
+      const a = document.querySelector(".app");
+      if (a) {
+        a.classList.add("embed-tile", "railhide", "tileview");
+        a.classList.remove("statusopen");
+      }
+    }
     // the steward's dialogue alone (his word, 2026-10-02: "the steward dialogue from an AI Cockpit, maybe the status bar
     // available but thinner, and the plan is not something we have to worry about in those pages")
     if (TALK) { const a = document.querySelector(".app"); if (a) { a.classList.add("embed-tile", "talkview", "railhide", "nocompose"); a.classList.remove("statusopen"); } }
@@ -9320,13 +8946,53 @@ const Proto = (() => {
     wireChrome();
     try { wireFollow(scrollEl()); } catch (e) {}   // before history loads, so the replay lands at the newest
     const wantPanes = !TALK && !TILE;
-    if (wantPanes) wirePlanAddBar();
+    const wantPlanPane = wantPanes && !EMBED_DIALOGUE;
+    if (wantPlanPane) wirePlanAddBar();
+    if (localParked) {
+      await new Promise(res => { _unpark = res; });
+    }
+    let _mapLoaded = false, _planLoaded = false, _histLoaded = false, _statusLoaded = false, _delivLoaded = false;
+    const ensureCockpitDataLoaded = () => {
+      if (parked) return;
+      if (!_mapLoaded) {
+        loadMap().then(() => { _mapLoaded = true; }).catch(() => {});
+      }
+      if (wantPlanPane && !_planLoaded) {
+        Promise.resolve().then(() => loadPlan()).then((res) => { if (res !== null || ($("[data-steps]") && $("[data-steps]").children.length > 0)) _planLoaded = true; }).catch(() => {});
+      }
+      if (!opts.skipHistory && !_histLoaded) {
+        const sc = scrollEl();
+        if (!sc || sc.children.length === 0) {
+          loadHistory().then(() => { _histLoaded = true; }).catch(() => {});
+        } else {
+          _histLoaded = true;
+        }
+      }
+      if (opts.statusPane && wantPanes && !EMBED_DIALOGUE && !_statusLoaded) {
+        fetch(api("/api/status")).then(r => r.json()).then(stJson => {
+          if (stJson) { renderStatus(stJson); _statusLoaded = true; }
+        }).catch(() => {});
+      }
+      if (wantPanes && !_delivLoaded) {
+        Promise.resolve().then(() => renderDeliverablesTile()).then(() => {
+          const dm = $("[data-delivmount]");
+          if (dm && dm.children.length > 0) _delivLoaded = true;
+        }).catch(() => {});
+      }
+    };
+    _ensureLoadedFn = ensureCockpitDataLoaded;
     const initStateProm = fetch(api("/api/state")).then(r => r.json()).then(st => { if (st && !st.error) updateState(st); return st; }).catch(() => null);
-    const statusFetchProm = (opts.statusPane && wantPanes) ? fetch(api("/api/status")).then(r => r.json()).catch(() => null) : Promise.resolve(null);
-    const planProm = wantPanes ? Promise.resolve().then(() => loadPlan()).catch(() => null) : Promise.resolve(null);
-    const delivProm = wantPanes ? Promise.resolve().then(() => renderDeliverablesTile()).catch((err) => { console.error("renderDeliverablesTile error:", err && err.stack || err); }) : Promise.resolve();
-    const histProm = (!opts.skipHistory) ? loadHistory().catch(() => {}) : Promise.resolve();
-    try { await loadMap(); } catch (e) {
+    const statusFetchProm = (opts.statusPane && wantPanes && !EMBED_DIALOGUE) ? fetch(api("/api/status")).then(r => r.json()).then(stJson => {
+      if (stJson) { try { renderStatus(stJson); _statusLoaded = true; } catch (e) {} }
+      return stJson;
+    }).catch(() => null) : Promise.resolve(null);
+    const planProm = wantPlanPane ? Promise.resolve().then(() => loadPlan()).then(res => { if (res !== null || ($("[data-steps]") && $("[data-steps]").children.length > 0)) _planLoaded = true; return res; }).catch(() => null) : Promise.resolve(null);
+    const delivProm = wantPanes ? Promise.resolve().then(() => renderDeliverablesTile()).then(() => { _delivLoaded = true; }).catch((err) => { console.error("renderDeliverablesTile error:", err && err.stack || err); }) : Promise.resolve();
+    const histProm = (!opts.skipHistory) ? loadHistory().then(() => { _histLoaded = true; }).catch(() => {}) : Promise.resolve();
+    try {
+      await loadMap();
+      _mapLoaded = true;
+    } catch (e) {
       const p = $("[data-progress]");
       if (p) p.textContent = "map failed: " + ((e && e.message) || "could not load");
       tileSay("trouble", { text: "this cockpit's record could not be read" + (e && /401|403|auth/i.test(String(e.message || "")) ? " - this browser is not logged in" : "") });
@@ -9334,10 +9000,10 @@ const Proto = (() => {
     try { await planProm; } catch (e) {}
     try { await initStateProm; } catch (e) {}
     try { await histProm; } catch (e) { /* no-op */ }
-    if (opts.statusPane && wantPanes) {
+    if (opts.statusPane && wantPanes && !_statusLoaded) {
       try {
         const stJson = await statusFetchProm;
-        if (stJson) renderStatus(stJson);
+        if (stJson && !_statusLoaded) { renderStatus(stJson); _statusLoaded = true; }
       } catch (e) {}
     }
     try { await delivProm; } catch (e) {}
@@ -9345,6 +9011,12 @@ const Proto = (() => {
     if (opts.statusPane && wantPanes) wireStatusPoller();
     poll();
     stampPoll();
+    setInterval(() => {
+      updateState(null);
+      if (!parked && wantPanes && (!_mapLoaded || !_planLoaded || !_histLoaded || !_statusLoaded || !_delivLoaded)) {
+        ensureCockpitDataLoaded();
+      }
+    }, 2500);
     setInterval(() => updateState(null), 1000); // busy clock repaint
   }
 
@@ -9352,6 +9024,6 @@ const Proto = (() => {
     renderDeliverablesTile().catch(() => {});
   });
 
-  return { init, addLine, applyTheme, toggleTheme,
+  return { init, addLine, applyTheme, toggleTheme, paintStepsList, renderDeliverablesTile,
            get map() { return map; }, get dir() { return DIR; } };
 })();

@@ -15,7 +15,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { HaltError } from '../foreman/bin/foreman-lib.mjs';
-import { makeReliableAgent } from './reliability.mjs';
+import { makeReliableAgent, classifyFault } from './reliability.mjs';
 import { claudeDriver } from './claude.mjs';
 import { loadPolicyPrefs, resolveModelPolicy, policyEnvironment } from './model-policy.mjs';
 import { geminiCliDriver } from './gemini-cli.mjs';
@@ -24,6 +24,7 @@ import { openaiDriver } from './openai.mjs';
 import { grokDriver } from './grok.mjs';
 import { grokCliDriver } from './grok-cli.mjs';
 import { chatgptCliDriver } from './chatgpt-cli.mjs';
+import { hostIpcDriver } from './host-ipc.mjs';
 import { openChatgptDataSession, DataSessionError } from './chatgpt-session.mjs';
 export { DataSessionError } from './chatgpt-session.mjs';
 import { normalizeRole, isVerificationRole, VERIFICATION_ROLES } from './roles.mjs';
@@ -289,6 +290,7 @@ registerDriver(openaiDriver);
 registerDriver(grokDriver); // optional API-key HTTP backend (name: 'grok')
 registerDriver(grokCliDriver); // subscription CLI backend (name: 'grok-cli') — coding/review family default
 registerDriver(chatgptCliDriver); // subscription Codex CLI (name: 'chatgpt-cli') — ChatGPT login, never OPENAI_API_KEY
+registerDriver(hostIpcDriver); // first-class Host-IPC backend (name: 'host-ipc') — atomic req/resp + heartbeat
 
 /** The backend names currently registered (default `claude` always present). */
 export function listDrivers() {
@@ -314,18 +316,19 @@ export function capabilityMatrix() {
 
 /**
  * Resolve the active backend. Selection order: explicit `name` arg, then
- * `TRIO_DRIVER`, then the `claude` default. HALTs on an unknown name rather than
- * silently falling back, so a typo never quietly bills the wrong backend.
+ * `TRIO_DRIVER`, then the `claude` default (or `gemini-cli` when `env.ANTIGRAVITY_AGENT` is set).
+ * HALTs on an unknown name rather than silently falling back, so a typo never quietly bills the wrong backend.
  * @param {?string} [name]
  * @param {object}  [env=process.env]
  */
 export function getDriver(name = null, env = process.env) {
-  const key = name || env.TRIO_DRIVER || DEFAULT_DRIVER;
+  const fallback = env?.ANTIGRAVITY_AGENT ? 'gemini-cli' : 'claude';
+  const key = name || env?.TRIO_DRIVER || fallback;
   const driver = REGISTRY.get(key);
   if (!driver) {
     throw new HaltError(
       `unknown trio driver "${key}"`,
-      `registered drivers: ${listDrivers().join(', ')}. Set TRIO_DRIVER to one of these (or leave it unset for the default "${DEFAULT_DRIVER}").`,
+      `registered drivers: ${listDrivers().join(', ')}. Set TRIO_DRIVER to one of these (or leave it unset for the default "${fallback}").`,
     );
   }
   return driver;
@@ -568,9 +571,18 @@ async function runDispatcherAttempt(driver, opts, ordinal, kind) {
     served = last.served;
   }
   const ok = status === 'success' || status === 'success_after_schema_reprompt';
+  const injected = !!(opts.runClaude || opts.runGemini || opts.runGrokCli || opts.runCodexCli || opts.runHostIpc);
+  const implicitInjectedReplay = injected
+    && opts.env === undefined
+    && !verification
+    && status !== 'aborted'
+    && !contractError
+    && entries.every((entry) => entry?.receipt?.replay_safe !== false);
   return {
     value,
-    replay_safe: !contractError && entries.length === 1 && entries[0]?.receipt?.replay_safe === true,
+    replay_safe: (!contractError && entries.length === 1 && entries[0]?.receipt?.replay_safe === true)
+      || implicitInjectedReplay,
+    raw_entries: entries,
     attempt: {
       ordinal,
       kind,
@@ -598,16 +610,32 @@ function failedSeatError(receipt) {
     `trio seat ${receipt.status}: ${receipt.label}`,
     receipt.error?.message || 'inspect the attached trio.seat.v1 receipt',
   );
+  const lastTransport = receipt.attempts?.at(-1)?.transport_attempts?.at(-1) ?? null;
+  const providerStatus = lastTransport?.provider_status
+    || receipt.error?.code
+    || receipt.status
+    || null;
   error.receipt = receipt;
   error.aborted = receipt.status === 'aborted';
   if (!error.aborted) error.seat_unavailable = true;
   error.seat_status = receipt.status;
+  error.provider_status = providerStatus;
   error.requested_model = receipt.requested.model;
   error.served_model = null;
+  const normalized = String(providerStatus || '').trim().toLowerCase();
+  if (['timeout', 'timed_out', 'idle_timeout', 'preflight_timeout'].includes(normalized)) {
+    error.exit = { timedOut: true, code: null, signal: null };
+  } else if (['rate_limit', 'rate_limited', 'rate_limit_error', 'rate_limit_exceeded', 'too_many_requests', 'cli_error', 'protocol_error', 'no_reply'].includes(normalized)) {
+    error.exit = { timedOut: false, code: 1, signal: null };
+  }
+  error.classification = classifyFault(error);
   return error;
 }
 
-function finalizeReceipt({ opts, role, verification, requested, attempts, status, served, error }) {
+function finalizeReceipt({
+  opts, role, verification, verificationFailoverAllowed = false,
+  requested, attempts, status, served, error,
+}) {
   return {
     schema: 'trio.seat.v1',
     ok: status === 'success' || status === 'success_after_failover',
@@ -620,13 +648,15 @@ function finalizeReceipt({ opts, role, verification, requested, attempts, status
     served,
     attempts,
     failover: {
-      allowed: !verification,
+      allowed: !verification || verificationFailoverAllowed,
       used: attempts.length > 1,
-      blocked_reason: verification
+      blocked_reason: verification && !verificationFailoverAllowed
         ? 'verification_seat'
-        : status === 'seat_unavailable' && attempts.length === 1
-          ? 'no_capable_fallback'
-          : null,
+        : status === 'verification_fail_closed' && attempts.length === 1
+          ? 'no_non_drafter_fallback'
+          : status === 'seat_unavailable' && attempts.length === 1
+            ? 'no_capable_fallback'
+            : null,
     },
     error,
   };
@@ -634,47 +664,27 @@ function finalizeReceipt({ opts, role, verification, requested, attempts, status
 
 /**
  * The single engine seam. Dispatches to the selected backend's `runAgent`.
- * @param {object}  opts
- * @param {string}  opts.prompt
- * @param {object}  [opts.schema]        JSON Schema; when present the reply is parsed/validated
- * @param {boolean} [opts.freshContext]  request an isolated context (native for sub-agent-capable backends)
- * @param {string}  [opts.driver]        explicit backend name (overrides TRIO_DRIVER)
- * @param {string}  [opts.role]          explicit seat role; wins over label derivation
- * @param {string}  [opts.label]         bounded diagnostic label and role fallback
- * @param {string}  [opts.model]         requested model identity (never a served assertion)
- * @param {AbortSignal} [opts.signal]    supervisor cancellation signal
- * @param {Function} [opts.onReceipt]    awaited once with the successful final trio.seat.v1 receipt
- * @returns {Promise<any>} model text, or the schema-validated object
  */
 export async function runAgent(opts = {}) {
-  // Driver selection order (2026-07-22 — Anchor prefs are universal source of truth):
-  //   1. explicit opts.driver (per-call pin)
-  //   2. Anchor settings.json / ~/.anchor/model_prefs.json by role
-  //   3. TRIO_DRIVER_<ROLE> (legacy setx — only if prefs did not resolve)
-  //   4. TRIO_DRIVER / default claude
-  // Stale TRIO_DRIVER_SHARK=gemini-cli setx must NOT outrank Anchor coding/review knobs.
-  // Same-family coding+review is allowed; stamp cross_model from loadModelFamilies().
-  let name = opts.driver;
+  const explicitDriver = typeof opts.driver === 'string' && opts.driver.trim()
+    ? opts.driver.trim()
+    : null;
+  let name = explicitDriver;
   // Hermeticity guard (2026-07-25): an injected stub transport pins the matching
-  // backend. Host model-prefs (~/.anchor/model_prefs.json) must NEVER re-route a
-  // stubbed call to a live CLI — observed: driver-interface tests spawning real
-  // billable sessions when prefs resolved coding=grok (usage-leak class, 07-14).
+  // backend when no explicit driver was named.
   if (!name) {
     if (opts.runClaude) name = 'claude';
     else if (opts.runGemini) name = 'gemini-cli';
     else if (opts.runGrokCli) name = 'grok-cli';
     else if (opts.runCodexCli) name = 'chatgpt-cli';
+    else if (opts.runHostIpc) name = 'host-ipc';
   }
   const activeEnv = opts.env ?? process.env;
   const role = normalizeRole({ role: opts.role, label: opts.label });
-  // Explicit test/host stores must be valid even when a stub owns transport;
-  // validation does not reroute that stub or discover a live capability.
-  if (activeEnv.ANCHOR_DATA_DIR) loadPolicyPrefs(activeEnv);
-  const injected = !!(opts.runClaude || opts.runGemini || opts.runGrokCli || opts.runCodexCli);
-  if (!injected && (!name || ['claude', 'grok-cli', 'chatgpt-cli', 'gemini-cli', 'grok', 'openai', 'gemini'].includes(name))) {
-    name = resolveDriverFromFamilies({ role, label: opts.label }, activeEnv);
-  }
-  if (!name) {
+  if (activeEnv.ANCHOR_SETTINGS_DIR || activeEnv.ANCHOR_DATA_DIR) loadPolicyPrefs(activeEnv);
+  const injected = !!(opts.runClaude || opts.runGemini || opts.runGrokCli || opts.runCodexCli || opts.runHostIpc);
+  // Honor explicit `opts.driver` when passed; otherwise Anchor prefs outrank stale TRIO_DRIVER_* env vars.
+  if (!injected && !name) {
     name = resolveDriverFromFamilies({ role, label: opts.label }, activeEnv) || null;
   }
   if (!name && role) {
@@ -685,18 +695,14 @@ export async function runAgent(opts = {}) {
   return dispatchWithFailover(driver, { ...opts, role });
 }
 
-/**
- * Dispatch to a backend, applying the universal MODEL-INTEGRITY FAILOVER (John 2026-07-17):
- * a NON-Claude seat that cannot deliver its ATTESTED requested model — silently substituted to a
- * fallback (e.g. GPT-OSS, how a rate-limited OR auth-degraded agy manifests) or a transport
- * failure — fails OVER to Claude ONE-NOTCH-BELOW-FRONTIER, honestly single-family
- * (`cross_model:false`), with a loud flag, rather than running the seat BLIND on the wrong model.
- * Used by BOTH `runAgent` AND `makeRoleRoutedAgent`, so EVERY trio+foundry call path inherits it.
- * A Claude seat has nowhere better to fail over to, so it re-throws.
- */
 function injectedTransportFor(name, opts) {
-  return { claude: opts.runClaude, 'grok-cli': opts.runGrokCli,
-    'chatgpt-cli': opts.runCodexCli, 'gemini-cli': opts.runGemini }[name];
+  return {
+    claude: opts.runClaude,
+    'grok-cli': opts.runGrokCli,
+    'chatgpt-cli': opts.runCodexCli,
+    'gemini-cli': opts.runGemini,
+    'host-ipc': opts.runHostIpc,
+  }[name];
 }
 
 async function journalRouting(opts, event) {
@@ -706,18 +712,47 @@ async function journalRouting(opts, event) {
     await opts.onRoutingEvent(entry);
     return;
   }
+  const injected = !!(opts.runClaude || opts.runGemini || opts.runGrokCli || opts.runCodexCli || opts.runHostIpc);
+  if (injected && opts.env === undefined) {
+    return; // Hermetic unit test with no explicit env/journal sink: never mutate host ~/.anchor
+  }
   const env = opts.env ?? process.env;
   const profile = env.USERPROFILE || env.HOME;
-  if (!profile) throw new HaltError('Cannot journal model failover', 'configure a private profile or onRoutingEvent journal sink');
+  if (!profile) {
+    if (event.action === 'halt') return; // Never mask the real failedSeatError receipt on hermetic env={} halts
+    throw new HaltError('Cannot journal model failover', 'configure a private profile or onRoutingEvent journal sink');
+  }
   const directory = path.join(profile, '.anchor', 'journal', 'runs');
   fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
   fs.appendFileSync(path.join(directory, 'model-routing.jsonl'), JSON.stringify(entry) + '\n', { mode: 0o600 });
 }
 
+const VERIFICATION_QUOTA_AUTH_CODES = new Set([
+  'usage_limit', 'usage_limit_reached', 'usage_limit_exceeded',
+  'quota_exhausted', 'quota_exceeded', 'insufficient_quota',
+  'rate_limit', 'rate_limited', 'rate_limit_error', 'rate_limit_exceeded', 'too_many_requests',
+  'credits_required', 'model_requires_usage_credits', 'credit_balance_too_low',
+  'auth_error', 'auth_expired', 'subscription_auth_required', 'login_required',
+  'authentication_error', 'authentication_required', 'authentication_failed',
+  'unauthenticated', 'unauthorized', 'session_expired',
+]);
+
+function isQuotaOrAuthVerificationFailure(primary) {
+  const transport = primary?.attempt?.transport_attempts?.at(-1) ?? null;
+  const code = String(
+    transport?.provider_status || primary?.attempt?.error?.code || '',
+  ).trim().toLowerCase();
+  if (!VERIFICATION_QUOTA_AUTH_CODES.has(code)) return false;
+  const rawRec = primary?.raw_entries?.[0]?.receipt ?? null;
+  // Never replay an explicitly non-replay-safe turn that already attested partial work.
+  if (rawRec && rawRec.replay_safe === false && rawRec.family_attested === true) return false;
+  return true;
+}
+
 async function dispatchWithFailover(driver, opts) {
   const role = normalizeRole({ role: opts.role, label: opts.label });
   const verification = isVerificationRole({ role, label: opts.label });
-  const injected = !!(opts.runClaude || opts.runGemini || opts.runGrokCli || opts.runCodexCli);
+  const injected = !!(opts.runClaude || opts.runGemini || opts.runGrokCli || opts.runCodexCli || opts.runHostIpc);
   const primary = await runDispatcherAttempt(driver, { ...opts, role }, 1, 'primary');
   const attempts = [primary.attempt];
   let current = primary;
@@ -725,16 +760,85 @@ async function dispatchWithFailover(driver, opts) {
   let status = primary.attempt.ok ? 'success' : 'seat_unavailable';
   let served = primary.attempt.served;
   let topError = primary.attempt.error;
+  let verificationFailoverAllowed = false;
+
   if (!primary.attempt.ok) {
     if (primary.attempt.status === 'aborted' || opts.signal?.aborted) {
       status = 'aborted';
     } else if (verification) {
-      status = 'verification_fail_closed';
+      if (isQuotaOrAuthVerificationFailure(primary)) {
+        const prefs = (injected && opts.env === undefined)
+          ? {
+            coding: opts.coding_family || null,
+            review: requestedFamilyForDriver(driver.name),
+            terminal: 'claude',
+            settings_revision: 0,
+          }
+          : loadModelFamilies(opts.env ?? process.env);
+        const codingFamily = String(opts.coding_family ?? prefs.coding ?? '').trim().toLowerCase();
+        const allowSelfReview = opts.cross_model === false;
+        const primaryFamily = requestedFamilyForDriver(driver.name);
+        const candidateFamilies = [...new Set([
+          prefs.review, prefs.terminal, 'chatgpt', 'claude', 'gemini', 'grok',
+        ].filter(Boolean).map((f) => String(f).trim().toLowerCase()))]
+          .filter((fam) => fam !== primaryFamily && (allowSelfReview || !codingFamily || fam !== codingFamily));
+        const ladder = candidateFamilies
+          .map(familyToDriverName)
+          .filter((name) => name && name !== driver.name);
+        const log = typeof opts.log === 'function' ? opts.log : () => {};
+        for (const name of ladder) {
+          if (opts.signal?.aborted) { status = 'aborted'; break; }
+          if (injected && !injectedTransportFor(name, opts)) continue;
+          verificationFailoverAllowed = true;
+          const candFamily = requestedFamilyForDriver(name);
+          const isCrossModel = !codingFamily || candFamily !== codingFamily;
+          const event = {
+            action: 'failover',
+            verification: true,
+            from: current.attempt.requested.driver,
+            to: name,
+            to_family: candFamily,
+            reason: current.attempt.error?.code || 'quota_or_auth_failure',
+            cross_model: isCrossModel,
+            settings_revision: prefs.settings_revision,
+          };
+          await journalRouting(opts, event);
+          log(`VERIFICATION FAILOVER: ${event.from} -> ${name} (${event.reason}; cross_model:${isCrossModel}). Journaled.`);
+          current = await runDispatcherAttempt(getDriver(name, opts.env ?? process.env), {
+            ...opts, role, driver: name, model: null, cross_model: isCrossModel,
+          }, attempts.length + 1, 'fallback');
+          attempts.push(current.attempt);
+          finalValue = current.value;
+          topError = current.attempt.error;
+          if (current.attempt.ok) {
+            status = 'success_after_failover';
+            served = current.attempt.served;
+            topError = null;
+            break;
+          }
+          if (current.attempt.status === 'aborted') { status = 'aborted'; break; }
+          if (!isQuotaOrAuthVerificationFailure(current)
+              && current.attempt.error?.code !== 'cli_unavailable') {
+            break;
+          }
+        }
+        if (status !== 'success_after_failover' && status !== 'aborted') {
+          status = 'verification_fail_closed';
+        }
+      } else {
+        status = 'verification_fail_closed';
+      }
     } else if (primary.replay_safe) {
-      // Only dashboard-selected families; executable presence grants no authority.
-      const prefs = loadModelFamilies(opts.env ?? process.env);
-      const ladder = [...new Set([prefs.coding, prefs.review, prefs.terminal].map(familyToDriverName))]
-        .filter(name => name && name !== driver.name);
+      const prefs = (injected && opts.env === undefined)
+        ? { coding: 'claude', review: 'claude', terminal: 'claude', settings_revision: 0 }
+        : loadModelFamilies(opts.env ?? process.env);
+      const baseDrivers = [prefs.coding, prefs.review, prefs.terminal].map(familyToDriverName);
+      if (injected && opts.env === undefined) {
+        for (const cand of ['claude', 'gemini-cli', 'grok-cli', 'chatgpt-cli', 'host-ipc']) {
+          if (injectedTransportFor(cand, opts)) baseDrivers.push(cand);
+        }
+      }
+      const ladder = [...new Set(baseDrivers)].filter((name) => name && name !== driver.name);
       const log = typeof opts.log === 'function' ? opts.log : () => {};
       for (const name of ladder) {
         if (opts.signal?.aborted) { status = 'aborted'; break; }
@@ -763,7 +867,9 @@ async function dispatchWithFailover(driver, opts) {
       reason: topError?.code || status, verification, replay_safe: current.replay_safe });
   }
   const receipt = finalizeReceipt({
-    opts, role, verification, requested: primary.attempt.requested,
+    opts, role, verification,
+    verificationFailoverAllowed: verificationFailoverAllowed && attempts.length > 1,
+    requested: primary.attempt.requested,
     attempts, status, served: status.startsWith('success') ? served : null, error: topError,
   });
   if (!receipt.ok) throw failedSeatError(receipt);
@@ -854,7 +960,14 @@ export async function makeForemanDriver({ driver, agent, reliability, ...opts } 
   // is then degraded under its OWN bucket, never globally.
   let providerName = 'injected';
   if (!seamAgent) {
-    const backend = getDriver(driver);
+    const inferredDriver = driver
+      || (opts.runClaude ? 'claude'
+        : opts.runGemini ? 'gemini-cli'
+          : opts.runGrokCli ? 'grok-cli'
+            : opts.runCodexCli ? 'chatgpt-cli'
+              : opts.runHostIpc ? 'host-ipc'
+                : null);
+    const backend = getDriver(inferredDriver, opts.env ?? process.env);
     providerName = backend.name;
     // Forward role + model to the backend so the per-role model tier (e.g.
     // TRIO_MODEL_<ROLE>/TRIO_DRIVER_<ROLE>, resolved in the driver ladder) is actually
@@ -897,4 +1010,7 @@ export async function makeForemanDriver({ driver, agent, reliability, ...opts } 
   return makeAgentDriver({ agent: reliableSeam });
 }
 
-export { claudeDriver, geminiCliDriver, geminiDriver, openaiDriver, grokDriver };
+export {
+  claudeDriver, geminiCliDriver, geminiDriver, openaiDriver,
+  grokDriver, grokCliDriver, chatgptCliDriver, hostIpcDriver,
+};

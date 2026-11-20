@@ -247,8 +247,12 @@ user is the final convergence authority**.
 - `bin/apply-hardening-to-plan.mjs` — inject + re-check; wired into `writeDocTrio` fail-closed
   (journal **0081**).
 - `bin/research.mjs` — researchPrime integration (once up-front + cost-guarded per round).
-- `bin/stage0.mjs` / `bin/stage1.mjs` / `bin/stage2.mjs` — the three stage protocols.
-- `bin/band-profile.mjs` — LITE / SPIKE-FIRST / FULL ceremony profiles (cf-slick; depth → real path).
+- `bin/stage0.mjs` / `bin/stage1.mjs` / `bin/stage2.mjs` — the three stage protocols (all supporting `--matrix-fast-track` and `realpathSync` junction-safe `isMain()`).
+- `bin/crucible.mjs` — unified CLI dispatcher (`--matrix-fast-track`, `--lite`, `--depth <LITE|MATRIX-FAST-TRACK|SPIKE-FIRST|FULL>`).
+- `bin/matrix-fast-track.mjs` — real lean 2-stage `--matrix-fast-track` engine (`6–9` bounded model calls: zero-LLM `Anvil` brownfield AST intake + `testCommand` doctor preflight → conditional `Superjump` option pass + unified Plan+Waves draft + cross-family `L0–L5` 6-Layer Adversarial Matrix + `<= 1` `120s` delta-only verify pass → deterministic Stage-2 `## Wave 1..N` + `### Wave W.k` disjoint-write-set sub-waves + `locate-plan.mjs`), plus `runLiteFastPath` (`<= 4` hard model-call cap).
+- `bin/slim.mjs` — compact `LITE` fast-path planner (`draft → 1 cross-family review → <= 1 delta patch → locate-plan.mjs`).
+- `bin/plan-quality-gates.mjs` — deterministic Chekhov `PROCESS-REVIEW.md` plan-quality guards (Wave-1 usable end-to-end pilot slice on `>= 3` waves, `O(N)` serial LLM call/latency budget estimator, `<= 200`-word approval block + plain-English scope-cut disclosure) and automatic Portfolio Skill Composition gates (`ft.py chrome-open` + `ft.py look` Interactive Chrome UI Mockup & `Figure-Designer` on `.html`/`.css`/`.tsx`/`.jsx`/`.svg`/UI templates, plus `Ramanujan`, `Financial-Analyst`, `Legal-Beagle`, and `Literature-Review` domain certifiers).
+- `bin/band-profile.mjs` — `LITE` (`<= 4` calls) / `MATRIX-FAST-TRACK` (`6–9` calls) / `SPIKE-FIRST` / `FULL` first-class ceremony profiles (retiring duplicate Stage-2 Shark-Tank + Stage-2 Elegance loop on `LITE` and `MATRIX-FAST-TRACK`).
 - `bin/enhanced.mjs` / `bin/remote.mjs` — the CROSS-FAMILY verification seam (builds the
   live role-routed agent from the Anchor dashboard prefs: Sharks/Judge on `review_family`,
   steering on `coding_family` — `buildDefaultCrucibleRoutes` → the shared
@@ -260,8 +264,8 @@ user is the final convergence authority**.
 - `bin/checklist.mjs` — the 5-gate Skill Productionization Checklist (the five
   North-Star criteria, made checkable) + the SKILL.md manifest checker.
 
-**Tests:** `test/*.test.mjs`, auto-discovered by `test/index.mjs`. The gate is
-`node --test test/`.
+**Tests:** `test/*.test.mjs`, executed cleanly across Windows and POSIX via
+`node scripts/run-all-tests.mjs` (`npm test`).
 
 ## How to invoke — the OPERATOR RUNBOOK (2026-07-11; a live session drives THIS, never an improvised protocol)
 

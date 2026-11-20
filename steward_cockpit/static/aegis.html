@@ -647,6 +647,7 @@
         <img src="/vendor/brand/anvil-option-2-sword-crystal-v1.jpg" alt="Anvil" width="16" height="16" style="border-radius:3px">
         <span>Switch to Anvil Workbench</span>
       </button>
+      <button type="button" id="btnCloseWorkbenchX" title="Close Aegis Workbench and return to Cave of Wonders or AI Cockpit (Esc)" aria-label="Close Aegis Workbench" style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:7px;border:1px solid rgba(248,113,113,0.55);background:rgba(239,68,68,0.18);color:#fecaca;font-size:15px;font-weight:800;cursor:pointer">&#10005;</button>
     </div>
   </div>
 
@@ -862,11 +863,23 @@
   });
 
   // Top bar navigation back to AI Cockpit or Switch to Anvil
-  document.getElementById("btnReturnCockpit").addEventListener("click", () => {
+  function returnFromAegisWorkbench() {
     if (window.parent && window.parent !== window) {
-      window.parent.postMessage({ type: "aegis-return-cockpit" }, window.location.origin);
+      try { window.parent.postMessage({ type: "aegis-return-cockpit" }, window.location.origin); } catch (_e) {}
+      try { window.parent.postMessage({ type: "anchor-overlay-close", closeTile: true, source: "aegis" }, window.location.origin); } catch (_e) {}
     } else {
-      window.location.href = "/steward?" + params.toString();
+      const qs = params.toString();
+      window.location.href = qs ? ("/steward?" + qs) : "/high-seat";
+    }
+  }
+  document.getElementById("btnReturnCockpit").addEventListener("click", returnFromAegisWorkbench);
+  const btnCloseAegisX = document.getElementById("btnCloseWorkbenchX");
+  if (btnCloseAegisX) btnCloseAegisX.addEventListener("click", returnFromAegisWorkbench);
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") {
+      const rm = document.getElementById("reportModal");
+      if (rm && !rm.hidden) { rm.hidden = true; return; }
+      if (window.parent && window.parent !== window) returnFromAegisWorkbench();
     }
   });
 

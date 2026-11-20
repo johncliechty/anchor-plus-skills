@@ -101,10 +101,10 @@ You cannot reliably enumerate your own host's tool list mid-turn. Bind by try-an
 
 1. **Sub-agent axis.** Default to single-context (sequential role-play). Switch to parallel-swarm only if the host explicitly signals sub-agent support. When unsure, stay single-context.
 
-2. **Engine capability (import probe — NOT direct CLI).** From this skill's directory run:
+2. **Engine capability (import probe or CLI).** From this skill's directory run:
    `node -e "import('./bin/contract.mjs').then(m=>m.runImportSpike()).then(v=>{process.stdout.write(JSON.stringify(v));process.exit(v.go?0:1)})"`
+   (or `node bin/contract.mjs` — all `bin/*.mjs` CLIs resolve `fs.realpathSync` so Windows junctions work cleanly).
    If it exits 0 / prints `"go":true`, bind ENGINE mode for Phase-3. If `node` is absent or it exits non-zero, bind DEGRADED prose mode.
-   Do NOT use `node bin/contract.mjs` for this probe: when the skill is installed via the onboard junction, that command prints nothing and exits 0 (its CLI guard compares the junction path to the symlink-resolved real path), which would falsely look like NO-GO.
 
 3. **Other capabilities** (web-fetch, code-exec, file-write, sub-agent, search): bind each by a low-cost attempt, never by introspection.
 
@@ -118,7 +118,7 @@ Produce only a written plan: the AXIS (the load-bearing win-condition and what w
 
 Oranges foresight receipt (required): name >=1 dropped or reordered branch AND its counterfactual cost. If you cannot, stamp "no foresight value added."
 
-Emit the stakes vector + foresight receipt as the Phase-1 hand-off; the governor projects the vector to a tier that scales Phase-3. Freeze the plan and STOP.
+Emit the stakes vector + foresight receipt as the Phase-1 hand-off; the governor projects the vector to a tier that scales Phase-3 (with automatic regulated-domain safety escalation to at least `high` on medical/clinical/drug-interaction, legal liability, or financial/fiduciary queries). Question-decomposing matrix planning (`bin/matrix-planner.mjs`) extracts concrete sub-claims, falsifiers, required evidence rungs (`OBSERVED`/`CORROBORATED`), and portfolio domain certifier hooks (`Ramanujan` for math/proofs, `Literature-Review` for academic/clinical citations, `Financial-Analyst` for valuation/cap-table math, `Legal-Beagle` for statutes/contracts). Freeze the plan and STOP.
 
 ---
 
@@ -137,13 +137,7 @@ dialog preview; never paste the whole plan unasked.
 Accept exactly one of: **APPROVE** (proceed to execution), **EDIT** (revise the plan per the user's change and re-present — bounded to 3 cycles), **ABORT** (halt the run). On EDIT, the revised plan is re-frozen and re-reported before any approval counts.
 
 **On a host with Node**, record the decision durably (hash-bound governance record, EDIT re-hash, replay binding) by driving the real engine gate:
-`node bin/plan-gate.mjs <planInputs.json> [runDir]` — **TTY hosts only** (journal 0031,
-hit twice on 2026-08-15: the CLI's readline reads EOF on piped/non-interactive stdin and
-exits 0 having written NOTHING — gate1-record without governance.json). **On a
-non-interactive host use the programmatic seam** — import `runPlanReviewGate` from
-`bin/plan-gate.mjs` and drive it with `promptGate1`/`promptGate2` callbacks returning the
-user's recorded decision (same hash-bound `governance.json`; the engine's
-execution-blocked guard requires it either way). `planInputs.json` is `{ objective, axis, branches:[…], baselines:[…], stakes:{ declared_stakes:'low|medium|high', reversibility:'reversible|hard-to-reverse|irreversible', blast_radius:'narrow|moderate|wide', magnitude:'minor|moderate|major' } }` (the `adjudicateStakes` axes; `irreversible` floors the tier at `medium`). Gate 2 renders and approves the ACTUAL Phase-1 plan (AXIS/branches/baselines + stakes/tier/foresight from `runPhase1`), NOT the generic `planMatrix`. APPROVE writes `governance.json` + `gate2-record.json` bound to the plan hash; EDIT re-hashes; ABORT/EDIT-overflow HALTs before execution. The plan artifact is a pure function of the inputs, so the same plan always yields the same `planHash`.
+`node bin/plan-gate.mjs <planInputs.json> [runDir] [--auto-approve]` (accepts `y`/`yes`/`approve`, `edit`, or `n`/`no`/`abort` case-insensitively at TTY prompts; on non-TTY stdin without `--auto-approve`, exits cleanly with structured `AWAITING_APPROVAL_NON_TTY` status rather than hanging or crashing on EOF; programmatic hosts may also import `runPlanReviewGate` from `bin/plan-gate.mjs` with `promptGate1`/`promptGate2` callbacks). `planInputs.json` is `{ objective, axis, branches:[…], baselines:[…], stakes:{ declared_stakes:'low|medium|high', reversibility:'reversible|hard-to-reverse|irreversible', blast_radius:'narrow|moderate|wide', magnitude:'minor|moderate|major' } }` (the `adjudicateStakes` axes; `irreversible` floors the tier at `medium`; regulated clinical/legal/financial queries floor at `high`). Gate 2 renders and approves the ACTUAL Phase-1 plan (AXIS/branches/baselines + stakes/tier/foresight from `runPhase1`), NOT a static stub. APPROVE writes `governance.json` + `gate2-record.json` bound to the plan hash; EDIT re-hashes; ABORT/EDIT-overflow HALTs before execution. The plan artifact is a pure function of the inputs, so the same plan always yields the same `planHash`.
 
 **On a host without Node**, run the same gate as prose: report the plan, capture APPROVE/EDIT/ABORT in the transcript, and only cross the boundary on APPROVE (stamp "plan-gate: prose, not hash-bound").
 
@@ -182,9 +176,9 @@ Gather evidence; record each item in the evidence ledger with its origin(s) and 
    anything else). Reviewer prompts hand agy ABSOLUTE artifact paths (0002); a ```-fenced agy reply
    pasted as data is a transcription defect — strip the fence (0052). agy takes `--model "<label
    form>"` and no permission flags (0048).
-2. `node bin/run-rounds.mjs <runDir> [--max-rounds N]` — replay mode by default (recorded adjudications);
-   `RESEARCHPRIME_LIVE_ROUND=1` routes reviewer/debate/judge LIVE via family prefs and, when
-   `reviews` are vacant, **spawns the panel** on the dashboard's `review_family` seat (seat down ⇒ honest HALT, never self-review).
+2. `node bin/run-rounds.mjs <runDir> [--live] [--max-rounds N]` — offline replay mode when invoked without `--live` (`mode: 'replay', verified: false, models: []` — never stamped `mode: 'engine', verified: true` and never fabricating `models: ['claude']`);
+   `--live` (or `RESEARCHPRIME_LIVE_ROUND=1`) routes reviewer/debate/judge LIVE via family prefs and, when
+   `reviews` are vacant, **spawns the G3 panel** across `>= 2` distinct available non-drafter families (e.g. `review_family` + secondary available family from `gemini`/`chatgpt`/`grok`/`claude`) when stakes require `minOrigins >= 2` (`"chatgpt"` and legacy `"gpt"` canonicalize to `"chatgpt"`). If only 1 family is logged in on the host, the run stamps `degraded_quorum: true, verified: false` honestly (never self-approving quorum).
    Hung/thrown seats ABSTAIN (the other two keep going). The orchestrator LOOKS IN
    (heartbeat trail + RC-6 + elegance) — a talking seat is not killed for wall-clock.
    Silence is death: spawned seats MUST heartbeat; a silent seat is looked into, then
@@ -192,12 +186,10 @@ Gather evidence; record each item in the evidence ledger with its origin(s) and 
    not a dry round.
    `--max-rounds` (default 8) is a HARD budget — the cap stops honestly with open blockers in
    `RUN-STATE.json`, never an unbounded loop.
-3. Fix blockers, add `round-<N+1>-input.json`, re-run. Convergence = dry streak N, OR N+1 consecutive
-   genuinely-empty rounds = **CLEAN convergence** (explicit stamp, distinct from DRY — a defect-free
-   artifact converges honestly instead of pressuring reviewers into filler nits).
+3. Fix blockers, add `round-<N+1>-input.json`, re-run. Convergence = **1 quorum-verified dry round** (`N = 1`) OR **1 quorum-verified genuinely-empty round** (`cleanN = 1`, honoring `ELEGANCE.md` Rule 5 — **CLEAN convergence**, distinct from DRY, never requiring a 2-round filler streak). Whenever `quorum.met === false` OR Judge issues `CHALLENGE` (`judgeVerdict.lockable === false`), `converged = true` and `verified = true` are **strictly blocked**.
 4. Deliverable lands as `DELIVERABLE-ENGINE.json`; a training record auto-writes to `journal/runs/`.
 
-Drive the REAL engine loop. The assembled orchestrator is `bin/governor.mjs` + `bin/round.mjs`, presented by `bin/deliverable.mjs`; `bin/dogfood.mjs` is the canonical worked example. Do NOT call `bin/engine.mjs runEngine` — that module is a skeleton with no-op gate slots.
+Drive the REAL engine loop (`bin/run-rounds.mjs` -> `bin/governor.mjs` + `bin/round.mjs`, presented by `bin/deliverable.mjs`). Note: `bin/dogfood.mjs` and `bin/fixture.mjs` are deterministic benchmark/self-run harnesses, not production runners; do NOT call `bin/engine.mjs runEngine` (skeleton with no-op gate slots).
 
 Per governed round (`runGovernedRound({ agent, stakes, reviews, round, northStar })` -> `orchestrateRound(...)`):
 - **Governor (stakes scaling).** Tier `low` fires ZERO Synthesizer/Judge/debate sub-agents; `medium`/`high` include them. A zero-AXIS-finding round is skipped at every tier.

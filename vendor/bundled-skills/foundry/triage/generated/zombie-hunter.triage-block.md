@@ -9,7 +9,7 @@
 Open every run with the **shared two-dimension triage** from `@foundry/triage`:
 
 - **Model tier:** `Heavy` | `Standard`
-- **Process depth:** `FULL` | `LITE` | `SPIKE`
+- **Process depth:** `FULL` | `LITE` | `SPIKE` | `MATRIX-FAST-TRACK`
 - Plus a written **rationale** for both.
 
 **Runtime enforcement:** `runtime_enforced: true` — no dimension may be acted on without a validating lock (`getLockedBand` / skill entry point). Unlocked headless → HALT.
@@ -48,7 +48,8 @@ Do **not** invent a second Heavy/Standard × FULL/LITE/SPIKE rubric — recommen
     "depth": [
       "FULL",
       "LITE",
-      "SPIKE"
+      "SPIKE",
+      "MATRIX-FAST-TRACK"
     ]
   },
   "triageSurface": "entry-points.mjs + zombieHunterKnobs",

@@ -1,0 +1,2401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Anvil v4 · Process Workbench &amp; Expandable Scientific IDE Debugger</title>
+<style>
+  :root {
+    --bg-canvas: #FAF8F5;
+    --bg-card: #FFFFFF;
+    --bg-subtle: #F3EFE8;
+    --bg-muted: #EAE4DA;
+    --ink: #1F2225;
+    --ink-soft: #4A4F55;
+    --ink-light: #5A5F66;
+    --border: #DFD9CE;
+    --border-strong: #C7BFB0;
+
+    /* Wong colorblind-safe semantic palette (Figure-Designer contract) */
+    --c-ingest: #4FA869;
+    --c-ingest-fill: #DAEEDC;
+    --c-compute: #4A7DB0;
+    --c-compute-fill: #DCE8F5;
+    --c-loop: #D4A858;
+    --c-loop-ink: #7A540E;
+    --c-loop-fill: #F8E8C8;
+    --c-fault: #C44F2A;
+    --c-fault-fill: #FBE0D0;
+    --c-infra: #5A6573;
+    --c-infra-fill: #E0E4E9;
+
+    --font-sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    --font-mono: "JetBrains Mono", "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 12px;
+    --shadow-sm: 0 1px 3px rgba(31, 34, 37, 0.06);
+    --shadow-md: 0 6px 20px rgba(31, 34, 37, 0.12);
+  }
+
+  [hidden] { display: none !important; }
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: var(--bg-canvas);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Top Deck & 5-State Surface Banner ─────────────────────────────── */
+  .top-deck {
+    flex: 0 0 auto;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border);
+    padding: 7px 14px;
+    z-index: 25;
+    box-shadow: 0 1px 4px rgba(31, 34, 37, 0.04);
+  }
+
+  .deck-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .deck-row + .deck-row { margin-top: 6px; }
+
+  .brand-cluster, .selector-group {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex-wrap: wrap;
+  }
+
+  .brand-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 800;
+    font-size: 13px;
+    color: var(--ink);
+  }
+
+  .brand-tag {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--c-loop-fill);
+    color: var(--c-loop-ink);
+    border: 1px solid #E3C583;
+  }
+
+  .repo-pill {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    font-weight: 700;
+    padding: 3px 9px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-subtle);
+    border: 1px solid var(--border-strong);
+    color: var(--ink);
+  }
+
+  .prov-tag {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border-strong);
+    color: var(--ink-soft);
+  }
+
+  .prov-tag.traced {
+    background: var(--c-ingest-fill);
+    border-color: var(--c-ingest);
+    color: #19532B;
+  }
+
+  .surface-banner {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px 14px;
+    border-bottom: 1px solid var(--border-strong);
+    background: #FFF6EA;
+    color: #5C3D04;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .surface-banner.sev-error {
+    background: var(--c-fault-fill);
+    border-bottom-color: var(--c-fault);
+    color: #7A1E0A;
+  }
+
+  .surface-banner.sev-empty {
+    background: var(--c-infra-fill);
+    border-bottom-color: var(--c-infra);
+    color: #2A3139;
+  }
+
+  .surface-badge {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 800;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--ink);
+    color: #FFFFFF;
+    letter-spacing: 0.02em;
+  }
+
+  .surface-banner.sev-error .surface-badge { background: var(--c-fault); }
+
+  /* ── Buttons & 5 Lens Tabs ─────────────────────────────────────────── */
+  .small-btn, .consent-run-btn, .xval-top-badge, .ide-posture-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-family: var(--font-sans);
+    font-size: 11.5px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-strong);
+    background: var(--bg-card);
+    color: var(--ink);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .small-btn:hover { background: var(--bg-subtle); }
+
+  .consent-run-btn {
+    background: var(--c-ingest-fill);
+    border-color: var(--c-ingest);
+    color: #164C27;
+  }
+  .consent-run-btn:hover { background: #C8E6CC; }
+
+  .ide-posture-btn {
+    border-radius: 999px;
+    border: 1.5px solid var(--c-compute);
+    background: var(--c-compute-fill);
+    color: #163E6C;
+    font-weight: 800;
+  }
+  .ide-posture-btn:hover { background: #CBE0F5; }
+  .ide-posture-btn.active {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: #FFFFFF;
+  }
+
+  .xval-top-badge {
+    border-radius: 999px;
+    background: var(--bg-subtle);
+    color: var(--ink);
+  }
+
+  .lens-tabs {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    background: var(--bg-subtle);
+    padding: 2px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+
+  .lens-tab {
+    font-family: var(--font-sans);
+    font-size: 11.5px;
+    font-weight: 700;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--ink-soft);
+    padding: 4px 10px;
+    border-radius: 7px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .lens-tab:hover { background: rgba(31, 34, 37, 0.05); color: var(--ink); }
+  .lens-tab.active {
+    background: var(--bg-card);
+    color: var(--ink);
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-sm);
+  }
+
+  /* ── Posture 1 (48% / 52%) & Posture 2 (25% / 45% / 30%) Split ────── */
+  .b3-workbench-split {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 48% 52%;
+    overflow: hidden;
+  }
+
+  .b3-workbench-split.ide-debugger-open {
+    grid-template-columns: 25% 45% 30%;
+  }
+
+  .left-map-pane {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border-right: 1px solid var(--border-strong);
+    background: var(--bg-canvas);
+    padding: 10px 12px;
+    overflow-y: auto;
+    gap: 8px;
+  }
+
+  .schematic-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .schematic-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+    font-weight: 800;
+  }
+
+  .untouched-pill {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: var(--c-compute-fill);
+    color: #163E6C;
+    border: 1px solid #9EC0E2;
+  }
+
+  .legend-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-size: 11px;
+    color: var(--ink-soft);
+  }
+
+  .legend-item { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; }
+  .swatch { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+
+  .l0-bar {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-wrap: wrap;
+  }
+
+  .l0-pill {
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 9px;
+    border-radius: 999px;
+    border: 1px solid var(--border-strong);
+    background: var(--bg-card);
+    color: var(--ink-soft);
+    cursor: pointer;
+  }
+  .l0-pill.active {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: #FFFFFF;
+  }
+
+  .svg-frame {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 6px;
+    box-shadow: var(--shadow-sm);
+  }
+  .svg-frame svg {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+  .svg-halo {
+    paint-order: stroke;
+    stroke: #FFFFFF;
+    stroke-width: 2.5px;
+    stroke-linejoin: round;
+  }
+  .stage-node-group { cursor: pointer; }
+
+  .stage-detail-card, .null-shelf, .scrubber-bar, .rail-l2-box {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 9px 11px;
+    font-size: 12px;
+  }
+
+  .kv-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    margin-top: 6px;
+  }
+  .kv-box {
+    background: var(--bg-canvas);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 5px 7px;
+    font-size: 11.5px;
+  }
+  .kv-lbl { font-size: 11px; font-weight: 800; color: var(--ink-light); }
+
+  .rail-l2-btn {
+    width: 100%;
+    text-align: left;
+    font-family: var(--font-sans);
+    font-size: 11px;
+    padding: 5px 8px;
+    margin-top: 4px;
+    border-radius: 6px;
+    border: 1px solid var(--border-strong);
+    background: var(--bg-canvas);
+    color: var(--ink);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+  }
+  .rail-l2-btn.active { border-color: var(--c-compute); background: #EEF5FC; font-weight: 700; }
+  .rail-l2-btn.fault { border-color: var(--c-fault); background: #FFF3EE; color: #7F1D1D; font-weight: 700; }
+
+  /* ── Center 45% Full Scientific IDE Debugger ──────────────────────── */
+  .full-ide-pane {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border-right: 1px solid var(--border-strong);
+    background: #FFFFFF;
+    color: var(--ink);
+    overflow: hidden;
+  }
+  .full-ide-hdr {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 12px;
+    background: #EFEAE0;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .full-ide-tabs {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 10px 0;
+    background: var(--bg-subtle);
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+  }
+  .full-ide-tab {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 5px 10px;
+    border-radius: 6px 6px 0 0;
+    border: 1px solid var(--border);
+    border-bottom: none;
+    background: var(--bg-muted);
+    color: var(--ink-soft);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .full-ide-tab.active {
+    background: #FFFFFF;
+    color: var(--ink);
+    font-weight: 800;
+    border-color: var(--border-strong);
+  }
+  .full-ide-hintbar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 4px 12px;
+    font-size: 11px;
+    color: var(--ink-soft);
+    background: #FAF8F5;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .full-ide-code-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    padding: 8px 0 16px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    background: #FFFFFF;
+  }
+  .full-code-line {
+    display: grid;
+    grid-template-columns: 22px 20px 42px 1fr;
+    align-items: baseline;
+    padding: 2px 12px 2px 6px;
+    line-height: 1.56;
+    border-left: 3px solid transparent;
+  }
+  .full-code-line.exec-clean { background: #EBF4FD; border-left-color: var(--c-compute); }
+  .full-code-line.exec-fault { background: #FDECE6; border-left-color: var(--c-fault); }
+  .full-bp-btn {
+    border: none;
+    background: transparent;
+    padding: 0;
+    cursor: pointer;
+    font-size: 11.5px;
+    color: #C5BEB1;
+    text-align: center;
+  }
+  .full-bp-btn.bp-on { color: var(--c-fault); }
+  .full-exec-arrow { font-size: 11px; font-weight: 800; color: var(--c-compute); text-align: center; }
+  .full-code-line.exec-fault .full-exec-arrow { color: var(--c-fault); }
+  .full-ln-num { color: var(--ink-light); font-size: 11px; text-align: right; padding-right: 10px; user-select: none; }
+  .full-code-txt { white-space: pre-wrap; word-break: break-word; font-size: 12px; }
+  .code-ident-tok {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    background: #EEF4FA;
+    border-bottom: 1.5px dashed var(--c-compute);
+    border-radius: 3px;
+    padding: 0 3px;
+    color: #163E6C;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .code-ident-tok.pinned {
+    background: var(--c-loop-fill);
+    border-bottom: 2px solid var(--c-loop-ink);
+    color: #5C3D04;
+    font-weight: 800;
+  }
+  .full-ghost-note {
+    display: inline-block;
+    margin-left: 10px;
+    font-size: 11px;
+    padding: 1px 7px;
+    border-radius: 4px;
+    background: #EFF7F1;
+    color: #1E5631;
+    border: 1px solid #BFE3C8;
+  }
+  .full-ghost-note.fault {
+    background: var(--c-fault-fill);
+    color: #7F1D1D;
+    border-color: var(--c-fault);
+    font-weight: 700;
+  }
+
+  /* Studio Dark Theme */
+  .full-ide-pane.theme-dark,
+  .full-ide-pane.theme-dark .full-ide-code-scroll { background: #1B2028; color: #E6EDF3; }
+  .full-ide-pane.theme-dark .full-ide-hdr,
+  .full-ide-pane.theme-dark .full-ide-tabs,
+  .full-ide-pane.theme-dark .full-ide-hintbar { background: #232830; color: #D0D7DE; border-color: #353C47; }
+  .full-ide-pane.theme-dark .full-ide-tab { background: #2B313B; color: #C9D1D9; border-color: #3E4652; }
+  .full-ide-pane.theme-dark .full-ide-tab.active { background: #1B2028; color: #FFFFFF; border-color: #6EA1D4; }
+  .full-ide-pane.theme-dark .full-ln-num { color: #8B949E; }
+  .full-ide-pane.theme-dark .full-code-line.exec-clean { background: rgba(74, 125, 176, 0.24); }
+  .full-ide-pane.theme-dark .full-code-line.exec-fault { background: rgba(196, 79, 42, 0.30); }
+  .full-ide-pane.theme-dark .code-ident-tok { background: rgba(74, 125, 176, 0.22); color: #9CDCFE; }
+  .full-ide-pane.theme-dark .code-ident-tok.pinned { background: rgba(212, 168, 88, 0.30); color: #FFE08A; }
+  .full-ide-pane.theme-dark .full-ghost-note { background: rgba(79, 168, 105, 0.22); color: #A7F3D0; border-color: #4FA869; }
+  .full-ide-pane.theme-dark .full-ghost-note.fault { background: rgba(196, 79, 42, 0.35); color: #FECACA; border-color: #F07148; }
+
+  /* ── Right 52% / 30% Singleton Inspector + Steward Co-Pilot ───────── */
+  .right-workbench-pane {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: var(--bg-canvas);
+    overflow: hidden;
+  }
+  .inspector-shell {
+    flex: 0 0 60%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    border-bottom: 1px solid var(--border-strong);
+  }
+  .b3-workbench-split.ide-debugger-open .inspector-shell { flex: 0 0 56%; }
+  .inspector-tabbar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 10px;
+    background: var(--bg-subtle);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .insp-tab {
+    font-family: var(--font-sans);
+    font-size: 11.5px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--ink-soft);
+    cursor: pointer;
+  }
+  .insp-tab.active {
+    background: var(--bg-card);
+    color: var(--ink);
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-sm);
+  }
+  .inspector-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .card-block {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 9px 11px;
+    font-size: 12px;
+  }
+  .card-block.active-card { border-color: var(--c-compute); box-shadow: var(--shadow-sm); }
+  .card-block.fault-card { border-color: var(--c-fault); background: #FFF7F4; }
+
+  .funnel-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+  }
+  .funnel-stage-btn {
+    text-align: left;
+    font-family: var(--font-sans);
+    padding: 6px 8px;
+    border-radius: 7px;
+    border: 1.5px solid var(--border-strong);
+    background: var(--bg-card);
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .funnel-stage-btn.active { border-color: var(--ink); background: #FFFFFF; box-shadow: var(--shadow-sm); }
+  .funnel-lbl { font-size: 11px; font-weight: 700; color: var(--ink-soft); }
+  .funnel-num { font-family: var(--font-mono); font-size: 14px; font-weight: 800; color: var(--ink); }
+
+  .scope-pills {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-wrap: wrap;
+  }
+  .scope-pill {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--border-strong);
+    background: var(--bg-card);
+    color: var(--ink-soft);
+    cursor: pointer;
+  }
+  .scope-pill.active {
+    background: var(--c-compute-fill);
+    border-color: var(--c-compute);
+    color: #163E6C;
+  }
+
+  .var-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 9px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-card);
+    font-size: 11.5px;
+    flex-wrap: wrap;
+  }
+  .var-row.anom { border-color: var(--c-fault); background: #FFF5F1; }
+
+  .copilot-shell {
+    flex: 1 1 40%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-card);
+  }
+  .b3-workbench-split.ide-debugger-open .copilot-shell { flex: 1 1 44%; }
+  .copilot-hdr {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 6px 12px;
+    background: var(--bg-subtle);
+    border-bottom: 1px solid var(--border);
+    font-size: 11.5px;
+    font-weight: 800;
+    flex-wrap: wrap;
+  }
+  .starter-chips {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 10px;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+  }
+  .chat-messages {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 8px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .chat-msg {
+    padding: 7px 10px;
+    border-radius: 8px;
+    font-size: 12px;
+    line-height: 1.45;
+    border: 1px solid var(--border);
+  }
+  .chat-msg.user { align-self: flex-end; background: var(--c-compute-fill); border-color: #A7C6E6; max-width: 88%; }
+  .chat-msg.assistant { align-self: flex-start; background: var(--bg-canvas); max-width: 95%; }
+  .chat-composer {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 10px;
+    border-top: 1px solid var(--border);
+    background: var(--bg-subtle);
+  }
+  .chat-input {
+    flex: 1 1 auto;
+    font-family: var(--font-sans);
+    font-size: 12px;
+    padding: 6px 9px;
+    border-radius: 6px;
+    border: 1px solid var(--border-strong);
+    background: #FFFFFF;
+    color: var(--ink);
+  }
+  .chat-send-btn {
+    font-family: var(--font-sans);
+    font-size: 11.5px;
+    font-weight: 800;
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--ink);
+    background: var(--ink);
+    color: #FFFFFF;
+    cursor: pointer;
+  }
+
+  /* ── Explicit Operator Consent Gate Modal ──────────────────────────── */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(31, 34, 37, 0.52);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 90;
+    padding: 16px;
+  }
+  .modal-card {
+    width: min(620px, 96vw);
+    background: var(--bg-card);
+    border: 2px solid var(--ink);
+    border-radius: var(--radius-lg);
+    padding: 16px 18px;
+    box-shadow: var(--shadow-md);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    font-size: 12.5px;
+  }
+  .trust-warning-box {
+    background: var(--c-fault-fill);
+    border: 1.5px solid var(--c-fault);
+    border-radius: var(--radius-sm);
+    padding: 8px 10px;
+    color: #7A1E0A;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .argv-code-box {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 7px 10px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-subtle);
+    border: 1px solid var(--border-strong);
+    width: 100%;
+    color: var(--ink);
+  }
+  .mathml-wrap {
+    overflow-x: auto;
+    padding: 6px 8px;
+    background: var(--bg-canvas);
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    font-size: 13px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+</head>
+<body>
+<header class="top-deck">
+  <div class="deck-row">
+    <div class="brand-cluster">
+      <span class="brand-badge">
+        <span>Anvil v4</span>
+        <span class="brand-tag">B3 Workbench + Scientific IDE</span>
+      </span>
+      <span id="repo-badge" class="repo-pill">Repository</span>
+      <span id="provenance-stamp" class="prov-tag">STATIC_AST</span>
+    </div>
+    <div class="selector-group">
+      <button type="button" id="btn-run-trace" class="consent-run-btn">▶ Run Consented Trace</button>
+      <button type="button" id="btn-open-ide-debugger" class="ide-posture-btn" aria-pressed="false">💻 Open IDE Debugger ⤢</button>
+      <button type="button" id="btn-top-xval" class="xval-top-badge">⇄ 2-Seat Validator Receipt</button>
+    </div>
+  </div>
+  <div class="deck-row">
+    <nav class="lens-tabs" role="tablist" aria-label="Anvil v4 Analytical Lenses">
+      <button type="button" id="lens-tab-understand" class="lens-tab active" data-lens="understand">1. Understand (L0–L3)</button>
+      <button type="button" id="lens-tab-refactor" class="lens-tab" data-lens="refactor">2. Refactor &amp; ∅ Null Set</button>
+      <button type="button" id="lens-tab-paper" class="lens-tab" data-lens="paper" style="display: none;">3. Paper ⇄ Code (MathML)</button>
+      <button type="button" id="lens-tab-debug" class="lens-tab" data-lens="debug">4. Debug &amp; Tripwires</button>
+      <button type="button" id="lens-tab-profile" class="lens-tab" data-lens="profile">5. Profile &amp; Literature</button>
+    </nav>
+    <div class="selector-group">
+      <span id="sync-status-pill" class="prov-tag">Sync: Ready</span>
+    </div>
+  </div>
+</header>
+
+<div id="surface-state-banner" class="surface-banner" role="status" aria-live="polite" hidden>
+  <div class="selector-group">
+    <span id="surface-state-badge" class="surface-badge">HEALTHY</span>
+    <span id="surface-state-message"></span>
+  </div>
+  <button type="button" id="btn-retry-state" class="small-btn">↻ Retry State Read</button>
+</div>
+
+<main id="main-workbench-split" class="b3-workbench-split">
+  <!-- LEFT 48% (Posture 1) / 25% Live Rail (Posture 2) -->
+  <section id="left-schematic-pane" class="left-map-pane" aria-label="Steady-Coordinate Process Schematic">
+    <div class="schematic-header">
+      <div class="schematic-title">
+        <span id="left-map-heading">Steady-Coordinate Process Schematic</span>
+        <span id="left-width-pill" class="untouched-pill">48% Locked</span>
+      </div>
+      <button type="button" id="btn-rail-back" class="small-btn" hidden>← Back to 48/52 Workbench</button>
+      <div id="left-legend-row" class="legend-row">
+        <span class="legend-item"><span class="swatch" style="background:#4FA869"></span>Ingest</span>
+        <span class="legend-item"><span class="swatch" style="background:#4A7DB0"></span>Compute</span>
+        <span class="legend-item"><span class="swatch" style="background:#D4A858"></span>Emit / Loop</span>
+        <span class="legend-item"><span class="swatch" style="background:#C44F2A"></span>Fault</span>
+        <span class="legend-item"><span class="swatch" style="background:#5A6573"></span>Infra / ∅</span>
+      </div>
+    </div>
+    <div id="paper-scope-strip" class="stage-detail-card" hidden></div>
+    <div id="l0-scenario-bar" class="l0-bar" aria-label="L0 Execution Scenarios"></div>
+    <div id="svg-container" class="svg-frame"></div>
+    <div id="scrubber-bar" class="scrubber-bar" hidden></div>
+    <div id="rail-l2-container" class="rail-l2-box" hidden></div>
+    <div id="null-shelf-container" class="null-shelf" hidden></div>
+    <div id="left-stage-detail-card" class="stage-detail-card"></div>
+  </section>
+
+  <!-- CENTER 45% (Posture 2 Expandable Scientific IDE Debugger) -->
+  <section id="full-ide-pane" class="full-ide-pane theme-light" aria-label="Full Scientific IDE Debugger" hidden>
+    <div class="full-ide-hdr">
+      <div class="selector-group">
+        <span style="font-weight:800; font-size:12px;">💻 Scientific IDE Debugger</span>
+        <span id="full-ide-exec-badge" class="prov-tag"></span>
+      </div>
+      <div class="selector-group">
+        <button type="button" id="btn-ide-theme" class="small-btn">☀ Paper Light</button>
+        <button type="button" id="btn-close-full-ide" class="small-btn">← 48/52 Workbench (Esc)</button>
+      </div>
+    </div>
+    <div id="full-ide-tabs" class="full-ide-tabs" role="tablist"></div>
+    <div class="full-ide-hintbar">
+      <span>Click any <strong>dashed identifier token</strong> to ★ Pin/Unpin watch · Click gutter <code>●</code> for breakpoint</span>
+      <span id="full-ide-bp-badge" style="font-family:var(--font-mono); font-weight:700; font-size:11px;"></span>
+    </div>
+    <div id="full-ide-code-scroll" class="full-ide-code-scroll"></div>
+  </section>
+
+  <!-- RIGHT 52% (Posture 1) / 30% (Posture 2) Singleton Inspector + Steward Co-Pilot -->
+  <section id="right-workbench-pane" class="right-workbench-pane" aria-label="Inspector and Grounded Steward Co-Pilot">
+    <div id="inspector-shell" class="inspector-shell">
+      <div id="inspector-tabbar" class="inspector-tabbar" role="tablist">
+        <button type="button" class="insp-tab active" data-inspector="story">📖 Stage Story</button>
+        <button type="button" class="insp-tab" data-inspector="ide">💻 Code Split</button>
+        <button type="button" class="insp-tab" data-inspector="funnel">🔬 Smart Funnel</button>
+        <button type="button" class="insp-tab" data-inspector="xval">⇄ Validator</button>
+      </div>
+      <div id="inspector-body" class="inspector-body"></div>
+    </div>
+
+    <div id="copilot-shell" class="copilot-shell">
+      <div class="copilot-hdr">
+        <span>🧭 Grounded Anvil Steward Co-Pilot</span>
+        <span id="copilot-sub-label" style="font-weight:600; color:var(--ink-light); font-size:11px;">· AST, Smart Funnel &amp; Cross-Validator</span>
+      </div>
+      <div class="starter-chips">
+        <button type="button" class="small-btn" data-chat-intent="explain_stage">Explain active stage I/O</button>
+        <button type="button" class="small-btn" data-chat-intent="debug_inf">🚨 Inspect Tripwires in IDE</button>
+        <button type="button" class="small-btn" data-chat-intent="refactor_rec">Pure-Core Refactor Plan</button>
+        <button type="button" class="small-btn" data-chat-intent="show_xval">Validator Receipt</button>
+      </div>
+      <div id="chat-messages" class="chat-messages" aria-live="polite"></div>
+      <div class="chat-composer">
+        <input id="chat-input" type="text" class="chat-input" placeholder="Ask Steward about S1..Sk, pinned watches, refactor crosswalk, or equations..." aria-label="Ask Grounded Anvil Steward Co-Pilot" />
+        <button type="button" id="btn-chat-send" class="chat-send-btn">Send</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- Explicit Operator Consent Gate Modal -->
+<div id="trace-consent-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="consent-modal-title" hidden>
+  <div class="modal-card">
+    <div style="font-size:14px; font-weight:800;" id="consent-modal-title">Confirm Consented Local Subprocess Execution</div>
+    <div class="trust-warning-box">
+      <div>isolation_boundary: <code>consented_local_subprocess</code></div>
+      <div style="margin-top:3px;">WARNING: Executes in an isolated temporary worktree copy (<code id="consent-temp-copy-path">$TMPDIR/anvil_v4_trace_&lt;ephemeral_worktree&gt;</code>) with <code>shell=False</code> and scrubbed credentials — <strong>NOT an OS/VM sandbox — do not run hostile untrusted code</strong>.</div>
+    </div>
+    <div>
+      <div style="font-size:11.5px; font-weight:800; margin-bottom:4px;">Validated Execution <code>argv</code> JSON Array (no shell strings permitted):</div>
+      <div id="consent-argv-preview" class="argv-code-box"></div>
+      <div id="consent-resolved-argv" class="argv-code-box" style="margin-top:4px; font-size:11px; color:var(--ink-soft);"></div>
+      <input id="consent-argv-input" type="text" class="argv-code-box" style="margin-top:6px;" aria-label="Execution argv JSON array" />
+    </div>
+    <div id="consent-modal-error" style="color:#8A1C08; font-size:11.5px; font-weight:700;" hidden></div>
+    <div class="deck-row" style="justify-content:flex-end; margin-top:4px;">
+      <button type="button" id="btn-cancel-trace-consent" class="small-btn">Cancel (Esc)</button>
+      <button type="button" id="btn-confirm-trace-consent" class="consent-run-btn">✓ Confirm Operator Consent &amp; Execute</button>
+    </div>
+  </div>
+</div>
+
+<script id="anvil-v4-bootstrap" type="application/json">__ANVIL_BOOTSTRAP_JSON__</script>
+<script nonce="__ANVIL_CSP_NONCE__">
+(function () {
+  "use strict";
+
+  const BACKOFF_STEPS_MS = [1000, 2000, 4000, 8000];
+  const HEALTHY_POLL_MS = 12000;
+  const FIVE_SCOPES = [
+    "function_locals",
+    "closure_nonlocals",
+    "instance_attrs",
+    "module_globals",
+    "stage_io_contracts"
+  ];
+
+  function parseBootstrap() {
+    const el = document.getElementById("anvil-v4-bootstrap");
+    if (!el) return { mode: "standalone", capability_token: "", bundle: null, surface_state: null };
+    const raw = (el.textContent || "").trim();
+    if (!raw || raw.indexOf("__ANVIL_BOOTSTRAP") === 0) {
+      return { mode: "standalone", capability_token: "", bundle: null, surface_state: null };
+    }
+    try {
+      return JSON.parse(raw);
+    } catch (_err) {
+      return {
+        mode: "standalone",
+        capability_token: "",
+        bundle: null,
+        unknown_state: false,
+        surface_state: {
+          kind: "dependency-returns-garbage",
+          status_kind: "dependency-returns-garbage",
+          http_status: 502,
+          badge: "REJECTED_GARBAGE",
+          message: "Malformed trace/validator payload — rejected fail-closed"
+        }
+      };
+    }
+  }
+
+  const BOOT = parseBootstrap();
+  const CAPABILITY_TOKEN = typeof BOOT.capability_token === "string" ? BOOT.capability_token : "";
+
+  const state = {
+    mode: BOOT.mode || "standalone",
+    bundle: BOOT.bundle || null,
+    surfaceState: BOOT.surface_state || (BOOT.bundle && BOOT.bundle.surface_state) || null,
+    unknownState: Boolean(BOOT.unknown_state) || Boolean(BOOT.surface_state && BOOT.surface_state.status_kind === "backing-store-unreadable"),
+    lens: "understand",
+    inspectorTab: "story",
+    activeScenarioIdx: 0,
+    activeStageId: "S1",
+    activeStepId: "1.1",
+    activeFile: "",
+    activeLine: 1,
+    ideOpen: false,
+    ideTheme: "light",
+    activePipeline: "",
+    showQuarantinedDrawer: false,
+    funnelStage: "all",
+    activeScopes: new Set(FIVE_SCOPES),
+    funnelSearch: "",
+    pinnedWatches: new Set(),
+    breakpoints: new Set(),
+    dialogueTurns: [],
+    consentAction: "trace",
+    recommendedArgv: Array.isArray(BOOT.recommended_argv) ? BOOT.recommended_argv : ["pytest", "-q"]
+  };
+
+  window.__anvilSyncStats = {
+    inFlight: false,
+    pollCount: 0,
+    abortedCount: 0,
+    failureStreak: 0,
+    lastBackoffMs: 0,
+    pausedForVisibility: false
+  };
+
+  let activePollController = null;
+  let scheduledPollTimer = null;
+
+  function esc(val) {
+    return String(val == null ? "" : val)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function stripDollarTokens(txt) {
+    return String(txt == null ? "" : txt).replace(/\$/g, "");
+  }
+
+  function shortWords(raw, maxWords, maxChars) {
+    const clean = stripDollarTokens(raw).replace(/\s+/g, " ").trim();
+    if (!clean) return "";
+    const words = clean.split(" ").slice(0, maxWords || 5);
+    let joined = words.join(" ");
+    const cap = maxChars || 34;
+    if (joined.length > cap) {
+      joined = joined.slice(0, cap - 1).trimEnd() + "…";
+    }
+    return joined;
+  }
+
+  function basename(p) {
+    const s = String(p || "");
+    const idx = Math.max(s.lastIndexOf("/"), s.lastIndexOf("\\"));
+    return idx >= 0 ? s.slice(idx + 1) : s;
+  }
+
+  function stagePalette(kind, isFault) {
+    if (isFault) return { stroke: "#C44F2A", fill: "#FBE0D0", tag: "FAULT" };
+    const k = String(kind || "compute").toLowerCase();
+    if (k.indexOf("ingest") >= 0) return { stroke: "#4FA869", fill: "#DAEEDC", tag: "INGEST" };
+    if (k.indexOf("emit") >= 0 || k.indexOf("loop") >= 0) return { stroke: "#D4A858", fill: "#F8E8C8", tag: k.indexOf("loop") >= 0 ? "LOOP" : "EMIT" };
+    if (k.indexOf("infra") >= 0 || k.indexOf("null") >= 0) return { stroke: "#5A6573", fill: "#E0E4E9", tag: "INFRA" };
+    return { stroke: "#4A7DB0", fill: "#DCE8F5", tag: "COMPUTE" };
+  }
+
+  function bpKey(file, line) {
+    return String(file || "") + ":" + String(line || 1);
+  }
+
+  function hydrateFromBundle(bundle, initialLoad) {
+    if (!bundle || typeof bundle !== "object") return;
+    state.bundle = bundle;
+    if (Array.isArray(bundle.recommended_argv) && bundle.recommended_argv.length > 0) {
+      state.recommendedArgv = bundle.recommended_argv;
+    }
+    const sess = bundle.session || {};
+    if (Array.isArray(sess.pinned_watches)) {
+      state.pinnedWatches = new Set(sess.pinned_watches.map(String));
+    }
+    if (Array.isArray(sess.breakpoints)) {
+      const nextBps = new Set();
+      sess.breakpoints.forEach(function (bp) {
+        if (typeof bp === "string") nextBps.add(bp);
+        else if (typeof bp === "number") nextBps.add(bpKey(sess.active_file || state.activeFile, bp));
+        else if (bp && typeof bp === "object" && bp.file && bp.line) nextBps.add(bpKey(bp.file, bp.line));
+      });
+      state.breakpoints = nextBps;
+    }
+    if (Array.isArray(sess.dialogue_turns)) {
+      state.dialogueTurns = sess.dialogue_turns.slice();
+    }
+    if (initialLoad) {
+      if (sess.active_stage_id) state.activeStageId = String(sess.active_stage_id);
+      if (sess.active_step_id) state.activeStepId = String(sess.active_step_id);
+      if (sess.active_file) state.activeFile = String(sess.active_file);
+      if (sess.active_line) state.activeLine = Number(sess.active_line) || 1;
+      state.ideOpen = Boolean(sess.ide_open);
+      state.ideTheme = sess.ide_theme === "dark" ? "dark" : "light";
+      if (typeof sess.active_pipeline === "string") state.activePipeline = sess.active_pipeline;
+    } else if (sess && typeof sess.active_pipeline === "string") {
+      state.activePipeline = sess.active_pipeline;
+    }
+    ensureValidSelection();
+  }
+
+  function ensureValidSelection() {
+    const b = state.bundle;
+    if (!b || !b.process_map) return;
+    const stages = b.process_map.l1_stages || [];
+    if (stages.length > 0 && !stages.some(function (s) { return s.id === state.activeStageId; })) {
+      state.activeStageId = stages[0].id;
+    }
+    const filesMap = b.files_source_map || {};
+    const fileKeys = Object.keys(filesMap);
+    if (fileKeys.length > 0 && (!state.activeFile || !filesMap[state.activeFile])) {
+      state.activeFile = fileKeys[0];
+    }
+    if (state.lens === "paper" && !(b.paper_map && b.paper_map.has_paper === true)) {
+      state.lens = "understand";
+    }
+  }
+
+  /* ── Visibility-Gated Single-Flight Client Sync + Exponential Backoff ── */
+  function clearScheduledSync() {
+    if (scheduledPollTimer !== null) {
+      window.clearTimeout(scheduledPollTimer);
+      scheduledPollTimer = null;
+    }
+  }
+
+  function abortActivePoll() {
+    if (activePollController) {
+      try { activePollController.abort(); } catch (_e) {}
+      activePollController = null;
+      window.__anvilSyncStats.inFlight = false;
+      window.__anvilSyncStats.abortedCount += 1;
+    }
+  }
+
+  function scheduleNextStateSync(delayMs) {
+    clearScheduledSync();
+    if (state.mode !== "live") return;
+    if (document.visibilityState !== "visible") {
+      window.__anvilSyncStats.pausedForVisibility = true;
+      return;
+    }
+    window.__anvilSyncStats.pausedForVisibility = false;
+    scheduledPollTimer = window.setTimeout(function () {
+      scheduledPollTimer = null;
+      fetchWithVisibilityAndBackoff(false);
+    }, delayMs);
+  }
+
+  async function fetchWithVisibilityAndBackoff(forceNow) {
+    if (state.mode !== "live") return;
+    if (!forceNow && document.visibilityState !== "visible") {
+      window.__anvilSyncStats.pausedForVisibility = true;
+      return;
+    }
+    abortActivePoll();
+    const controller = new AbortController();
+    activePollController = controller;
+    window.__anvilSyncStats.inFlight = true;
+    window.__anvilSyncStats.pollCount += 1;
+
+    const pill = document.getElementById("sync-status-pill");
+    if (pill) pill.textContent = "Sync: Reading…";
+
+    try {
+      const resp = await window.fetch("/api/anvil/v4/state", {
+        method: "GET",
+        headers: { "Accept": "application/json" },
+        cache: "no-store",
+        signal: controller.signal
+      });
+      const data = await resp.json();
+      if (activePollController === controller) {
+        activePollController = null;
+        window.__anvilSyncStats.inFlight = false;
+      }
+
+      if (resp.ok && data && data.ok) {
+        window.__anvilSyncStats.failureStreak = 0;
+        window.__anvilSyncStats.lastBackoffMs = 0;
+        state.unknownState = false;
+        state.surfaceState = data.surface_state || null;
+        hydrateFromBundle(data, false);
+        if (pill) pill.textContent = "Sync: Live (200)";
+        renderAll();
+        scheduleNextStateSync(HEALTHY_POLL_MS);
+      } else {
+        const idx = Math.min(window.__anvilSyncStats.failureStreak, BACKOFF_STEPS_MS.length - 1);
+        const backoff = BACKOFF_STEPS_MS[idx];
+        window.__anvilSyncStats.failureStreak += 1;
+        window.__anvilSyncStats.lastBackoffMs = backoff;
+        state.surfaceState = (data && data.surface_state) || {
+          kind: (data && data.status_kind) || "backing-store-unreadable",
+          status_kind: (data && data.status_kind) || "backing-store-unreadable",
+          http_status: resp.status,
+          badge: (data && data.badge) || "UNKNOWN",
+          message: (data && data.message) || "Session/trace store unreadable (unknown state, not empty)"
+        };
+        state.unknownState = state.surfaceState.status_kind === "backing-store-unreadable" || resp.status === 500;
+        if (state.unknownState || resp.status === 502) {
+          state.bundle = null;
+        } else if (data && data.bundle) {
+          hydrateFromBundle(data.bundle, false);
+        }
+        if (pill) pill.textContent = "Sync: Backoff " + backoff + "ms (" + resp.status + ")";
+        renderAll();
+        scheduleNextStateSync(backoff);
+      }
+    } catch (err) {
+      if (activePollController === controller) {
+        activePollController = null;
+        window.__anvilSyncStats.inFlight = false;
+      }
+      if (err && err.name === "AbortError") return;
+      const idx = Math.min(window.__anvilSyncStats.failureStreak, BACKOFF_STEPS_MS.length - 1);
+      const backoff = BACKOFF_STEPS_MS[idx];
+      window.__anvilSyncStats.failureStreak += 1;
+      window.__anvilSyncStats.lastBackoffMs = backoff;
+      if (pill) pill.textContent = "Sync: Offline Backoff " + backoff + "ms";
+      scheduleNextStateSync(backoff);
+    }
+  }
+
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState !== "visible") {
+      clearScheduledSync();
+      abortActivePoll();
+      window.__anvilSyncStats.pausedForVisibility = true;
+    } else if (state.mode === "live") {
+      window.__anvilSyncStats.pausedForVisibility = false;
+      fetchWithVisibilityAndBackoff(false);
+    }
+  });
+
+  async function apiPost(route, payload) {
+    if (state.mode !== "live") return null;
+    const resp = await window.fetch(route, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "X-Anvil-Capability": CAPABILITY_TOKEN
+      },
+      body: JSON.stringify(payload)
+    });
+    const data = await resp.json();
+    return { status: resp.status, ok: resp.ok, data: data };
+  }
+
+  async function persistSessionState() {
+    if (state.mode !== "live") return;
+    const payload = {
+      pinned_watches: Array.from(state.pinnedWatches),
+      breakpoints: Array.from(state.breakpoints),
+      active_stage_id: state.activeStageId,
+      active_step_id: state.activeStepId,
+      active_file: state.activeFile,
+      active_line: state.activeLine,
+      ide_open: state.ideOpen,
+      ide_theme: state.ideTheme,
+      active_pipeline: state.activePipeline || ""
+    };
+    try {
+      await apiPost("/api/anvil/v4/session", payload);
+    } catch (_e) {}
+  }
+
+  /* ── Top Deck & 5-State Failure Banner ─────────────────────────────── */
+  function renderTopDeckAndBanner() {
+    const b = state.bundle;
+    const repoBadge = document.getElementById("repo-badge");
+    const provStamp = document.getElementById("provenance-stamp");
+    if (state.unknownState) {
+      repoBadge.textContent = "Store: UNKNOWN";
+      provStamp.textContent = "UNKNOWN";
+      provStamp.className = "prov-tag";
+    } else if (b) {
+      repoBadge.textContent = b.repo_name + (b.repo_fingerprint ? " · " + b.repo_fingerprint.slice(0, 8) : "");
+      provStamp.textContent = b.has_trace ? "TRACED · consented_local_subprocess" : "STATIC_AST · zero_execution";
+      provStamp.className = "prov-tag" + (b.has_trace ? " traced" : "");
+    } else {
+      repoBadge.textContent = "No Bundle";
+      provStamp.textContent = (state.surfaceState && state.surfaceState.badge) || "UNAVAILABLE";
+      provStamp.className = "prov-tag";
+    }
+
+    const hasPaper = Boolean(b && b.paper_map && b.paper_map.has_paper === true && !state.unknownState);
+    const paperTab = document.getElementById("lens-tab-paper");
+    paperTab.style.display = hasPaper ? "" : "none";
+    if (!hasPaper && state.lens === "paper") state.lens = "understand";
+
+    document.querySelectorAll(".lens-tab").forEach(function (btn) {
+      btn.classList.toggle("active", btn.getAttribute("data-lens") === state.lens);
+    });
+
+    const ideBtn = document.getElementById("btn-open-ide-debugger");
+    ideBtn.classList.toggle("active", state.ideOpen);
+    ideBtn.setAttribute("aria-pressed", String(state.ideOpen));
+    ideBtn.textContent = state.ideOpen ? "← Back to 48/52 Workbench (Esc)" : "💻 Open IDE Debugger ⤢";
+
+    const split = document.getElementById("main-workbench-split");
+    split.classList.toggle("ide-debugger-open", state.ideOpen);
+    document.getElementById("full-ide-pane").hidden = !state.ideOpen;
+    document.getElementById("left-legend-row").hidden = state.ideOpen;
+    document.getElementById("btn-rail-back").hidden = !state.ideOpen;
+    document.getElementById("left-width-pill").textContent = state.ideOpen ? "25% Live Rail" : "48% Locked";
+    document.getElementById("inspector-tabbar").hidden = state.ideOpen;
+    document.getElementById("copilot-sub-label").textContent = state.ideOpen
+      ? "· ● Synced to IDE Debugger"
+      : "· AST, Smart Funnel & Cross-Validator";
+
+    const banner = document.getElementById("surface-state-banner");
+    const badgeEl = document.getElementById("surface-state-badge");
+    const msgEl = document.getElementById("surface-state-message");
+    const surf = state.surfaceState;
+    if (surf && surf.status_kind && surf.status_kind !== "healthy") {
+      banner.hidden = false;
+      const isErr = surf.http_status >= 500 && surf.http_status !== 503;
+      const isEmpty = surf.status_kind === "empty-but-valid";
+      banner.className = "surface-banner" + (isErr ? " sev-error" : (isEmpty ? " sev-empty" : ""));
+      badgeEl.textContent = surf.badge || "ALERT";
+      msgEl.textContent = surf.message || "";
+    } else {
+      banner.hidden = true;
+    }
+  }
+
+  /* ── Steady-Coordinate SVG Renderers (<= 6 words per <text>, 0 overlap) ── */
+  function buildProcessSchematicSvg(stages, hasTrace) {
+    if (state.unknownState) {
+      return '<svg viewBox="0 0 640 160" role="img" aria-label="Unknown Backing Store State">' +
+        '<rect x="16" y="20" width="608" height="120" rx="10" fill="#FBE0D0" stroke="#C44F2A" stroke-width="2"/>' +
+        '<text x="36" y="64" font-size="14" font-weight="800" fill="#7A1E0A">Backing store state UNKNOWN</text>' +
+        '<text x="36" y="96" font-size="12" fill="#5A2214">Stage count: UNKNOWN (unreadable store)</text></svg>';
+    }
+    if (!stages || stages.length === 0) {
+      return '<svg viewBox="0 0 640 150" role="img" aria-label="Empty Repository Schematic">' +
+        '<rect x="16" y="20" width="608" height="110" rx="10" fill="#FAF8F5" stroke="#5A6573" stroke-dasharray="6 4" stroke-width="1.6"/>' +
+        '<text x="36" y="64" font-size="13" font-weight="800" fill="#1F2225">EMPTY · Zero matched units</text>' +
+        '<text x="36" y="94" font-size="12" fill="#4A4F55">Repository parsed cleanly without stages</text></svg>';
+    }
+
+    const rowGap = 138;
+    const svgH = 64 + stages.length * rowGap;
+    let out = '<svg viewBox="0 0 680 ' + svgH + '" role="img" aria-label="Steady-Coordinate L1 and L2 Process Schematic">' +
+      '<defs><marker id="arr-main" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">' +
+      '<path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#4A7DB0"/></marker></defs>' +
+      '<text x="24" y="26" font-size="12.5" font-weight="800" fill="#1F2225">Macro Stages (S1–S' + stages.length + ')</text>' +
+      '<text x="652" y="26" font-size="11.5" font-weight="700" fill="#4A4F55" text-anchor="end">' +
+      (hasTrace ? "Solid: Traced Runtime" : "Dashed: Static AST") + '</text>';
+
+    stages.forEach(function (st, idx) {
+      const y = 44 + idx * rowGap;
+      const isFault = (st.tripwires && st.tripwires.length > 0) || st.verdict === "CODE_VIOLATES_SPEC";
+      const pal = stagePalette(st.kind, isFault);
+      const isSel = st.id === state.activeStageId;
+      const hasBlind = (st.dynamic_blind_spots || []).length > 0;
+      const badgeRight = isFault
+        ? "FAULT"
+        : (state.lens === "profile" ? (Number(st.wall_pct || 0).toFixed(1) + "% wall") : (hasBlind && !hasTrace ? "⋯? Blind" : shortWords(st.verdict || "STATIC", 2, 16)));
+      const subCount = (st.l2_steps || []).length;
+      const cleanTitle = shortWords(String(st.title || st.id).replace(/^S\d+\s*[·:-]?\s*/i, ""), 4, 30);
+
+      out += '<g class="stage-node-group" data-stage-node="' + esc(st.id) + '">' +
+        '<rect x="24" y="' + y + '" width="430" height="98" rx="10" fill="#FFFFFF" stroke="' + (isSel ? "#1F2225" : pal.stroke) + '" stroke-width="' + (isSel ? "2.8" : "1.8") + '"/>' +
+        '<rect x="25" y="' + (y + 1) + '" width="428" height="28" rx="9" fill="' + pal.fill + '"/>' +
+        '<text x="38" y="' + (y + 20) + '" font-size="12" font-weight="800" fill="#1F2225" class="svg-halo">' + esc(st.id + " · " + pal.tag) + '</text>' +
+        '<text x="440" y="' + (y + 20) + '" font-size="11.5" font-weight="800" fill="' + (isFault ? "#C44F2A" : "#1F2225") + '" text-anchor="end" class="svg-halo">' + esc(badgeRight) + '</text>' +
+        '<text x="38" y="' + (y + 54) + '" font-size="12.5" font-weight="700" fill="#1F2225">' + esc(cleanTitle) + '</text>' +
+        '<text x="38" y="' + (y + 80) + '" font-size="11.5" fill="#4A4F55">' + esc(subCount + " sub-steps · " + (st.hit_count || 0) + " hits") + '</text>' +
+        '</g>';
+
+      /* Right steady callout pill for first L2 code anchor */
+      const leadStep = (st.l2_steps || [])[0];
+      if (leadStep && leadStep.code_ref) {
+        const refLabel = shortWords(basename(leadStep.code_ref.file) + ":L" + leadStep.code_ref.start_line, 2, 24);
+        out += '<g class="stage-node-group" data-stage-node="' + esc(st.id) + '">' +
+          '<line x1="454" y1="' + (y + 49) + '" x2="486" y2="' + (y + 49) + '" stroke="#5A6573" stroke-width="1.4" stroke-dasharray="4 3"/>' +
+          '<rect x="486" y="' + (y + 29) + '" width="170" height="40" rx="7" fill="#FAF8F5" stroke="#C7BFB0"/>' +
+          '<text x="498" y="' + (y + 53) + '" font-size="11.5" font-weight="700" fill="#1F2225">' + esc(refLabel) + '</text>' +
+          '</g>';
+      }
+
+      if (st.has_loop) {
+        out += '<path d="M 454 ' + (y + 72) + ' C 478 ' + (y + 72) + ', 478 ' + (y + 92) + ', 454 ' + (y + 92) + '" fill="none" stroke="#D4A858" stroke-width="2"/>';
+      }
+      if (idx < stages.length - 1) {
+        const dash = hasTrace && st.hit_count > 0 ? "" : 'stroke-dasharray="6 4"';
+        out += '<line x1="239" y1="' + (y + 98) + '" x2="239" y2="' + (y + rowGap - 4) + '" stroke="#4A7DB0" stroke-width="2.2" ' + dash + ' marker-end="url(#arr-main)"/>';
+      }
+    });
+
+    out += "</svg>";
+    return out;
+  }
+
+  function buildRefactorCrosswalkSvg(refMap) {
+    const oldSt = (refMap && refMap.old_stages) || [];
+    const newSt = (refMap && refMap.target_stages) || [];
+    const edges = (refMap && refMap.crosswalk_edges) || [];
+    const rows = Math.max(oldSt.length, newSt.length, 1);
+    const rowGap = 112;
+    const svgH = 72 + rows * rowGap;
+
+    let out = '<svg viewBox="0 0 680 ' + svgH + '" role="img" aria-label="Old to New Pure-Core Refactor Crosswalk">' +
+      '<text x="24" y="28" font-size="12.5" font-weight="800" fill="#1F2225">Current Stages (S1–Sk)</text>' +
+      '<text x="656" y="28" font-size="12.5" font-weight="800" fill="#163E6C" text-anchor="end">Pure Core Targets (N1–Nk)</text>';
+
+    const oldY = {};
+    oldSt.forEach(function (s, i) {
+      const y = 48 + i * rowGap;
+      oldY[s.id] = y + 36;
+      const pal = stagePalette(s.kind, false);
+      const tShort = shortWords(String(s.title || s.id).replace(/^S\d+\s*[·:-]?\s*/i, ""), 3, 22);
+      out += '<g class="stage-node-group" data-stage-node="' + esc(s.id) + '">' +
+        '<rect x="24" y="' + y + '" width="240" height="74" rx="8" fill="#FFFFFF" stroke="' + pal.stroke + '" stroke-width="1.8"/>' +
+        '<text x="36" y="' + (y + 26) + '" font-size="12" font-weight="800" fill="#1F2225">' + esc(s.id + " · Current") + '</text>' +
+        '<text x="36" y="' + (y + 54) + '" font-size="11.5" fill="#4A4F55">' + esc(tShort) + '</text></g>';
+    });
+
+    const newY = {};
+    newSt.forEach(function (ns, j) {
+      const y = 48 + j * rowGap;
+      newY[ns.id] = y + 36;
+      const isCore = Boolean(ns.is_pure_core);
+      const stroke = isCore ? "#4A7DB0" : "#4FA869";
+      const fill = isCore ? "#DCE8F5" : "#DAEEDC";
+      const roleShort = isCore ? "Pure Functional Core" : "Imperative I/O Shell";
+      out += '<g>' +
+        '<rect x="416" y="' + y + '" width="240" height="74" rx="8" fill="' + fill + '" stroke="' + stroke + '" stroke-width="1.8"/>' +
+        '<text x="428" y="' + (y + 26) + '" font-size="12" font-weight="800" fill="#1F2225">' + esc(ns.id + " · " + (ns.symbol_count || 0) + " sym") + '</text>' +
+        '<text x="428" y="' + (y + 54) + '" font-size="11.5" font-weight="700" fill="#1F2225">' + esc(roleShort) + '</text></g>';
+    });
+
+    edges.forEach(function (e) {
+      const y1 = oldY[e.from_stage];
+      const y2 = newY[e.to_stage];
+      if (y1 !== undefined && y2 !== undefined) {
+        out += '<path d="M 264 ' + y1 + ' C 335 ' + y1 + ', 345 ' + y2 + ', 416 ' + y2 + '" fill="none" stroke="#4A7DB0" stroke-width="2"/>';
+      }
+    });
+
+    out += "</svg>";
+    return out;
+  }
+
+  function buildCompactRailSvg(stages, hasTrace) {
+    if (!stages || stages.length === 0) {
+      return buildProcessSchematicSvg(stages, hasTrace);
+    }
+    const rowGap = 86;
+    const svgH = 44 + stages.length * rowGap;
+    let out = '<svg viewBox="0 0 360 ' + svgH + '" role="img" aria-label="Compact Live Process Schematic Rail">' +
+      '<text x="14" y="22" font-size="12" font-weight="800" fill="#1F2225">Live Process Rail</text>' +
+      '<text x="346" y="22" font-size="11.5" fill="#4A4F55" text-anchor="end">' + (hasTrace ? "Traced" : "Static") + '</text>';
+
+    stages.forEach(function (st, idx) {
+      const y = 36 + idx * rowGap;
+      const isFault = (st.tripwires && st.tripwires.length > 0) || st.verdict === "CODE_VIOLATES_SPEC";
+      const pal = stagePalette(st.kind, isFault);
+      const isSel = st.id === state.activeStageId;
+      const shortT = shortWords(String(st.title || st.id).replace(/^S\d+\s*[·:-]?\s*/i, ""), 3, 24);
+      out += '<g class="stage-node-group" data-stage-node="' + esc(st.id) + '">' +
+        '<rect x="14" y="' + y + '" width="332" height="66" rx="8" fill="#FFFFFF" stroke="' + (isSel ? "#1F2225" : pal.stroke) + '" stroke-width="' + (isSel ? "2.6" : "1.6") + '"/>' +
+        '<rect x="15" y="' + (y + 1) + '" width="330" height="22" rx="7" fill="' + pal.fill + '"/>' +
+        '<text x="24" y="' + (y + 16) + '" font-size="11.5" font-weight="800" fill="#1F2225" class="svg-halo">' + esc(st.id + " · " + pal.tag) + '</text>' +
+        '<text x="336" y="' + (y + 16) + '" font-size="11.5" font-weight="700" fill="#1F2225" text-anchor="end" class="svg-halo">' + esc((st.l2_steps || []).length + " steps") + '</text>' +
+        '<text x="24" y="' + (y + 48) + '" font-size="12" font-weight="700" fill="#1F2225">' + esc(shortT) + '</text></g>';
+      if (idx < stages.length - 1) {
+        out += '<line x1="180" y1="' + (y + 66) + '" x2="180" y2="' + (y + rowGap - 2) + '" stroke="#4A7DB0" stroke-width="1.8" ' + (hasTrace ? "" : 'stroke-dasharray="5 3"') + '/>';
+      }
+    });
+    out += "</svg>";
+    return out;
+  }
+
+  function getStages() {
+    if (!state.bundle || !state.bundle.process_map) return [];
+    const rawStages = state.bundle.process_map.l1_stages || [];
+    if (state.mode === "standalone" && state.activePipeline && state.activePipeline !== "all_paper_matched" && state.activePipeline !== "all") {
+      const pScopes = state.bundle.process_map.paper_matched_scopes || {};
+      const pipeObj = (pScopes.available_pipelines || []).find(function (p) { return (p.id || p.pipeline_id) === state.activePipeline; });
+      if (pipeObj && Array.isArray(pipeObj.files) && pipeObj.files.length > 0) {
+        const fSet = new Set(pipeObj.files);
+        const filtered = rawStages.filter(function (st) {
+          return (st.files || []).some(function (f) { return fSet.has(f); });
+        });
+        if (filtered.length > 0) return filtered;
+      }
+    }
+    return rawStages;
+  }
+
+  function getActiveStage() {
+    const stages = getStages();
+    return stages.find(function (s) { return s.id === state.activeStageId; }) || stages[0] || null;
+  }
+
+  function renderLeftPane() {
+    const b = state.bundle;
+    const stages = getStages();
+    const hasTrace = Boolean(b && b.has_trace);
+    const l0Bar = document.getElementById("l0-scenario-bar");
+    const scopeStrip = document.getElementById("paper-scope-strip");
+    const svgBox = document.getElementById("svg-container");
+    const scrub = document.getElementById("scrubber-bar");
+    const railL2 = document.getElementById("rail-l2-container");
+    const nullShelf = document.getElementById("null-shelf-container");
+    const detailCard = document.getElementById("left-stage-detail-card");
+    const heading = document.getElementById("left-map-heading");
+
+    const pScopes = (b && b.process_map && b.process_map.paper_matched_scopes) || (b && b.paper_map && b.paper_map.paper_matched_scopes) || null;
+    if (!state.ideOpen && !state.unknownState && pScopes && (pScopes.scoped || (pScopes.available_pipelines && pScopes.available_pipelines.length > 0))) {
+      scopeStrip.hidden = false;
+      const availPipes = pScopes.available_pipelines || [];
+      const curPipe = state.activePipeline || pScopes.active_pipeline || "all_paper_matched";
+      const allCnt = (pScopes.paper_matched_files || pScopes.active_files || []).length;
+      const selPipeObj = availPipes.find(function (pp) { return (pp.id || pp.pipeline_id) === curPipe; });
+      const actCnt = (selPipeObj && selPipeObj.file_count) ? selPipeObj.file_count : ((pScopes.active_files || []).length || allCnt);
+      const quarList = pScopes.quarantined_historical_files || pScopes.unreferenced_historical_files || [];
+      const exclSyms = pScopes.excluded_shared_symbols || [];
+      const manifests = (pScopes.workflow_manifests || []).join(", ");
+      const pillsHtml =
+        '<button type="button" class="l0-pill ' + ((curPipe === "all_paper_matched" || curPipe === "all" || !curPipe) ? "active" : "") + '" data-pipe-id="all_paper_matched">All Paper-Matched (' + allCnt + ')</button>' +
+        availPipes.map(function (pp) {
+          const pidVal = pp.id || pp.pipeline_id;
+          return '<button type="button" class="l0-pill ' + (curPipe === pidVal ? "active" : "") + '" data-pipe-id="' + esc(pidVal) + '" title="' + esc((pp.entrypoints || []).join(", ")) + '">' +
+            esc(stripDollarTokens(pp.title || pidVal)) + ' (' + Number(pp.file_count || 0) + ')</button>';
+        }).join("");
+      const drawerHtml = state.showQuarantinedDrawer ? (
+        '<div style="margin-top:8px; padding:8px; background:var(--bg-canvas); border:1px solid var(--border); border-radius:6px; max-height:170px; overflow-y:auto; font-size:11px;">' +
+          '<div style="font-weight:800; margin-bottom:4px;">Quarantined Non-Paper Scripts (' + quarList.length + ' excluded from replication scope):</div>' +
+          '<div style="font-family:var(--font-mono); color:var(--ink-soft); line-height:1.5;">' + quarList.map(esc).join(" · ") + '</div>' +
+          (exclSyms.length > 0
+            ? '<div style="font-weight:800; margin-top:6px; margin-bottom:2px;">Excluded Out-of-Scope Dataset Helpers in Shared Modules (' + exclSyms.length + '):</div>' +
+              '<div style="font-family:var(--font-mono); color:#8A1C08;">' + exclSyms.map(esc).join(" · ") + '</div>'
+            : "") +
+        '</div>'
+      ) : "";
+      scopeStrip.innerHTML =
+        '<div class="deck-row">' +
+          '<div><strong>🎯 Paper-Matched Replication Scope</strong> · <span style="color:var(--ink-soft);">' + actCnt + ' active script(s)' + (manifests ? ' via <code>' + esc(manifests) + '</code>' : '') + '</span></div>' +
+          (quarList.length > 0
+            ? '<button type="button" id="btnToggleQuarantined" class="small-btn">∅ ' + quarList.length + ' Non-Paper Scripts Quarantined ' + (state.showQuarantinedDrawer ? "▲" : "▼") + '</button>'
+            : '<span class="prov-tag traced">Scoped</span>') +
+        '</div>' +
+        '<div class="l0-bar" style="margin-top:6px;">' + pillsHtml + '</div>' +
+        drawerHtml;
+      const qBtn = document.getElementById("btnToggleQuarantined");
+      if (qBtn) {
+        qBtn.addEventListener("click", function () {
+          state.showQuarantinedDrawer = !state.showQuarantinedDrawer;
+          renderLeftPane();
+        });
+      }
+      scopeStrip.querySelectorAll("[data-pipe-id]").forEach(function (btn) {
+        btn.addEventListener("click", async function () {
+          const nextPipe = btn.getAttribute("data-pipe-id") || "all_paper_matched";
+          state.activePipeline = nextPipe;
+          ensureValidSelection();
+          if (state.mode === "live") {
+            await persistSessionState();
+            await fetchWithVisibilityAndBackoff(true);
+          } else {
+            renderAll();
+          }
+        });
+      });
+    } else if (scopeStrip) {
+      scopeStrip.hidden = true;
+      scopeStrip.innerHTML = "";
+    }
+
+    const l0List = (b && b.process_map && b.process_map.l0_scenarios) || [];
+    if (!state.ideOpen && l0List.length > 0 && !state.unknownState) {
+      l0Bar.hidden = false;
+      l0Bar.innerHTML = l0List.map(function (sc, idx) {
+        return '<button type="button" class="l0-pill ' + (idx === state.activeScenarioIdx ? "active" : "") + '" data-l0-idx="' + idx + '">' +
+          esc(stripDollarTokens(sc.title || sc.id)) + '</button>';
+      }).join("");
+      l0Bar.querySelectorAll("[data-l0-idx]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          const i = Number(btn.getAttribute("data-l0-idx")) || 0;
+          state.activeScenarioIdx = i;
+          if (l0List[i] && Array.isArray(l0List[i].recommended_argv)) {
+            state.recommendedArgv = l0List[i].recommended_argv;
+          }
+          renderAll();
+        });
+      });
+    } else {
+      l0Bar.hidden = true;
+    }
+
+    if (state.ideOpen) {
+      heading.textContent = "Live Process Rail";
+      svgBox.innerHTML = buildCompactRailSvg(stages, hasTrace);
+      nullShelf.hidden = true;
+      scrub.hidden = true;
+      detailCard.hidden = true;
+      const actSt = getActiveStage();
+      if (actSt && (actSt.l2_steps || []).length > 0 && !state.unknownState) {
+        railL2.hidden = false;
+        railL2.innerHTML = '<div style="font-size:11.5px; font-weight:800;">Active L2 Sub-Steps · ' + esc(actSt.id) + '</div>' +
+          (actSt.l2_steps || []).map(function (sub) {
+            const cref = sub.code_ref || {};
+            const isSel = sub.id === state.activeStepId;
+            const isFlt = Boolean(sub.fault_hotspot);
+            return '<button type="button" class="rail-l2-btn ' + (isFlt ? "fault" : (isSel ? "active" : "")) + '" data-rail-step="' + esc(sub.id) + '" data-rail-file="' + esc(cref.file || "") + '" data-rail-line="' + Number(cref.start_line || 1) + '">' +
+              '<span><strong>' + esc(sub.id) + '</strong> ' + esc(shortWords(sub.title || sub.id, 4, 24)) + '</span>' +
+              '<span style="font-family:var(--font-mono); font-size:11px;">' + esc(basename(cref.file || "") + ":L" + (cref.start_line || 1)) + '</span></button>';
+          }).join("");
+        railL2.querySelectorAll("[data-rail-step]").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            state.activeStepId = btn.getAttribute("data-rail-step") || "1.1";
+            const rf = btn.getAttribute("data-rail-file");
+            if (rf) state.activeFile = rf;
+            state.activeLine = Number(btn.getAttribute("data-rail-line")) || 1;
+            persistSessionState();
+            renderAll();
+          });
+        });
+      } else {
+        railL2.hidden = true;
+      }
+    } else {
+      railL2.hidden = true;
+      if (state.lens === "refactor" && b && b.refactor_map && !state.unknownState) {
+        heading.textContent = "Old-to-New Refactor Crosswalk (S1–Sk ⇄ N1–Nk)";
+        svgBox.innerHTML = buildRefactorCrosswalkSvg(b.refactor_map);
+        const sc = b.refactor_map.symbol_conservation || {};
+        const ns = b.refactor_map.null_set || {};
+        const nProv = (ns.null_proven || []).length;
+        const nUnex = (ns.null_unexercised || []).length;
+        const nRed = (ns.null_redundant || []).length;
+        nullShelf.hidden = false;
+        nullShelf.innerHTML =
+          '<div class="deck-row">' +
+            '<span style="font-weight:800; font-size:12px;">3-Tier ∅ Null Set &amp; 100% Symbol Conservation</span>' +
+            '<span class="prov-tag traced">' + (sc.conserved !== false ? "100% Conserved" : "Check Required") + ' · ' + (sc.total_symbols || 0) + ' symbols</span>' +
+          '</div>' +
+          '<div class="kv-grid">' +
+            '<div class="kv-box"><div class="kv-lbl">∅-proven (Safe Delete)</div><div><strong>' + nProv + '</strong> unreferenced</div></div>' +
+            '<div class="kv-box"><div class="kv-lbl">∅-unexercised (PROTECTED)</div><div><strong>' + nUnex + '</strong> CLI / test branches</div></div>' +
+            '<div class="kv-box"><div class="kv-lbl">∅-redundant (Clone)</div><div><strong>' + nRed + '</strong> duplicate AST bodies</div></div>' +
+          '</div>';
+      } else {
+        heading.textContent = state.lens === "profile"
+          ? "Steady-Coordinate Map · Stage Hotspot Overlay"
+          : "Steady-Coordinate Process Schematic (L0–L2)";
+        nullShelf.hidden = true;
+        svgBox.innerHTML = buildProcessSchematicSvg(stages, hasTrace);
+      }
+
+      if (state.lens === "debug" && stages.length > 0 && !state.unknownState) {
+        scrub.hidden = false;
+        const tws = (b && b.trace_summary && b.trace_summary.tripwires) || [];
+        scrub.innerHTML = '<div style="font-weight:800; font-size:11.5px; margin-bottom:5px;">Step Keyframe Scrubber &amp; 3-Way Stage Verdicts</div>' +
+          '<div class="selector-group">' +
+          stages.map(function (s) {
+            return '<button type="button" class="small-btn" data-scrub-stage="' + esc(s.id) + '" style="' + (s.id === state.activeStageId ? "border-color:#1F2225;font-weight:800;" : "") + '">' +
+              esc(s.id + " · " + (s.verdict || "STATIC_ONLY")) + '</button>';
+          }).join("") + '</div>' +
+          (tws.length > 0 ? '<div style="margin-top:6px; color:#8A1C08; font-size:11.5px; font-weight:700;">🚨 Non-Finite Tripwire: ' + esc(tws[0].variable + " -> " + (tws[0].kind || "+Infinity") + " at " + tws[0].file + ":L" + tws[0].line) + '</div>' : "");
+        scrub.querySelectorAll("[data-scrub-stage]").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            selectStage(btn.getAttribute("data-scrub-stage"));
+          });
+        });
+      } else {
+        scrub.hidden = true;
+      }
+
+      const actStage = getActiveStage();
+      if (state.unknownState) {
+        detailCard.hidden = false;
+        detailCard.innerHTML = '<div style="font-weight:800; color:#7A1E0A;">Stage Details: UNKNOWN (Session/trace store unreadable)</div>';
+      } else if (actStage) {
+        detailCard.hidden = false;
+        detailCard.innerHTML =
+          '<div class="deck-row">' +
+            '<div><strong>' + esc(actStage.id) + '</strong> · ' + esc(stripDollarTokens(actStage.title || actStage.id)) + '</div>' +
+            '<span class="prov-tag">' + esc(actStage.verdict || "STATIC_ONLY") + '</span>' +
+          '</div>' +
+          '<div style="margin-top:4px; color:var(--ink-soft);">' + esc(stripDollarTokens(actStage.purpose || "")) + '</div>' +
+          '<div class="kv-grid">' +
+            '<div class="kv-box"><div class="kv-lbl">What Enters</div><div>' + esc((actStage.what_enters || ["none"]).join(", ")) + '</div></div>' +
+            '<div class="kv-box"><div class="kv-lbl">Actions Run</div><div>' + esc(shortWords((actStage.actions_run || ["AST unit"]).join("; "), 8, 60)) + '</div></div>' +
+            '<div class="kv-box"><div class="kv-lbl">What Exits</div><div>' + esc((actStage.what_exits || ["return"]).join(", ")) + '</div></div>' +
+          '</div>';
+      } else {
+        detailCard.hidden = false;
+        detailCard.innerHTML = '<div>EMPTY · 0 stages matched in repository.</div>';
+      }
+    }
+
+    svgBox.querySelectorAll("[data-stage-node]").forEach(function (g) {
+      g.addEventListener("click", function () {
+        selectStage(g.getAttribute("data-stage-node"));
+      });
+    });
+  }
+
+  function selectStage(sid) {
+    if (!sid) return;
+    state.activeStageId = sid;
+    const st = getActiveStage();
+    if (st && (st.l2_steps || []).length > 0) {
+      const step0 = st.l2_steps[0];
+      state.activeStepId = step0.id;
+      if (step0.code_ref && step0.code_ref.file) {
+        state.activeFile = step0.code_ref.file;
+        state.activeLine = Number(step0.code_ref.start_line) || 1;
+      }
+    }
+    persistSessionState();
+    renderAll();
+  }
+
+  /* ── Center 45% Full Scientific IDE Debugger ──────────────────────── */
+  function tokenizeCodeLine(lineText, watchables) {
+    if (!lineText) return "";
+    const wSet = new Set(watchables || []);
+    const parts = String(lineText).split(/(\b[A-Za-z_][A-Za-z0-9_]*\b)/g);
+    return parts.map(function (tok) {
+      if (wSet.has(tok)) {
+        const pinned = state.pinnedWatches.has(tok);
+        return '<span role="button" tabindex="0" class="code-ident-tok' + (pinned ? " pinned" : "") + '" data-var="' + esc(tok) + '">' +
+          (pinned ? "★ " : "") + esc(tok) + '</span>';
+      }
+      return esc(tok);
+    }).join("");
+  }
+
+  function renderFullIdePane() {
+    const pane = document.getElementById("full-ide-pane");
+    if (!state.ideOpen) {
+      pane.hidden = true;
+      return;
+    }
+    pane.hidden = false;
+    pane.classList.toggle("theme-light", state.ideTheme !== "dark");
+    pane.classList.toggle("theme-dark", state.ideTheme === "dark");
+    document.getElementById("btn-ide-theme").textContent = state.ideTheme === "dark" ? "☾ Studio Dark" : "☀ Paper Light";
+
+    const filesMap = (state.bundle && state.bundle.files_source_map) || {};
+    const fileKeys = Object.keys(filesMap);
+    const tabsEl = document.getElementById("full-ide-tabs");
+    const scrollEl = document.getElementById("full-ide-code-scroll");
+    const execBadge = document.getElementById("full-ide-exec-badge");
+    const bpBadge = document.getElementById("full-ide-bp-badge");
+
+    if (state.unknownState) {
+      tabsEl.innerHTML = "";
+      execBadge.textContent = "UNKNOWN";
+      bpBadge.textContent = "Breakpoints: UNKNOWN · Watches: UNKNOWN";
+      scrollEl.innerHTML = '<div style="padding:14px; font-weight:700;">Backing store unreadable (UNKNOWN state)</div>';
+      return;
+    }
+
+    if (fileKeys.length === 0) {
+      tabsEl.innerHTML = "";
+      execBadge.textContent = "EMPTY";
+      bpBadge.textContent = "● 0 breakpoints · ★ " + state.pinnedWatches.size + " pinned";
+      scrollEl.innerHTML = '<div style="padding:14px;">No source files present in repository.</div>';
+      return;
+    }
+
+    if (!filesMap[state.activeFile]) state.activeFile = fileKeys[0];
+    const fObj = filesMap[state.activeFile];
+    const activeLn = state.activeLine || fObj.exec_line || 1;
+
+    execBadge.textContent = fObj.file + " · ▶ L" + activeLn + (fObj.has_fault ? " (⚡ TRIPWIRE)" : "");
+    bpBadge.textContent = "● " + state.breakpoints.size + " breakpoints · ★ " + state.pinnedWatches.size + " pinned";
+
+    tabsEl.innerHTML = fileKeys.map(function (fk) {
+      return '<button type="button" class="full-ide-tab ' + (fk === fObj.file ? "active" : "") + '" data-ide-tab="' + esc(fk) + '">' + esc(basename(fk)) + '</button>';
+    }).join("");
+    tabsEl.querySelectorAll("[data-ide-tab]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        const fk = btn.getAttribute("data-ide-tab") || "";
+        state.activeFile = fk;
+        const target = filesMap[fk];
+        if (target) {
+          state.activeStageId = target.stage_id || state.activeStageId;
+          state.activeLine = target.exec_line || 1;
+        }
+        persistSessionState();
+        renderAll();
+      });
+    });
+
+    const ghosts = fObj.ghost_values || {};
+    scrollEl.innerHTML = (fObj.lines || []).map(function (pair) {
+      const ln = pair[0];
+      const txt = pair[1];
+      const key = bpKey(fObj.file, ln);
+      const bpOn = state.breakpoints.has(key);
+      const isExec = ln === activeLn;
+      const gEntry = ghosts[String(ln)];
+      const isFaultLn = Boolean(gEntry && gEntry.fault);
+      const cls = "full-code-line" + (isExec ? (isFaultLn ? " exec-fault" : " exec-clean") : (isFaultLn ? " exec-fault" : ""));
+      return '<div class="' + cls + '" data-code-ln="' + ln + '">' +
+        '<button type="button" class="full-bp-btn ' + (bpOn ? "bp-on" : "") + '" data-bp-key="' + esc(key) + '" title="Toggle breakpoint ' + esc(key) + '">●</button>' +
+        '<span class="full-exec-arrow">' + (isExec ? "▶" : "") + '</span>' +
+        '<span class="full-ln-num">' + ln + '</span>' +
+        '<div class="full-code-txt">' + tokenizeCodeLine(txt, fObj.watchable_tokens) +
+          (gEntry ? '<span class="full-ghost-note ' + (gEntry.fault ? "fault" : "") + '">' + esc(stripDollarTokens(gEntry.text)) + '</span>' : "") +
+        '</div></div>';
+    }).join("");
+
+    scrollEl.querySelectorAll("[data-bp-key]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        const k = btn.getAttribute("data-bp-key") || "";
+        if (state.breakpoints.has(k)) state.breakpoints.delete(k);
+        else state.breakpoints.add(k);
+        persistSessionState();
+        renderFullIdePane();
+      });
+    });
+
+    scrollEl.querySelectorAll(".code-ident-tok").forEach(function (tokEl) {
+      tokEl.addEventListener("click", function () {
+        const v = tokEl.getAttribute("data-var") || "";
+        if (!v) return;
+        if (state.pinnedWatches.has(v)) state.pinnedWatches.delete(v);
+        else state.pinnedWatches.add(v);
+        persistSessionState();
+        renderFullIdePane();
+        renderInspector();
+      });
+    });
+  }
+
+  /* ── Smart Variable Funnel, Paper MathML, Profile, XVal & Story ────── */
+  function safeMathMlHtml(rawMml, fallbackTitle) {
+    const clean = stripDollarTokens(rawMml || "").trim();
+    if (clean.indexOf("<math") >= 0) {
+      return clean.replace(/<script[\s\S]*?<\/script>/gi, "");
+    }
+    return '<math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><mrow><mtext>' +
+      esc(stripDollarTokens(fallbackTitle || "Equation")) + '</mtext></mrow></math>';
+  }
+
+  function renderSmartFunnelView(body) {
+    if (state.unknownState) {
+      body.innerHTML =
+        '<div class="funnel-grid">' +
+          '<div class="funnel-stage-btn"><div class="funnel-lbl">1. All State</div><div id="funnel-count-all" class="funnel-num">UNKNOWN</div></div>' +
+          '<div class="funnel-stage-btn"><div class="funnel-lbl">2. Stage Scope</div><div id="funnel-count-stage" class="funnel-num">UNKNOWN</div></div>' +
+          '<div class="funnel-stage-btn"><div class="funnel-lbl">3. Delta Mutated</div><div id="funnel-count-delta" class="funnel-num">UNKNOWN</div></div>' +
+          '<div class="funnel-stage-btn"><div class="funnel-lbl">4. Anomalies &amp; Pins</div><div id="funnel-count-anomalies" class="funnel-num">UNKNOWN</div></div>' +
+        '</div>' +
+        '<div class="card-block fault-card">Session/trace store unreadable (unknown state, not empty) — counts marked UNKNOWN.</div>';
+      return;
+    }
+
+    const vc = (state.bundle && state.bundle.variable_catalog) || { scopes: {}, funnel: {} };
+    const scopesObj = vc.scopes || {};
+    const allItems = [];
+    const seenNames = new Set();
+    FIVE_SCOPES.forEach(function (sc) {
+      if (!state.activeScopes.has(sc)) return;
+      (scopesObj[sc] || []).forEach(function (it) {
+        seenNames.add(it.name);
+        allItems.push(Object.assign({}, it, { pinned: state.pinnedWatches.has(it.name) || Boolean(it.pinned) }));
+      });
+    });
+    state.pinnedWatches.forEach(function (pw) {
+      if (!seenNames.has(pw) && state.activeScopes.has("function_locals")) {
+        allItems.push({
+          key: "pin:" + pw,
+          scope: "function_locals",
+          stage_id: state.activeStageId,
+          file: state.activeFile,
+          line: state.activeLine || 1,
+          file_line: (state.activeFile || "active") + ":" + (state.activeLine || 1),
+          name: pw,
+          type_shape: "pinned_watch",
+          value: (state.bundle && state.bundle.has_trace) ? "Pinned watch active" : "Pinned (run consented trace for live value)",
+          changed: true,
+          anomaly: false,
+          pinned: true
+        });
+      }
+    });
+
+    const stageItems = allItems.filter(function (it) { return it.stage_id === state.activeStageId || it.pinned || it.anomaly; });
+    const deltaItems = stageItems.filter(function (it) { return Boolean(it.changed) || it.pinned || it.anomaly; });
+    const anomItems = deltaItems.filter(function (it) { return Boolean(it.anomaly) || it.pinned; });
+
+    const cAll = allItems.length;
+    const cStage = Math.min(cAll, stageItems.length);
+    const cDelta = Math.min(cStage, deltaItems.length);
+    const cAnom = Math.min(cDelta, anomItems.length);
+
+    let visible = allItems;
+    if (state.funnelStage === "stage") visible = stageItems;
+    else if (state.funnelStage === "delta") visible = deltaItems;
+    else if (state.funnelStage === "anomalies") visible = anomItems;
+
+    const q = state.funnelSearch.trim().toLowerCase();
+    if (q) {
+      visible = visible.filter(function (it) {
+        return (it.name + " " + it.scope + " " + it.type_shape + " " + it.value + " " + it.file_line).toLowerCase().indexOf(q) >= 0;
+      });
+    }
+
+    body.innerHTML =
+      '<div class="funnel-grid" role="group" aria-label="4-Stage Smart Variable Funnel">' +
+        '<button type="button" class="funnel-stage-btn ' + (state.funnelStage === "all" ? "active" : "") + '" data-funnel-stage="all"><div class="funnel-lbl">1. All State</div><div id="funnel-count-all" class="funnel-num">' + cAll + '</div></button>' +
+        '<button type="button" class="funnel-stage-btn ' + (state.funnelStage === "stage" ? "active" : "") + '" data-funnel-stage="stage"><div class="funnel-lbl">2. Stage Scope</div><div id="funnel-count-stage" class="funnel-num">' + cStage + '</div></button>' +
+        '<button type="button" class="funnel-stage-btn ' + (state.funnelStage === "delta" ? "active" : "") + '" data-funnel-stage="delta"><div class="funnel-lbl">3. Delta Mutated</div><div id="funnel-count-delta" class="funnel-num">' + cDelta + '</div></button>' +
+        '<button type="button" class="funnel-stage-btn ' + (state.funnelStage === "anomalies" ? "active" : "") + '" data-funnel-stage="anomalies"><div class="funnel-lbl">4. Anomalies &amp; Pins</div><div id="funnel-count-anomalies" class="funnel-num">' + cAnom + '</div></button>' +
+      '</div>' +
+      '<div class="scope-pills" role="group" aria-label="5-Scope Variable Filter">' +
+        FIVE_SCOPES.map(function (sc) {
+          return '<button type="button" class="scope-pill ' + (state.activeScopes.has(sc) ? "active" : "") + '" data-scope="' + esc(sc) + '">' + esc(sc) + '</button>';
+        }).join("") +
+      '</div>' +
+      '<div><input id="funnel-search-input" type="search" class="chat-input" style="width:100%;" value="' + esc(state.funnelSearch) + '" placeholder="Filter variables, types, shapes, or files..." aria-label="Search Smart Variable Funnel"/></div>' +
+      (visible.length > 0
+        ? visible.slice(0, 60).map(function (it) {
+            return '<div class="var-row ' + (it.anomaly ? "anom" : "") + '">' +
+              '<div><strong style="font-family:var(--font-mono);">' + (it.anomaly ? "🚨 " : "") + esc(it.name) + '</strong> ' +
+                '<span class="prov-tag">' + esc(it.scope) + '</span> ' +
+                '<span style="color:var(--ink-light); font-family:var(--font-mono);">' + esc(it.type_shape) + '</span>' +
+                '<div style="margin-top:2px; font-family:var(--font-mono); color:var(--ink-soft);">' + esc(stripDollarTokens(it.value)) + '</div>' +
+              '</div>' +
+              '<div class="selector-group">' +
+                (it.file ? '<button type="button" class="small-btn" data-jump-file="' + esc(it.file) + '" data-jump-line="' + Number(it.line || 1) + '">' + esc(basename(it.file) + ":L" + (it.line || 1)) + '</button>' : "") +
+                '<button type="button" class="small-btn" data-pin-var="' + esc(it.name) + '">' + (state.pinnedWatches.has(it.name) ? "★ Pinned" : "+ Pin Watch") + '</button>' +
+              '</div></div>';
+          }).join("")
+        : '<div class="card-block">0 variables in current funnel slice. Click <strong>1. All State</strong> to view all scopes.</div>');
+
+    body.querySelectorAll("[data-funnel-stage]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        state.funnelStage = btn.getAttribute("data-funnel-stage") || "all";
+        renderInspector();
+      });
+    });
+    body.querySelectorAll("[data-scope]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        const sc = btn.getAttribute("data-scope") || "";
+        if (state.activeScopes.has(sc) && state.activeScopes.size > 1) state.activeScopes.delete(sc);
+        else state.activeScopes.add(sc);
+        renderInspector();
+      });
+    });
+    const fInput = document.getElementById("funnel-search-input");
+    if (fInput) {
+      fInput.addEventListener("input", function (e) {
+        state.funnelSearch = e.target.value || "";
+        renderInspector();
+        const nextIn = document.getElementById("funnel-search-input");
+        if (nextIn) nextIn.focus();
+      });
+    }
+    bindPinAndJumpButtons(body);
+  }
+
+  function renderPaperLensView(body) {
+    const pm = (state.bundle && state.bundle.paper_map) || {};
+    const sciVal = (state.bundle && state.bundle.scientific_validation) || pm.scientific_validation || null;
+    const sciFindings = (sciVal && sciVal.findings) || [];
+    const sciProp = (sciVal && sciVal.refactoring_proposal) || null;
+    const secs = pm.sections || [];
+    const algs = pm.algorithms || [];
+    const eqs = pm.equations || [];
+    const sciHtml = (sciFindings.length > 0 || sciProp) ? (
+      '<div class="card-block ' + (sciFindings.length > 0 ? "fault-card" : "") + '">' +
+        '<div class="deck-row"><strong>🔬 Scientific Statistical &amp; Numerical Audit</strong>' +
+        '<span class="prov-tag">' + sciFindings.length + ' finding(s)</span></div>' +
+        sciFindings.map(function (f) {
+          return '<div style="margin-top:6px; padding-top:5px; border-top:1px solid var(--border);">' +
+            '<div class="deck-row"><span><strong>[' + esc(f.rule_id || "SCI") + ']</strong> ' + esc(stripDollarTokens(f.title || "")) + '</span>' +
+            (f.file ? '<button type="button" class="small-btn" data-jump-file="' + esc(f.file) + '" data-jump-line="' + Number(f.lineno || 1) + '">' + esc(basename(f.file) + ":L" + (f.lineno || 1)) + '</button>' : "") +
+            '</div>' +
+            '<div style="color:var(--ink-soft); margin-top:2px;">' + esc(stripDollarTokens(f.detail || "")) + '</div>' +
+            (f.remediation ? '<div style="margin-top:2px; font-weight:700; color:#1E5631;">Fix: ' + esc(stripDollarTokens(f.remediation)) + '</div>' : "") +
+          '</div>';
+        }).join("") +
+        (sciProp ? (
+          '<div style="margin-top:8px; padding:7px 9px; background:var(--bg-card); border:1px solid var(--border-strong); border-radius:6px;">' +
+            '<div><strong>Concrete Refactoring Proposal (' + esc(sciProp.architecture || "Functional Core / Imperative Shell") + '):</strong> ' + esc(stripDollarTokens(sciProp.summary || "")) + '</div>' +
+            '<div style="margin-top:3px; font-family:var(--font-mono); font-size:11px;">Shared Kernel: ' + esc(sciProp.shared_pure_kernel_module || "") + ' · Split-Safe Preprocessor: ' + esc(sciProp.split_safe_preprocessor_module || "") + '</div>' +
+          '</div>'
+        ) : "") +
+      '</div>'
+    ) : "";
+    body.innerHTML =
+      '<div class="card-block active-card">' +
+        '<div class="deck-row"><strong>Paper ⇄ Software Bridge · ' + esc(stripDollarTokens(pm.paper_title || "Companion Manuscript")) + '</strong>' +
+        '<span class="prov-tag traced">Native MathML · Dual Crosswalk (S* &amp; N*)</span></div>' +
+        '<div style="margin-top:4px; color:var(--ink-soft);">Sections: ' + secs.length + ' · Algorithms: ' + algs.length + ' · Equations: ' + eqs.length + '</div>' +
+      '</div>' +
+      sciHtml +
+      secs.map(function (sec) {
+        return '<div class="card-block"><strong>Section ' + esc(sec.number || sec.id) + ': ' + esc(stripDollarTokens(sec.title || "")) + '</strong>' +
+          '<div style="color:var(--ink-soft); margin-top:3px;">' + esc(stripDollarTokens(sec.summary || "")) + '</div></div>';
+      }).join("") +
+      algs.map(function (alg) {
+        const stepsHtml = (alg.steps || []).map(function (st) {
+          return '<li>' + esc(stripDollarTokens(st.text || st.description || String(st))) + '</li>';
+        }).join("");
+        return '<div class="card-block"><strong>Algorithm: ' + esc(stripDollarTokens(alg.title || alg.id)) + '</strong>' +
+          (stepsHtml ? '<ol style="margin:6px 0 0 18px; padding:0;">' + stepsHtml + '</ol>' : "") + '</div>';
+      }).join("") +
+      eqs.map(function (eq) {
+        const oldTags = (eq.maps_to_old || []).map(function (m) { return m.stage_id + ":" + m.symbol; }).join(", ") || "unmapped";
+        const newTags = (eq.maps_to_new || []).map(function (m) { return m.stage_id + ":" + m.symbol; }).join(", ") || "unmapped";
+        const mfs = eq.matched_functions || [];
+        const topFn = mfs[0] || null;
+        const stamp = eq.verification_stamp || eq.status || "STATIC_ALIGNED";
+        const isDrift = stamp === "MAP_DRIFT";
+        return '<div class="card-block ' + (isDrift ? "fault-card" : "") + '">' +
+          '<div class="deck-row"><strong>Equation (' + esc(eq.number || eq.id) + ')' + (eq.label ? ' · <code>' + esc(eq.label) + '</code>' : '') + '</strong>' +
+          '<div class="selector-group">' +
+            (topFn && topFn.file ? '<button type="button" class="small-btn" data-jump-file="' + esc(topFn.file) + '" data-jump-line="' + Number(topFn.line_start || 1) + '">' + esc(topFn.file + ":" + topFn.qualname + " (L" + (topFn.line_start || 1) + ")") + '</button>' : '') +
+            '<span class="prov-tag ' + (stamp.indexOf("VERIFIED") === 0 ? "traced" : "") + '">' + esc(stamp) + '</span>' +
+          '</div></div>' +
+          '<div class="mathml-wrap" style="margin-top:6px;">' + safeMathMlHtml(eq.mathml, eq.label || eq.id) + '</div>' +
+          '<div style="margin-top:6px; font-size:11.5px;"><strong>maps_to_old (S*):</strong> <code>' + esc(oldTags) + '</code> · <strong>maps_to_new (N*):</strong> <code>' + esc(newTags) + '</code></div>' +
+          (eq.drift_reason ? '<div style="margin-top:4px; color:#8A1C08; font-weight:700;">' + esc(stripDollarTokens(eq.drift_reason)) + '</div>' : "") +
+        '</div>';
+      }).join("");
+    bindPinAndJumpButtons(body);
+  }
+
+  function renderProfileLensView(body) {
+    const pl = (state.bundle && state.bundle.profile_lit) || {};
+    const spots = pl.stage_hotspots || [];
+    const ioFixes = pl.imperative_shell_io_fixes || [];
+    const coreUps = pl.functional_core_kernel_upgrades || [];
+    const rejUps = pl.rejected_kernel_upgrades || [];
+    body.innerHTML =
+      '<div class="card-block active-card"><div class="deck-row">' +
+        '<strong>Untraced Wall-Clock Stage Profiler (' + esc(pl.profile_mode || "STATIC_AST_ONLY") + ')</strong>' +
+        '<button type="button" id="btn-run-profile" class="consent-run-btn">▶ Run Consented Stage Profiler</button>' +
+      '</div></div>' +
+      '<div class="card-block"><strong>Stage Wall-Clock Hotspots</strong>' +
+        (spots.map(function (sp) {
+          const pct = Math.max(2, Math.min(100, Number(sp.share_pct || 0)));
+          return '<div style="margin-top:6px;"><div class="deck-row"><span><strong>' + esc(sp.stage_id) + '</strong> · ' + esc(stripDollarTokens(sp.title || "")) + '</span><span>' + Number(sp.wall_ms || 0).toFixed(2) + ' ms (' + Number(sp.share_pct || 0).toFixed(1) + '%)</span></div>' +
+            '<div style="height:8px; background:var(--bg-subtle); border-radius:4px; margin-top:3px;"><div style="height:8px; width:' + pct + '%; background:#C44F2A; border-radius:4px;"></div></div></div>';
+        }).join("") || '<div style="margin-top:4px;">0 stages profiled.</div>') +
+      '</div>' +
+      '<div class="card-block"><strong>Imperative-Shell I/O Fixes (' + ioFixes.length + ')</strong>' +
+        (ioFixes.map(function (fx) {
+          return '<div style="margin-top:5px;">• <code>' + esc((fx.file || "") + ":L" + (fx.line || 1)) + '</code> — ' + esc(stripDollarTokens(fx.recommendation || fx.issue || "Batch I/O outside loop")) + '</div>';
+        }).join("") || '<div style="margin-top:4px; color:var(--ink-soft);">No unbatched I/O hotspots flagged.</div>') +
+      '</div>' +
+      '<div class="card-block"><strong>Precondition-Checked Functional-Core Kernel Literature Upgrades (' + coreUps.length + ')</strong>' +
+        (coreUps.map(function (up) {
+          return '<div style="margin-top:5px;">• <strong>' + esc(stripDollarTokens(up.algorithm || up.title || up.symbol || "Kernel Upgrade")) + '</strong> — ' + esc(stripDollarTokens(up.citation || up.rationale || "")) + '</div>';
+        }).join("") || '<div style="margin-top:4px; color:var(--ink-soft);">No precondition-verified kernel replacements needed.</div>') +
+      '</div>' +
+      (rejUps.length > 0 ? '<div class="card-block"><strong>Refused Upgrades (Failed Structural Preconditions: ' + rejUps.length + ')</strong>' +
+        rejUps.map(function (rj) { return '<div style="margin-top:4px; color:var(--ink-soft);">• ' + esc(stripDollarTokens(rj.algorithm || rj.symbol || "Candidate")) + ': ' + esc(stripDollarTokens(rj.refusal_reason || rj.reason || "Precondition unmet")) + '</div>'; }).join("") + '</div>' : "");
+
+    const pBtn = document.getElementById("btn-run-profile");
+    if (pBtn) pBtn.addEventListener("click", function () { openConsentModal("profile"); });
+  }
+
+  function bindPinAndJumpButtons(container) {
+    container.querySelectorAll("[data-pin-var]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        const v = btn.getAttribute("data-pin-var") || "";
+        if (state.pinnedWatches.has(v)) state.pinnedWatches.delete(v);
+        else state.pinnedWatches.add(v);
+        persistSessionState();
+        renderFullIdePane();
+        renderInspector();
+      });
+    });
+    container.querySelectorAll("[data-jump-file]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        state.activeFile = btn.getAttribute("data-jump-file") || state.activeFile;
+        state.activeLine = Number(btn.getAttribute("data-jump-line")) || 1;
+        state.ideOpen = true;
+        persistSessionState();
+        renderAll();
+      });
+    });
+  }
+
+  function renderInspector() {
+    document.querySelectorAll(".insp-tab").forEach(function (t) {
+      t.classList.toggle("active", t.getAttribute("data-inspector") === state.inspectorTab);
+    });
+    const body = document.getElementById("inspector-body");
+
+    if (state.ideOpen || state.inspectorTab === "funnel") {
+      renderSmartFunnelView(body);
+      return;
+    }
+    if (state.unknownState) {
+      body.innerHTML = '<div class="card-block fault-card"><strong>UNKNOWN STATE</strong> — Session/trace store unreadable (counts: UNKNOWN, never 0).</div>';
+      return;
+    }
+    if (state.inspectorTab === "xval") {
+      const xv = (state.bundle && state.bundle.xval_receipt) || {};
+      const findings = xv.findings || [];
+      body.innerHTML =
+        '<div class="card-block active-card"><div class="deck-row"><strong>2-Seat Orchestrator ⇄ Validator Receipt</strong><span class="prov-tag">' + esc(xv.mode || "DETERMINISTIC_FALLBACK") + '</span></div>' +
+          '<div style="margin-top:6px;">Verdict: <strong>' + esc(xv.verdict || "PASS") + '</strong> · Cross-Family HMAC Attested: <strong>' + String(Boolean(xv.cross_family_attested)) + '</strong></div>' +
+          '<div style="margin-top:4px; font-family:var(--font-mono); font-size:11px;">Digest: ' + (xv.digest_bytes || 0) + ' B · sha256=' + esc(String(xv.digest_sha256 || "").slice(0, 24)) + '</div>' +
+          (xv.attestation_reason || xv.fallback_reason ? '<div style="margin-top:4px; color:var(--ink-soft);">' + esc(xv.attestation_reason || xv.fallback_reason) + '</div>' : "") +
+        '</div>' +
+        (findings.map(function (f) {
+          return '<div class="card-block">• ' + esc(typeof f === "string" ? f : JSON.stringify(f)) + '</div>';
+        }).join("") || '<div class="card-block">0 reconciliation blockers across stages, symbol conservation, and paper claims.</div>');
+      return;
+    }
+    if (state.inspectorTab === "ide") {
+      const filesMap = (state.bundle && state.bundle.files_source_map) || {};
+      const fObj = filesMap[state.activeFile] || Object.values(filesMap)[0];
+      body.innerHTML =
+        '<div class="card-block active-card"><div class="deck-row"><strong>Mini Code Split · ' + esc(fObj ? fObj.file : "No File") + '</strong>' +
+          '<button type="button" id="btn-expand-ide-split" class="ide-posture-btn">💻 Expand Full IDE Debugger ⤢</button></div>' +
+          '<div style="margin-top:6px; font-family:var(--font-mono); font-size:11.5px; white-space:pre-wrap; max-height:220px; overflow:auto; background:var(--bg-canvas); padding:8px; border-radius:6px;">' +
+            esc(fObj ? (fObj.lines || []).slice(0, 28).map(function (p) { return p[0] + " | " + p[1]; }).join("\n") : "Empty repository") +
+          '</div></div>';
+      const exp = document.getElementById("btn-expand-ide-split");
+      if (exp) exp.addEventListener("click", function () { state.ideOpen = true; persistSessionState(); renderAll(); });
+      return;
+    }
+
+    /* Story tab adapts cleanly when Paper or Profile lens is active */
+    if (state.lens === "paper" && state.bundle && state.bundle.paper_map && state.bundle.paper_map.has_paper) {
+      renderPaperLensView(body);
+      return;
+    }
+    if (state.lens === "profile") {
+      renderProfileLensView(body);
+      return;
+    }
+
+    const stages = getStages();
+    if (stages.length === 0) {
+      body.innerHTML = '<div class="card-block"><strong>EMPTY</strong> · Repository parsed cleanly with 0 matched items.</div>';
+      return;
+    }
+    body.innerHTML = stages.map(function (st) {
+      const isAct = st.id === state.activeStageId;
+      const steps = st.l2_steps || [];
+      const lead = steps[0] && steps[0].code_ref ? steps[0].code_ref : null;
+      return '<div class="card-block ' + (isAct ? "active-card" : "") + '">' +
+        '<div class="deck-row"><strong>' + esc(st.id) + ' · ' + esc(stripDollarTokens(st.title || st.id)) + '</strong>' +
+          '<div class="selector-group"><span class="prov-tag">' + esc(st.verdict || "STATIC_ONLY") + '</span>' +
+          (lead ? '<button type="button" class="small-btn" data-jump-file="' + esc(lead.file) + '" data-jump-line="' + Number(lead.start_line || 1) + '">💻 Open in IDE ⤢</button>' : "") +
+          '</div></div>' +
+        '<div style="margin-top:4px; color:var(--ink-soft);"><strong>Purpose:</strong> ' + esc(stripDollarTokens(st.purpose || "")) + '</div>' +
+        '<div style="margin-top:4px; font-size:11.5px;"><strong>Enters:</strong> <code>' + esc((st.what_enters || ["none"]).join(", ")) + '</code> → <strong>Exits:</strong> <code>' + esc((st.what_exits || ["return"]).join(", ")) + '</code></div>' +
+        (steps.length > 0 ? '<div style="margin-top:6px; font-size:11.5px;">' + steps.map(function (sb) {
+          const cr = sb.code_ref || {};
+          return '<div style="margin-top:2px;">• <strong>' + esc(sb.id) + '</strong> ' + esc(stripDollarTokens(sb.title || "")) + ' (<code>' + esc(basename(cr.file || "") + ":L" + (cr.start_line || 1)) + '</code>)</div>';
+        }).join("") + '</div>' : "") +
+      '</div>';
+    }).join("");
+    bindPinAndJumpButtons(body);
+  }
+
+  /* ── Singleton Steward Co-Pilot & Explicit Trace Consent Modal ────── */
+  function renderChatMessages() {
+    const box = document.getElementById("chat-messages");
+    if (state.dialogueTurns.length === 0) {
+      const st = getActiveStage();
+      box.innerHTML = '<div class="chat-msg assistant">[Steward Co-Pilot] Ready on <strong>' +
+        esc(st ? st.id : "repository") + '</strong>. Ask about stage contracts, refactor targets (N1..Nk), or click a variable token in the IDE Debugger to pin watches.</div>';
+      return;
+    }
+    box.innerHTML = state.dialogueTurns.map(function (t) {
+      const roleCls = t.role === "user" ? "user" : "assistant";
+      return '<div class="chat-msg ' + roleCls + '">' + esc(stripDollarTokens(t.text || "")) + '</div>';
+    }).join("");
+    box.scrollTop = box.scrollHeight;
+  }
+
+  async function submitChatQuestion(rawQuestion) {
+    const q = String(rawQuestion || "").trim();
+    if (!q) return;
+    if (state.mode === "live") {
+      try {
+        const res = await apiPost("/api/anvil/v4/chat", {
+          question: q,
+          active_stage_id: state.activeStageId,
+          active_file: state.activeFile,
+          active_line: state.activeLine,
+          ide_open: state.ideOpen
+        });
+        if (res && res.ok && res.data && Array.isArray(res.data.dialogue_turns)) {
+          state.dialogueTurns = res.data.dialogue_turns.slice();
+          renderChatMessages();
+          return;
+        }
+      } catch (_e) {}
+    }
+    const st = getActiveStage();
+    state.dialogueTurns.push({ role: "user", text: q, stage_id: state.activeStageId });
+    state.dialogueTurns.push({
+      role: "assistant",
+      text: "[Steward Co-Pilot · Standalone] Stage " + (st ? st.id : "S1") +
+        (state.activeFile ? " (" + state.activeFile + ":L" + state.activeLine + ")" : "") +
+        " — Pinned watches: " + (Array.from(state.pinnedWatches).join(", ") || "none") + ".",
+      stage_id: state.activeStageId
+    });
+    renderChatMessages();
+  }
+
+  function openConsentModal(actionKind) {
+    state.consentAction = actionKind || "trace";
+    const modal = document.getElementById("trace-consent-modal");
+    const argvJson = JSON.stringify(state.recommendedArgv);
+    document.getElementById("consent-argv-preview").textContent = argvJson;
+    document.getElementById("consent-argv-input").value = argvJson;
+    const resEl = document.getElementById("consent-resolved-argv");
+    if (resEl) {
+      const resolvedList = (state.bundle && Array.isArray(state.bundle.resolved_argv)) ? state.bundle.resolved_argv : state.recommendedArgv;
+      resEl.textContent = "Resolved argv: " + JSON.stringify(resolvedList);
+    }
+    const tmpEl = document.getElementById("consent-temp-copy-path");
+    if (tmpEl && state.bundle && state.bundle.isolated_temp_copy_path) {
+      tmpEl.textContent = String(state.bundle.isolated_temp_copy_path);
+    }
+    const errEl = document.getElementById("consent-modal-error");
+    errEl.hidden = true;
+    errEl.textContent = "";
+    modal.hidden = false;
+  }
+
+  function closeConsentModal() {
+    document.getElementById("trace-consent-modal").hidden = true;
+  }
+
+  async function confirmConsentExecution() {
+    const errEl = document.getElementById("consent-modal-error");
+    let parsedArgv = null;
+    try {
+      parsedArgv = JSON.parse(document.getElementById("consent-argv-input").value);
+      if (!Array.isArray(parsedArgv) || parsedArgv.length === 0) throw new Error("argv must be a non-empty JSON array");
+    } catch (e) {
+      errEl.hidden = false;
+      errEl.textContent = "Invalid argv JSON array: " + e.message;
+      return;
+    }
+    if (state.mode !== "live") {
+      errEl.hidden = false;
+      errEl.textContent = "Standalone HTML export is read-only; start 'anvil_engine.py workbench --serve' for consented subprocess execution.";
+      return;
+    }
+    const route = state.consentAction === "profile" ? "/api/anvil/v4/profile-lit" : "/api/anvil/v4/trace";
+    const res = await apiPost(route, {
+      argv: parsedArgv,
+      operator_consent_confirmed: true
+    });
+    if (!res) return;
+    if (res.ok && res.data && res.data.bundle) {
+      closeConsentModal();
+      state.unknownState = false;
+      state.surfaceState = res.data.bundle.surface_state || null;
+      hydrateFromBundle(res.data.bundle, false);
+      renderAll();
+    } else if (res.data && res.data.surface_state) {
+      closeConsentModal();
+      state.surfaceState = res.data.surface_state;
+      state.unknownState = res.status === 500;
+      if (res.data.bundle) hydrateFromBundle(res.data.bundle, false);
+      renderAll();
+    } else {
+      errEl.hidden = false;
+      errEl.textContent = (res.data && res.data.message) || ("Execution refused (" + res.status + ")");
+    }
+  }
+
+  function renderAll() {
+    renderTopDeckAndBanner();
+    renderLeftPane();
+    renderFullIdePane();
+    renderInspector();
+    renderChatMessages();
+  }
+
+  /* ── Wire Event Listeners (100% CSP-Nonce Safe, Zero Inline Handlers) ── */
+  document.querySelectorAll(".lens-tab").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      const next = btn.getAttribute("data-lens") || "understand";
+      state.lens = next;
+      if (next === "debug") state.inspectorTab = "funnel";
+      else state.inspectorTab = "story";
+      renderAll();
+    });
+  });
+
+  document.querySelectorAll(".insp-tab").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      state.inspectorTab = btn.getAttribute("data-inspector") || "story";
+      renderInspector();
+    });
+  });
+
+  document.getElementById("btn-open-ide-debugger").addEventListener("click", function () {
+    state.ideOpen = !state.ideOpen;
+    persistSessionState();
+    renderAll();
+  });
+  document.getElementById("btn-rail-back").addEventListener("click", function () {
+    state.ideOpen = false;
+    persistSessionState();
+    renderAll();
+  });
+  document.getElementById("btn-close-full-ide").addEventListener("click", function () {
+    state.ideOpen = false;
+    persistSessionState();
+    renderAll();
+  });
+  document.getElementById("btn-ide-theme").addEventListener("click", function () {
+    state.ideTheme = state.ideTheme === "dark" ? "light" : "dark";
+    persistSessionState();
+    renderFullIdePane();
+  });
+  document.getElementById("btn-top-xval").addEventListener("click", function () {
+    state.ideOpen = false;
+    state.inspectorTab = "xval";
+    persistSessionState();
+    renderAll();
+  });
+  document.getElementById("btn-run-trace").addEventListener("click", function () {
+    openConsentModal("trace");
+  });
+  document.getElementById("btn-cancel-trace-consent").addEventListener("click", closeConsentModal);
+  document.getElementById("btn-confirm-trace-consent").addEventListener("click", confirmConsentExecution);
+  document.getElementById("btn-retry-state").addEventListener("click", function () {
+    fetchWithVisibilityAndBackoff(true);
+  });
+
+  document.getElementById("btn-chat-send").addEventListener("click", function () {
+    const inp = document.getElementById("chat-input");
+    const txt = inp.value;
+    if (!txt.trim()) return;
+    inp.value = "";
+    submitChatQuestion(txt);
+  });
+  document.getElementById("chat-input").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      document.getElementById("btn-chat-send").click();
+    }
+  });
+
+  document.querySelectorAll("[data-chat-intent]").forEach(function (chip) {
+    chip.addEventListener("click", function () {
+      const intent = chip.getAttribute("data-chat-intent");
+      if (intent === "debug_inf") {
+        state.ideOpen = true;
+        state.funnelStage = "anomalies";
+        persistSessionState();
+        renderAll();
+        submitChatQuestion("Inspect active non-finite tripwires and pinned watches in the IDE Debugger.");
+      } else if (intent === "refactor_rec") {
+        state.ideOpen = false;
+        state.lens = "refactor";
+        state.inspectorTab = "story";
+        renderAll();
+        submitChatQuestion("Summarize the S1..Sk to N1..Nk Pure-Core refactor crosswalk and 3-tier Null Set.");
+      } else if (intent === "show_xval") {
+        state.ideOpen = false;
+        state.inspectorTab = "xval";
+        renderAll();
+        submitChatQuestion("Explain the 2-Seat Orchestrator <-> Validator reconciliation receipt.");
+      } else {
+        submitChatQuestion("Explain the Purpose, What Enters, Actions Run, and What Exits contract of " + state.activeStageId + ".");
+      }
+    });
+  });
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") {
+      const modal = document.getElementById("trace-consent-modal");
+      if (modal && !modal.hidden) {
+        closeConsentModal();
+        return;
+      }
+      if (state.ideOpen) {
+        state.ideOpen = false;
+        persistSessionState();
+        renderAll();
+      }
+    }
+  });
+
+  if (state.bundle) {
+    hydrateFromBundle(state.bundle, true);
+  }
+  renderAll();
+  if (state.mode === "live") {
+    scheduleNextStateSync(HEALTHY_POLL_MS);
+  }
+})();
+</script>
+</body>
+</html>

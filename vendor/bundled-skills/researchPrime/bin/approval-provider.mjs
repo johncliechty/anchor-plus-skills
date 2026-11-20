@@ -110,7 +110,11 @@ import { fileURLToPath } from 'node:url';
 function invokedDirectly() {
   const entry = process.argv[1];
   if (!entry) return false;
-  try { return path.resolve(fileURLToPath(import.meta.url)) === path.resolve(entry); } catch { return false; }
+  try {
+    return fs.realpathSync(fileURLToPath(import.meta.url)) === fs.realpathSync(path.resolve(entry));
+  } catch {
+    try { return path.resolve(fileURLToPath(import.meta.url)) === path.resolve(entry); } catch { return false; }
+  }
 }
 
 if (invokedDirectly()) {

@@ -39,6 +39,40 @@ from steward_cockpit.question_context import (save_question_context, normalize_q
 HERE = Path(__file__).parent
 STATE_FILE = globals().get("STATE_FILE") or (HERE / "proto-state.json")
 _RELOCATED_STATE_FILE = globals().get("_RELOCATED_STATE_FILE")   # the last ledger path relocate_state() set — its own move, as against a test/healthcheck swap
+_REAL_SUBPROCESS_POPEN = getattr(globals().get("_REAL_SUBPROCESS_POPEN"), "__call__", None) and globals().get("_REAL_SUBPROCESS_POPEN") or subprocess.Popen
+
+_EVICTED_NATIVE_SESSION_RE = re.compile(
+    r"(?:"
+    r"(?:Gemini|Codex|Grok|Claude)\s+(?:resumed|emitted)\s+an\s+unexpected\s+(?:conversation|thread|session(?:\s+identity)?)"
+    r"|\bno\s+(?:conversation|session|rollout|thread)\s+found\b"
+    r"|\b(?:conversation|session|rollout|thread)\s+(?:not\s+found|does\s+not\s+exist|expired|was\s+evicted)\b"
+    r"|\bcannot\s+resume\s+(?:conversation|session|thread)\b"
+    r"|\bunknown\s+(?:conversation|session)\s+id\b"
+    r")",
+    re.I,
+)
+
+
+def native_session_evicted_locally(cli: str, session_id: str | None) -> bool:
+    """Return True ONLY when the local provider store directory exists on disk AND
+    positively proves `session_id` has been evicted/deleted from the local cache."""
+    sid = str(session_id or "").strip()
+    fam = str(cli or "").strip().lower()
+    if not sid or sid.startswith("fake-"):
+        return False
+    if fam == "gemini":
+        override_brain = os.environ.get("AGY_BRAIN_DIR")
+        agy_root = Path(override_brain).parent if override_brain else (Path.home() / ".gemini" / "antigravity-cli")
+        brain_dir = Path(override_brain) if override_brain else (agy_root / "brain")
+        conv_dir = agy_root / "conversations"
+        if not brain_dir.is_dir() and not conv_dir.is_dir():
+            return False
+        if (brain_dir / sid).exists():
+            return False
+        if conv_dir.is_dir() and any(conv_dir.glob(f"{sid}*")):
+            return False
+        return True
+    return False
 
 
 def relocate_state(target):
@@ -1226,6 +1260,81 @@ def rename_state_keys(old_dir, new_dir):
             _save_state(state)
 
 
+def reconcile_evicted_cockpit_sessions(state_path: Path | None = None, *, active_keys: set[str] | None = None) -> dict:
+    """Proactively archive locally-evicted native CLI `session_id`s into `provider_sessions`
+    and clear `session_id: None` across parked cockpits that already possess durable conversation
+    history (`.ecgberht/conversation-log.json` or `.ecgberht/terminal-history/<tid>.json`), so
+    no cockpit waits to hit a resume error on the user's next message."""
+    from steward_cockpit.conversation_history import has_history
+    prev_sf = STATE_FILE
+    if state_path is not None:
+        relocate_state(state_path)
+    repaired_keys: list[str] = []
+    skipped_active: list[str] = []
+    skipped_no_history: list[str] = []
+    try:
+        with _STATE_LOCK:
+            try:
+                state = _load_state()
+            except Exception as exc:
+                return {"ok": False, "error": str(exc), "repaired_count": 0}
+            now_ts = time.time()
+            changed = False
+            for key, entry in list(state.items()):
+                if not isinstance(entry, dict):
+                    continue
+                sid = str(entry.get("session_id") or "").strip()
+                cli = str(entry.get("cli") or "").strip().lower()
+                if not sid or not cli:
+                    continue
+                if active_keys and key in active_keys:
+                    skipped_active.append(key)
+                    continue
+                if not native_session_evicted_locally(cli, sid):
+                    continue
+                parts = str(key).split("||")
+                effort_dir = parts[0]
+                is_gen = len(parts) >= 2 and parts[1] == "general"
+                tid = parts[2] if len(parts) >= 3 else "1"
+                if not Path(effort_dir).is_dir():
+                    continue
+                try:
+                    durable_ok = has_history(effort_dir, thread_id=(f"terminal-{tid}" if is_gen else None))
+                except Exception:
+                    durable_ok = False
+                if not durable_ok:
+                    skipped_no_history.append(key)
+                    continue
+                records = list(entry.get("provider_sessions") or [])
+                if not any(r.get("family") == cli and r.get("session_id") == sid for r in records):
+                    records.append({
+                        "family": cli,
+                        "session_id": sid,
+                        "model_policy": entry.get("model_policy"),
+                        "provider_connection": entry.get("provider_connection"),
+                        "provider_quality": entry.get("provider_quality"),
+                        "preserved_at": now_ts,
+                        "reason": "local_cli_cache_evicted",
+                    })
+                entry["provider_sessions"] = records
+                entry["session_id"] = None
+                entry["retain_native_on_resume_failure"] = False
+                repaired_keys.append(key)
+                changed = True
+            if changed:
+                _save_state(state)
+        return {
+            "ok": True,
+            "repaired_count": len(repaired_keys),
+            "repaired_keys": repaired_keys[:30],
+            "skipped_active_count": len(skipped_active),
+            "skipped_no_history_count": len(skipped_no_history),
+        }
+    finally:
+        if state_path is not None and STATE_FILE != prev_sf:
+            relocate_state(prev_sf)
+
+
 def _cli_cmd(cli="claude"):
     exe = shutil.which(cli)
     if not exe:
@@ -1499,9 +1608,10 @@ def _list_state_capsule() -> str:
     return "\n".join(lines)
 
 
-def _plan_state_capsule(cdir) -> str:
+def _plan_state_capsule(cdir, query: str = "") -> str:
     """Compact live capsule of *The Plan* (`roadmap.json` / `strip.json`), pending `plan-proposal.json`,
-    and unaccepted `for_review` deliverables for dedicated project cockpit Steward turns.
+    unaccepted `for_review` deliverables, and query-focused MERA-Poincaré deep-memory recall for
+    dedicated project cockpit Steward turns.
 
     Enforces `unknown != empty`: corrupt/unreadable backing files are reported explicitly as `UNKNOWN`,
     never masked as `0/0 steps`."""
@@ -1576,6 +1686,15 @@ def _plan_state_capsule(cdir) -> str:
             )
         else:
             lines.append(f"- Unaccepted For-Review Deliverables: 0 awaiting review ({len(final_items)} final)")
+
+    if pstate.get("ok") and (Path(cdir) / "ECGBERHT.md").is_file():
+        try:
+            import poincare_state_map as _psm
+            pm_cap = _psm.fast_turn_recall_capsule(cdir, query=str(query or ""), budget_tokens=900)
+            if pm_cap:
+                lines.append(pm_cap)
+        except Exception:
+            pass
     return "\n".join(lines)
 
 
@@ -2114,7 +2233,7 @@ class Engine:
             return ""
         relative = (f".ecgberht/terminal-history/{self._history_thread()}.json"
                     if self.general else ".ecgberht/conversation-log.json")
-        return _personalize_prompt_for_user(
+        base_ref = _personalize_prompt_for_user(
                 "CONVERSATION CONTINUITY: This is an existing conversation, even if the goal/map is still empty. "
                 f"Before answering or working, read the complete durable history in {relative} "
                 "(in the JSON schema, human turns use the legacy key role='john' for the active human user). "
@@ -2122,6 +2241,17 @@ class Engine:
                 "do not ask him to dictate them again. Read the existing project files as needed. "
                 "Distinguish requirements from completed actions: do not replay completed actions; verify uncertain action outcomes before repeating them. Explicit, still-current authorization for outstanding agreed work remains valid across session or provider changes, but does not create new approval or expand scope. Honor later pauses, unresolved decisions, scope limits, and budgets. "
                 "If the history cannot be read completely, say so before proceeding.\n")
+        if not self.general and (Path(self.dir) / "ECGBERHT.md").is_file():
+            try:
+                import poincare_state_map as _psm
+                _mdoc = _psm.build_cockpit_poincare_map(self.dir, persist=True)
+                _pack = _psm.parse_deep_memory_window(_mdoc, budget_tokens=2400)
+                _cap = str(_pack.get("formatted_capsule") or "").strip()
+                if _cap:
+                    base_ref += "\n" + _cap + "\n"
+            except Exception:
+                pass
+        return base_ref
 
     def _retain_native_session(self, entry):
         """Retain old provider pointers before replacing the active native ID."""
@@ -2385,6 +2515,67 @@ class Engine:
         ok, _ = self._wake_locked(fresh=True, seed=seed if seed else None)
         return bool(ok)
 
+    def _try_evicted_native_session_rollover(self, err_text, ev=None):
+        """Universal turn-boundary rollover across ALL CLI families (`gemini`, `claude`, `chatgpt`, `grok`):
+        when a resumed CLI session fails before running any tools because its native session/thread/conversation
+        UUID was evicted or expired in the provider's local cache (e.g., `Gemini resumed an unexpected conversation`,
+        `Codex resumed an unexpected thread`, `Grok emitted an unexpected session identity`, `No conversation found`),
+        preserve the prior native pointer in `provider_sessions`, clear `session_id`, wake a fresh session
+        grounded in durable `.ecgberht/conversation-log.json` (or terminal history), and replay the turn once."""
+        fam = str(self.cli or "").strip().lower()
+        if fam not in ("gemini", "claude", "chatgpt", "grok") or not self.session_id:
+            return False
+        err_blob = f"{err_text or ''} {(ev or {}).get('error') or ''}"
+        if not _EVICTED_NATIVE_SESSION_RE.search(err_blob):
+            return False
+        if self._turn_had_tools:
+            return False
+        old_sid = str(self.session_id)
+        guard_key = f"{fam}:{old_sid}"
+        if getattr(self, "_last_evicted_native_sid", None) == guard_key:
+            return False
+        self._last_evicted_native_sid = guard_key
+        entry = _read_state_entry(self.skey())
+        try:
+            history_ref = self._history_reference()
+        except Exception:
+            history_ref = ""
+        if not history_ref and entry.get("retain_native_on_resume_failure"):
+            return False
+        self._retain_native_session(entry)
+        _update_state(self.skey(), {"session_id": None, "retain_native_on_resume_failure": False})
+        label = {"gemini": "Gemini", "claude": "Claude", "chatgpt": "ChatGPT", "grok": "Grok"}.get(fam, fam)
+        self._emit({
+            "t": "sys",
+            "text": (
+                f"Prior {label} CLI session expired from local cache — starting a fresh {label} session "
+                "from durable conversation history and re-running your turn."
+            ),
+        })
+        self._journal_receipt(
+            "native_session_rollover",
+            f"evicted {fam} session '{old_sid}' rolled over to fresh session with durable history",
+        )
+        if self.fake or os.environ.get("STEWARD_COCKPIT_FAKE"):
+            self.session_id = None
+            return True
+        proc = self.proc
+        self.proc = None
+        if proc is not None and proc.poll() is None:
+            self._kill_tree(proc)
+        self.session_id = None
+        raw_user = str(getattr(self, "_turn_words", "") or self._last_submitted or "").strip()
+        if history_ref and raw_user:
+            seed = history_ref + RESUME_CONTINUITY + "\n\nNEXT MESSAGE (answer this once):\n" + raw_user
+        elif history_ref:
+            seed = history_ref + RESUME_CONTINUITY
+        else:
+            seed = raw_user or None
+        ok, _ = self._wake_locked(fresh=True, seed=seed)
+        return bool(ok)
+
+    _try_gemini_evicted_session_rollover = _try_evicted_native_session_rollover
+
     def _rollover_locked(self, target, settings, text):
         """Idle-boundary handoff; the next message is never sent to the old seat."""
         import model_policy
@@ -2507,6 +2698,26 @@ class Engine:
             stored = None
         if stored and self.cli == "chatgpt" and not self.fake:
             stored = _usage_uuid(stored)
+        # Layer 1 pre-wake guard: if the real CLI's local session store provably evicted `stored`
+        # AND durable `.ecgberht/conversation-log.json` (or terminal history) exists, archive `stored`
+        # into `provider_sessions` and wake fresh immediately without wasting a failed resume launch.
+        if (stored and not is_fake and not fresh and expected_selection is None
+                and subprocess.Popen is _REAL_SUBPROCESS_POPEN and history_reference
+                and native_session_evicted_locally(self.cli, stored)):
+            self._retain_native_session(entry)
+            _update_state(self.skey(), {"session_id": None, "retain_native_on_resume_failure": False})
+            self._emit({
+                "t": "sys",
+                "text": (
+                    f"Prior {self.cli} CLI session expired from local cache — restoring seamlessly "
+                    "from durable conversation history."
+                ),
+            })
+            self._journal_receipt(
+                "native_session_prewake_rollover",
+                f"evicted {self.cli} session '{stored}' archived to provider_sessions before wake",
+            )
+            stored = None
         # Bind the selected resume before its Broker can emit checkpoints or
         # an early terminal error. Fresh/provider-changed wakes clear identity.
         self.session_id = stored
@@ -2623,15 +2834,19 @@ class Engine:
         self.busy = False
         self.woke_at = time.time()
         # resume validation: if a resumed process dies within a few seconds
-        # (bad session id / rejected flags), clear the id and cold-start once
+        # (bad session id / rejected flags), archive the old pointer when durable
+        # history exists and cold-start once; retain identity only when mid-refresh
+        # or when no durable conversation history exists yet.
         if resuming:
             time.sleep(0.1)
             if proc.poll() not in (None, 0):
-                if self.cli == "chatgpt" or expected_selection is not None or entry.get("retain_native_on_resume_failure"):
+                if expected_selection is not None or not history_reference and (
+                        self.cli == "chatgpt" or entry.get("retain_native_on_resume_failure")):
                     self.proc = None
                     self._kill_tree(proc)
                     return False, "stored session could not resume; original identity retained"
-                _update_state(self.skey(), {"session_id": None})
+                self._retain_native_session(entry)
+                _update_state(self.skey(), {"session_id": None, "retain_native_on_resume_failure": False})
                 self._emit({"t": "sys", "text":
                             "stored session could not resume - starting fresh"})
                 if not self.general:
@@ -3728,12 +3943,13 @@ class Engine:
         if self._bridge_system_prompt:
             msg["system_prompt"] = self._bridge_system_prompt
         if self.cli in ("chatgpt", "grok", "gemini"):
-            msg["standing_rules"] = self._contract()   # every bridge turn is a new process: the rules ride each one
+            _q_bridge = "" if (origin and origin != "human") else str(text or "")
+            msg["standing_rules"] = self._contract(query=_q_bridge)   # every bridge turn is a new process: the rules ride each one
             if not self.general and _is_campaign_dir(self.dir) and not _is_cave_dir(self.dir):
                 # the Star Chart's remit rides every bridge turn too, resumed or not (Grok code R1 F4)
-                msg["standing_rules"] = campaign_mode_remit(self.steward) + self._contract()
+                msg["standing_rules"] = campaign_mode_remit(self.steward) + self._contract(query=_q_bridge)
             elif not self.general and _is_cave_dir(self.dir):
-                msg["standing_rules"] = cave_mode_remit(self.steward) + self._contract()
+                msg["standing_rules"] = cave_mode_remit(self.steward) + self._contract(query=_q_bridge)
         # No CLI call under the stdin arbiter. A producer captures its exact
         # context through the lifecycle CLI; automatic fallback remains unknown.
         refinement_context = None
@@ -3747,7 +3963,7 @@ class Engine:
             msg["message"]["content"][0]["text"] += "\n\n" + _list_state_capsule()
         elif (not is_bridge and not self.busy and not is_control and not self.general and not self.one_conversation
                 and not self.code_job and not _is_campaign_dir(self.dir) and self.dir):
-            msg["message"]["content"][0]["text"] += "\n\n" + _plan_state_capsule(self.dir)
+            msg["message"]["content"][0]["text"] += "\n\n" + _plan_state_capsule(self.dir, query=str(text or ""))
         if not self.busy and not is_control and (Path(self.dir) / "roadmap.json").is_file():
             from steward_cockpit.producer_handoff import _handoff_id
             refinement_producer_id = uuid.uuid4().hex
@@ -4014,7 +4230,7 @@ class Engine:
         except Exception:
             return False
 
-    def _contract(self):
+    def _contract(self, query: str = ""):
         # 2026-10-12: the Foundry tools are read from their index each time the rules are built, so a new tool
         # reaches every steward and job with no Anchor change
         from steward_cockpit import foundry_tools
@@ -4035,7 +4251,7 @@ class Engine:
             else:
                 raw = SMALL_DUTY + CONTRACT + foundry_tools.block()
             if dedicated_cockpit and self.dir:
-                raw += "\n" + _plan_state_capsule(self.dir) + "\n"
+                raw += "\n" + _plan_state_capsule(self.dir, query=query) + "\n"
         return _personalize_prompt_for_user(raw)
 
     def _fire_turn_done(self, result):
@@ -5092,6 +5308,12 @@ class Engine:
             if history_saved and link_report:
                 self._publish_link_report(completed_turn_id, link_report)
             self._finish_served_audit()
+            if not self.general and not self.code_job and not was_tick and (Path(self.dir) / "ECGBERHT.md").is_file():
+                try:
+                    import poincare_state_map as _psm
+                    _psm.build_cockpit_poincare_map(self.dir, persist=True)
+                except Exception:
+                    pass
 
             # The complete result boundary is one arbitration transaction.
             # Exactly one next writer wins: an already accepted human message,
@@ -5189,6 +5411,8 @@ class Engine:
                     # the exhausted provider. Only a confirmed unsubmitted/
                     # rejected turn can replay the original message.
                     if self._try_claude_credit_gate_fallback(err_text, ev):
+                        return
+                    if self._try_evicted_native_session_rollover(err_text, ev):
                         return
                     if limit and not (self.fake or os.environ.get("STEWARD_COCKPIT_FAKE")):
                         try:
@@ -5686,6 +5910,14 @@ class Engine:
     def _commit_if_dirty(self, message):
         """The campaign's own paths only; other staging untouched; announced only on git's word. Takes the
         repository's one commit lock (git_safety, Grok R2 G1) so it never lands inside a code job's land."""
+        if getattr(self, "general", False) or getattr(self, "code_job", False):
+            return None
+        try:
+            import paths as _paths
+            if Path(self.dir).resolve().is_relative_to(_paths.code_jobs_dir().resolve()):
+                return None
+        except Exception:
+            pass
         try:
             import git_safety as _gs
             _lock = _gs.repo_lock(_gs.toplevel(self.dir) or self.dir, wait_s=30, who="steward commit " + str(self.dir))

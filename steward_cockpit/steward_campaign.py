@@ -20,6 +20,7 @@ import time
 import threading
 from copy import deepcopy
 from pathlib import Path
+from urllib.parse import parse_qsl, urlsplit
 
 from steward_cockpit import steward_core as _core
 
@@ -378,10 +379,11 @@ def _read_attention_fast(campaign_dir: str) -> dict:
         expired = (attention_age is None
                    or attention_age >= ATTENTION_WORKING_GRACE_SECONDS)
         if failure_code == "ATTENTION_STALE" or (expired and not has_fresh_owner):
-            attention["state"] = "stale"
-            attention["reason"] = (
-                "attention working edge has no fresh owner heartbeat")
-            attention["lease_seconds"] = ATTENTION_WORKING_GRACE_SECONDS
+            if not running_code_jobs(campaign_dir) and not running_skill_jobs(campaign_dir):
+                attention["state"] = "stale"
+                attention["reason"] = (
+                    "attention working edge has no fresh owner heartbeat")
+                attention["lease_seconds"] = ATTENTION_WORKING_GRACE_SECONDS
         attention["fresh_owner"] = has_fresh_owner
 
     refinement = read_refinement(campaign_dir, stale_ok=True)
@@ -2373,32 +2375,6 @@ def running_skill_jobs(campaign_dir):
     return [r for r in rows if isinstance(r, dict) and r.get("status") == "running" and not r.get("finished")]
 
 
-def read_attention(campaign_dir: str) -> dict:
-    """Read and normalize ``<cdir>/.ecgberht/attention.json`` with stale-working lease discipline."""
-    attention_path = Path(campaign_dir) / ".ecgberht" / "attention.json"
-    att, err = _read_json(attention_path)
-    attention = _normalize_attention(att, err)
-    attention_age = _age(attention_path)
-    attention["age_seconds"] = attention_age
-    if attention["state"] == "working":
-        failure_code = str(attention.get("failure_code") or "")
-        has_fresh_owner = any(
-            seat.get("state") == "fresh"
-            for seat in read_swarm_trails(str(campaign_dir))
-        )
-        expired = (
-            attention_age is None
-            or attention_age >= ATTENTION_WORKING_GRACE_SECONDS
-        )
-        if failure_code == "ATTENTION_STALE" or (expired and not has_fresh_owner):
-            if not running_code_jobs(campaign_dir) and not running_skill_jobs(campaign_dir):
-                attention["state"] = "stale"
-                attention["reason"] = "attention working edge has no fresh owner heartbeat"
-                attention["lease_seconds"] = ATTENTION_WORKING_GRACE_SECONDS
-        attention["fresh_owner"] = has_fresh_owner
-    return attention
-
-
 def _resolve_job_log_file(campaign_dir: str, job: dict) -> tuple[str, Path | None]:
     """Return ``(declared_log_rel, resolved_path)`` for a job's explicit ``log_path`` or ``log``."""
     if not isinstance(job, dict):
@@ -3794,6 +3770,20 @@ def classify_route(token: str):
     if not token or not isinstance(token, str):
         return None
     t = token.strip()
+    if t.startswith("/steward/v1/open"):
+        if ".." in t or "\\" in t or "//" in t:
+            return None
+        parts = urlsplit(t)
+        if parts.scheme or parts.netloc or parts.fragment or parts.path != "/steward/v1/open":
+            return None
+        _allowed_open_keys = {
+            "path", "hash", "product_id", "revision_id", "presentation_id", "dir", "pid", "download",
+        }
+        if parts.query:
+            for qk, qv in parse_qsl(parts.query, keep_blank_values=True):
+                if qk not in _allowed_open_keys or ".." in qv or "\\" in qv or "\x00" in qv:
+                    return None
+        return t
     if t.startswith("/foundry?"):
         query = t[len("/foundry?"):]
         if "&" in query or not query.startswith("skill="):
@@ -3824,10 +3814,31 @@ def classify_route(token: str):
     return None
 
 
-def _resolve_fuzzy_final_path(campaign_dir: str, cdir_real: str, cand: str) -> tuple[str, bool]:
+def _is_contained_rel_path(campaign_dir: str | Path, cand: str) -> tuple[Path | None, str]:
+    """Verify that cand is a relative path strictly contained inside campaign_dir (no '..', drive, or root escape)."""
+    raw = str(cand or "").strip()
+    if not raw or raw.startswith(("/", "\\")) or re.match(r"^[A-Za-z]:", raw) or "\x00" in raw:
+        return None, ""
+    norm = raw.replace("\\", "/").strip("/")
+    if not norm or any(seg in ("", ".", "..") for seg in norm.split("/")):
+        return None, ""
+    try:
+        root_real = Path(os.path.realpath(str(campaign_dir))).resolve()
+        target_real = Path(os.path.realpath(str(root_real / norm))).resolve()
+        if target_real != root_real and not target_real.is_relative_to(root_real):
+            return None, ""
+        rel_clean = target_real.relative_to(root_real).as_posix()
+        return target_real, rel_clean
+    except Exception:
+        return None, ""
+
+
+def _resolve_fuzzy_final_path(campaign_dir: str, cdir_real: str, cand: str) -> tuple[str | None, bool]:
     """Resolve a candidate relative path inside campaign_dir, handling `- PowerPoint.pptx` vs `.pptx`
-    and short unit folder names under `Final Deliverables/`."""
-    cand_norm = cand.replace("\\", "/").strip()
+    and short unit folder names under `Final Deliverables/`, while refusing path escapes."""
+    target_real, cand_norm = _is_contained_rel_path(cdir_real, cand)
+    if target_real is None or not cand_norm:
+        return None, False
     cands_to_try = [cand_norm]
     if re.search(r"\s*-\s*PowerPoint\.pptx$", cand_norm, re.I):
         cands_to_try.append(re.sub(r"\s*-\s*PowerPoint(\.pptx)$", r"\1", cand_norm, flags=re.I))
@@ -3862,7 +3873,23 @@ def _resolve_fuzzy_final_path(campaign_dir: str, cdir_real: str, cand: str) -> t
                                     return os.path.relpath(real, cdir_real).replace(os.sep, "/"), True
             except OSError:
                 pass
-    return cand, False
+    return cand_norm, False
+
+
+def resolve_deliverable_open_path(campaign_dir: str | Path, cand: str) -> str | None:
+    """Resolve a deliverable open target (contained Anchor route or relative file path inside campaign_dir),
+    or return None when empty or escaping campaign_dir."""
+    raw = str(cand or "").strip()
+    if not raw:
+        return None
+    if raw.startswith("/"):
+        return classify_route(raw)
+    try:
+        cdir_real = os.path.realpath(str(campaign_dir))
+    except OSError:
+        return None
+    resolved_rel, _ = _resolve_fuzzy_final_path(str(campaign_dir), cdir_real, raw)
+    return resolved_rel
 
 
 def _read_deliverables(campaign_dir: str):
@@ -4387,6 +4414,9 @@ def _iso_days_between(d1_str: str, d2_str: str) -> int:
         return 0
 
 
+_CURRENT_IN_USE_RE = re.compile(r"\(\s*current\s+in\s+use\s*\)|\bcurrent\s+in\s+use\b", re.I)
+
+
 def current_review_items(map_, items):
     from .navigation_compat import resolve_step
     steps = (map_ or {}).get("steps") or []
@@ -4400,7 +4430,7 @@ def current_review_items(map_, items):
         w_str = str(it.get("what") or "")
         if _HISTORICAL_LABEL.match(w_str):
             continue
-        if re.match(r"^(?:START\s+HERE|CURRENT|FOR\s+REVIEW)\s*(?:[:—–-]|$)", w_str, re.I):
+        if re.match(r"^(?:START\s+HERE|CURRENT|FOR\s+REVIEW)\s*(?:[:—–-]|$)", w_str, re.I) or _CURRENT_IN_USE_RE.search(w_str):
             ow = resolve_step(steps, it.get("step"))
             sid = str((ow or {}).get("id") or "")
             d_iso = str(it.get("date") or "").strip()[:10]
@@ -4410,12 +4440,14 @@ def current_review_items(map_, items):
 
     for it in items or []:
         owner = resolve_step(steps, it.get("step"))
-        if owner is None:
+        w_str = str(it.get("what") or "")
+        is_cur_in_use = bool(_CURRENT_IN_USE_RE.search(w_str))
+        if owner is None and not is_cur_in_use:
             continue
         nav = (owner or {}).get("navigation") or {}
         if it.get("accepted") or it.get("accepted_current"):
             continue
-        if _HISTORICAL_LABEL.match(str(it.get("what") or "")):
+        if _HISTORICAL_LABEL.match(w_str) and not is_cur_in_use:
             continue
         p_norm = str(it.get("path") or "").replace("\\", "/").lower()
         if "/code-job-outputs/" in ("/" + p_norm):
@@ -4423,15 +4455,17 @@ def current_review_items(map_, items):
         if it.get("managed") and it.get("phase") in ("awaiting_review", "blocked"):
             current.append(it)                 # asked for review: stays whatever the focus (journal 0132)
             continue
-        if nav.get("current") is False or nav.get("role") == "support" or (owner or {}).get("status") == "parked":
+        if not is_cur_in_use and (nav.get("current") is False or nav.get("role") == "support" or (owner or {}).get("status") == "parked"):
             continue
         if it.get("managed") and it.get("phase") != "done":
+            current.append(it)
+        elif not it.get("managed") and is_cur_in_use:
             current.append(it)
         elif not it.get("managed") and owner and owner.get("status") != "done" and (owner.get("refinement") or {}).get("phase") != "done":
             normalize = lambda p: str(p or "").replace("\\", "/").lower()
             featured = {normalize(p) for p in nav.get("featured_paths") or []}
-            designation = re.match(r"^(?:START\s+HERE|CURRENT|FOR\s+REVIEW)\s*(?:[:—–-]|$)", str(it.get("what") or ""), re.I)
-            historical = _HISTORICAL_LABEL.match(str(it.get("what") or ""))
+            designation = re.match(r"^(?:START\s+HERE|CURRENT|FOR\s+REVIEW)\s*(?:[:—–-]|$)", w_str, re.I) or is_cur_in_use
+            historical = _HISTORICAL_LABEL.match(w_str)
             if not historical and (normalize(it.get("path")) in featured or designation):
                 current.append(it)
     # 2026-10-07 (John: Next steps showed "a fraction"): the newest batch published on the focused step is current
@@ -4476,28 +4510,32 @@ def current_review_items(map_, items):
         best = {}
         for it in own:
             fam = _family_key(it)
-            best[fam] = max(best.get(fam, ("", ())), _version_rank(it))
+            vr = _version_rank(it)
+            rank_k = (vr[1], vr[0])
+            if fam not in best or rank_k > best[fam]:
+                best[fam] = rank_k
         seen = {id(it) for it in current}
-        current.extend(it for it in own if _version_rank(it) == best[_family_key(it)] and id(it) not in seen)
-    # Deduplicate superseded versions across unmanaged items when both carry explicit version numbers
+        current.extend(it for it in own if (_version_rank(it)[1], _version_rank(it)[0]) == best[_family_key(it)] and id(it) not in seen)
+    # Deduplicate superseded versions across unmanaged items when both carry explicit version numbers or ISO dates
     # on the same stem (e.g., v11 in stale featured_paths when v12 is designated START HERE, or Initial-Draft vs Refinement-2).
     stem_max_ver = {}
-    clean_stem = lambda s: re.sub(r"\s+", " ", _INITIAL_DRAFT_TAG.sub("", _VERSION_TAG.sub("", _strip_format_tag(s)))).strip(" -_,").lower()
     for it in current:
         if it.get("managed"):
             continue
-        ver = _version_rank(it)[1]
-        st_key = clean_stem(_split_path(it)[1])
-        if ver and st_key:
-            if st_key not in stem_max_ver or ver > stem_max_ver[st_key]:
-                stem_max_ver[st_key] = ver
+        vr = _version_rank(it)
+        has_ver_or_date = bool(vr[1] or _ISO_DATE_TAG.search(_split_path(it)[1]) or _ISO_DATE_TAG.search(str(it.get("what") or "")))
+        st_key = normalize_deliverable_fold_stem(_split_path(it)[1] or str(it.get("what") or ""))
+        if has_ver_or_date and st_key:
+            rk = (vr[1], vr[0])
+            if st_key not in stem_max_ver or rk > stem_max_ver[st_key]:
+                stem_max_ver[st_key] = rk
     if stem_max_ver:
         current = [
             it for it in current
             if it.get("managed")
-            or not _version_rank(it)[1]
-            or not clean_stem(_split_path(it)[1])
-            or _version_rank(it)[1] >= stem_max_ver.get(clean_stem(_split_path(it)[1]), ())
+            or not normalize_deliverable_fold_stem(_split_path(it)[1] or str(it.get("what") or ""))
+            or normalize_deliverable_fold_stem(_split_path(it)[1] or str(it.get("what") or "")) not in stem_max_ver
+            or (_version_rank(it)[1], _version_rank(it)[0]) >= stem_max_ver.get(normalize_deliverable_fold_stem(_split_path(it)[1] or str(it.get("what") or "")), ((), ""))
         ]
     current.sort(key=lambda it: str(it.get("date") or ""), reverse=True)
     return [it for it in current if not it.get("reviewed_done")]
@@ -4524,10 +4562,56 @@ def _strip_format_tag(text, keep_note=False):
     return _FORMAT_TAG.sub("", text).strip()
 
 
-_VERSION_TAG = re.compile(r"[\s,_-]*\b(?:draft|refinement|version|release|round|revision|rev|v)[\s_-]*(\d+(?:\.\d+)*)\b",
-                          re.I)
+_VERSION_TAG = re.compile(
+    r"[\s,_-]*(?:^|(?<=[\s,._\-(\[/]))(?:(?:draft|refinement|version|ver|release|round|revision|rev)[\s._-]*|v)(\d+(?:\.\d+)*)(?=$|[\s,._\-)\]/])",
+    re.I,
+)
 
-_INITIAL_DRAFT_TAG = re.compile(r"[\s,_-]*\binitial[\s_-]*(?:draft|version|release)\b", re.I)
+_INITIAL_DRAFT_TAG = re.compile(
+    r"[\s,_-]*(?:^|(?<=[\s,._\-(\[/]))initial[\s._-]*(?:draft|version|release)(?=$|[\s,._\-)\]/])",
+    re.I,
+)
+
+_ISO_DATE_TAG = re.compile(
+    r"[\s,_-]*(?:^|(?<=[\s,._\-(\[/]))(20\d{2}-\d{2}-\d{2})(?:[T_\s-]\d{2}[-:]?\d{2}(?:[-:]?\d{2})?Z?)?(?=$|[\s,._\-)\]/])",
+    re.I,
+)
+
+_REDLINE_TAG = re.compile(
+    r"[\s,_-]*(?:^|(?<=[\s,._\-(\[/]))(?:redline|redlined|tracked|track[\s._-]*changes)(?=$|[\s,._\-)\]/])",
+    re.I,
+)
+
+_CLEAN_OR_FINAL_TAG = re.compile(
+    r"[\s,_-]*(?:^|(?<=[\s,._\-(\[/]))(?:clean|final(?:ized)?(?:\s+edition)?|current[\s._-]+in[\s._-]+use)(?=$|[\s,._\-)\]/])",
+    re.I,
+)
+
+
+def normalize_deliverable_fold_stem(text: str) -> str:
+    """Normalize a deliverable stem or title for read-time folding by stripping ISO dates,
+    explicit version tokens (v\\d+, Draft \\d+, Refinement \\d+, Rev \\d+), format tags, and
+    redline/clean/final markers, while NEVER stripping bare unit numbers (e.g. Lecture 10, Chapter 3)."""
+    s = _strip_format_tag(str(text or "")).strip()
+    s = re.sub(r"\.[a-z0-9]{1,8}$", "", s, flags=re.I)
+    s = re.sub(
+        r"^(?:[\u2605\u2b50]\s*|(?:START\s+HERE|FOR\s+REVIEW|CURRENT|FINAL(?:IZED)?|APPROVED|ACCEPTED|SUPPORTING|SUPPLEMENTAL|COMPANION)\s*(?:\([^)]*\)\s*)?[\u2014\u2013\-:]\s*)+",
+        "",
+        s,
+        flags=re.I,
+    )
+    for pat in (_ISO_DATE_TAG, _VERSION_TAG, _INITIAL_DRAFT_TAG, _REDLINE_TAG, _CLEAN_OR_FINAL_TAG):
+        s = pat.sub(" ", s)
+    s = re.sub(r"\(\s*\)", " ", s)
+    s = re.sub(
+        r"[\s_-]+(?:pdf|pptx|powerpoint|docx|word|html|md|markdown|xlsx|excel|reading[\s_-]+copy|slide[\s_-]+deck)\s*$",
+        "",
+        s,
+        flags=re.I,
+    )
+    s = re.sub(r"\bquiz[\s_-]+i\b", "quiz-1", s, flags=re.I)
+    s = re.sub(r"[^a-zA-Z0-9]+", "-", s.lower()).strip("-")
+    return s
 
 
 def _owner_id(it, steps=None):
@@ -4559,16 +4643,30 @@ def _version_rank(it):
         version = (0,)
     else:
         version = ()
-    return (str(it.get("date") or ""), version)
+    m_date = _ISO_DATE_TAG.search(stem_txt) or _ISO_DATE_TAG.search(what_txt)
+    inline_date = m_date.group(1) if m_date else ""
+    item_date = str(it.get("date") or "")[:10]
+    eff_date = max(inline_date, item_date) if (inline_date and item_date and re.match(r"^\d{4}-\d{2}-\d{2}$", item_date)) else (inline_date or str(it.get("date") or ""))
+    return (eff_date, version)
 
 
 def _family_key(it, steps=None):
-    """A product across its versions: owner, folder and file stem with every version tag removed ('Quiz 1 - Draft
+    """A product across its versions: owner, folder and file stem with every version/date/redline tag removed ('Quiz 1 - Draft
     3/Bank - Draft 3' and 'Quiz 1 - Draft 1/Bank - Draft 1' are one family; 'a/Summary' and 'b/Summary' are two)."""
+    if isinstance(it, dict) and it.get("managed") and it.get("product_id"):
+        return (_owner_id(it, steps), "managed", normalize_deliverable_fold_stem(str(it.get("product_id"))))
     folder, stem = _split_path(it)
-    clean = lambda t: re.sub(r"\s+", " ", _INITIAL_DRAFT_TAG.sub("", _VERSION_TAG.sub("", t))).strip(" -_,").lower()
-    folder = "/".join(clean(seg) for seg in folder.split("/"))
-    return (_owner_id(it, steps), folder, clean(_strip_format_tag(stem)) or clean(_strip_format_tag(it.get("what"))))
+    clean_seg = lambda seg: normalize_deliverable_fold_stem(seg).replace("-", " ")
+    raw_segs = [seg for seg in folder.split("/") if seg]
+    if raw_segs and raw_segs[0].lower() in ("deliverables", "final deliverables", "finished deliverables", "key deliverables", "revisions", ".ecgberht"):
+        raw_segs = raw_segs[1:]
+        if raw_segs and raw_segs[0].lower() == "revisions":
+            raw_segs = raw_segs[1:]
+    folder_norm = "/".join(clean_seg(seg) for seg in raw_segs if clean_seg(seg))
+    stem_clean = normalize_deliverable_fold_stem(stem)
+    if not stem_clean or _HEX_HASH_FILENAME_RE.match(stem + ".pdf"):
+        stem_clean = normalize_deliverable_fold_stem(str(it.get("what") or ""))
+    return (_owner_id(it, steps), folder_norm, stem_clean or normalize_deliverable_fold_stem(str(it.get("what") or "")))
 
 
 def _product_key(it, steps=None):
@@ -4718,6 +4816,39 @@ def dismiss_deliverable(campaign_dir: str, path: str = "", product_id: str = "",
     return out_resp
 
 
+def dismiss_deliverables(
+    campaign_dir: str,
+    items: list[dict] | None = None,
+    *,
+    disposition: str = "approved",
+    auto_complete: bool = True,
+    notify_cave: bool = True,
+) -> dict:
+    """Batch-dismiss a list of deliverable dicts in dismissed-deliverables.json."""
+    if not campaign_dir:
+        return {"ok": False, "error": "missing campaign_dir", "dismissed": []}
+    dismissed_list = []
+    for raw_it in (items or []):
+        if not isinstance(raw_it, dict):
+            continue
+        item_disp = str(raw_it.get("disposition") or disposition or "approved").strip() or "approved"
+        res = dismiss_deliverable(
+            campaign_dir,
+            path=str(raw_it.get("open_path") or raw_it.get("path") or ""),
+            product_id=str(raw_it.get("product_id") or ""),
+            what=str(raw_it.get("what") or ""),
+            revision_id=str(raw_it.get("revision_id") or ""),
+            hash_val=str(raw_it.get("hash") or ""),
+            disposition=item_disp,
+            step_id=str(raw_it.get("step_id") or raw_it.get("step") or ""),
+            auto_complete=auto_complete,
+            notify_cave=notify_cave,
+        )
+        if res.get("ok") and isinstance(res.get("dismissed"), dict):
+            dismissed_list.append(res["dismissed"])
+    return {"ok": True, "dismissed": dismissed_list, "count": len(dismissed_list), "disposition": disposition}
+
+
 def approve_deliverable(campaign_dir: str, path: str = "", product_id: str = "",
                         what: str = "", revision_id: str = "", hash_val: str = "",
                         step_id: str = "", notify_cave: bool = True) -> dict:
@@ -4817,7 +4948,7 @@ def _is_deliverable_dismissed(campaign_dir: str, it: dict, dismissed: dict) -> b
     return True
 
 
-def sync_steward_projections(campaign_dir: str) -> dict:
+def sync_steward_projections(campaign_dir: str, reason: str = "") -> dict:
     """Keep roadmap.json active step projection aligned with strip.json and DELIVERABLES.md
     when the Steward updates strip.json / DELIVERABLES.md faster than roadmap.json."""
     root = Path(campaign_dir)
@@ -4830,15 +4961,25 @@ def sync_steward_projections(campaign_dir: str) -> dict:
         pass
     roadmap, rm_err = _read_json(rm_path)
     strip, st_err = _read_json(st_path)
-    if rm_err or st_err or not isinstance(roadmap, dict) or not isinstance(strip, dict):
+    if (rm_err and rm_err != "absent") or (st_err and st_err != "absent"):
+        return {"ok": False, "changed": False}
+    if strip is None:
+        strip = {}
+    if roadmap is None:
+        roadmap = {"roadmap_projection": [], "roadmap_events": []}
+    if not isinstance(roadmap, dict) or not isinstance(strip, dict):
         return {"ok": False, "changed": False}
     if any(isinstance(e, dict) and e.get("kind") == "refinement_update" for e in (roadmap.get("roadmap_events") or [])):
         return {"ok": True, "changed": False, "managed": True}
     roadmap = dict(roadmap)
-    proj = [deepcopy(s) for s in (roadmap.get("roadmap_projection") or []) if isinstance(s, dict)]
+    proj = [deepcopy(s) for s in (roadmap.get("roadmap_projection") or roadmap.get("steps") or []) if isinstance(s, dict)]
     roadmap["roadmap_projection"] = proj
     if not isinstance(proj, list) or not proj:
-        return {"ok": True, "changed": False}
+        try:
+            rec_res = reconcile_plan_under_lock(campaign_dir, roadmap=roadmap, reason=reason)
+            return {"ok": True, "changed": bool(rec_res.get("changed"))}
+        except Exception:
+            return {"ok": True, "changed": False}
     deliv = _read_deliverables(campaign_dir)
     raw_items = (deliv or {}).get("items") or []
     norm_p = lambda p: str(p or "").replace("\\", "/").strip().lower()
@@ -4953,22 +5094,12 @@ def sync_steward_projections(campaign_dir: str) -> dict:
                     _JSON_FILE_CACHE.clear()
         except (OSError, TimeoutError):
             return {"ok": False, "changed": False}
-    if not os.environ.get("PYTEST_CURRENT_TEST"):
-        try:
-            refresh = compute_deliverables_plan_refresh(campaign_dir, roadmap=roadmap)
-            if refresh.get("has_changes"):
-                prop_file = root / ".ecgberht" / "plan-proposal.json"
-                prop_disk = {}
-                if prop_file.is_file():
-                    try:
-                        prop_disk = json.loads(prop_file.read_text(encoding="utf-8")) or {}
-                    except Exception:
-                        prop_disk = {}
-                if not (isinstance(prop_disk, dict) and prop_disk.get("status") == "dismissed" and prop_disk.get("digest") == refresh.get("digest")):
-                    resolve_plan_proposal(campaign_dir, action="accept")
-                    changed = True
-        except Exception:
-            pass
+    try:
+        rec_res = reconcile_plan_under_lock(campaign_dir, roadmap=roadmap, reason=reason)
+        if rec_res.get("changed"):
+            changed = True
+    except Exception:
+        pass
     return {"ok": True, "changed": changed}
 
 
@@ -4999,6 +5130,7 @@ def _is_intermediate_deliverable(it: dict) -> bool:
     is_explicit_final_or_review = bool(
         _FINAL_DELIV_RE.match(what)
         or _ACTIVE_REVIEW_DELIV_RE.match(what)
+        or _CURRENT_IN_USE_RE.search(what)
         or "/final deliverables/" in ("/" + path.lower())
     )
     if _HISTORICAL_LABEL.match(what) and not is_explicit_final_or_review:
@@ -5136,43 +5268,126 @@ def _classify_hierarchy_unit(what: str, step: str, path: str, steps: list) -> di
     from .navigation_compat import resolve_step
     p_norm = str(path or "").replace("\\", "/").strip("/")
     owner = resolve_step(steps, step) if steps else None
+    owner_lbl = ""
+    owner_dw = ""
+    owner_id = ""
+    owner_ord = 50
     if owner:
-        raw_lbl = str(
+        owner_lbl = str(
             ((owner.get("navigation") or {}).get("label") if isinstance(owner.get("navigation"), dict) else "")
             or owner.get("title")
             or owner.get("name")
             or owner.get("id")
             or ""
         ).strip()
-        raw_dw = _first_sentence(str(owner.get("done_when") or "")).strip()
-        u_lbl, u_sub = clean_plan_step_title(raw_lbl, raw_dw)
-        u_key = str(owner.get("id") or _slug(u_lbl) or "workstream")
+        owner_dw = _first_sentence(str(owner.get("done_when") or "")).strip()
+        owner_id = str(owner.get("id") or "").strip()
         try:
-            u_ord = next((idx + 1 for idx, s in enumerate(steps) if s.get("id") == owner.get("id")), 50)
+            owner_ord = next((idx + 1 for idx, s in enumerate(steps) if s.get("id") == owner.get("id")), 50)
         except Exception:
-            u_ord = 50
+            owner_ord = 50
+
+    probe_text = f"{owner_lbl} {owner_id} {what} {p_norm}"
+    m_lec = re.search(r"\b(?:lecture|lec)[-_\s]*0*(\d+)\b", probe_text, re.I)
+    if m_lec:
+        lec_n = int(m_lec.group(1))
+        _, topic_sub = clean_plan_step_title(owner_lbl or what, owner_dw)
+        return {
+            "is_course": True,
+            "category_id": "lectures",
+            "category_title": "Lectures",
+            "category_order": 1,
+            "unit_key": f"lecture-{lec_n:02d}",
+            "unit_order": lec_n,
+            "unit_label": f"Lecture {lec_n}",
+            "unit_topic": topic_sub,
+            "unit_title": f"Lecture {lec_n}" + (f" \u2014 {topic_sub}" if topic_sub else ""),
+            "solid_badge": "",
+        }
+    m_hw = re.search(r"\b(?:homework|hw)[-_\s]*0*(\d+)\b", probe_text, re.I)
+    if m_hw:
+        hw_n = int(m_hw.group(1))
+        _, topic_sub = clean_plan_step_title(owner_lbl or what, owner_dw)
+        return {
+            "is_course": True,
+            "category_id": "homeworks",
+            "category_title": "Homeworks",
+            "category_order": 2,
+            "unit_key": f"homework-{hw_n:02d}",
+            "unit_order": 100 + hw_n,
+            "unit_label": f"Homework {hw_n}",
+            "unit_topic": topic_sub,
+            "unit_title": f"Homework {hw_n}" + (f" \u2014 {topic_sub}" if topic_sub else ""),
+            "solid_badge": "",
+        }
+    m_qz = re.search(r"\bquiz[-_\s]*(?:0*(\d+)|(i{1,3}|iv|v))\b", probe_text, re.I)
+    if m_qz:
+        roman_map = {"i": 1, "ii": 2, "iii": 3, "iv": 4, "v": 5}
+        qz_n = int(m_qz.group(1)) if m_qz.group(1) else roman_map.get(str(m_qz.group(2) or "").lower(), 1)
+        _, topic_sub = clean_plan_step_title(owner_lbl or what, owner_dw)
+        return {
+            "is_course": True,
+            "category_id": "assessments",
+            "category_title": "Quizzes & Assessments",
+            "category_order": 3,
+            "unit_key": f"quiz-{qz_n:02d}",
+            "unit_order": 200 + qz_n,
+            "unit_label": f"Quiz {qz_n}",
+            "unit_topic": topic_sub,
+            "unit_title": f"Quiz {qz_n}" + (f" \u2014 {topic_sub}" if topic_sub else ""),
+            "solid_badge": "",
+        }
+    if re.search(r"\bsyllabus\b", probe_text, re.I):
+        _, topic_sub = clean_plan_step_title(owner_lbl or what, owner_dw)
+        return {
+            "is_course": True,
+            "category_id": "foundations",
+            "category_title": "Course Foundations",
+            "category_order": 0,
+            "unit_key": "syllabus",
+            "unit_order": 0,
+            "unit_label": "Syllabus",
+            "unit_topic": topic_sub,
+            "unit_title": "Syllabus" + (f" \u2014 {topic_sub}" if topic_sub else ""),
+            "solid_badge": "",
+        }
+
+    if owner:
+        u_lbl, u_sub = clean_plan_step_title(owner_lbl, owner_dw)
+        u_key = _slug(owner_id or u_lbl) or "workstream"
+        u_ord = owner_ord
+        unit_key_str = f"step-{u_ord:02d}-{u_key}"
     else:
         segs = [seg for seg in p_norm.split("/") if seg]
         folder_unit = ""
         if len(segs) >= 2:
             if segs[0].lower() in ("final deliverables", "finished deliverables", "deliverables") and len(segs) >= 3:
                 folder_unit = segs[1]
-            elif not segs[0].startswith(".") and segs[0].lower() not in ("deliverables", "revisions"):
+            elif not segs[0].startswith(".") and segs[0].lower() not in ("deliverables", "revisions", "final deliverables", "finished deliverables"):
                 folder_unit = segs[0]
-        u_lbl = (
-            _core.clean_human_deliverable_title(folder_unit)
-            if folder_unit
-            else humanize_deliverable_title({"what": what, "path": path})
-        )
-        u_sub = ""
-        u_key = _slug(u_lbl)[:36] or "workstream"
-        u_ord = 90
+        if folder_unit:
+            u_lbl = _core.clean_human_deliverable_title(folder_unit)
+            u_sub = ""
+            u_key = normalize_deliverable_fold_stem(folder_unit) or _slug(u_lbl)[:36] or "workstream"
+            u_ord = 20
+        elif str(step or "").strip():
+            st_raw = str(step).strip()
+            u_lbl = f"Step {st_raw}" if st_raw.isdigit() else _core.clean_human_deliverable_title(st_raw)
+            u_sub = ""
+            u_key = _slug(st_raw)[:36] or "workstream"
+            u_ord = int(st_raw) if st_raw.isdigit() else 50
+        else:
+            u_lbl = "Main Deliverables"
+            u_sub = ""
+            u_key = "main"
+            u_ord = 10
+        unit_key_str = f"ws-{u_key}"
     return {
         "is_course": False,
         "category_id": "workstreams",
         "category_title": "Deliverable Workstreams",
         "category_order": 10,
-        "unit_key": f"ws-{u_key}",
+        "unit_key": unit_key_str,
         "unit_order": u_ord,
         "unit_label": u_lbl,
         "unit_topic": u_sub,
@@ -5188,11 +5403,9 @@ def _file_role_and_sort_key(rel_path: str, what: str, title_hint: str = "") -> t
     low_f = fname.lower()
     low_w = (what or "").lower()
     combined = f"{low_f} {low_w}"
-    raw_stem = Path(fname).stem.lower()
-    raw_stem = re.sub(r"[\s_-]*(?:refinement|draft|revision|rev|v)[\s_-]*\d+\b", "", raw_stem, flags=re.I)
-    raw_stem = re.sub(r"\s*\(\d+\)\s*$", "", raw_stem)
-    raw_stem = re.sub(r"\bquiz[\s_-]+i\b", "quiz-1", raw_stem, flags=re.I)
-    stem_norm = re.sub(r"[^a-z0-9]+", "-", raw_stem).strip("-") or "file"
+    stem_norm = normalize_deliverable_fold_stem(Path(fname).stem)
+    if not stem_norm or _HEX_HASH_FILENAME_RE.match(fname):
+        stem_norm = normalize_deliverable_fold_stem(what or title_hint or fname) or "file"
 
     is_ai_supp = bool(re.search(r"\bai[-_\s]+supplement\b", combined, re.I))
     combined_norm = re.sub(r"[-_]+", " ", combined)
@@ -5228,34 +5441,68 @@ def _file_role_and_sort_key(rel_path: str, what: str, title_hint: str = "") -> t
             return ("assignment", "Assignment")
         return ("primary", "")
 
+    sub_key, sub_lbl = _doc_subrole()
     if ext == ".pptx":
         if is_ai_supp:
-            return ("pptx-ai-supplement", 2, "PPTX (AI Supplement)", fname)
-        return ("pptx-main", 1, "PPTX Deck", fname)
+            return (f"pptx-ai-supplement-{stem_norm}", 2, "PPTX (AI Supplement)", fname)
+        return (f"pptx-main-{stem_norm}", 1, "PPTX Deck", fname)
     if ext == ".pdf":
-        sub_key, sub_lbl = _doc_subrole()
         if sub_key == "primary":
             return (f"pdf-primary-{stem_norm}", 2, "PDF Reading Copy", fname)
         if sub_key == "ai-supplement":
-            return ("pdf-ai-supplement", 3, "PDF (AI Supplement)", fname)
+            return (f"pdf-ai-supplement-{stem_norm}", 3, "PDF (AI Supplement)", fname)
         order = 3 if sub_key in ("instructions", "quiz-packet", "question-bank") else 4
-        return (f"pdf-{sub_key}", order, f"PDF ({sub_lbl})", fname)
+        return (f"pdf-{sub_key}-{stem_norm}", order, f"PDF ({sub_lbl})", fname)
     if ext in (".docx", ".doc", ".html", ".md"):
-        sub_key, sub_lbl = _doc_subrole()
         ext_up = ext.lstrip(".").upper()
         if ext == ".html":
             badge = f"HTML ({sub_lbl})" if sub_lbl else "HTML Interactive"
             return (f"html-{stem_norm}", 5, badge, fname)
         badge = f"{ext_up} ({sub_lbl})" if sub_lbl else f"{ext_up} Document"
-        slot = f"doc-{ext_up.lower()}-{sub_key}" if sub_key != "primary" else f"doc-{ext_up.lower()}-{stem_norm}"
+        slot = f"doc-{ext_up.lower()}-{sub_key}-{stem_norm}" if sub_key != "primary" else f"doc-{ext_up.lower()}-{stem_norm}"
         return (slot, 5, badge, fname)
     if ext in (".r", ".py", ".ipynb", ".sql"):
         return (f"code-{stem_norm}", 6, f"{ext.lstrip('.').upper()} Script", fname)
     if ext in (".csv", ".xlsx", ".xls", ".tsv"):
         return (f"data-{stem_norm}", 7, f"{ext.lstrip('.').upper()} Data", fname)
     if ext == ".zip":
-        return ("zip-bundle", 8, "ZIP Bundle", fname)
+        return (f"zip-bundle-{stem_norm}", 8, "ZIP Bundle", fname)
     return (f"other-{stem_norm}", 9, ext.lstrip(".").upper() or "FILE", fname)
+
+
+def _product_fold_key_and_role(rel_path: str, what: str, title_hint: str = "", it: dict | None = None) -> tuple[str, int, str, str]:
+    """Return (product_fold_key, format_sort_order, role_badge, clean_fname) so all versions and format/redline
+    sidecars of one main work product fold into a single latest row while preserving bare unit numbers."""
+    slot_key, sort_ord, role_badge, clean_fname = _file_role_and_sort_key(rel_path, what, title_hint)
+    raw_name = Path(rel_path).name if rel_path else clean_fname
+    raw_stem = Path(raw_name).stem if raw_name else ""
+    stem_norm = "" if _HEX_HASH_FILENAME_RE.match(raw_name) else normalize_deliverable_fold_stem(raw_stem)
+    if not stem_norm and isinstance(it, dict) and it.get("readable_path"):
+        stem_norm = normalize_deliverable_fold_stem(Path(str(it.get("readable_path"))).stem)
+    if not stem_norm and isinstance(it, dict) and it.get("product_id"):
+        stem_norm = normalize_deliverable_fold_stem(str(it.get("product_id")))
+    if not stem_norm:
+        stem_norm = normalize_deliverable_fold_stem(what or title_hint or clean_fname) or "product"
+    # Extract subrole from slot_key if non-primary so e.g. Lecture 10 Deck/PDF and Lecture 10 AI Supplement stay distinct products
+    sub_prefix = "primary"
+    for role_tok in ("ai-supplement", "instructions", "answer-sheet", "answer-key", "ai-companion", "rubric", "ta-guide", "question-bank", "student-practice", "quiz-packet", "study-guide", "proctor-signup", "student-signup", "assignment"):
+        if role_tok in slot_key:
+            sub_prefix = role_tok
+            break
+    return (f"{sub_prefix}:{stem_norm}", sort_ord, role_badge, clean_fname)
+
+
+def _clean_folded_product_title(h_title: str) -> str:
+    """Strip version/date/redline suffixes from a human title for the folded main product row while keeping unit numbers."""
+    s = str(h_title or "").strip()
+    s = re.sub(r"\s*\((?:Draft|Refinement|Revision|Round|Version|Rev|v)\s*\d+(?:\.\d+)*\)\s*$", "", s, flags=re.I).strip()
+    s = _ISO_DATE_TAG.sub(" ", s)
+    s = _VERSION_TAG.sub(" ", s)
+    s = _INITIAL_DRAFT_TAG.sub(" ", s)
+    s = _REDLINE_TAG.sub(" ", s)
+    s = re.sub(r"\(\s*\)", " ", s)
+    s = re.sub(r"\s+", " ", s).strip(" \t\u2014\u2013-:|")
+    return s or str(h_title or "Deliverable").strip()
 
 
 def _is_unit_specific_dir(d_path: Path, root: Path) -> bool:
@@ -5283,30 +5530,46 @@ def _is_unit_specific_dir(d_path: Path, root: Path) -> bool:
 
 
 def build_deliverable_hierarchy(campaign_dir: str, decorated_items: list, approved_items: list | None = None, steps: list | None = None) -> dict:
-    """Build a collapsible Category -> Workstream Folder -> Connected Files hierarchy."""
+    """Build a collapsible Category -> Workstream Folder -> Folded Main Products hierarchy with 1 latest row per product,
+    inline format/redline pills, and 1 collapsed 'Supporting & Earlier Files' drawer for scripts, datasets, audits, and prior versions."""
     root = Path(campaign_dir)
     steps = steps or []
     approved_items = approved_items or []
 
     units: dict[str, dict] = {}
+    supporting_by_key: dict[str, dict] = {}
     all_candidates = list(decorated_items or []) + list(approved_items or [])
 
-    def _ensure_unit(info: dict, status_hint: str = "Final", date_hint: str = "") -> dict:
+    def _ensure_unit(info: dict, status_hint: str = "Final", date_hint: str = "", step_id_hint: str = "") -> dict:
         ukey = info["unit_key"]
         if ukey not in units:
             units[ukey] = {
                 **info,
                 "status": status_hint,
-                "files_by_slot": {},
+                "step_id": step_id_hint,
+                "products_by_key": {},
+                "fold_key_by_product_id": {},
+                "supporting_by_key": {},
                 "dirs_on_disk": set(),
                 "latest_date": date_hint[:10] if date_hint else "",
             }
         else:
-            if status_hint == "Final":
-                units[ukey]["status"] = "Final"
+            if status_hint == "For Review":
+                units[ukey]["status"] = "For Review"
+            if step_id_hint and not units[ukey].get("step_id"):
+                units[ukey]["step_id"] = step_id_hint
             if date_hint and date_hint[:10] > units[ukey]["latest_date"]:
                 units[ukey]["latest_date"] = date_hint[:10]
         return units[ukey]
+
+    def _record_supporting(entry_dict: dict, target_u: dict | None = None) -> None:
+        sk = str(entry_dict.get("path") or entry_dict.get("route") or entry_dict.get("product_id") or entry_dict.get("title") or "").lower().strip()
+        if not sk:
+            return
+        if sk not in supporting_by_key:
+            supporting_by_key[sk] = entry_dict
+        if target_u is not None and sk not in target_u["supporting_by_key"]:
+            target_u["supporting_by_key"][sk] = entry_dict
 
     # Step 0: Discover dedicated unit folders under Final Deliverables (generic, effort-agnostic)
     final_roots = [root / "Final Deliverables"]
@@ -5332,115 +5595,159 @@ def build_deliverable_hierarchy(campaign_dir: str, decorated_items: list, approv
         except Exception:
             continue
 
-    # First & Second pass over DELIVERABLES.md / approved items
-    for pass_idx in (1, 2):
-        for it in all_candidates:
-            if not isinstance(it, dict):
-                continue
-            p = str(it.get("open_path") or it.get("path") or "").replace("\\", "/").strip()
-            if not p:
-                raw_rt = str(it.get("route") or "")
-                if "/artifact/" in raw_rt and "path=" in raw_rt:
-                    try:
-                        import urllib.parse as _up
-                        qs = _up.parse_qs(_up.urlsplit(raw_rt).query)
-                        p = str((qs.get("path") or [""])[0]).replace("\\", "/").strip()
-                    except Exception:
-                        p = ""
-            what = str(it.get("what") or "").strip()
-            step = str(it.get("step") or "").strip()
-            if not p or _INTERMEDIATE_PATH_RE.search(p):
-                continue
-            raw_fname = p.rsplit("/", 1)[-1] if "/" in p else p
-            is_hash_blob = bool(_HEX_HASH_FILENAME_RE.match(raw_fname))
-            ext = ("." + raw_fname.rsplit(".", 1)[-1].lower()) if "." in raw_fname else ""
-            if ext not in (".pptx", ".pdf", ".r", ".csv", ".zip", ".docx", ".xlsx", ".html", ".py", ".md"):
-                continue
+    # First & Second pass over DELIVERABLES.md / approved items (without the old 5408-5409 shared-folder sweep!)
+    for it in all_candidates:
+        if not isinstance(it, dict):
+            continue
+        raw_p = str(it.get("open_path") or it.get("path") or "").replace("\\", "/").strip()
+        raw_route = str(it.get("route") or "").strip()
+        if not raw_p and raw_route:
+            if "/artifact/" in raw_route and "path=" in raw_route:
+                try:
+                    import urllib.parse as _up
+                    qs = _up.parse_qs(_up.urlsplit(raw_route).query)
+                    raw_p = str((qs.get("path") or [""])[0]).replace("\\", "/").strip()
+                except Exception:
+                    raw_p = ""
+        what = str(it.get("what") or "").strip()
+        step = str(it.get("owner_step_id") or it.get("step") or "").strip()
+        safe_route = classify_route(raw_route) if raw_route else None
 
-            # Verify file actually exists on disk so dead/renamed paths never create unopenable ghost entries
-            full_p = None
-            file_exists = False
+        # Verify path containment (refuse '..', absolute paths, or symlink escapes)
+        p = ""
+        full_p = None
+        file_exists = False
+        if raw_p:
+            full_p, p = _is_contained_rel_path(root, raw_p)
+            if full_p is None or not p:
+                continue
             try:
-                full_p = (root / p).resolve()
                 file_exists = full_p.is_file()
             except Exception:
                 file_exists = False
-            if not file_exists and not it.get("route"):
+
+        if not p and not safe_route:
+            continue
+        if not file_exists and not safe_route and it.get("openable") is not True:
+            continue
+
+        raw_fname = p.rsplit("/", 1)[-1] if "/" in p else (p or Path(safe_route or "deliverable").name)
+        is_hash_blob = bool(_HEX_HASH_FILENAME_RE.match(raw_fname))
+        ext = ("." + raw_fname.rsplit(".", 1)[-1].lower()) if "." in raw_fname else ""
+        if p and ext not in (".pptx", ".pdf", ".r", ".csv", ".zip", ".docx", ".doc", ".xlsx", ".xls", ".tsv", ".html", ".htm", ".py", ".ipynb", ".sql", ".md", ".txt", ".json", ".log"):
+            if not safe_route:
                 continue
 
-            is_cur = bool(it.get("is_current"))
-            is_fin = bool(
-                it.get("final_promoted")
-                or _FINAL_DELIV_RE.match(what)
-                or _ACTIVE_REVIEW_DELIV_RE.match(what)
-                or "/final deliverables/" in ("/" + p.lower())
-                or it.get("accepted")
-                or it.get("accepted_current")
-            )
-            if pass_idx == 1 and not (is_cur or is_fin):
-                continue
-            if pass_idx == 2:
-                if ext in (".pptx", ".pdf", ".docx", ".md") and re.search(
-                    r"\b(?:draft|refinement|earlier|superseded|historical|diagnosis|verdict|plan)\b",
-                    what,
-                    re.I,
-                ) and not (_FINAL_DELIV_RE.match(what) or _ACTIVE_REVIEW_DELIV_RE.match(what)):
-                    continue
+        is_cur_in_use = bool(_CURRENT_IN_USE_RE.search(what))
+        is_cur = bool(it.get("is_current") or is_cur_in_use or _ACTIVE_REVIEW_DELIV_RE.match(what))
+        is_fin = bool(
+            it.get("final_promoted")
+            or str(it.get("tier") or "").lower() == "final"
+            or _FINAL_DELIV_RE.match(what)
+            or "/final deliverables/" in ("/" + p.lower())
+            or it.get("accepted")
+            or it.get("accepted_current")
+        )
+        is_inter = bool(it.get("is_intermediate")) if "is_intermediate" in it else _is_intermediate_deliverable(it)
+        if is_cur_in_use:
+            is_inter = False
 
-            info = _classify_hierarchy_unit(what, step, p, steps)
-            if not info:
-                continue
-            ukey = info["unit_key"]
-            if pass_idx == 2 and ukey not in units:
-                continue
+        info = _classify_hierarchy_unit(what, step, p or safe_route or "", steps)
+        if not info:
+            continue
+        status_hint = "For Review" if (is_cur and not is_fin) else "Final"
+        u = _ensure_unit(info, status_hint=status_hint, date_hint=str(it.get("date") or ""), step_id_hint=step)
 
-            # For course units (Lectures, Homeworks, Quizzes, Syllabus), skip legacy hash-named blobs
-            # when the unit has real human-named files on disk
-            if info.get("is_course") and is_hash_blob:
-                continue
-            # Also skip internal markdown review notes inside course units
-            if info.get("is_course") and ext == ".md":
-                continue
+        h_title = str(it.get("human_title") or "").strip() or humanize_deliverable_title(it)
+        pref_p = str(it.get("readable_path") or it.get("open_path") or p or "")
+        explicit_sugg_fn = str(it.get("suggested_filename") or "").strip()
+        if explicit_sugg_fn and _HEX_HASH_FILENAME_RE.match(explicit_sugg_fn):
+            explicit_sugg_fn = ""
+        sugg_fn = explicit_sugg_fn or _core.suggested_deliverable_filename(h_title, pref_p or raw_fname)
+        fold_key, sort_ord, role_badge, clean_fname = _product_fold_key_and_role(p, what, title_hint=h_title, it=it)
+        prod_id_str = str(it.get("product_id") or "").strip()
+        if prod_id_str:
+            if prod_id_str in u["fold_key_by_product_id"]:
+                fold_key = u["fold_key_by_product_id"][prod_id_str]
+            else:
+                u["fold_key_by_product_id"][prod_id_str] = fold_key
 
-            status_hint = "For Review" if (is_cur and not _FINAL_DELIV_RE.match(what) and "/final deliverables/" not in ("/" + p.lower())) else "Final"
-            u = _ensure_unit(info, status_hint=status_hint, date_hint=str(it.get("date") or ""))
+        is_script = ext in (".r", ".py", ".ipynb", ".sql")
+        is_dataset = ext in (".csv", ".xlsx", ".xls", ".tsv") and not is_cur_in_use
+        is_audit_or_inter = bool(
+            is_inter
+            or (_HISTORICAL_LABEL.match(what) and not (is_cur_in_use or is_fin))
+            or _INTERMEDIATE_PATH_RE.search(p)
+            or re.search(r"\b(?:gandalf|beta[-_\s]*reader|audit|verification[-_\s]+log|working[-_\s]+notes|smoke[-_\s]+test)\b", f"{what} {p}", re.I)
+        )
+        if is_script or is_dataset or is_audit_or_inter:
+            supp_cat = "script" if is_script else ("dataset" if is_dataset else "audit")
+            supp_role = "Script" if is_script else ("Dataset" if is_dataset else "Audit / Supporting")
+            _record_supporting({
+                "filename": clean_fname,
+                "suggested_filename": sugg_fn,
+                "title": h_title,
+                "human_title": h_title,
+                "role": supp_role,
+                "category": supp_cat,
+                "ext": ext.lstrip(".").upper() or "FILE",
+                "path": p,
+                "open_path": str(it.get("open_path") or p),
+                "route": safe_route or "",
+                "hash": str(it.get("hash") or ""),
+                "product_id": str(it.get("product_id") or ""),
+                "revision_id": str(it.get("revision_id") or ""),
+                "managed": bool(it.get("managed")),
+                "openable": True,
+                "date": str(it.get("date") or "")[:10],
+                "step": step,
+                "unit_key": u["unit_key"],
+            }, u)
+            continue
 
-            if file_exists and full_p is not None and _is_unit_specific_dir(full_p.parent, root):
-                u["dirs_on_disk"].add(full_p.parent)
+        vr = _version_rank(it)
+        ver_tuple = tuple(vr[1]) if isinstance(vr[1], tuple) else ()
+        iso_date = str(vr[0] or it.get("date") or "")[:10]
+        is_redline = bool(_REDLINE_TAG.search(p) or _REDLINE_TAG.search(what))
+        is_in_final_dir = "/final deliverables/" in ("/" + p.lower())
 
-            h_title = humanize_deliverable_title(it)
-            slot_key, sort_ord, role_badge, clean_fname = _file_role_and_sort_key(p, what, title_hint=h_title)
-            vr = _version_rank(it)
-            ver_tuple = tuple(vr[1]) if isinstance(vr[1], tuple) else ()
-            is_in_final_dir = 1 if "/final deliverables/" in ("/" + p.lower()) else 0
-            is_human_named = 0 if is_hash_blob else 1
-            prefers_concise_name = 1 if ("- powerpoint" not in clean_fname.lower()) else 0
-            rank_tuple = (
-                int(is_human_named),
-                int(is_in_final_dir),
-                1 if _FINAL_DELIV_RE.match(what) else 0,
-                ver_tuple,
-                int(prefers_concise_name),
-                str(vr[0] or it.get("date") or ""),
-            )
-            existing = u["files_by_slot"].get(slot_key)
-            if existing is None or rank_tuple > existing["_rank"]:
-                raw_route = str(it.get("route") or "").strip()
-                route = raw_route if (raw_route and not raw_route.startswith("/steward/v1/open")) else ""
-                u["files_by_slot"][slot_key] = {
-                    "filename": clean_fname,
-                    "title": h_title,
-                    "role": role_badge,
-                    "ext": ext.lstrip(".").upper() or "FILE",
-                    "path": p,
-                    "route": route,
-                    "openable": True,
-                    "date": str(it.get("date") or "")[:10],
-                    "sort_order": sort_ord,
-                    "_rank": rank_tuple,
-                }
+        u["products_by_key"].setdefault(fold_key, []).append({
+            "filename": clean_fname,
+            "suggested_filename": sugg_fn,
+            "explicit_suggested_filename": explicit_sugg_fn,
+            "title": h_title,
+            "human_title": h_title,
+            "what": what,
+            "role": "Redline" if is_redline else role_badge,
+            "ext": ext.lstrip(".").upper() or ("LINK" if safe_route else "FILE"),
+            "path": p,
+            "open_path": str(it.get("open_path") or p),
+            "readable_path": str(it.get("readable_path") or ""),
+            "route": safe_route or "",
+            "hash": str(it.get("hash") or ""),
+            "product_id": str(it.get("product_id") or ""),
+            "revision_id": str(it.get("revision_id") or ""),
+            "presentation_id": str(it.get("presentation_id") or ""),
+            "phase": str(it.get("phase") or ""),
+            "managed": bool(it.get("managed")),
+            "step": step,
+            "step_id": step,
+            "is_current": is_cur,
+            "is_current_in_use": is_cur_in_use,
+            "is_final": is_fin,
+            "accepted": bool(it.get("accepted") or it.get("accepted_current")),
+            "tier": str(it.get("tier") or ("for_review" if is_cur else ("final" if is_fin else "other"))),
+            "openable": True,
+            "date": iso_date,
+            "sort_order": sort_ord,
+            "ver_tuple": ver_tuple,
+            "iso_date": iso_date,
+            "is_redline": is_redline,
+            "in_final_dir": is_in_final_dir,
+            "is_human_named": not is_hash_blob,
+        })
 
-    # Third pass: scan each unit's dedicated folders on disk for final/companion .pptx, .pdf, .R, .csv, .zip, .docx, .xlsx, .html
+    # Third pass: scan ONLY Step-0 Final Deliverables/<unit> folders on disk
     for ukey, u in list(units.items()):
         for d_path in list(u.get("dirs_on_disk") or []):
             try:
@@ -5460,78 +5767,263 @@ def build_deliverable_hierarchy(campaign_dir: str, decorated_items: list, approv
                     ):
                         continue
                     ext = ("." + fn.rsplit(".", 1)[-1].lower()) if "." in fn else ""
-                    if ext not in (".pptx", ".pdf", ".r", ".csv", ".zip", ".docx", ".xlsx", ".html"):
+                    if ext not in (".pptx", ".pdf", ".r", ".csv", ".zip", ".docx", ".xlsx", ".html", ".py", ".sql", ".ipynb"):
                         continue
                     if _HEX_HASH_FILENAME_RE.match(fn):
                         continue
                     # Skip duplicate "- Final - PowerPoint.pptx" when "- Final.pptx" exists in the same folder
                     if "- final - powerpoint.pptx" in low_fn and (d_path / fn.replace(" - Final - PowerPoint.pptx", " - Final.pptx")).is_file():
                         continue
-                    # Outside Final Deliverables, skip intermediate Draft/Refinement docs unless it's a Quiz/Syllabus doc or a ZIP bundle
-                    if not is_final_folder and re.search(r"\b(?:draft|refinement)[-_\s]*\d+\b", low_fn, re.I):
-                        if ext != ".zip" and "quiz 1" not in low_fn and "syllabus" not in low_fn:
-                            continue
                     if re.search(r"\b(?:original comparison|researchprime|ramanujan|agent instructions|schedule-and-accommodations|ntfy|keeper|validation)\b", low_fn, re.I):
                         continue
 
                     rel_p = Path(entry.path).resolve().relative_to(root.resolve()).as_posix()
-                    # Check if a file sitting in Final Deliverables/Syllabus actually belongs to Quiz 1
                     file_info = _classify_hierarchy_unit(fn, "", rel_p, steps)
                     target_u = u
-                    if file_info and file_info.get("is_course") and file_info["unit_key"] != ukey:
-                        if ukey == "foundation-01-syllabus" and file_info["unit_key"].startswith("quiz-"):
+                    if file_info and file_info["unit_key"] != ukey:
+                        if "syllabus" in ukey and "quiz" in file_info["unit_key"]:
                             target_u = _ensure_unit(file_info, status_hint="Final", date_hint=u.get("latest_date") or "")
 
-                    slot_key, sort_ord, role_badge, clean_fname = _file_role_and_sort_key(rel_p, fn)
-                    is_final_named = 1 if ("final" in low_fn or "-powerpoint" in low_fn or "-pdf" in low_fn) else 0
-                    prefers_concise_name = 1 if ("- powerpoint" not in low_fn) else 0
-                    m_ver = re.search(r"\b(?:refinement|draft|v)\s*(\d+)\b", low_fn, re.I)
-                    ver_tuple = (int(m_ver.group(1)),) if m_ver else ()
-                    rank_tuple = (
-                        1,  # human-named
-                        1 if is_final_folder else 0,
-                        int(is_final_named),
-                        ver_tuple,
-                        int(prefers_concise_name),
-                        str(target_u.get("latest_date") or ""),
-                    )
-                    existing = target_u["files_by_slot"].get(slot_key)
-                    if existing is None or rank_tuple > existing["_rank"]:
-                        target_u["files_by_slot"][slot_key] = {
+                    h_title_p3 = humanize_deliverable_title({"what": fn, "path": rel_p})
+                    sugg_fn_p3 = _core.suggested_deliverable_filename(h_title_p3, rel_p)
+                    fold_key, sort_ord, role_badge, clean_fname = _product_fold_key_and_role(rel_p, fn, title_hint=h_title_p3)
+
+                    if ext in (".r", ".py", ".ipynb", ".sql", ".csv", ".xlsx"):
+                        is_scr = ext in (".r", ".py", ".ipynb", ".sql")
+                        _record_supporting({
                             "filename": clean_fname,
-                            "title": Path(clean_fname).stem.replace("_", " "),
-                            "role": role_badge,
+                            "suggested_filename": sugg_fn_p3,
+                            "title": h_title_p3,
+                            "human_title": h_title_p3,
+                            "role": "Script" if is_scr else "Dataset",
+                            "category": "script" if is_scr else "dataset",
                             "ext": ext.lstrip(".").upper(),
                             "path": rel_p,
+                            "open_path": rel_p,
                             "route": "",
+                            "hash": "",
+                            "product_id": "",
+                            "revision_id": "",
+                            "managed": False,
                             "openable": True,
                             "date": target_u.get("latest_date") or "",
-                            "sort_order": sort_ord,
-                            "_rank": rank_tuple,
-                        }
+                            "step": target_u.get("step_id") or "",
+                            "unit_key": target_u["unit_key"],
+                        }, target_u)
+                        continue
+
+                    vr_p3 = _version_rank({"path": rel_p, "what": fn, "date": target_u.get("latest_date") or ""})
+                    ver_tuple_p3 = tuple(vr_p3[1]) if isinstance(vr_p3[1], tuple) else ()
+                    iso_date_p3 = str(vr_p3[0] or target_u.get("latest_date") or "")[:10]
+                    is_redline_p3 = bool(_REDLINE_TAG.search(rel_p))
+
+                    # Avoid duplicating a path already added in Pass 1/2
+                    existing_list = target_u["products_by_key"].setdefault(fold_key, [])
+                    if any(str(x.get("path") or "").lower() == rel_p.lower() for x in existing_list):
+                        continue
+                    existing_list.append({
+                        "filename": clean_fname,
+                        "suggested_filename": sugg_fn_p3,
+                        "title": h_title_p3,
+                        "human_title": h_title_p3,
+                        "what": fn,
+                        "role": "Redline" if is_redline_p3 else role_badge,
+                        "ext": ext.lstrip(".").upper(),
+                        "path": rel_p,
+                        "open_path": rel_p,
+                        "readable_path": "",
+                        "route": "",
+                        "hash": "",
+                        "product_id": "",
+                        "revision_id": "",
+                        "presentation_id": "",
+                        "phase": "",
+                        "managed": False,
+                        "step": target_u.get("step_id") or "",
+                        "step_id": target_u.get("step_id") or "",
+                        "is_current": False,
+                        "is_current_in_use": False,
+                        "is_final": is_final_folder,
+                        "accepted": is_final_folder,
+                        "tier": "final" if is_final_folder else "other",
+                        "openable": True,
+                        "date": iso_date_p3,
+                        "sort_order": sort_ord,
+                        "ver_tuple": ver_tuple_p3,
+                        "iso_date": iso_date_p3,
+                        "is_redline": is_redline_p3,
+                        "in_final_dir": is_final_folder,
+                        "is_human_named": True,
+                    })
             except Exception:
                 continue
 
-    # Assemble sorted categories and units
-    has_course_units = any(u.get("is_course") for u in units.values() if u.get("files_by_slot"))
+    # Fold each product family inside each unit into 1 latest row + inline format/redline pills,
+    # moving prior versions into supporting_by_key ('Supporting & Earlier Files' drawer).
     categories_map: dict[str, dict] = {}
     total_units = 0
     final_units = 0
     review_units = 0
     total_files = 0
+    active_files = 0
 
     for ukey, u in units.items():
-        # In a course campaign, keep the hierarchy focused on the 4 core course categories
-        # (Lectures, Homeworks, Quizzes & Exams, Course Syllabus & Foundations) so legacy
-        # planning/research workstreams don't clutter the Key Deliverables view
-        if has_course_units and not u.get("is_course"):
-            continue
+        folded_rows: list[dict] = []
+        for fold_key, cands in u["products_by_key"].items():
+            if not cands:
+                continue
+            max_explicit_ver = max((c["ver_tuple"] for c in cands if not c["is_redline"]), default=())
+            max_cur_ver = max((c["ver_tuple"] for c in cands if c["is_current"] and not c["is_redline"]), default=())
+
+            def _eff_ver_key(c: dict) -> tuple[tuple, str]:
+                vt = c["ver_tuple"]
+                # An unversioned Final Deliverables file beats or pairs with earlier drafts unless a higher version is in review
+                if not vt and c["is_final"] and not c["is_redline"] and max_explicit_ver and max_explicit_ver >= max_cur_ver:
+                    vt = max_explicit_ver
+                return (vt, str(c["iso_date"] or ""))
+
+            non_redline_cands = [c for c in cands if not c["is_redline"]] or cands
+            win_ver_tuple, win_iso_date = max(_eff_ver_key(c) for c in non_redline_cands)
+
+            latest_group: list[dict] = []
+            prior_versions: list[dict] = []
+            for c in cands:
+                evt, eiso = _eff_ver_key(c)
+                if c["is_redline"]:
+                    # Redline/tracked companion stays on the latest row unless it carries an older explicit version/date
+                    if (not c["ver_tuple"] or c["ver_tuple"] == win_ver_tuple) and (not c["iso_date"] or not win_iso_date or c["iso_date"] >= win_iso_date):
+                        latest_group.append(c)
+                    else:
+                        prior_versions.append(c)
+                elif evt == win_ver_tuple and (not win_iso_date or not eiso or eiso == win_iso_date or (evt and evt == win_ver_tuple and len([x for x in non_redline_cands if _eff_ver_key(x)[0] == win_ver_tuple]) == 1)):
+                    latest_group.append(c)
+                else:
+                    prior_versions.append(c)
+
+            if not latest_group:
+                latest_group = [max(cands, key=_eff_ver_key)]
+                prior_versions = [c for c in cands if c is not latest_group[0]]
+
+            for pv in prior_versions:
+                _record_supporting({
+                    "filename": pv["filename"],
+                    "suggested_filename": pv["suggested_filename"],
+                    "title": pv["title"],
+                    "human_title": pv["human_title"],
+                    "role": "Prior Version",
+                    "category": "prior_version",
+                    "ext": pv["ext"],
+                    "path": pv["path"],
+                    "open_path": pv["open_path"],
+                    "route": pv["route"],
+                    "hash": pv["hash"],
+                    "product_id": pv["product_id"],
+                    "revision_id": pv["revision_id"],
+                    "managed": pv["managed"],
+                    "openable": True,
+                    "date": pv["date"],
+                    "step": pv["step"],
+                    "unit_key": ukey,
+                }, u)
+
+            # Choose the lead item for the folded row (prefer managed or non-redline readable primary format)
+            latest_sorted = sorted(
+                latest_group,
+                key=lambda c: (
+                    1 if c["managed"] else 0,
+                    0 if c["is_redline"] else 1,
+                    1 if c["is_human_named"] else 0,
+                    1 if c["in_final_dir"] else 0,
+                    -int(c["sort_order"]),
+                    str(c["date"] or ""),
+                ),
+                reverse=True,
+            )
+            lead = latest_sorted[0]
+            # Carry managed hash/product_id/route from any managed member in latest_group if lead lacked one
+            managed_donor = next((c for c in latest_sorted if c.get("managed") or c.get("hash") or c.get("product_id")), lead)
+            route_donor = next((c for c in latest_sorted if c.get("route")), lead)
+
+            # Build inline format & redline pills
+            format_pills: list[dict] = []
+            seen_pills: set[tuple] = set()
+            for c in sorted(latest_group, key=lambda x: (1 if x["is_redline"] else 0, x["sort_order"], x["ext"])):
+                pill_lbl = ("Redline" if c["ext"] in ("DOCX", "PDF", "FILE") else f"Redline {c['ext']}") if c["is_redline"] else c["ext"]
+                pk = (pill_lbl.upper(), str(c["path"] or c["route"]).lower())
+                if pk in seen_pills:
+                    continue
+                seen_pills.add(pk)
+                format_pills.append({
+                    "label": pill_lbl,
+                    "pill_type": "redline" if c["is_redline"] else "format",
+                    "is_redline": bool(c["is_redline"]),
+                    "ext": c["ext"],
+                    "path": c["path"],
+                    "open_path": c["open_path"],
+                    "route": c["route"],
+                    "hash": c["hash"],
+                    "product_id": c["product_id"],
+                    "suggested_filename": c["suggested_filename"],
+                    "filename": c["filename"],
+                })
+
+            any_cur = any(c["is_current"] for c in cands)
+            any_accepted = any(c["accepted"] for c in cands)
+            clean_prod_title = _clean_folded_product_title(lead["human_title"] or lead["title"])
+
+            if any_cur and not lead["is_final"]:
+                u["status"] = "For Review"
+
+            folded_rows.append({
+                "fold_key": fold_key,
+                "filename": lead["filename"],
+                "suggested_filename": (
+                    lead.get("explicit_suggested_filename")
+                    or managed_donor.get("explicit_suggested_filename")
+                    or (managed_donor.get("suggested_filename") if managed_donor.get("managed") else "")
+                    or lead["suggested_filename"]
+                    or managed_donor.get("suggested_filename")
+                    or lead["filename"]
+                ),
+                "title": clean_prod_title,
+                "human_title": lead["human_title"] or clean_prod_title,
+                "role": lead["role"],
+                "ext": lead["ext"],
+                "path": lead["path"],
+                "open_path": lead["open_path"] or lead["path"],
+                "readable_path": lead["readable_path"] or managed_donor.get("readable_path") or "",
+                "route": lead["route"] or route_donor.get("route") or "",
+                "hash": lead["hash"] or managed_donor.get("hash") or "",
+                "product_id": lead["product_id"] or managed_donor.get("product_id") or "",
+                "revision_id": lead["revision_id"] or managed_donor.get("revision_id") or "",
+                "presentation_id": lead["presentation_id"] or managed_donor.get("presentation_id") or "",
+                "phase": lead["phase"] or managed_donor.get("phase") or "",
+                "managed": bool(lead["managed"] or managed_donor.get("managed")),
+                "step": lead["step"],
+                "step_id": lead["step_id"],
+                "is_current": any_cur,
+                "is_current_in_use": any(c["is_current_in_use"] for c in latest_group),
+                "accepted": any_accepted,
+                "awaiting_review_chip": bool(any_cur and any_accepted),
+                "tier": "for_review" if (any_cur and not lead["is_final"]) else ("final" if lead["is_final"] else lead["tier"]),
+                "openable": True,
+                "date": lead["date"],
+                "sort_order": lead["sort_order"],
+                "formats": format_pills,
+                "format_pills": format_pills,
+                "has_redline": any(p["is_redline"] for p in format_pills),
+                "prior_versions_count": len(prior_versions),
+            })
+
         files_list = sorted(
-            u["files_by_slot"].values(),
-            key=lambda f: (f["sort_order"], f["filename"].lower()),
+            folded_rows,
+            key=lambda f: (f["sort_order"], f["title"].lower(), f["filename"].lower()),
         )
-        for f in files_list:
-            f.pop("_rank", None)
+        unit_supp_list = sorted(
+            u["supporting_by_key"].values(),
+            key=lambda s: (str(s.get("date") or ""), str(s.get("filename") or "").lower()),
+            reverse=True,
+        )
         if not files_list:
             continue
         cid = u["category_id"]
@@ -5548,16 +6040,25 @@ def build_deliverable_hierarchy(campaign_dir: str, decorated_items: list, approv
         else:
             review_units += 1
         total_files += len(files_list)
-        ext_counts = {}
+        active_files += sum(
+            1
+            for f in files_list
+            if f.get("is_current") or f.get("is_current_in_use") or f.get("tier") == "for_review"
+        )
+        ext_counts: dict[str, int] = {}
         for f in files_list:
-            ext_counts[f["ext"]] = ext_counts.get(f["ext"], 0) + 1
-        ext_summary = " · ".join(
+            for pill in (f.get("formats") or [{"ext": f["ext"]}]):
+                pk_ext = pill.get("label") if pill.get("is_redline") else pill.get("ext")
+                if pk_ext:
+                    ext_counts[pk_ext] = ext_counts.get(pk_ext, 0) + 1
+        ext_summary = " \u00b7 ".join(
             f"{cnt} {k}" if cnt > 1 else k
             for k, cnt in ext_counts.items()
         )
         categories_map[cid]["units"].append({
             "unit_key": ukey,
             "unit_order": u["unit_order"],
+            "step_id": u.get("step_id") or "",
             "label": u["unit_label"],
             "topic": u["unit_topic"],
             "title": u["unit_title"],
@@ -5567,6 +6068,7 @@ def build_deliverable_hierarchy(campaign_dir: str, decorated_items: list, approv
             "file_count": len(files_list),
             "ext_summary": ext_summary,
             "files": files_list,
+            "supporting_files": unit_supp_list,
             "default_expanded": bool(u["status"] == "For Review" or u.get("solid_badge")),
         })
 
@@ -5577,14 +6079,20 @@ def build_deliverable_hierarchy(campaign_dir: str, decorated_items: list, approv
         c["final_count"] = sum(1 for u in c["units"] if u["status"] == "Final")
         c["review_count"] = sum(1 for u in c["units"] if u["status"] != "Final")
 
-    headline = f"{final_units} Finalized Deliverable Units \u00b7 {review_units} Ready for Review ({total_files} connected files)"
+    all_supporting_list = sorted(
+        supporting_by_key.values(),
+        key=lambda s: (str(s.get("date") or ""), str(s.get("filename") or "").lower()),
+        reverse=True,
+    )
+
+    headline = f"{final_units} Finalized Deliverable Units \u00b7 {review_units} Ready for Review ({total_files} main products)"
     narrative = (
-        "Deliverables are grouped by workstream folder so primary documents, reading copies, code scripts, and data files stay connected without clutter. "
-        "Click any folder to inspect its indented files."
+        "Deliverables fold versions and format sidecars at read time to show 1 latest row per main product grouped by workflow, "
+        "with inline format/redline pills and one collapsed Supporting & Earlier Files drawer."
     )
 
     return {
-        "is_course": False,
+        "is_course": bool(categories and any(c["id"] in ("lectures", "homeworks", "assessments", "foundations") for c in categories)),
         "executive_summary": {
             "headline": headline,
             "narrative": narrative,
@@ -5592,56 +6100,18 @@ def build_deliverable_hierarchy(campaign_dir: str, decorated_items: list, approv
             "units_final": final_units,
             "units_review": review_units,
             "files_total": total_files,
+            "files_active": active_files,
+            "active_count": active_files,
+            "supporting_total": len(all_supporting_list),
         },
         "categories": categories,
-    }
-
-
-def build_oranges_forecast(
-    campaign_dir: str,
-    m: dict,
-    done_steps: list,
-    active_steps: list,
-    upcoming_steps: list,
-    hierarchy: dict | None = None,
-) -> dict:
-    """Proactive 'Parable of the Oranges' predictor for the Steward Living Plan:
-    anticipates the next chain of work from live plan state while staying flexible for pivots."""
-    hb = (m or {}).get("heartbeat") or {}
-    predictions = []
-    if active_steps:
-        a0 = active_steps[0]
-        predictions.append({
-            "horizon": "1 \u00b7 Immediate Close-Loop",
-            "title": a0.get("name") or "Complete Active Effort",
-            "detail": a0.get("done_when") or a0.get("subtitle") or "Review and lock the current active deliverable set.",
-            "badge": "Active Now",
-        })
-    for idx, u in enumerate(upcoming_steps[:2]):
-        predictions.append({
-            "horizon": f"{len(predictions) + 1} \u00b7 Anticipated Next Effort",
-            "title": u.get("name") or f"Upcoming Wave {idx + 1}",
-            "detail": u.get("done_when") or u.get("subtitle") or "Pre-stage supporting research, scripts, and verification checks.",
-            "badge": "Anticipated",
-        })
-    if not predictions:
-        predictions.append({
-            "horizon": "1 \u00b7 Ready for Next Objective",
-            "title": str(hb.get("next_recommended") or "Proactive Deliverable & Verification Sweep"),
-            "detail": str(hb.get("why_next") or "All current steps are complete; Steward is ready to pivot to your next priority."),
-            "badge": "Ready",
-        })
-    summary_line = (
-        "Living Plan auto-reconciles on every major effort completion and review sweep, "
-        "anticipating the next chain of work while adapting immediately when new priorities arise."
-    )
-
-    return {
-        "cadence_label": "Auto-Synced on Major Effort + Steward Review",
-        "last_reconciled": time.strftime("%Y-%m-%d %H:%M"),
-        "summary": summary_line,
-        "flexibility_note": "Flexible by design \u2014 tell the Steward in chat anytime a new priority or surprise comes up and The Plan adapts immediately.",
-        "predictions": predictions,
+        "supporting_files": all_supporting_list,
+        "supporting_drawer": {
+            "title": "Supporting & Earlier Files",
+            "collapsed": True,
+            "count": len(all_supporting_list),
+            "files": all_supporting_list,
+        },
     }
 
 
@@ -5869,11 +6339,9 @@ def build_running_overview(campaign_dir: str, m: dict | None = None) -> dict:
             })
             if len(key_deliverables) >= 12:
                 break
-        deliv_hierarchy = build_deliverable_hierarchy(campaign_dir, raw_items, raw_d.get("approved") or [], steps)
     except Exception:
-        deliv_hierarchy = {"is_course": False, "executive_summary": {}, "categories": []}
+        pass
 
-    oranges_forecast = build_oranges_forecast(campaign_dir, m, done_steps, active_steps, upcoming_steps, deliv_hierarchy)
     pct_done = round(100 * len(done_steps) / total_active_plan) if total_active_plan else 0
     return {
         "goal": goal_txt,
@@ -5891,8 +6359,6 @@ def build_running_overview(campaign_dir: str, m: dict | None = None) -> dict:
         "active_steps": active_steps,
         "upcoming_steps": upcoming_steps,
         "key_deliverables": key_deliverables[:12],
-        "deliverable_hierarchy": deliv_hierarchy,
-        "oranges_forecast": oranges_forecast,
         "human_wait": _real_wait(str(hb.get("human_wait") or "")),
     }
 
@@ -5948,7 +6414,13 @@ def read_deliverables(campaign_dir: str):
                 "why_next": "",
                 "review_count": 0,
             },
-            "deliverable_hierarchy": {"is_course": False, "executive_summary": {}, "categories": []},
+            "deliverable_hierarchy": {
+                "is_course": False,
+                "executive_summary": {},
+                "categories": [],
+                "supporting_files": [],
+                "supporting_drawer": {"title": "Supporting & Earlier Files", "collapsed": True, "count": 0, "files": []},
+            },
         }
     try:
         map_ = read_map(campaign_dir, include_plan_history=False, include_overview=False)
@@ -5967,13 +6439,16 @@ def read_deliverables(campaign_dir: str):
     approved_raw = result.get("approved") or []
     approved = []
     for ap in approved_raw:
-        ap_ht = humanize_deliverable_title(ap)
+        ap_ht = str(ap.get("human_title") or "").strip() or humanize_deliverable_title(ap)
         ap_pref = ap.get("readable_path") or ap.get("open_path") or ap.get("path") or ""
+        ap_sugg = str(ap.get("suggested_filename") or "").strip()
+        if ap_sugg and _HEX_HASH_FILENAME_RE.match(ap_sugg):
+            ap_sugg = ""
         approved.append({
             **ap,
             "owner_step_id": ap.get("owner_step_id") or (resolve_step(steps, ap.get("step")) or {}).get("id"),
             "human_title": ap_ht,
-            "suggested_filename": _core.suggested_deliverable_filename(ap_ht, ap_pref),
+            "suggested_filename": ap_sugg or _core.suggested_deliverable_filename(ap_ht, ap_pref),
             "is_intermediate": _is_intermediate_deliverable(ap),
         })
     # Track highest version rank per product family across all items so Final Deliverables
@@ -6001,7 +6476,7 @@ def read_deliverables(campaign_dir: str):
         owner_done = bool(owner and (owner.get("status") == "done" or (owner.get("refinement") or {}).get("phase") == "done"))
         nav_fp = {str(p or "").replace("\\", "/").lower() for p in ((owner or {}).get("navigation") or {}).get("featured_paths") or []}
         p_low = str(it.get("path") or "").replace("\\", "/").lower()
-        p_stem = re.sub(r"\.[a-z0-9]{1,8}$", "", p_low)
+        p_stem = normalize_deliverable_fold_stem(p_low)
         fk = _family_key(it, steps)
         vr = _version_rank(it)
         is_latest_ver = (not vr[1]) or (vr >= fam_max_ver.get(fk, vr))
@@ -6064,9 +6539,12 @@ def read_deliverables(campaign_dir: str):
                 else ("in_progress" if in_prog else "supporting")
             )
         )
-        ht = humanize_deliverable_title(it)
+        ht = str(it.get("human_title") or "").strip() or humanize_deliverable_title(it)
         pref_path = it.get("readable_path") or it.get("open_path") or it.get("path") or ""
-        sf = _core.suggested_deliverable_filename(ht, pref_path)
+        explicit_sf = str(it.get("suggested_filename") or "").strip()
+        if explicit_sf and _HEX_HASH_FILENAME_RE.match(explicit_sf):
+            explicit_sf = ""
+        sf = explicit_sf or _core.suggested_deliverable_filename(ht, pref_path)
         decorated.append({
             **it,
             "owner_step_id": owner.get("id") if owner else None,
@@ -6423,34 +6901,67 @@ def _plan_docs(root: Path):
     return out
 
 
-def _steps_from_plan_doc(root: Path):
-    """Proposed steps from the newest plan document's ``## `` headings (skipping
-    front matter such as Goal / Success / Non-goals). Returns (steps, name)."""
-    docs = _plan_docs(root)
-    if not docs:
-        return [], ""
-    doc = docs[0]
+def _steps_from_single_plan_file(doc: Path) -> list[dict]:
+    """Parse steps from a single plan document (``## `` headings or markdown checklist lines)."""
+    if doc is None or not doc.is_file():
+        return []
     try:
         text = doc.read_text(encoding="utf-8", errors="replace")
     except OSError:
-        return [], ""
+        return []
     skip = re.compile(r"^(goal|observable success|success criteria|non-goals?|risk|foresight|sources?|"
-                      r"the deliverable|elegance|adversary|property gates|hardening)", re.I)
+                      r"the deliverable|elegance|adversary|property gates|hardening|the plan|plan)$", re.I)
     steps = []
-    for line in text.splitlines():
-        m = re.match(r"^##\s+(.+?)\s*$", line)
-        if not m:
-            continue
-        name = re.sub(r"\s*\(.*?\)\s*$", "", m.group(1)).strip()
-        if not name or skip.match(name):
-            continue
-        n = len(steps) + 1
-        steps.append({
-            "id": f"d{n:02d}", "name": name, "status": "proposed", "done_when": "",
-            "waiting_on": None, "commissioned_as": None, "part": "", "gate": "",
-            "derived_from": doc.name,
-        })
-    return steps, doc.name
+    if doc.name.upper() != "ECGBERHT.MD":
+        for line in text.splitlines():
+            m = re.match(r"^##\s+(.+?)\s*$", line)
+            if not m:
+                continue
+            name = re.sub(r"\s*\(.*?\)\s*$", "", m.group(1)).strip()
+            if not name or skip.match(name):
+                continue
+            n = len(steps) + 1
+            steps.append({
+                "id": f"d{n:02d}", "name": name, "title": name, "status": "proposed", "done_when": "",
+                "waiting_on": None, "commissioned_as": None, "part": "", "gate": "",
+                "derived_from": doc.name,
+            })
+    if not steps:
+        for line in text.splitlines():
+            mc = re.match(r"^\s*[-*]\s*\[([ xX~])\]\s*(.+?)\s*$", line)
+            if not mc:
+                continue
+            mark_ch = mc.group(1).lower()
+            rest = mc.group(2).strip()
+            m_id = re.search(r"\(\s*id\s*:\s*`?([A-Za-z0-9_.-]+)`?\s*\)", rest, re.I)
+            explicit_id = m_id.group(1).strip() if m_id else ""
+            if m_id:
+                rest = (rest[:m_id.start()] + rest[m_id.end():]).strip()
+            parts = re.split(r"\s+[\u2014\u2013]\s+|\s+--\s+", rest, maxsplit=1)
+            raw_title = re.sub(r"^\*\*|\*\*$", "", parts[0].strip()).strip()
+            goal_txt = parts[1].strip() if len(parts) > 1 else ""
+            if not raw_title:
+                continue
+            n = len(steps) + 1
+            st_val = "done" if mark_ch == "x" else ("active" if mark_ch == "~" else "proposed")
+            sid = explicit_id or f"d{n:02d}"
+            steps.append({
+                "id": sid, "name": raw_title, "title": raw_title, "status": st_val,
+                "done": st_val == "done", "done_when": goal_txt, "goal": goal_txt,
+                "waiting_on": None, "commissioned_as": None, "part": "", "gate": "",
+                "derived_from": doc.name,
+            })
+    return steps
+
+
+def _steps_from_plan_doc(root: Path):
+    """Proposed steps from the newest plan document's ``## `` headings or markdown checklist items
+    (skipping front matter such as Goal / Success / Non-goals). Returns (steps, name)."""
+    docs = _plan_docs(root)
+    doc = docs[0] if docs else ((root / "ECGBERHT.md") if (root / "ECGBERHT.md").is_file() else None)
+    if doc is None:
+        return [], ""
+    return _steps_from_single_plan_file(doc), doc.name
 
 
 _FOR_REVIEW_LABEL = re.compile(r"^(?:START\s+HERE\s*[:\u2014\u2013-]\s*)?FOR\s+REVIEW\s*(?:[:\u2014\u2013-]|$)", re.I)
@@ -6552,7 +7063,8 @@ _FINAL_DELIV_RE = re.compile(
     re.I,
 )
 _ACTIVE_REVIEW_DELIV_RE = re.compile(
-    r"^(?:START\s+HERE|CURRENT|FOR\s+REVIEW)\s*(?:[:\u2014\u2013\-]|$)",
+    r"^(?:START\s+HERE|CURRENT|FOR\s+REVIEW)\s*(?:[:\u2014\u2013\-]|$)"
+    r"|\(\s*current\s+in\s+use\s*\)|\bcurrent\s+in\s+use\b",
     re.I,
 )
 
@@ -6563,9 +7075,9 @@ def _steps_digest(steps: list) -> str:
     norm = [
         (
             str(s.get("id") or s.get("step_id") or ""),
-            str(s.get("name") or ""),
-            str(s.get("status") or "proposed"),
-            str(s.get("done_when") or ""),
+            str(s.get("name") or s.get("title") or ""),
+            str(s.get("status") or ("done" if s.get("done") else "proposed")),
+            str(s.get("done_when") or s.get("goal") or ""),
         )
         for s in steps
         if isinstance(s, dict)
@@ -6576,11 +7088,16 @@ def _steps_digest(steps: list) -> str:
 def _compact_history_step(s: dict) -> dict:
     if not isinstance(s, dict):
         return {}
+    st_val = str(s.get("status") or ("done" if s.get("done") else ("parked" if s.get("parked") else "proposed")))
     out = {
         "id": str(s.get("id") or s.get("step_id") or ""),
         "name": str(s.get("name") or s.get("title") or "(unnamed)"),
-        "status": str(s.get("status") or "proposed"),
-        "done_when": str(s.get("done_when") or ""),
+        "title": str(s.get("title") or s.get("name") or "(unnamed)"),
+        "status": st_val,
+        "done": bool(s.get("done") if s.get("done") is not None else (st_val == "done")),
+        "parked": bool(s.get("parked") if s.get("parked") is not None else (st_val == "parked")),
+        "done_when": str(s.get("done_when") or s.get("goal") or ""),
+        "goal": str(s.get("goal") or s.get("done_when") or ""),
         "waiting_on": s.get("waiting_on"),
         "due": s.get("due"),
         "part": str(s.get("part") or ""),
@@ -6633,14 +7150,14 @@ def _record_plan_history_snapshot(
         return entries[0]
     now_iso = at or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     date_str = now_iso[:10] if len(now_iso) >= 10 and now_iso[:4].isdigit() else time.strftime("%Y-%m-%d")
-    done_cnt = sum(1 for s in compact_steps if s.get("status") == "done")
+    done_cnt = sum(1 for s in compact_steps if s.get("status") == "done" or s.get("done") is True)
     total_cnt = len(compact_steps)
     snap_id = f"snap-{date_str}-{digest[:8]}-{int(time.time()) % 100000}"
     snap = {
         "id": snap_id,
         "date": date_str,
         "at": now_iso,
-        "label": label or f"{date_str} · Plan Snapshot ({done_cnt}/{total_cnt} done)",
+        "label": label or f"{date_str} \u00b7 Plan Snapshot ({done_cnt}/{total_cnt} done)",
         "summary": summary or f"{done_cnt} of {total_cnt} steps completed.",
         "trigger": trigger,
         "digest": digest,
@@ -6660,11 +7177,9 @@ def _record_plan_history_snapshot(
         if len(deduped) >= 60:
             break
     try:
+        import paths as _paths
         hist_path.parent.mkdir(parents=True, exist_ok=True)
-        hist_path.write_text(
-            json.dumps({"schema": "anchor-plan-history-v1", "snapshots": deduped}, indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
+        _paths.atomic_write_json(hist_path, {"schema": "anchor-plan-history-v1", "snapshots": deduped})
     except OSError:
         pass
     with _PLAN_HISTORY_CACHE_LOCK:
@@ -6996,40 +7511,133 @@ def read_plan_history(campaign_dir: str, m: dict | None = None, roadmap: dict | 
     return out
 
 
-def compute_deliverables_plan_refresh(campaign_dir: str, m: dict | None = None, roadmap: dict | None = None) -> dict:
-    """Analyze DELIVERABLES.md and plan documents against roadmap.json to propose concrete step updates."""
+def _norm_step_title_key(s: dict) -> str:
+    raw = str(
+        ((s.get("navigation") or {}).get("label") if isinstance(s.get("navigation"), dict) else "")
+        or s.get("title")
+        or s.get("name")
+        or ""
+    ).strip()
+    return re.sub(r"[^a-z0-9]+", " ", raw.lower()).strip()
+
+
+def _compute_monotonic_scope_additions(cur_steps: list, cand_steps: list) -> tuple[bool, list[dict]]:
+    """Return (is_monotonic, added_steps).
+    A candidate step list is monotonic iff it removes or renames NO unfinished step in cur_steps."""
+    if not isinstance(cand_steps, list) or not cand_steps:
+        return (True, [])
+    cur_dicts = [s for s in (cur_steps or []) if isinstance(s, dict)]
+    cand_dicts = [s for s in cand_steps if isinstance(s, dict)]
+    if not cur_dicts:
+        return (True, deepcopy(cand_dicts))
+
+    cand_by_id = {
+        str(c.get("id") or c.get("step_id") or "").strip().lower(): c
+        for c in cand_dicts
+        if str(c.get("id") or c.get("step_id") or "").strip()
+    }
+    cand_titles = {_norm_step_title_key(c) for c in cand_dicts if _norm_step_title_key(c)}
+
+    for u in cur_dicts:
+        st_low = str(u.get("status") or ("done" if u.get("done") else ("parked" if u.get("parked") else "proposed"))).strip().lower()
+        is_unfinished = st_low not in ("done", "parked", "cancelled", "dropped") and not u.get("done") and not u.get("parked")
+        if not is_unfinished:
+            continue
+        uid = str(u.get("id") or u.get("step_id") or "").strip().lower()
+        utitle = _norm_step_title_key(u)
+        if uid and uid in cand_by_id:
+            ctitle = _norm_step_title_key(cand_by_id[uid])
+            if utitle and ctitle and utitle != ctitle:
+                return (False, [])
+        elif utitle and utitle in cand_titles:
+            continue
+        else:
+            return (False, [])
+
+    existing_ids = {
+        str(s.get("id") or s.get("step_id") or "").strip().lower()
+        for s in cur_dicts
+        if str(s.get("id") or s.get("step_id") or "").strip()
+    }
+    existing_titles = {_norm_step_title_key(s) for s in cur_dicts if _norm_step_title_key(s)}
+
+    added: list[dict] = []
+    used_ids = set(existing_ids)
+    for idx, c in enumerate(cand_dicts):
+        cid = str(c.get("id") or c.get("step_id") or "").strip()
+        ctitle = _norm_step_title_key(c)
+        if (cid and cid.lower() in existing_ids) or (ctitle and ctitle in existing_titles):
+            continue
+        new_step = deepcopy(c)
+        if not cid or cid.lower() in used_ids:
+            base_slug = re.sub(r"[^a-z0-9]+", "-", (ctitle or f"step-{len(cur_dicts) + len(added) + 1}")).strip("-")[:32] or f"step-{idx + 1}"
+            cand_id = base_slug
+            seq_n = 2
+            while cand_id.lower() in used_ids:
+                cand_id = f"{base_slug}-{seq_n}"
+                seq_n += 1
+            new_step["id"] = cand_id
+        used_ids.add(str(new_step["id"]).lower())
+        raw_nm = str(new_step.get("name") or new_step.get("title") or new_step["id"]).strip()
+        new_step["name"] = raw_nm
+        new_step["title"] = str(new_step.get("title") or raw_nm).strip()
+        st_c = str(new_step.get("status") or ("done" if new_step.get("done") else "proposed")).strip().lower()
+        new_step["status"] = st_c
+        new_step["done"] = bool(st_c == "done")
+        new_step["parked"] = bool(st_c == "parked")
+        added.append(new_step)
+
+    return (True, added)
+
+
+def compute_deliverables_plan_refresh(
+    campaign_dir: str,
+    m: dict | None = None,
+    roadmap: dict | None = None,
+    candidate_steps: list | None = None,
+) -> dict:
+    """Analyze DELIVERABLES.md and plan documents against roadmap.json to compute acceptance-backed
+    status transitions (accepted / accepted_current / tier=='final', never revision_requested) and
+    monotonic scope additions."""
     from .navigation_compat import resolve_step
     root = Path(campaign_dir)
     if roadmap is None:
         roadmap, _ = _read_json(root / "roadmap.json")
-    cur_proj = deepcopy((roadmap or {}).get("roadmap_projection") or (m or {}).get("steps") or [])
+    cur_proj = deepcopy((roadmap or {}).get("roadmap_projection") or (roadmap or {}).get("steps") or (m or {}).get("steps") or [])
     if not isinstance(cur_proj, list):
         cur_proj = []
 
+    scaffold_changes: list[dict] = []
     if not cur_proj:
-        doc_steps, doc_name = _steps_from_plan_doc(root)
-        if doc_steps:
-            changes = [
+        ecg_steps = _steps_from_single_plan_file(root / "ECGBERHT.md")
+        if ecg_steps:
+            cur_proj = deepcopy(ecg_steps)
+            scaffold_changes = [
                 {
                     "step_id": str(s.get("id") or ""),
-                    "name": str(s.get("name") or ""),
+                    "name": str(s.get("name") or s.get("title") or ""),
                     "from": "none",
                     "to": str(s.get("status") or "proposed"),
-                    "reason": f"Scaffolded from {doc_name}",
+                    "reason": "Scaffolded from ECGBERHT.md",
                 }
-                for s in doc_steps
+                for s in cur_proj
             ]
-            return {
-                "has_changes": True,
-                "changes": changes,
-                "proposed_steps": doc_steps,
-                "proposed_steps_count": len(doc_steps),
-                "proposed_done_count": sum(1 for s in doc_steps if s.get("status") == "done"),
-                "title": f"Proposed Plan from {doc_name}",
-                "reason": f"Extracted {len(doc_steps)} plan steps from {doc_name}.",
-                "digest": "empty->" + _steps_digest(doc_steps),
-            }
-        return {"has_changes": False, "changes": [], "proposed_steps": [], "digest": "empty->empty"}
+        else:
+            doc_steps, doc_name = (candidate_steps, "proposed_steps") if isinstance(candidate_steps, list) and candidate_steps else _steps_from_plan_doc(root)
+            if doc_steps:
+                cur_proj = deepcopy(doc_steps)
+                scaffold_changes = [
+                    {
+                        "step_id": str(s.get("id") or ""),
+                        "name": str(s.get("name") or s.get("title") or ""),
+                        "from": "none",
+                        "to": str(s.get("status") or "proposed"),
+                        "reason": f"Scaffolded from {doc_name}",
+                    }
+                    for s in cur_proj
+                ]
+            else:
+                return {"has_changes": False, "changes": [], "proposed_steps": [], "digest": "empty->empty"}
 
     deliv = _read_deliverables(campaign_dir)
     raw_items = (deliv or {}).get("items") or []
@@ -7038,9 +7646,12 @@ def compute_deliverables_plan_refresh(campaign_dir: str, m: dict | None = None, 
 
     final_by_step: dict[str, list[str]] = {}
     open_review_by_step: dict[str, list[str]] = {}
+    revision_requested_steps: set[str] = set()
 
     for it in list(raw_items) + list(approved_items):
         if not isinstance(it, dict):
+            continue
+        if not (it.get("openable") or it.get("path") or it.get("route")) and not (it.get("accepted") or it.get("accepted_current")):
             continue
         what = str(it.get("what") or "").strip()
         p_norm = str(it.get("path") or "").replace("\\", "/").lower()
@@ -7070,40 +7681,46 @@ def compute_deliverables_plan_refresh(campaign_dir: str, m: dict | None = None, 
             )
         ) or Path(str(it.get("path") or sid)).name
 
+        is_dis = bool(dismissed and _is_deliverable_dismissed(campaign_dir, it, dismissed))
+        disp = str(it.get("disposition") or (_dismissed_disposition(campaign_dir, it, dismissed) if is_dis else "") or "").strip().lower()
+
+        # Never auto-apply status transition to done when disposition is revision_requested
+        if disp == "revision_requested":
+            revision_requested_steps.add(sid)
+            continue
+
+        item_tier = str(it.get("tier") or "").strip().lower()
         is_final = bool(
-            it.get("accepted")
-            or it.get("accepted_current")
+            it.get("accepted") is True
+            or it.get("accepted_current") is True
+            or item_tier == "final"
+            or it.get("final_promoted") is True
             or _FINAL_DELIV_RE.match(what)
             or "/final deliverables/" in ("/" + p_norm)
+            or (is_dis and disp in ("", "approved", "accepted", "final") and not _is_intermediate_deliverable(it))
         )
         if is_final:
             if clean_label not in final_by_step.setdefault(sid, []):
                 final_by_step[sid].append(clean_label)
             continue
 
-        is_dis = bool(dismissed and _is_deliverable_dismissed(campaign_dir, it, dismissed))
-        if is_dis and not _is_intermediate_deliverable(it):
-            if clean_label not in final_by_step.setdefault(sid, []):
-                final_by_step[sid].append(clean_label)
-            continue
         if is_dis or _HISTORICAL_LABEL.match(what):
             continue
         is_for_review = bool(
             _FOR_REVIEW_LABEL.match(what)
             or _ACTIVE_REVIEW_DELIV_RE.match(what)
+            or item_tier == "for_review"
             or (it.get("managed") and it.get("phase") in ("awaiting_review", "blocked"))
         )
         if is_for_review:
             if clean_label not in open_review_by_step.setdefault(sid, []):
                 open_review_by_step[sid].append(clean_label)
-        elif it.get("openable") and not it.get("auto") and not _is_intermediate_deliverable(it):
-            if clean_label not in final_by_step.setdefault(sid, []):
-                final_by_step[sid].append(clean_label)
 
     proposed_steps = deepcopy(cur_proj)
-    changes = []
+    changes = list(scaffold_changes)
     done_added = 0
     active_added = 0
+    scope_added = len(scaffold_changes)
 
     for s in proposed_steps:
         if not isinstance(s, dict):
@@ -7111,11 +7728,17 @@ def compute_deliverables_plan_refresh(campaign_dir: str, m: dict | None = None, 
         sid = str(s.get("id") or s.get("step_id") or "").strip()
         if not sid:
             continue
-        cur_st = str(s.get("status") or "proposed").strip().lower()
-        sname = str(((s.get("navigation") or {}).get("label") if isinstance(s.get("navigation"), dict) else "") or s.get("name") or sid)
+        cur_st = str(s.get("status") or ("done" if s.get("done") else "proposed")).strip().lower()
+        sname = str(((s.get("navigation") or {}).get("label") if isinstance(s.get("navigation"), dict) else "") or s.get("title") or s.get("name") or sid)
 
-        if sid in final_by_step and sid not in open_review_by_step and cur_st not in ("done", "parked", "cancelled", "dropped"):
+        if (
+            sid in final_by_step
+            and sid not in open_review_by_step
+            and sid not in revision_requested_steps
+            and cur_st not in ("done", "parked", "cancelled", "dropped")
+        ):
             s["status"] = "done"
+            s["done"] = True
             s["waiting_on"] = None
             done_added += 1
             changes.append({
@@ -7125,7 +7748,7 @@ def compute_deliverables_plan_refresh(campaign_dir: str, m: dict | None = None, 
                 "to": "done",
                 "reason": f"Final deliverable locked ({one_line(final_by_step[sid][0], 48)})",
             })
-        elif sid in open_review_by_step and cur_st in ("planned", "proposed"):
+        elif sid in open_review_by_step and cur_st in ("planned", "proposed", "todo"):
             s["status"] = "active"
             if not s.get("waiting_on"):
                 s["waiting_on"] = f"Review {one_line(open_review_by_step[sid][0], 56)}"
@@ -7137,6 +7760,30 @@ def compute_deliverables_plan_refresh(campaign_dir: str, m: dict | None = None, 
                 "to": "active",
                 "reason": f"Deliverable ready for review ({one_line(open_review_by_step[sid][0], 48)})",
             })
+
+    # Check for monotonic scope additions (from explicit candidate_steps or plan documents)
+    cand_scope_steps = candidate_steps
+    scope_src = "scope update"
+    if cand_scope_steps is None:
+        doc_steps, doc_name = _steps_from_plan_doc(root)
+        if doc_steps:
+            cand_scope_steps = doc_steps
+            scope_src = doc_name or "PLAN.md"
+    if isinstance(cand_scope_steps, list) and cand_scope_steps:
+        is_mono, added_steps = _compute_monotonic_scope_additions(proposed_steps, cand_scope_steps)
+        if is_mono and added_steps:
+            for add_s in added_steps:
+                proposed_steps.append(add_s)
+                scope_added += 1
+                add_id = str(add_s.get("id") or "")
+                add_nm = str(add_s.get("title") or add_s.get("name") or add_id)
+                changes.append({
+                    "step_id": add_id,
+                    "name": one_line(add_nm, 60),
+                    "from": "none",
+                    "to": str(add_s.get("status") or "proposed"),
+                    "reason": f"Monotonic scope addition ({scope_src})",
+                })
 
     # If the currently pinned step is now done, move the pin to the first step with open review items or first active step
     pinned_steps = [
@@ -7158,7 +7805,7 @@ def compute_deliverables_plan_refresh(campaign_dir: str, m: dict | None = None, 
             nav["pin"] = True
             nav["current"] = True
 
-    before_dig = _steps_digest(cur_proj)
+    before_dig = "empty" if scaffold_changes else _steps_digest(cur_proj)
     after_dig = _steps_digest(proposed_steps)
     refresh_digest = f"{before_dig}->{after_dig}"
 
@@ -7179,7 +7826,10 @@ def compute_deliverables_plan_refresh(campaign_dir: str, m: dict | None = None, 
     if active_added:
         act_names = ", ".join(c["name"] for c in changes if c["to"] == "active")
         parts.append(f"{active_added} step(s) active in For Review ({one_line(act_names, 70)})")
-    reason_str = " · ".join(parts) or f"{len(changes)} step update(s) detected from recent deliverables."
+    if scope_added:
+        sc_names = ", ".join(c["name"] for c in changes if c["from"] == "none")
+        parts.append(f"{scope_added} step(s) added monotonically ({one_line(sc_names, 70)})")
+    reason_str = " \u00b7 ".join(parts) or f"{len(changes)} step update(s) detected from recent deliverables."
 
     return {
         "has_changes": True,
@@ -7187,9 +7837,96 @@ def compute_deliverables_plan_refresh(campaign_dir: str, m: dict | None = None, 
         "proposed_steps": proposed_steps,
         "proposed_steps_count": len(proposed_steps),
         "proposed_done_count": sum(1 for s in proposed_steps if isinstance(s, dict) and s.get("status") == "done"),
-        "title": f"Proposed Plan Refresh ({len(changes)} Deliverable Update{'s' if len(changes) != 1 else ''})",
+        "title": f"Auto-Synced Plan ({len(changes)} Update{'s' if len(changes) != 1 else ''})",
         "reason": reason_str,
         "digest": refresh_digest,
+    }
+
+
+def reconcile_plan_under_lock(
+    campaign_dir: str,
+    *,
+    proposed_steps: list | None = None,
+    m: dict | None = None,
+    roadmap: dict | None = None,
+    reason: str = "",
+) -> dict:
+    """Auto-apply acceptance-backed status transitions (accepted/accepted_current/tier=='final', never revision_requested)
+    and monotonic scope additions under plan.lock with a dated snapshot in plan-history.json."""
+    root = Path(campaign_dir)
+    if proposed_steps is None:
+        for cand_p in (root / "plan-proposal.json", root / ".ecgberht" / "plan-proposal.json"):
+            if cand_p.is_file():
+                try:
+                    p_disk = json.loads(cand_p.read_text(encoding="utf-8")) or {}
+                except Exception:
+                    p_disk = {}
+                if (
+                    isinstance(p_disk, dict)
+                    and p_disk.get("pending") is True
+                    and str(p_disk.get("status") or "pending").lower() not in ("accepted", "dismissed")
+                ):
+                    rm_cur, _ = _read_json(root / "roadmap.json")
+                    cur_s = list((rm_cur or {}).get("roadmap_projection") or (rm_cur or {}).get("steps") or [])
+                    return {
+                        "ok": True,
+                        "applied": False,
+                        "auto_applied": False,
+                        "changed": False,
+                        "reason": "explicit CLI proposal pending",
+                        "steps_count": len(cur_s),
+                    }
+    rm_path = root / "roadmap.json"
+    rm_data = roadmap
+    if not isinstance(rm_data, dict):
+        rm_data, _ = _read_json(rm_path)
+    if not isinstance(rm_data, dict):
+        rm_data = {"roadmap_projection": [], "roadmap_events": []}
+    cur_proj = list(rm_data.get("roadmap_projection") or rm_data.get("steps") or (m or {}).get("steps") or [])
+
+    if isinstance(proposed_steps, list) and proposed_steps and cur_proj:
+        is_mono, _ = _compute_monotonic_scope_additions(cur_proj, proposed_steps)
+        if not is_mono:
+            return {
+                "ok": True,
+                "applied": False,
+                "auto_applied": False,
+                "changed": False,
+                "reason": "non-monotonic scope change (unfinished step removed or renamed)",
+                "steps_count": len(cur_proj),
+            }
+
+    refresh = compute_deliverables_plan_refresh(campaign_dir, m=m, roadmap=rm_data, candidate_steps=proposed_steps)
+    if not refresh.get("has_changes"):
+        return {
+            "ok": True,
+            "applied": False,
+            "auto_applied": False,
+            "changed": False,
+            "steps_count": len(cur_proj),
+            "digest": refresh.get("digest") or "",
+        }
+
+    acc_res = resolve_plan_proposal(
+        campaign_dir,
+        action="accept",
+        candidate_steps=proposed_steps,
+        candidate_changes=refresh.get("changes"),
+        candidate_reason=refresh.get("reason") or reason,
+        by_actor="auto-reconcile",
+        m_hint=m,
+    )
+    applied_steps = acc_res.get("steps") if isinstance(acc_res.get("steps"), list) else refresh.get("proposed_steps")
+    if isinstance(m, dict) and isinstance(applied_steps, list):
+        m["steps"] = deepcopy(applied_steps)
+        m["steps_done"] = sum(1 for s in m["steps"] if isinstance(s, dict) and (s.get("status") == "done" or s.get("done") is True))
+        m["steps_total"] = len(m["steps"])
+    return {
+        **acc_res,
+        "applied": bool(acc_res.get("applied", True)),
+        "auto_applied": bool(acc_res.get("applied", True)),
+        "changed": bool(acc_res.get("applied", True)),
+        "digest": refresh.get("digest") or "",
     }
 
 
@@ -7198,8 +7935,8 @@ _PLAN_PROPOSAL_CACHE: dict[str, tuple[tuple, dict | None]] = globals().get("_PLA
 
 
 def read_plan_proposal(campaign_dir: str, m: dict | None = None, roadmap: dict | None = None) -> dict | None:
-    """Return a plan refresh proposal when major deliverables or plan documents update the campaign plan,
-    or when a previous plan backup exists so John can Accept New Plan or Revert to Old Plan."""
+    """Reconcile acceptance-backed deliverable status transitions and monotonic scope additions under plan.lock,
+    returning a pending proposal ONLY when an explicit steward_plan.py CLI proposal is awaiting approval."""
     root = Path(campaign_dir)
     root_prop_file = root / "plan-proposal.json"
     prop_file = root / ".ecgberht" / "plan-proposal.json"
@@ -7239,8 +7976,6 @@ def _read_plan_proposal_uncached(campaign_dir: str, m: dict | None = None, roadm
     root = Path(campaign_dir)
     root_prop_file = root / "plan-proposal.json"
     prop_file = root / ".ecgberht" / "plan-proposal.json"
-    backup_file = root / ".ecgberht" / "roadmap-backup.json"
-    has_backup = backup_file.is_file()
     prop_disk = {}
     cand_prop = root_prop_file if root_prop_file.is_file() else prop_file
     if cand_prop.is_file():
@@ -7249,72 +7984,70 @@ def _read_plan_proposal_uncached(campaign_dir: str, m: dict | None = None, roadm
         except Exception:
             prop_disk = {}
 
-    # 0. Explicit pending proposal written by steward_plan.py (`pending: True`)
-    if isinstance(prop_disk, dict) and prop_disk.get("pending") is True and str(prop_disk.get("status") or "pending").lower() not in ("accepted", "dismissed"):
+    # 0. Explicit pending CLI proposal written by steward_plan.py (`pending: True`)
+    if (
+        isinstance(prop_disk, dict)
+        and prop_disk.get("pending") is True
+        and str(prop_disk.get("status") or "pending").lower() not in ("accepted", "dismissed")
+    ):
         out_prop = dict(prop_disk)
         out_prop["status"] = "pending"
         out_prop.setdefault("title", str(prop_disk.get("summary") or "Proposed Plan Update"))
         out_prop["can_revert"] = True
         return out_prop
 
-    # 1. Check deliverable-driven plan updates
+    # 1. Check deliverable-driven plan updates and monotonic scope additions -> auto-apply under plan.lock!
+    cand_steps = None
+    if (
+        isinstance(prop_disk, dict)
+        and prop_disk.get("pending") is not True
+        and str(prop_disk.get("status") or "pending").lower() in ("pending", "")
+        and isinstance(prop_disk.get("proposed_steps"), list)
+        and prop_disk.get("proposed_steps")
+    ):
+        cand_steps = prop_disk["proposed_steps"]
+
     try:
-        refresh = compute_deliverables_plan_refresh(campaign_dir, m, roadmap)
+        refresh = compute_deliverables_plan_refresh(campaign_dir, m, roadmap, candidate_steps=cand_steps)
     except Exception:
         refresh = {"has_changes": False, "changes": [], "proposed_steps": []}
 
     if refresh.get("has_changes"):
         dig = str(refresh.get("digest") or "")
         if not (isinstance(prop_disk, dict) and prop_disk.get("status") == "dismissed" and prop_disk.get("digest") == dig):
-            return {
-                "id": "deliv-refresh-" + dig[:12],
-                "status": "pending",
-                "title": refresh.get("title") or "Proposed Plan Refresh",
-                "reason": refresh.get("reason") or "Recent deliverables updated the campaign plan.",
-                "changes": refresh.get("changes") or [],
-                "proposed_steps_count": refresh.get("proposed_steps_count", 0),
-                "proposed_done_count": refresh.get("proposed_done_count", 0),
-                "can_revert": True,
-            }
-
-    # 2. Check explicit pending or accepted proposal file on disk
-    if isinstance(prop_disk, dict):
-        if prop_disk.get("status") in ("pending", None, "") and (prop_disk.get("title") or prop_disk.get("reason") or prop_disk.get("proposed_steps")):
-            out_prop = dict(prop_disk)
-            out_prop["status"] = "pending"
-            out_prop["can_revert"] = bool(has_backup or prop_disk.get("previous_steps") or True)
-            out_prop.pop("proposed_steps", None)
-            out_prop.pop("previous_steps", None)
-            return out_prop
-        if prop_disk.get("status") == "accepted" and has_backup:
-            return {
-                "id": str(prop_disk.get("id") or "accepted-plan"),
-                "status": "accepted",
-                "title": str(prop_disk.get("title") or "Updated Plan Active"),
-                "reason": str(prop_disk.get("reason") or "Plan refreshed after recent deliverables."),
-                "changes": prop_disk.get("changes") if isinstance(prop_disk.get("changes"), list) else [],
-                "can_revert": True,
-            }
-
-    # 3. Check plan document / conversational drift
-    drift = (m or {}).get("plan_drift") if isinstance(m, dict) and isinstance(m.get("plan_drift"), dict) else plan_drift(campaign_dir)
-    if isinstance(drift, dict) and drift.get("drift"):
-        proposed_steps, doc_name = _steps_from_plan_doc(root)
-        cur_steps = (m or {}).get("steps") or ((roadmap or {}).get("roadmap_projection") if isinstance(roadmap, dict) else []) or []
-        return {
-            "id": "drift-" + (doc_name or "roadmap"),
-            "status": "pending",
-            "title": "Proposed Plan Refresh" + (" from " + doc_name if doc_name and not cur_steps else ""),
-            "reason": str(drift.get("reason") or "Deliverables or instructions updated the plan structure."),
-            "changes": refresh.get("changes") or [],
-            "proposed_steps_count": len(cur_steps) or len(proposed_steps),
-            "can_revert": True,
-        }
+            try:
+                acc_auto = resolve_plan_proposal(
+                    campaign_dir,
+                    action="accept",
+                    candidate_steps=cand_steps,
+                    candidate_changes=refresh.get("changes"),
+                    candidate_reason=refresh.get("reason"),
+                    by_actor="auto-reconcile",
+                    m_hint=m,
+                )
+                applied_s = acc_auto.get("steps") if isinstance(acc_auto.get("steps"), list) else refresh.get("proposed_steps")
+                if isinstance(m, dict) and isinstance(applied_s, list) and acc_auto.get("applied", True):
+                    m["steps"] = deepcopy(applied_s)
+                    m["steps_done"] = sum(1 for s in m["steps"] if isinstance(s, dict) and (s.get("status") == "done" or s.get("done") is True))
+                    m["steps_total"] = len(m["steps"])
+            except Exception:
+                pass
     return None
 
 
-def resolve_plan_proposal(campaign_dir: str, action: str = "accept", proposal_id: str = "") -> dict:
+def resolve_plan_proposal(
+    campaign_dir: str,
+    action: str = "accept",
+    proposal_id: str = "",
+    *,
+    candidate_steps: list | None = None,
+    candidate_changes: list | None = None,
+    candidate_reason: str | None = None,
+    by_actor: str = "John",
+    m_hint: dict | None = None,
+) -> dict:
     """Accept a proposed plan refresh, revert to the previous roadmap snapshot, restore any historical date snapshot, or refresh."""
+    import paths as _paths
     root = Path(campaign_dir)
     ec_dir = root / ".ecgberht"
     ec_dir.mkdir(parents=True, exist_ok=True)
@@ -7322,11 +8055,12 @@ def resolve_plan_proposal(campaign_dir: str, action: str = "accept", proposal_id
     prop_file = ec_dir / "plan-proposal.json"
     backup_file = ec_dir / "roadmap-backup.json"
     conv_file = ec_dir / "conversational-plan-drift.json"
+    lock_path = ec_dir / "plan.lock"
     act = str(action or "accept").strip().lower()
     rm_data, _ = _read_json(rm_path)
     if not isinstance(rm_data, dict):
         rm_data = {"roadmap_projection": [], "roadmap_events": []}
-    cur_proj = deepcopy(list(rm_data.get("roadmap_projection") or []))
+    cur_proj = deepcopy(list(rm_data.get("roadmap_projection") or rm_data.get("steps") or []))
     prop_data = {}
     if prop_file.is_file():
         try:
@@ -7338,30 +8072,23 @@ def resolve_plan_proposal(campaign_dir: str, action: str = "accept", proposal_id
     today_str = now_iso[:10]
 
     if act in ("refresh", "re-evaluate", "propose"):
-        refresh = compute_deliverables_plan_refresh(campaign_dir, roadmap=rm_data)
+        refresh = compute_deliverables_plan_refresh(campaign_dir, roadmap=rm_data, candidate_steps=candidate_steps)
         if refresh.get("has_changes"):
-            prop_payload = {
-                "id": "deliv-refresh-" + str(refresh.get("digest") or "")[:12],
-                "status": "pending",
-                "title": refresh.get("title") or "Proposed Plan Refresh",
-                "reason": refresh.get("reason") or "Deliverables analyzed against plan.",
-                "changes": refresh.get("changes") or [],
-                "proposed_steps": refresh.get("proposed_steps") or [],
-                "proposed_steps_count": refresh.get("proposed_steps_count", 0),
-                "proposed_done_count": refresh.get("proposed_done_count", 0),
-                "digest": refresh.get("digest") or "",
-                "refreshed_at": now_iso,
-                "can_revert": True,
-            }
-            prop_file.write_text(json.dumps(prop_payload, indent=2, ensure_ascii=False), encoding="utf-8")
+            acc = resolve_plan_proposal(
+                campaign_dir,
+                action="accept",
+                candidate_steps=refresh.get("proposed_steps"),
+                candidate_changes=refresh.get("changes"),
+                candidate_reason=refresh.get("reason"),
+            )
             return {
                 "ok": True,
                 "action": "refreshed",
+                "auto_applied": True,
                 "has_changes": True,
                 "changes_count": len(refresh.get("changes") or []),
-                "proposal": {k: v for k, v in prop_payload.items() if k != "proposed_steps"},
+                "steps_count": acc.get("steps_count", len(refresh.get("proposed_steps") or [])),
             }
-        # Even if no pending step flips, record a verified snapshot in history and clear stale conversational drift
         if conv_file.is_file():
             try:
                 conv_file.unlink()
@@ -7372,8 +8099,8 @@ def resolve_plan_proposal(campaign_dir: str, action: str = "accept", proposal_id
             _record_plan_history_snapshot(
                 campaign_dir,
                 cur_proj,
-                label=f"{today_str} · Verified Plan ({done_c}/{len(cur_proj)} done)",
-                summary="Plan reviewed against Deliverables — all steps up to date.",
+                label=f"{today_str} \u00b7 Verified Plan ({done_c}/{len(cur_proj)} done)",
+                summary="Plan reviewed against Deliverables \u2014 all steps up to date.",
                 trigger="plan_refresh",
                 at=now_iso,
             )
@@ -7390,7 +8117,8 @@ def resolve_plan_proposal(campaign_dir: str, action: str = "accept", proposal_id
         prop_data["status"] = "dismissed"
         prop_data["digest"] = refresh.get("digest") or prop_data.get("digest") or ""
         prop_data["dismissed_at"] = now_iso
-        prop_file.write_text(json.dumps(prop_data, indent=2, ensure_ascii=False), encoding="utf-8")
+        with _paths.cross_process_lock(lock_path, timeout_sec=2.0):
+            _paths.atomic_write_json(prop_file, prop_data)
         return {"ok": True, "action": "dismissed"}
 
     if act == "restore":
@@ -7407,51 +8135,50 @@ def resolve_plan_proposal(campaign_dir: str, action: str = "accept", proposal_id
         )
         if target_snap is None:
             return {"ok": False, "error": f"Historical plan snapshot '{proposal_id}' not found"}
-        if cur_proj:
-            done_cur = sum(1 for s in cur_proj if isinstance(s, dict) and s.get("status") == "done")
-            backup_file.write_text(
-                json.dumps({"saved_at": now_iso, "roadmap_projection": cur_proj}, indent=2, ensure_ascii=False),
-                encoding="utf-8",
-            )
+        restored_steps = deepcopy(target_snap["steps"])
+        with _paths.cross_process_lock(lock_path, timeout_sec=2.0):
+            if cur_proj:
+                done_cur = sum(1 for s in cur_proj if isinstance(s, dict) and s.get("status") == "done")
+                _paths.atomic_write_json(backup_file, {"saved_at": now_iso, "roadmap_projection": cur_proj})
+                _record_plan_history_snapshot(
+                    campaign_dir,
+                    cur_proj,
+                    label=f"{today_str} \u00b7 Snapshot before Restore ({done_cur}/{len(cur_proj)} done)",
+                    summary=f"Saved automatically before restoring plan from {target_snap.get('date')}.",
+                    trigger="before_restore",
+                    at=now_iso,
+                    force=True,
+                )
+            rm_data["roadmap_projection"] = restored_steps
+            rm_data["steps"] = deepcopy(restored_steps)
+            evs = list(rm_data.get("roadmap_events") or [])
+            evs.append({
+                "kind": "plan_restore",
+                "at": now_iso,
+                "by": "John",
+                "proposal_id": str(target_snap.get("id") or proposal_id),
+                "restored_date": str(target_snap.get("date") or ""),
+                "steps": restored_steps,
+            })
+            rm_data["roadmap_events"] = evs
+            _paths.atomic_write_json(rm_path, rm_data)
+            with _JSON_FILE_CACHE_LOCK:
+                _JSON_FILE_CACHE.clear()
+            done_rest = sum(1 for s in restored_steps if isinstance(s, dict) and s.get("status") == "done")
             _record_plan_history_snapshot(
                 campaign_dir,
-                cur_proj,
-                label=f"{today_str} · Snapshot before Restore ({done_cur}/{len(cur_proj)} done)",
-                summary=f"Saved automatically before restoring plan from {target_snap.get('date')}.",
-                trigger="before_restore",
+                restored_steps,
+                label=f"{today_str} \u00b7 Restored Plan from {target_snap.get('date')} ({done_rest}/{len(restored_steps)} done)",
+                summary=f"Restored historical plan from {target_snap.get('date')} ({target_snap.get('summary') or ''}).",
+                trigger="plan_restore",
                 at=now_iso,
                 force=True,
             )
-        restored_steps = deepcopy(target_snap["steps"])
-        rm_data["roadmap_projection"] = restored_steps
-        evs = list(rm_data.get("roadmap_events") or [])
-        evs.append({
-            "kind": "plan_restore",
-            "at": now_iso,
-            "by": "John",
-            "proposal_id": str(target_snap.get("id") or proposal_id),
-            "restored_date": str(target_snap.get("date") or ""),
-            "steps": restored_steps,
-        })
-        rm_data["roadmap_events"] = evs
-        rm_path.write_text(json.dumps(rm_data, indent=2, ensure_ascii=False), encoding="utf-8")
-        with _JSON_FILE_CACHE_LOCK:
-            _JSON_FILE_CACHE.clear()
-        done_rest = sum(1 for s in restored_steps if isinstance(s, dict) and s.get("status") == "done")
-        _record_plan_history_snapshot(
-            campaign_dir,
-            restored_steps,
-            label=f"{today_str} · Restored Plan from {target_snap.get('date')} ({done_rest}/{len(restored_steps)} done)",
-            summary=f"Restored historical plan from {target_snap.get('date')} ({target_snap.get('summary') or ''}).",
-            trigger="plan_restore",
-            at=now_iso,
-            force=True,
-        )
-        prop_data["status"] = "accepted"
-        prop_data["title"] = f"Restored Plan from {target_snap.get('date')}"
-        prop_data["reason"] = f"Showing restored plan from {target_snap.get('date')} ({done_rest}/{len(restored_steps)} done). You can revert to your previous plan at any time."
-        prop_data["can_revert"] = True
-        prop_file.write_text(json.dumps(prop_data, indent=2, ensure_ascii=False), encoding="utf-8")
+            prop_data["status"] = "accepted"
+            prop_data["title"] = f"Restored Plan from {target_snap.get('date')}"
+            prop_data["reason"] = f"Showing restored plan from {target_snap.get('date')} ({done_rest}/{len(restored_steps)} done). You can revert to your previous plan at any time."
+            prop_data["can_revert"] = True
+            _paths.atomic_write_json(prop_file, prop_data)
         return {
             "ok": True,
             "action": "restored",
@@ -7475,128 +8202,211 @@ def resolve_plan_proposal(campaign_dir: str, action: str = "accept", proposal_id
             hist = read_plan_history(campaign_dir, roadmap=rm_data)
             if len(hist) >= 2 and isinstance(hist[1].get("steps"), list):
                 prev_steps = hist[1]["steps"]
-        if prev_steps is not None:
-            if cur_proj:
-                done_cur = sum(1 for s in cur_proj if isinstance(s, dict) and s.get("status") == "done")
+        with _paths.cross_process_lock(lock_path, timeout_sec=2.0):
+            if prev_steps is not None:
+                if cur_proj:
+                    done_cur = sum(1 for s in cur_proj if isinstance(s, dict) and s.get("status") == "done")
+                    _record_plan_history_snapshot(
+                        campaign_dir,
+                        cur_proj,
+                        label=f"{today_str} \u00b7 Snapshot before Revert ({done_cur}/{len(cur_proj)} done)",
+                        summary="Saved before reverting to previous plan.",
+                        trigger="before_revert",
+                        at=now_iso,
+                        force=True,
+                    )
+                    _paths.atomic_write_json(backup_file, {"saved_at": now_iso, "roadmap_projection": cur_proj})
+                rm_data["roadmap_projection"] = prev_steps
+                rm_data["steps"] = deepcopy(prev_steps)
+                evs = list(rm_data.get("roadmap_events") or [])
+                evs.append({
+                    "kind": "plan_revert",
+                    "at": now_iso,
+                    "by": "John",
+                    "proposal_id": proposal_id or str(prop_data.get("id") or ""),
+                    "steps": prev_steps,
+                })
+                rm_data["roadmap_events"] = evs
+                _paths.atomic_write_json(rm_path, rm_data)
+                with _JSON_FILE_CACHE_LOCK:
+                    _JSON_FILE_CACHE.clear()
+                done_prev = sum(1 for s in prev_steps if isinstance(s, dict) and s.get("status") == "done")
                 _record_plan_history_snapshot(
                     campaign_dir,
-                    cur_proj,
-                    label=f"{today_str} · Snapshot before Revert ({done_cur}/{len(cur_proj)} done)",
-                    summary="Saved before reverting to previous plan.",
-                    trigger="before_revert",
+                    prev_steps,
+                    label=f"{today_str} \u00b7 Reverted to Previous Plan ({done_prev}/{len(prev_steps)} done)",
+                    summary="Reverted to previous plan snapshot.",
+                    trigger="plan_revert",
                     at=now_iso,
                     force=True,
                 )
-                backup_file.write_text(
-                    json.dumps({"saved_at": now_iso, "roadmap_projection": cur_proj}, indent=2, ensure_ascii=False),
-                    encoding="utf-8",
-                )
-            rm_data["roadmap_projection"] = prev_steps
-            evs = list(rm_data.get("roadmap_events") or [])
-            evs.append({
-                "kind": "plan_revert",
-                "at": now_iso,
-                "by": "John",
-                "proposal_id": proposal_id or str(prop_data.get("id") or ""),
-                "steps": prev_steps,
+            prop_data["status"] = "reverted"
+            prop_data["reverted_at"] = now_iso
+            _paths.atomic_write_json(prop_file, prop_data)
+        return {"ok": True, "action": "reverted", "steps_count": len(rm_data.get("roadmap_projection") or [])}
+
+    # Accept / Auto-Apply plan update under plan.lock: re-read roadmap.json & plan-proposal.json inside plan.lock
+    # so concurrent CLI mutations (`tools/steward_plan.py`) never suffer a lost-update overwrite.
+    actor_label = str(by_actor or "John").strip() or "John"
+    is_auto_reconcile = actor_label == "auto-reconcile"
+
+    with _paths.cross_process_lock(lock_path, timeout_sec=2.0):
+        if rm_path.is_file():
+            try:
+                rm_locked = json.loads(rm_path.read_text(encoding="utf-8"))
+                if isinstance(rm_locked, dict):
+                    rm_data = rm_locked
+            except Exception:
+                pass
+        cur_proj = deepcopy(list(rm_data.get("roadmap_projection") or rm_data.get("steps") or (m_hint or {}).get("steps") or []))
+
+        prop_cand_locked = (root / "plan-proposal.json") if (root / "plan-proposal.json").is_file() else prop_file
+        if prop_cand_locked.is_file():
+            try:
+                prop_data = json.loads(prop_cand_locked.read_text(encoding="utf-8")) or {}
+            except Exception:
+                prop_data = {}
+
+        is_Explicit_cli_prop = bool(
+            isinstance(prop_data, dict)
+            and prop_data.get("pending") is True
+            and str(prop_data.get("status") or "pending").lower() not in ("accepted", "dismissed")
+        )
+        if is_auto_reconcile and is_Explicit_cli_prop and candidate_steps is None:
+            return {
+                "ok": True,
+                "action": "deferred_pending_cli_proposal",
+                "applied": False,
+                "can_revert": True,
+                "changes_count": 0,
+                "steps_count": len(cur_proj),
+                "steps_done": sum(1 for s in cur_proj if isinstance(s, dict) and (s.get("status") == "done" or s.get("done") is True)),
+                "steps": cur_proj,
+            }
+
+        if is_auto_reconcile:
+            refresh = compute_deliverables_plan_refresh(
+                campaign_dir,
+                m=m_hint,
+                roadmap=rm_data,
+                candidate_steps=candidate_steps,
+            )
+            if not refresh.get("has_changes"):
+                return {
+                    "ok": True,
+                    "action": "accepted",
+                    "applied": False,
+                    "can_revert": True,
+                    "changes_count": 0,
+                    "steps_count": len(cur_proj),
+                    "steps_done": sum(1 for s in cur_proj if isinstance(s, dict) and (s.get("status") == "done" or s.get("done") is True)),
+                    "steps": cur_proj,
+                }
+            new_steps = refresh.get("proposed_steps")
+            changes_applied = refresh.get("changes") or candidate_changes or []
+            reason_applied = str(refresh.get("reason") or candidate_reason or "")
+        else:
+            refresh = (
+                {"has_changes": True, "proposed_steps": candidate_steps, "changes": candidate_changes or [], "reason": candidate_reason or ""}
+                if isinstance(candidate_steps, list) and candidate_steps
+                else compute_deliverables_plan_refresh(campaign_dir, m=m_hint, roadmap=rm_data)
+            )
+            new_steps = (
+                candidate_steps
+                if isinstance(candidate_steps, list) and candidate_steps
+                else (prop_data.get("proposed_steps") if isinstance(prop_data.get("proposed_steps"), list) and prop_data.get("proposed_steps") else None)
+            )
+            changes_applied = (
+                candidate_changes
+                if isinstance(candidate_changes, list)
+                else (prop_data.get("changes") if isinstance(prop_data.get("changes"), list) else [])
+            )
+            reason_applied = str(candidate_reason or prop_data.get("reason") or "")
+            if not new_steps and refresh.get("has_changes") and isinstance(refresh.get("proposed_steps"), list):
+                new_steps = refresh["proposed_steps"]
+                changes_applied = refresh.get("changes") or []
+                reason_applied = str(refresh.get("reason") or "")
+            if not new_steps:
+                doc_steps, _ = _steps_from_plan_doc(root)
+                if doc_steps and not cur_proj:
+                    new_steps = doc_steps
+
+        if cur_proj and new_steps and _steps_digest(cur_proj) != _steps_digest(new_steps):
+            done_cur = sum(1 for s in cur_proj if isinstance(s, dict) and (s.get("status") == "done" or s.get("done") is True))
+            _paths.atomic_write_json(backup_file, {
+                "saved_at": now_iso,
+                "roadmap_projection": cur_proj,
             })
-            rm_data["roadmap_events"] = evs
-            rm_path.write_text(json.dumps(rm_data, indent=2, ensure_ascii=False), encoding="utf-8")
-            with _JSON_FILE_CACHE_LOCK:
-                _JSON_FILE_CACHE.clear()
-            done_prev = sum(1 for s in prev_steps if isinstance(s, dict) and s.get("status") == "done")
             _record_plan_history_snapshot(
                 campaign_dir,
-                prev_steps,
-                label=f"{today_str} · Reverted to Previous Plan ({done_prev}/{len(prev_steps)} done)",
-                summary="Reverted to previous plan snapshot.",
-                trigger="plan_revert",
+                cur_proj,
+                label=f"{today_str} \u00b7 Plan before Refresh ({done_cur}/{len(cur_proj)} done)",
+                summary="Saved automatically before applying plan update.",
+                trigger="before_accept",
                 at=now_iso,
                 force=True,
             )
-        prop_data["status"] = "reverted"
-        prop_data["reverted_at"] = now_iso
-        prop_file.write_text(json.dumps(prop_data, indent=2, ensure_ascii=False), encoding="utf-8")
-        return {"ok": True, "action": "reverted", "steps_count": len(rm_data.get("roadmap_projection") or [])}
-
-    # Accept new plan: save backup and history snapshot of current projection first so John can revert anytime
-    if cur_proj:
-        done_cur = sum(1 for s in cur_proj if isinstance(s, dict) and s.get("status") == "done")
-        backup_file.write_text(json.dumps({
-            "saved_at": now_iso,
-            "roadmap_projection": cur_proj,
-        }, indent=2, ensure_ascii=False), encoding="utf-8")
-        _record_plan_history_snapshot(
-            campaign_dir,
-            cur_proj,
-            label=f"{today_str} · Plan before Refresh ({done_cur}/{len(cur_proj)} done)",
-            summary="Saved automatically before accepting plan refresh.",
-            trigger="before_accept",
-            at=now_iso,
-            force=True,
-        )
-
-    refresh = compute_deliverables_plan_refresh(campaign_dir, roadmap=rm_data)
-    new_steps = prop_data.get("proposed_steps") if isinstance(prop_data.get("proposed_steps"), list) and prop_data.get("proposed_steps") else None
-    changes_applied = prop_data.get("changes") if isinstance(prop_data.get("changes"), list) else []
-    reason_applied = str(prop_data.get("reason") or "")
-    if not new_steps and refresh.get("has_changes") and isinstance(refresh.get("proposed_steps"), list):
-        new_steps = refresh["proposed_steps"]
-        changes_applied = refresh.get("changes") or []
-        reason_applied = str(refresh.get("reason") or "")
-    if not new_steps:
-        doc_steps, _ = _steps_from_plan_doc(root)
-        if doc_steps and not cur_proj:
-            new_steps = doc_steps
-    if new_steps:
-        rm_data["roadmap_projection"] = new_steps
-        rm_data["steps"] = deepcopy(new_steps)
-    final_proj = list(rm_data.get("roadmap_projection") or rm_data.get("steps") or [])
-    rm_data["steps"] = deepcopy(final_proj)
-    evs = list(rm_data.get("roadmap_events") or [])
-    evs.append({
-        "kind": "plan_accept",
-        "at": now_iso,
-        "by": "John",
-        "proposal_id": proposal_id or str(prop_data.get("id") or "accepted-plan"),
-        "steps": [_compact_history_step(s) for s in final_proj if isinstance(s, dict)],
-    })
-    rm_data["roadmap_events"] = evs
-    import paths as _paths
-    with _paths.cross_process_lock(root / ".ecgberht" / "plan.lock", timeout_sec=2.0):
+        if new_steps:
+            rm_data["roadmap_projection"] = new_steps
+            rm_data["steps"] = deepcopy(new_steps)
+        final_proj = list(rm_data.get("roadmap_projection") or rm_data.get("steps") or [])
+        for s_item in final_proj:
+            if isinstance(s_item, dict):
+                st_v = str(s_item.get("status") or ("done" if s_item.get("done") else "proposed")).lower()
+                s_item["status"] = st_v
+                s_item["done"] = bool(st_v == "done")
+                s_item.setdefault("title", s_item.get("name") or s_item.get("id") or "Step")
+                s_item.setdefault("name", s_item.get("title") or s_item.get("id") or "Step")
+        rm_data["roadmap_projection"] = final_proj
+        rm_data["steps"] = deepcopy(final_proj)
+        evs = list(rm_data.get("roadmap_events") or [])
+        evs.append({
+            "kind": "plan_accept",
+            "at": now_iso,
+            "by": actor_label,
+            "proposal_id": proposal_id or str(prop_data.get("id") or ("auto-reconciled-plan" if is_auto_reconcile else "accepted-plan")),
+            "steps": [_compact_history_step(s) for s in final_proj if isinstance(s, dict)],
+        })
+        rm_data["roadmap_events"] = evs
         _paths.atomic_write_json(rm_path, rm_data)
         with _JSON_FILE_CACHE_LOCK:
             _JSON_FILE_CACHE.clear()
-    if conv_file.is_file():
-        try:
-            conv_file.unlink()
-        except OSError:
-            pass
-    done_new = sum(1 for s in final_proj if isinstance(s, dict) and s.get("status") == "done")
-    _record_plan_history_snapshot(
-        campaign_dir,
-        final_proj,
-        label=f"{today_str} · Accepted Refreshed Plan ({done_new}/{len(final_proj)} done)",
-        summary=reason_applied or f"Accepted plan refresh ({done_new} of {len(final_proj)} steps completed).",
-        trigger="plan_accept",
-        at=now_iso,
-        force=True,
-    )
-    prop_data["id"] = proposal_id or str(prop_data.get("id") or "accepted-plan")
-    prop_data["status"] = "accepted"
-    prop_data["title"] = "Updated Plan Active"
-    prop_data["reason"] = reason_applied or f"Plan refreshed ({done_new}/{len(final_proj)} steps done)."
-    prop_data["changes"] = changes_applied
-    prop_data["accepted_at"] = now_iso
-    prop_data.pop("proposed_steps", None)
-    prop_file.write_text(json.dumps(prop_data, indent=2, ensure_ascii=False), encoding="utf-8")
+        if conv_file.is_file():
+            try:
+                conv_file.unlink()
+            except OSError:
+                pass
+        done_new = sum(1 for s in final_proj if isinstance(s, dict) and s.get("status") == "done")
+        _record_plan_history_snapshot(
+            campaign_dir,
+            final_proj,
+            label=f"{today_str} \u00b7 Auto-Synced Plan ({done_new}/{len(final_proj)} done)",
+            summary=reason_applied or f"Auto-synced plan ({done_new} of {len(final_proj)} steps completed).",
+            trigger="plan_accept",
+            at=now_iso,
+            force=True,
+        )
+        if not (is_auto_reconcile and is_Explicit_cli_prop) and (prop_file.is_file() or (root / "plan-proposal.json").is_file() or not candidate_steps):
+            prop_data["id"] = proposal_id or str(prop_data.get("id") or ("auto-reconciled-plan" if is_auto_reconcile else "accepted-plan"))
+            prop_data["status"] = "accepted"
+            prop_data["pending"] = False
+            prop_data["reason"] = reason_applied or f"Plan refreshed ({done_new}/{len(final_proj)} steps done)."
+            prop_data["changes"] = changes_applied
+            prop_data["accepted_at"] = now_iso
+            prop_data.pop("proposed_steps", None)
+            prop_data.pop("title", None)
+            _paths.atomic_write_json(prop_file, prop_data)
+            if (root / "plan-proposal.json").is_file():
+                _paths.atomic_write_json(root / "plan-proposal.json", prop_data)
     return {
         "ok": True,
         "action": "accepted",
+        "applied": True,
         "can_revert": True,
         "changes_count": len(changes_applied),
         "steps_count": len(final_proj),
         "steps_done": done_new,
+        "steps": final_proj,
     }
 
 
@@ -7917,11 +8727,16 @@ def reconcile_cockpit_turn_state(
         try:
             refresh = compute_deliverables_plan_refresh(campaign_dir)
             if refresh.get("has_changes"):
-                prop_file = root / ".ecgberht" / "plan-proposal.json"
-                prop_disk, _ = _read_json(prop_file)
-                if not (isinstance(prop_disk, dict) and prop_disk.get("status") == "dismissed" and prop_disk.get("digest") == refresh.get("digest")):
-                    resolve_plan_proposal(campaign_dir, action="accept")
-                    plan_refreshed = True
+                cand_prop_ov = (root / "plan-proposal.json") if (root / "plan-proposal.json").is_file() else (root / ".ecgberht" / "plan-proposal.json")
+                prop_disk, _ = _read_json(cand_prop_ov)
+                is_cli_pending_ov = bool(
+                    isinstance(prop_disk, dict)
+                    and prop_disk.get("pending") is True
+                    and str(prop_disk.get("status") or "pending").lower() not in ("accepted", "dismissed")
+                )
+                if not is_cli_pending_ov and not (isinstance(prop_disk, dict) and prop_disk.get("status") == "dismissed" and prop_disk.get("digest") == refresh.get("digest")):
+                    acc_ov = resolve_plan_proposal(campaign_dir, action="accept", by_actor="auto-reconcile")
+                    plan_refreshed = bool(acc_ov.get("applied", True))
         except Exception:
             pass
 

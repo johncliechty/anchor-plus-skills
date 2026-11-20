@@ -129,7 +129,7 @@ export function pairKey(a, b) {
   const y = typeof b === 'string' ? b.trim() : '';
   if (!x || !y) throw new HaltError('pairKey requires two non-empty lineage names');
   if (x === y) throw new HaltError(`pairKey requires two DISTINCT lineages — a same-lineage pair (${x}) carries no independence signal`);
-  return [x, y].sort().join(' '); // NUL join: unambiguous even if a lineage name contains a delimiter char
+  return [x, y].sort().join('\0'); // NUL join: unambiguous even if a lineage name contains a delimiter char
 }
 
 /** A fresh, empty ledger (a pure value — no I/O). */
@@ -417,8 +417,18 @@ export function runCalibration({ reviewers = [], useLedger = false, ledgerFile =
 // SAME monotone-tighten-only map + origin counter the engine/round use (one canonical counter, I3/I8).
 export { requiredQuorum, countIndependentOrigins, meetsQuorum, STATIC_QUORUM_FLOOR, lineageOf };
 
+function isMain() {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return fs.realpathSync(fileURLToPath(import.meta.url)) === fs.realpathSync(path.resolve(entry));
+  } catch {
+    try { return path.resolve(entry) === fileURLToPath(import.meta.url); } catch { return false; }
+  }
+}
+
 // CLI: `node bin/rho-ledger.mjs` prints the live ledger's ρ̂ estimate (human inspection).
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isMain()) {
   const ledger = loadLedger();
   console.log(JSON.stringify({ hash: ledgerHash(ledger), estimate: estimateRho(ledger) }, null, 2));
 }

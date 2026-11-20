@@ -126,6 +126,13 @@ WAVE2_FAILURE_CONTRACT: dict[str, dict] = {
 
 MAX_RECIPIENTS_TOTAL = 100
 MAX_WORKING_LIST_PROPOSALS = 50
+MAX_LIVE_RECONCILE_PROPOSALS = 3
+LIVE_RECONCILE_MAX_PENDING_PROPOSALS = MAX_LIVE_RECONCILE_PROPOSALS
+MAX_SPAM_SENDERS = 500
+MAX_SPAM_UIDS = 500
+MAX_SPAM_SNAPSHOTS = 200
+MAX_SPAM_SNAPSHOT_DRAFTS_PER_UID = 20
+MAX_SPAM_SNAPSHOT_DRAFT_BODY_CHARS = 16384
 STORE_LOCK_TIMEOUT_SEC = 2.0
 ORANGES_SKILLS: tuple[str, ...] = (
     "researchPrime",
@@ -236,9 +243,57 @@ def _split_top_level_recipient_tokens(normalized_csv: str) -> list[str]:
     return tokens
 
 
+def _format_graph_recipient(name: str, addr: str) -> str:
+    """Format a `(name, email)` pair into valid RFC 5322 form, quoting commas/semicolons and preserving `>`."""
+    nm = str(name or "").strip().strip('"').strip()
+    ad = str(addr or "").strip().strip("<> ").strip()
+    if nm and ad and nm.lower() != ad.lower():
+        return _formataddr((nm, ad))
+    return ad or nm
+
+
+def _repair_corporate_recipient_header(raw: str) -> str:
+    """Repair truncated `<user@domain` angle brackets (missing closing `>`) from legacy Graph header cache entries."""
+    s = str(raw or "")
+    if "<" not in s or "@" not in s:
+        return s
+    return re.sub(r"<([\w.+-]+@[\w.-]+\.[A-Za-z]{2,})(?![>\w.-])", r"<\1>", s)
+
+
+_CORP_SURNAME_TOKEN_RE = re.compile(r"^[A-Za-z][A-Za-z.'\-\s]{0,48}$")
+_CORP_GIVEN_AND_ANGLE_RE = re.compile(r"^([A-Za-z][A-Za-z0-9.'\-\s]{0,48}?)\s*(<[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}>)\s*$")
+
+
+def _merge_unquoted_last_first_tokens(tokens: list[str]) -> list[str]:
+    """Rejoin unquoted corporate `'Last, First <user@domain>'` pairs split on the comma while keeping garbage tokens unmerged."""
+    merged: list[str] = []
+    idx = 0
+    n = len(tokens)
+    while idx < n:
+        cur_tok = tokens[idx].strip()
+        if (
+            idx + 1 < n
+            and "@" not in cur_tok
+            and "<" not in cur_tok
+            and ">" not in cur_tok
+            and '"' not in cur_tok
+            and _CORP_SURNAME_TOKEN_RE.match(cur_tok)
+        ):
+            m_next = _CORP_GIVEN_AND_ANGLE_RE.match(tokens[idx + 1].strip())
+            if m_next:
+                given_part = m_next.group(1).strip()
+                angle_part = m_next.group(2).strip()
+                merged.append(f'"{cur_tok}, {given_part}" {angle_part}')
+                idx += 2
+                continue
+        merged.append(cur_tok)
+        idx += 1
+    return merged
+
+
 def _parse_recipient_list(raw, *, strict: bool = True) -> list[dict]:
     """Parse multi-recipient input (`To`/`CC`/`BCC`) supporting commas, semicolons outside quotes,
-    and RFC 5322 quoted display names (`"Doe, Jane" <jane@example.com>`).
+    RFC 5322 quoted display names (`"Doe, Jane" <jane@example.com>`), and corporate `Last, First <addr>` headers.
     Deduplicates case-insensitively by email address and validates `user@example.com`."""
     if raw is None:
         return []
@@ -250,8 +305,9 @@ def _parse_recipient_list(raw, *, strict: bool = True) -> list[dict]:
         return []
     if strict and any(c in joined for c in ("\r", "\n", "\x00")):
         raise InvalidPayloadError(WAVE2_FAILURE_CONTRACT["dependency-returns-garbage"]["message"])
-    normalized = _split_semicolons_outside_quotes(joined)
-    tokens = _split_top_level_recipient_tokens(normalized)
+    repaired = _repair_corporate_recipient_header(joined)
+    normalized = _split_semicolons_outside_quotes(repaired)
+    tokens = _merge_unquoted_last_first_tokens(_split_top_level_recipient_tokens(normalized))
     if not tokens:
         return []
     by_email: dict[str, dict] = {}
@@ -498,6 +554,22 @@ def _imap_uid_list(conn, criterion: str) -> list[int]:
     return sorted({int(tok) for tok in raw.split() if tok.isdigit()})
 
 
+def _parse_local_display_email_ts(dt_str: str) -> str:
+    """Convert timezone-aware RFC-2822 / ISO email dates to local 'YYYY-MM-DD HH:MM' matching Graph's local timestamps."""
+    s = str(dt_str or "").strip()
+    if not s:
+        return ""
+    try:
+        from email.utils import parsedate_to_datetime
+        dt = parsedate_to_datetime(s)
+        if dt.tzinfo is not None:
+            dt = dt.astimezone().replace(tzinfo=None)
+        return dt.strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        pass
+    return _parse_comparable_email_ts(s)
+
+
 def _parse_imap_header_block(raw_hdr: str) -> dict:
     unfolded = re.sub(r"(?:\r?\n)+[ \t]+", " ", raw_hdr)
     out = {"subject": "", "from": "", "to": "", "cc": "", "date": "", "message_id": ""}
@@ -515,7 +587,7 @@ def _parse_imap_header_block(raw_hdr: str) -> dict:
         elif low.startswith("cc:"):
             out["cc"] = _decode_mime_words(val)
         elif low.startswith("date:"):
-            out["date"] = _parse_comparable_email_ts(val) or val[:32]
+            out["date"] = _parse_local_display_email_ts(val) or val[:32]
         elif low.startswith("message-id:"):
             out["message_id"] = val
     return out
@@ -844,6 +916,9 @@ def _acted_identity_keys(rec: dict) -> list[tuple]:
     mid = str(rec.get("message_id") or "").strip().strip("<>").lower()
     if mid:
         keys.append(("mid", mid))
+    # Never emit coarse same-day ("ssd") keys for synthetic outbound records (sent-*, sr-*, log-*)
+    if uid.startswith(("sent-", "sr-", "log-")):
+        return keys
     m_addr = re.search(r"[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}", f"{rec.get('sender_email') or ''} {rec.get('from') or ''}")
     sender = m_addr.group(0).lower() if m_addr else ""
     subj = str(rec.get("norm_subject") or _norm_email_subject(str(rec.get("subject") or ""))).strip()
@@ -853,10 +928,39 @@ def _acted_identity_keys(rec: dict) -> list[tuple]:
     return keys
 
 
+def _ssd_reconcile_allowed(entry: dict, hdr: dict) -> bool:
+    """Guard coarse same-day ('ssd') fallback so a second unread reply on the same day or same mailbox
+    never inherits an earlier message's acted-upon state."""
+    e_uid = str(entry.get("uid") or "").strip()
+    h_uid = str(hdr.get("uid") or "").strip()
+    if e_uid.startswith(("sent-", "sr-", "log-")):
+        return False
+    e_mid = str(entry.get("message_id") or "").strip().strip("<>").lower()
+    h_mid = str(hdr.get("message_id") or "").strip().strip("<>").lower()
+    # If both carry Message-IDs and did not match via ("mid", ...), they are distinct messages
+    if e_mid and h_mid and e_mid != h_mid:
+        return False
+    e_aid = str(entry.get("account_id") or "").strip()
+    h_aid = str(hdr.get("account_id") or "").strip()
+    # Within the same account, two distinct permanent UIDs are two distinct emails in that mailbox
+    if e_aid and h_aid and e_aid == h_aid and e_uid and h_uid and e_uid != h_uid:
+        return False
+    # Across two distinct live accounts, never let Account A's acted entry hide an unread copy on Account B
+    if hdr.get("is_read") is False and e_aid and h_aid and e_aid != h_aid and e_aid != "legacy":
+        return False
+    if hdr.get("is_read") is False:
+        h_ts = _parse_comparable_email_ts(str(hdr.get("date") or ""))
+        e_act_raw = str(entry.get("at_utc") or entry.get("approved_at_utc") or entry.get("sent_at_utc") or entry.get("date") or "").strip()
+        e_ts = _parse_comparable_email_ts(e_act_raw)
+        if h_ts and e_ts and _sent_ts_is_older_than_inbound(e_ts, h_ts, tolerance_hours=0.02):
+            return False
+    return True
+
+
 def reconcile_acted_upon_emails(acted_map: dict, headers: list[dict]) -> dict:
     """Idempotently re-key ``acted_upon_emails`` onto the current headers by dual key: ``(account_id, uid)`` OR
-    ``message_id`` OR ``(sender_email, subject_norm, date_day)``. A matched entry is copied under the canonical
-    ``"<account_id>:<uid>"`` key (identity fields filled). Re-running on the same input changes nothing."""
+    ``message_id`` OR guarded legacy ``(sender_email, subject_norm, date_day)``. A matched entry is copied under the
+    canonical ``"<account_id>:<uid>"`` key (identity fields filled). Re-running on the same input changes nothing."""
     if not isinstance(acted_map, dict):
         return {"matched": 0, "added_keys": 0}
     index: dict[tuple, dict] = {}
@@ -873,7 +977,15 @@ def reconcile_acted_upon_emails(acted_map: dict, headers: list[dict]) -> dict:
         if not aid or not uid:
             continue
         canon = f"{aid}:{uid}"
-        hit = next((index[ik] for ik in _acted_identity_keys(hdr) if ik in index), None)
+        hit = None
+        for ik in _acted_identity_keys(hdr):
+            cand = index.get(ik)
+            if cand is None:
+                continue
+            if ik[0] == "ssd" and not _ssd_reconcile_allowed(cand, hdr):
+                continue
+            hit = cand
+            break
         if hit is None:
             continue
         matched += 1
@@ -1112,25 +1224,27 @@ def load_comms_sync() -> dict:
 
 def save_comms_sync(sync_data: dict) -> dict:
     p = _sync_path()
+    lock_p = p.with_name(p.name + ".lock")
     with COMMS_LOCK:
         p.parent.mkdir(parents=True, exist_ok=True)
-        if not sync_data.get("sent_email_headers") and p.is_file():
+        with paths.cross_process_lock(lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC):
+            if not sync_data.get("sent_email_headers") and p.is_file():
+                try:
+                    prev, prev_st = _cached_read_json_file(p)
+                    if prev_st != "loaded" or not isinstance(prev, dict):
+                        prev = json.loads(p.read_text(encoding="utf-8"))
+                    if isinstance(prev, dict) and prev.get("sent_email_headers"):
+                        sync_data = dict(sync_data)
+                        sync_data["sent_email_headers"] = prev["sent_email_headers"]
+                except Exception:
+                    pass
+            paths.atomic_write_json(p, sync_data, lock_path=lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC)
             try:
-                prev, prev_st = _cached_read_json_file(p)
-                if prev_st != "loaded" or not isinstance(prev, dict):
-                    prev = json.loads(p.read_text(encoding="utf-8"))
-                if isinstance(prev, dict) and prev.get("sent_email_headers"):
-                    sync_data = dict(sync_data)
-                    sync_data["sent_email_headers"] = prev["sent_email_headers"]
+                st = p.stat()
+                _COMMS_JSON_CACHE[os.path.normcase(str(p.resolve()))] = (st.st_mtime_ns, st.st_size, copy.deepcopy(sync_data))
             except Exception:
                 pass
-        paths.atomic_write_text(p, json.dumps(sync_data, indent=2, ensure_ascii=False))
-        try:
-            st = p.stat()
-            _COMMS_JSON_CACHE[os.path.normcase(str(p.resolve()))] = (st.st_mtime_ns, st.st_size, dict(sync_data))
-        except Exception:
-            pass
-        _RECONCILE_COMMS_CACHE.clear()
+            _RECONCILE_COMMS_CACHE.clear()
     return sync_data
 
 
@@ -1544,15 +1658,39 @@ def _fetch_rest_headers_fallback(account: dict, token: str, max_messages: int = 
     }
     try:
         if fam == "outlook":
+            select_cols = "id,internetMessageId,subject,from,toRecipients,ccRecipients,receivedDateTime,body,bodyPreview,hasAttachments,isRead,importance,inferenceClassification"
             url = (
                 f"https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages"
-                f"?$top={int(max_messages)}&$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,body,bodyPreview,hasAttachments,isRead,importance,inferenceClassification"
+                f"?$top={int(max_messages)}&$select={select_cols}"
                 f"&$orderby=receivedDateTime%20desc"
             )
             req = urllib.request.Request(url, headers=req_hdrs)
             with paths.safe_urlopen(req, timeout=min(float(timeout or 8.0), 15.0)) as resp:
                 data = json.loads(resp.read().decode("utf-8", errors="replace"))
-            for item in data.get("value") or []:
+            raw_items: list[dict] = [it for it in (data.get("value") or []) if isinstance(it, dict)]
+            seen_graph_ids: set[str] = {str(it.get("id") or "") for it in raw_items if it.get("id")}
+            if int(max_messages or 0) >= 15:
+                try:
+                    cutoff_14d_iso = (date.today() - timedelta(days=14)).isoformat()
+                    unread_url = (
+                        f"https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages"
+                        f"?$top=100&$filter=isRead%20eq%20false%20and%20receivedDateTime%20ge%20{cutoff_14d_iso}T00:00:00Z"
+                        f"&$select={select_cols}&$orderby=receivedDateTime%20desc"
+                    )
+                    u_req = urllib.request.Request(unread_url, headers=req_hdrs)
+                    with paths.safe_urlopen(u_req, timeout=min(float(timeout or 8.0), 15.0)) as u_resp:
+                        u_data = json.loads(u_resp.read().decode("utf-8", errors="replace"))
+                    u_vals = [x for x in (u_data.get("value") or []) if isinstance(x, dict)]
+                    if len(u_vals) >= 100:
+                        account["_rest_unread_capped"] = True
+                    for u_it in u_vals:
+                        u_id = str(u_it.get("id") or "")
+                        if u_id and u_id not in seen_graph_ids:
+                            seen_graph_ids.add(u_id)
+                            raw_items.append(u_it)
+                except Exception:
+                    account["_rest_unread_capped"] = True
+            for item in raw_items:
                 if not isinstance(item, dict):
                     continue
                 frm_obj = ((item.get("from") or {}).get("emailAddress") or {})
@@ -1565,14 +1703,14 @@ def _fetch_rest_headers_fallback(account: dict, token: str, max_messages: int = 
                         ea = (r.get("emailAddress") or {})
                         nm = str(ea.get("name") or "").strip()
                         ad = str(ea.get("address") or "").strip()
-                        to_list.append(f"{nm} <{ad}>".strip(" <>") if (nm and ad and nm != ad) else (ad or nm))
+                        to_list.append(_format_graph_recipient(nm, ad))
                 cc_list = []
                 for r in (item.get("ccRecipients") or []):
                     if isinstance(r, dict):
                         ea = (r.get("emailAddress") or {})
                         nm = str(ea.get("name") or "").strip()
                         ad = str(ea.get("address") or "").strip()
-                        cc_list.append(f"{nm} <{ad}>".strip(" <>") if (nm and ad and nm != ad) else (ad or nm))
+                        cc_list.append(_format_graph_recipient(nm, ad))
                 to_str = ", ".join([x for x in to_list if x])
                 cc_str = ", ".join([x for x in cc_list if x])
                 body_obj = item.get("body") or {}
@@ -1580,14 +1718,24 @@ def _fetch_rest_headers_fallback(account: dict, token: str, max_messages: int = 
                 is_html_body = str(body_obj.get("contentType") or "").lower() == "html"
                 cleaned_info = format_clean_email_body_and_links(raw_body_content, is_html=is_html_body)
                 clean_snip = " ".join(str(cleaned_info.get("body") or item.get("bodyPreview") or "").split())[:180]
+                raw_rdt = str(item.get("receivedDateTime") or "").strip()
+                fmt_rdt = raw_rdt[:16].replace("T", " ")
+                if raw_rdt:
+                    try:
+                        parsed_rdt = datetime.fromisoformat(raw_rdt.replace("Z", "+00:00"))
+                        if parsed_rdt.tzinfo is not None:
+                            fmt_rdt = parsed_rdt.astimezone().strftime("%Y-%m-%d %H:%M")
+                    except Exception:
+                        pass
                 graph_hdr = {
                     "uid": str(item.get("id") or ""),
+                    "message_id": str(item.get("internetMessageId") or "").strip(),
                     "subject": str(item.get("subject") or "(No Subject)"),
                     "from": str(frm_str),
                     "sender_email": frm_addr,
                     "to": to_str,
                     "cc": cc_str,
-                    "date": str(item.get("receivedDateTime") or "")[:16].replace("T", " "),
+                    "date": fmt_rdt,
                     "snippet": clean_snip,
                     "body": str(cleaned_info.get("body") or clean_snip),
                     "quoted_history": str(cleaned_info.get("quoted_history") or ""),
@@ -1616,11 +1764,29 @@ def _fetch_rest_headers_fallback(account: dict, token: str, max_messages: int = 
             req = urllib.request.Request(list_url, headers=req_hdrs)
             with paths.safe_urlopen(req, timeout=min(float(timeout or 8.0), 15.0)) as resp:
                 data = json.loads(resp.read().decode("utf-8", errors="replace"))
-            for mref in (data.get("messages") or [])[:max_messages]:
+            raw_mrefs = list((data.get("messages") or [])[:max_messages])
+            seen_gm_ids = {str((r or {}).get("id") or "") for r in raw_mrefs if isinstance(r, dict) and r.get("id")}
+            if int(max_messages or 0) >= 15:
+                try:
+                    unread_g_url = "https://gmail.googleapis.com/gmail/v1/users/me/messages?labelIds=INBOX&q=is%3Aunread%20newer_than%3A14d&maxResults=50"
+                    ug_req = urllib.request.Request(unread_g_url, headers=req_hdrs)
+                    with paths.safe_urlopen(ug_req, timeout=min(float(timeout or 8.0), 15.0)) as ug_resp:
+                        ug_data = json.loads(ug_resp.read().decode("utf-8", errors="replace"))
+                    ug_msgs = list((ug_data.get("messages") or [])[:50])
+                    if len(ug_msgs) >= 50:
+                        account["_rest_unread_capped"] = True
+                    for u_ref in ug_msgs:
+                        u_gid = str((u_ref or {}).get("id") or "")
+                        if u_gid and u_gid not in seen_gm_ids:
+                            seen_gm_ids.add(u_gid)
+                            raw_mrefs.append(u_ref)
+                except Exception:
+                    account["_rest_unread_capped"] = True
+            for mref in raw_mrefs:
                 mid = str((mref or {}).get("id") or "")
                 if not mid:
                     continue
-                m_url = f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{mid}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Date"
+                m_url = f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{urllib.parse.quote(mid, safe='')}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Date&metadataHeaders=Message-ID"
                 m_req = urllib.request.Request(m_url, headers=req_hdrs)
                 with paths.safe_urlopen(m_req, timeout=min(float(timeout or 8.0), 15.0)) as m_resp:
                     m_data = json.loads(m_resp.read().decode("utf-8", errors="replace"))
@@ -1631,6 +1797,7 @@ def _fetch_rest_headers_fallback(account: dict, token: str, max_messages: int = 
                 hmap = {str(h.get("name") or "").lower(): str(h.get("value") or "") for h in hdr_list if isinstance(h, dict)}
                 headers_out.append({
                     "uid": mid,
+                    "message_id": hmap.get("message-id") or "",
                     "subject": hmap.get("subject") or "(No Subject)",
                     "from": hmap.get("from") or "Gmail",
                     "to": hmap.get("to") or "",
@@ -1841,7 +2008,7 @@ def fetch_sent_headers(account: dict, secret: str, max_messages: int = 15, timeo
                             ea = (r.get("emailAddress") or {})
                             nm = str(ea.get("name") or "").strip()
                             ad = str(ea.get("address") or "").strip()
-                            to_list.append(f"{nm} <{ad}>".strip(" <>") if (nm and ad and nm != ad) else (ad or nm))
+                            to_list.append(_format_graph_recipient(nm, ad))
                     to_str = ", ".join([x for x in to_list if x]) or "Recipient"
                     sent_iso_raw = str(item.get("sentDateTime") or item.get("receivedDateTime") or "").strip()
                     dt_raw = sent_iso_raw[:16].replace("T", " ")
@@ -2392,6 +2559,127 @@ def _triage_prefs_path() -> Path:
     return paths.data_dir() / ".anchor" / "comms-triage-prefs.json"
 
 
+def normalize_spam_sender(raw_sender) -> str:
+    """Delegate sender normalization to `scribe_engine.normalize_spam_sender` (single `email.utils.parseaddr` source of truth)."""
+    return _scribe.normalize_spam_sender(raw_sender)
+
+
+def _spam_uid_key(account_id: str, uid: str) -> str:
+    """Return an account-qualified `<account_id>:<uid>` key when `account_id` is known, else bare `uid`."""
+    aid = str(account_id or "").strip()
+    u = str(uid or "").strip()
+    if not u:
+        return ""
+    if ":" in u or not aid:
+        return u
+    return f"{aid}:{u}"
+
+
+def _is_spam_uid_match(uid: str, account_id: str, spam_uids_set: set[str]) -> bool:
+    """Return True if `(account_id, uid)` matches `spam_uids_set` without cross-account bare-UID collisions."""
+    return _scribe._is_spam_uid_match(uid, account_id, spam_uids_set)
+
+
+def _collect_protected_correspondents(
+    *,
+    prefs: dict | None = None,
+    sync_cache: dict | None = None,
+    cfg: dict | None = None,
+    scribe_mem: dict | None = None,
+) -> set[str]:
+    """Compute the normalized set of protected correspondent addresses once per classify/triage call."""
+    cfg_doc = cfg if isinstance(cfg, dict) else load_comms_config()
+    prefs_doc = prefs if isinstance(prefs, dict) else load_triage_prefs()
+    sync_doc = sync_cache if isinstance(sync_cache, dict) else load_comms_sync()
+    protected: set[str] = set()
+
+    def _add(raw_val) -> None:
+        ns = normalize_spam_sender(raw_val)
+        if ns:
+            protected.add(ns)
+        raw_low = str(raw_val or "").strip().lower()
+        if raw_low and "@" in raw_low:
+            protected.add(raw_low)
+
+    # 1. Own configured accounts
+    for acc in (cfg_doc.get("accounts") or []):
+        if isinstance(acc, dict):
+            _add(acc.get("email"))
+    for own_extra in (prefs_doc.get("own_emails") or cfg_doc.get("own_emails") or []):
+        _add(own_extra)
+
+    # 2. Explicitly upgraded senders or positive sender score
+    for up_s in (prefs_doc.get("upgraded_senders") or []):
+        _add(up_s)
+    for prot_s in (prefs_doc.get("protected_senders") or cfg_doc.get("protected_senders") or []):
+        _add(prot_s)
+    scores = prefs_doc.get("sender_scores") if isinstance(prefs_doc.get("sender_scores"), dict) else {}
+    for sk, sv in scores.items():
+        try:
+            if int(sv or 0) > 0:
+                _add(sk)
+        except (TypeError, ValueError):
+            pass
+
+    # 3. Correspondents the user has replied to or emailed
+    for rep_s in (prefs_doc.get("replied_senders") or []):
+        _add(rep_s)
+    acted_map = prefs_doc.get("acted_upon_emails") if isinstance(prefs_doc.get("acted_upon_emails"), dict) else {}
+    for _ak, av in acted_map.items():
+        if not isinstance(av, dict):
+            continue
+        st_low = str(av.get("status") or "").lower()
+        if any(w in st_low for w in ("replied", "answered", "important", "steward action")):
+            _add(av.get("sender_email") or av.get("from"))
+    for lg in (cfg_doc.get("manual_logs") or []):
+        if isinstance(lg, dict) and str(lg.get("direction") or "sent").lower() == "sent":
+            for fld in ("to", "cc", "bcc", "counterparty", "sender_email"):
+                for r in _parse_recipient_list(lg.get(fld), strict=False):
+                    _add(r.get("email"))
+    for sh in (sync_doc.get("sent_email_headers") or []):
+        if isinstance(sh, dict):
+            for fld in ("to", "cc", "bcc", "counterparty", "recipient", "sender_email"):
+                for r in _parse_recipient_list(sh.get(fld), strict=False):
+                    _add(r.get("email"))
+
+    # 4. Scribe memory learned important / sent_count > 0
+    try:
+        sc_mem = scribe_mem if isinstance(scribe_mem, dict) else _scribe.load_scribe_memory()
+        s_profs = sc_mem.get("sender_profiles") if isinstance(sc_mem, dict) else {}
+        if isinstance(s_profs, dict):
+            for pk, prof in s_profs.items():
+                if isinstance(prof, dict) and (prof.get("important") or int(prof.get("sent_count") or 0) > 0):
+                    _add(pk)
+                    _add(prof.get("email"))
+    except Exception:
+        pass
+    return protected
+
+
+def _is_protected_correspondent(
+    norm_email: str,
+    *,
+    prefs: dict | None = None,
+    sync_cache: dict | None = None,
+    cfg: dict | None = None,
+    scribe_mem: dict | None = None,
+    protected_set: set[str] | None = None,
+) -> bool:
+    """Return True when `norm_email` is a protected correspondent (own account, upgraded sender,
+    replied/sent recipient, or learned important contact in Scribe memory) and must never be sender-blocked."""
+    em = normalize_spam_sender(norm_email)
+    if not em:
+        return False
+    if protected_set is not None:
+        return em in protected_set
+    return em in _collect_protected_correspondents(
+        prefs=prefs,
+        sync_cache=sync_cache,
+        cfg=cfg,
+        scribe_mem=scribe_mem,
+    )
+
+
 def load_triage_prefs() -> dict:
     p = _triage_prefs_path()
     base = {
@@ -2404,6 +2692,9 @@ def load_triage_prefs() -> dict:
         "upgraded_senders": [],
         "downgraded_domains": [],
         "upgraded_domains": [],
+        "spam_senders": [],
+        "spam_uids": [],
+        "spam_snapshots": {},
         "sender_scores": {},
         "acted_upon_emails": {},
         "unacted_uids": [],
@@ -2413,15 +2704,102 @@ def load_triage_prefs() -> dict:
         for k in base:
             if k in raw and isinstance(raw[k], type(base[k])):
                 base[k] = list(raw[k]) if isinstance(raw[k], list) else (copy.deepcopy(raw[k]) if isinstance(raw[k], dict) else raw[k])
+    norm_ss: list[str] = []
+    for item in base.get("spam_senders") or []:
+        ns = normalize_spam_sender(item)
+        if ns and ns not in norm_ss:
+            norm_ss.append(ns)
+    base["spam_senders"] = norm_ss
+    norm_su: list[str] = []
+    for item in base.get("spam_uids") or []:
+        su = str(item or "").strip()
+        if su and su not in norm_su:
+            norm_su.append(su)
+    base["spam_uids"] = norm_su
     return base
+
+
+def _bound_spam_snapshots(
+    spam_snapshots: dict | None,
+    active_spam_uids: list[str] | None = None,
+    active_spam_senders: list[str] | None = None,
+) -> dict:
+    """Enforce numeric bounds (`MAX_SPAM_SNAPSHOTS`, `MAX_SPAM_SNAPSHOT_DRAFTS_PER_UID`,
+    `MAX_SPAM_SNAPSHOT_DRAFT_BODY_CHARS`) and evict stale snapshot entries whose UIDs/senders
+    are no longer active or pending restore."""
+    if not isinstance(spam_snapshots, dict):
+        return {}
+    out: dict = {}
+    active_uids_set = {str(u).strip() for u in (active_spam_uids or []) if str(u).strip()} if active_spam_uids is not None else None
+    active_senders_set = {normalize_spam_sender(s) for s in (active_spam_senders or []) if normalize_spam_sender(s)} if active_spam_senders is not None else None
+
+    raw_uids = spam_snapshots.get("uids")
+    if isinstance(raw_uids, dict):
+        bounded_uids: dict[str, dict] = {}
+        seen_entry_ids: set[int] = set()
+        for k, v in raw_uids.items():
+            ks = str(k or "").strip()
+            if not ks or not isinstance(v, dict) or id(v) in seen_entry_ids:
+                continue
+            bare_u = ks.split(":", 1)[1].strip() if ":" in ks else ks
+            aid_u = str(v.get("account_id") or "").strip()
+            qual_u = _spam_uid_key(aid_u, bare_u)
+            if active_uids_set is not None and not v.get("restore_pending"):
+                if ks not in active_uids_set and bare_u not in active_uids_set and (not qual_u or qual_u not in active_uids_set):
+                    continue
+            seen_entry_ids.add(id(v))
+            entry_copy = dict(v)
+            entry_copy["sender_uids"] = [str(x).strip() for x in (entry_copy.get("sender_uids") or []) if str(x).strip()][-MAX_SPAM_UIDS:]
+            entry_copy["removed_proposals"] = [dict(p) for p in (entry_copy.get("removed_proposals") or []) if isinstance(p, dict)][-MAX_WORKING_LIST_PROPOSALS:]
+            entry_copy["added_dismissed_keys"] = [str(x).strip() for x in (entry_copy.get("added_dismissed_keys") or []) if str(x).strip()][-MAX_WORKING_LIST_PROPOSALS:]
+            trimmed_drafts: list[dict] = []
+            for d in (entry_copy.get("removed_sr_drafts") or [])[-MAX_SPAM_SNAPSHOT_DRAFTS_PER_UID:]:
+                if not isinstance(d, dict):
+                    continue
+                d_copy = dict(d)
+                for bf in ("draft_body", "body", "quoted_history", "incoming_snippet"):
+                    if isinstance(d_copy.get(bf), str) and len(d_copy[bf]) > MAX_SPAM_SNAPSHOT_DRAFT_BODY_CHARS:
+                        d_copy[bf] = d_copy[bf][:MAX_SPAM_SNAPSHOT_DRAFT_BODY_CHARS]
+                trimmed_drafts.append(d_copy)
+            entry_copy["removed_sr_drafts"] = trimmed_drafts
+            canon_k = qual_u or ks
+            bounded_uids[canon_k] = entry_copy
+        if len(bounded_uids) > MAX_SPAM_SNAPSHOTS:
+            bounded_uids = dict(list(bounded_uids.items())[-MAX_SPAM_SNAPSHOTS:])
+        if bounded_uids:
+            out["uids"] = bounded_uids
+
+    raw_senders = spam_snapshots.get("senders")
+    if isinstance(raw_senders, dict):
+        bounded_senders: dict[str, dict] = {}
+        for k, v in raw_senders.items():
+            ns = normalize_spam_sender(k)
+            if not ns or not isinstance(v, dict):
+                continue
+            if active_senders_set is not None and ns not in active_senders_set:
+                continue
+            bounded_senders[ns] = dict(v)
+        if len(bounded_senders) > MAX_SPAM_SNAPSHOTS:
+            bounded_senders = dict(list(bounded_senders.items())[-MAX_SPAM_SNAPSHOTS:])
+        if bounded_senders:
+            out["senders"] = bounded_senders
+
+    return out
 
 
 def save_triage_prefs(prefs: dict) -> dict:
     p = _triage_prefs_path()
+    lock_p = p.with_name(p.name + ".lock")
     clean_prefs = {k: v for k, v in (prefs or {}).items() if not str(k).startswith("_")}
+    if "spam_snapshots" in clean_prefs:
+        clean_prefs["spam_snapshots"] = _bound_spam_snapshots(
+            clean_prefs.get("spam_snapshots"),
+            clean_prefs.get("spam_uids"),
+            clean_prefs.get("spam_senders"),
+        )
     with COMMS_LOCK:
         p.parent.mkdir(parents=True, exist_ok=True)
-        paths.atomic_write_text(p, json.dumps(clean_prefs, indent=2, ensure_ascii=False))
+        paths.atomic_write_json(p, clean_prefs, lock_path=lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC)
         _invalidate_cached_json_file(p)
     return prefs
 
@@ -2573,7 +2951,8 @@ def _extract_person_tokens(raw: str) -> set[str]:
             out.update(_PERSON_TOKEN_ALIASES[em])
         elif local in _PERSON_TOKEN_ALIASES:
             out.update(_PERSON_TOKEN_ALIASES[local])
-    words = [w for w in re.sub(r"[^a-z0-9\s]", " ", s).split() if len(w) >= 3 and w not in ("edu", "com", "org", "net", "gmail", "the", "and", "for", "inbox", "marketing", "university")]
+    s_names = re.sub(r"[\w.+-]+@[\w.-]+\.[a-z]{2,}", " ", s)
+    words = [w for w in re.sub(r"[^a-z0-9\s]", " ", s_names).split() if len(w) >= 3 and w not in ("edu", "com", "org", "net", "gmail", "the", "and", "for", "inbox", "marketing", "university")]
     out.update(words)
     if len(words) >= 2:
         nk = " ".join(words[:2])
@@ -2843,7 +3222,58 @@ def _sent_ts_is_older_than_inbound(s_ts: str, in_ts: str, tolerance_hours: float
 
 
 _COMPARABLE_TS_MEMO: dict[str, str] = {}
+_LOCAL_TS_MEMO: dict[tuple[str, str], str] = {}
+_LOCAL_NAIVE_TZ_OVERRIDE: Any = None
 _ISO_DATE_PREFIX_RE = re.compile(r"^\d{4}-\d{2}-\d{2}")
+_EXPLICIT_TZ_RE = re.compile(r"(?:Z|[+-]\d{2}:?\d{2})\s*$", re.I)
+
+
+def _parse_local_or_utc_email_ts(dt_str: str) -> str:
+    """Parse a sent/triage timestamp into UTC 'YYYY-MM-DD HH:MM'.
+    Explicitly timezone-qualified strings ('...Z' or '+/-HH:MM') convert directly to UTC;
+    legacy naive local-clock strings ('YYYY-MM-DD HH:MM' or 'Nov 16 12:19') are interpreted in the
+    machine's local timezone at that timestamp (or `_LOCAL_NAIVE_TZ_OVERRIDE` in tests) and converted to UTC."""
+    s = str(dt_str or "").strip()
+    if not s:
+        return ""
+    if _EXPLICIT_TZ_RE.search(s):
+        return _parse_comparable_email_ts(s)
+    tz_key = str(_LOCAL_NAIVE_TZ_OVERRIDE) if _LOCAL_NAIVE_TZ_OVERRIDE is not None else "sys_local"
+    memo_k = (s, tz_key)
+    hit = _LOCAL_TS_MEMO.get(memo_k)
+    if hit is not None:
+        return hit
+    naive_dt: datetime | None = None
+    if _ISO_DATE_PREFIX_RE.match(s):
+        try:
+            naive_dt = datetime.fromisoformat(s[:19].replace("T", " "))
+        except Exception:
+            try:
+                naive_dt = datetime.strptime(s[:16].replace("T", " "), "%Y-%m-%d %H:%M")
+            except Exception:
+                naive_dt = None
+    if naive_dt is None:
+        try:
+            naive_dt = datetime.strptime(f"{date.today().year} {s[:12].strip()}", "%Y %b %d %H:%M")
+            if naive_dt > datetime.now() + timedelta(days=2):
+                naive_dt = naive_dt.replace(year=naive_dt.year - 1)
+        except Exception:
+            naive_dt = None
+    if naive_dt is None:
+        res = _parse_comparable_email_ts(s)
+    else:
+        if naive_dt.tzinfo is None:
+            if _LOCAL_NAIVE_TZ_OVERRIDE is not None:
+                aware_dt = naive_dt.replace(tzinfo=_LOCAL_NAIVE_TZ_OVERRIDE)
+            else:
+                aware_dt = naive_dt.astimezone()
+        else:
+            aware_dt = naive_dt
+        res = aware_dt.astimezone(timezone.utc).replace(tzinfo=None).strftime("%Y-%m-%d %H:%M")
+    if len(_LOCAL_TS_MEMO) > 8192:
+        _LOCAL_TS_MEMO.clear()
+    _LOCAL_TS_MEMO[memo_k] = res
+    return res
 
 
 def _parse_comparable_email_ts(dt_str: str) -> str:
@@ -2900,6 +3330,31 @@ def _parse_comparable_email_ts(dt_str: str) -> str:
         _COMPARABLE_TS_MEMO.clear()
     _COMPARABLE_TS_MEMO[s] = res
     return res
+
+
+def _thread_message_utc_key(m: dict) -> tuple[str, int, int]:
+    """Return a descending-comparable UTC tuple `(utc_ts, is_current, is_inbound)` so sorting with
+    `reverse=True` places the most recent email at index 0, the next-most-recent at index 1, and so on."""
+    raw_dt = str(m.get("raw_date") or m.get("sent_at_utc") or m.get("approved_at_utc") or m.get("date") or "").strip()
+    uid_s = str(m.get("uid") or "").strip()
+    if m.get("direction") == "sent" and uid_s.startswith(("log-", "sr-")) and raw_dt and not _EXPLICIT_TZ_RE.search(raw_dt):
+        ts = _parse_local_or_utc_email_ts(raw_dt)
+    else:
+        ts = _parse_comparable_email_ts(raw_dt)
+    if not ts and m.get("is_current"):
+        ts = "9999-99-99 99:99"
+    return (
+        ts or "",
+        1 if m.get("is_current") else 0,
+        1 if m.get("direction") == "inbound" else 0,
+    )
+
+
+def _sort_thread_messages_newest_first(tmsgs: list[dict]) -> list[dict]:
+    """Sort `thread_messages` in-place from most recent (index 0, top) to oldest (bottom)."""
+    if isinstance(tmsgs, list) and len(tmsgs) > 1:
+        tmsgs.sort(key=_thread_message_utc_key, reverse=True)
+    return tmsgs
 
 
 def _subjects_match_thread(s1: str, s2: str, sender1: str = "", sender2: str = "") -> bool:
@@ -2960,146 +3415,466 @@ def _match_user_sent_reply_for_inbox_item(hdr: dict, sent_items: list[dict]) -> 
             continue
         if sender_toks and to_toks and not same_person and not is_third_party_cc and not _is_specific_multi_person_thread_subject(subj_norm):
             continue
-        s_ts = _parse_comparable_email_ts(str(s.get("date") or s.get("approved_at") or s.get("at") or ""))
+        _explicit_utc = str(s.get("approved_at_utc") or s.get("sent_at_utc") or s.get("at_utc") or "").strip()
         _s_uid_str = str(s.get("uid") or s.get("id") or "")
         _is_local_clock_sent = (
             _s_uid_str.startswith(("sent-", "log-", "sr-"))
             or bool(s.get("approved_at"))
             or str(s.get("source") or "") == "manual_log"
         )
-        _tol_hrs = 8.0 if _is_local_clock_sent else 0.02
+        if _explicit_utc:
+            s_ts = _parse_comparable_email_ts(_explicit_utc)
+        elif _is_local_clock_sent:
+            s_ts = _parse_local_or_utc_email_ts(str(s.get("approved_at") or s.get("at") or s.get("date") or ""))
+        else:
+            s_ts = _parse_comparable_email_ts(str(s.get("date") or s.get("approved_at") or s.get("at") or ""))
+        _tol_hrs = 0.02
         if in_ts and s_ts and not is_third_party_cc and _sent_ts_is_older_than_inbound(s_ts, in_ts, tolerance_hours=_tol_hrs):
             continue
         return s
     return None
 
 
-def mark_email_read_remote(account_id: str = "", uid: str = "", subject: str = "") -> dict:
-    """Mark an email as Read (looked at) locally in `.anchor/comms-sync.json` AND asynchronously in the live
-    provider (Microsoft 365 Graph `isRead=true`, Gmail REST `removeLabelIds=['UNREAD']`, or IMAP `+FLAGS \\Seen`).
-    HARD LAW: Never deletes any email message."""
-    clean_uid = str(uid or "").strip()
-    clean_aid = str(account_id or "").strip()
-    clean_subj = str(subject or "").strip()
-    if not clean_uid and not clean_subj:
-        return {"ok": False, "error": "uid or subject required"}
+_REMOTE_READ_WORKER_LOCK = globals().get("_REMOTE_READ_WORKER_LOCK") or threading.Lock()
+_REMOTE_READ_TRIGGER = globals().get("_REMOTE_READ_TRIGGER") or threading.Lock()
+_REMOTE_READ_THREAD: threading.Thread | None = globals().get("_REMOTE_READ_THREAD")
+MAX_REMOTE_READ_QUEUE = 500
+MAX_REMOTE_READ_ATTEMPTS = 6
 
-    # 1. Update local comms-sync.json immediately
-    matched_aid = clean_aid
+
+def _pending_read_sync_path() -> Path:
+    return paths.data_dir() / ".anchor" / "pending-read-sync.json"
+
+
+def _load_pending_read_sync_unlocked(p: Path | None = None) -> dict[str, dict]:
+    fp = p or _pending_read_sync_path()
+    if not fp.is_file():
+        return {}
     try:
-        sync_data = load_comms_sync()
-        changed = False
-        for hdr in sync_data.get("email_headers") or []:
-            if not isinstance(hdr, dict):
-                continue
-            if (clean_uid and str(hdr.get("uid") or "") == clean_uid) or (not clean_uid and clean_subj and clean_subj.lower() == str(hdr.get("subject") or "").lower()):
-                if not matched_aid:
-                    matched_aid = str(hdr.get("account_id") or "")
-                if not clean_subj:
-                    clean_subj = str(hdr.get("subject") or "")
-                if not hdr.get("is_read"):
-                    hdr["is_read"] = True
-                    changed = True
-        if changed:
-            save_comms_sync(sync_data)
+        doc = json.loads(fp.read_text(encoding="utf-8"))
+        if isinstance(doc, dict) and isinstance(doc.get("items"), dict):
+            return {str(k): dict(v) for k, v in doc["items"].items() if isinstance(v, dict)}
     except Exception:
         pass
+    return {}
 
+
+def _pending_remote_read_map() -> dict[tuple[str, str], bool]:
+    """Return `{(account_id, uid): target_is_read}` for any in-flight remote Read/Unread mutations."""
+    out: dict[tuple[str, str], bool] = {}
+    try:
+        items = _load_pending_read_sync_unlocked()
+        for entry in items.values():
+            aid = str(entry.get("account_id") or "").strip()
+            uid = str(entry.get("uid") or "").strip()
+            if uid:
+                out[(aid, uid)] = bool(entry.get("is_read", True))
+    except Exception:
+        pass
+    return out
+
+
+def _resolve_owning_account_for_uid(accounts: list[dict], account_id: str, uid: str) -> dict | None:
+    clean_aid = str(account_id or "").strip()
+    clean_uid = str(uid or "").strip()
+    valid_accs = [a for a in (accounts or []) if isinstance(a, dict)]
+    if clean_aid:
+        hit = next((a for a in valid_accs if str(a.get("id") or "") == clean_aid), None)
+        if hit is not None:
+            return hit
+    if clean_uid.startswith("AAMk") or (clean_uid and not clean_uid.isdigit() and len(clean_uid) > 36):
+        out_acc = next((a for a in valid_accs if str(a.get("family") or "").lower() == "outlook"), None)
+        if out_acc is not None:
+            return out_acc
+    if clean_uid.isdigit():
+        imap_accs = [
+            a for a in valid_accs
+            if str(a.get("auth_mode") or "app_password").lower() != "oauth_token"
+            or str(a.get("family") or "").lower() != "outlook"
+        ]
+        if len(imap_accs) == 1:
+            return imap_accs[0]
+    if len(valid_accs) == 1:
+        return valid_accs[0]
+    return valid_accs[0] if (valid_accs and not clean_aid and not clean_uid) else None
+
+
+def _enqueue_pending_read_sync(entries: list[dict]) -> int:
+    if not entries:
+        return 0
+    p = _pending_read_sync_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    lock_p = p.with_name(p.name + ".lock")
+    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    try:
+        with paths.cross_process_lock(lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC):
+            items = _load_pending_read_sync_unlocked(p)
+            for ent in entries:
+                uid = str(ent.get("uid") or "").strip()
+                subj = str(ent.get("subject") or "").strip()
+                aid = str(ent.get("account_id") or "").strip()
+                if not uid and not subj:
+                    continue
+                if uid.startswith(("imap-", "sent-", "log-", "sr-")):
+                    continue
+                k = f"{aid}:{uid or subj.lower()[:64]}"
+                prev = items.get(k) if isinstance(items.get(k), dict) else {}
+                items[k] = {
+                    "account_id": aid or str(prev.get("account_id") or ""),
+                    "uid": uid,
+                    "subject": subj or str(prev.get("subject") or ""),
+                    "is_read": bool(ent.get("is_read", True)),
+                    "attempts": int(prev.get("attempts") or 0),
+                    "queued_at": str(prev.get("queued_at") or now_iso),
+                    "updated_at": now_iso,
+                }
+            if len(items) > MAX_REMOTE_READ_QUEUE:
+                items = dict(list(items.items())[-MAX_REMOTE_READ_QUEUE:])
+            paths.atomic_write_json(p, {"version": 1, "items": items, "updated_at": now_iso}, lock_path=lock_p)
+            return len(items)
+    except Exception:
+        return 0
+
+
+def flush_pending_read_sync() -> dict:
+    """Drain `.anchor/pending-read-sync.json` serially per account, batching IMAP UID STORE commands
+    and properly URL-encoding Microsoft Graph / Gmail REST message IDs (`safe=''`). Never deletes mail."""
     if _is_hermetic():
-        return {"ok": True, "uid": clean_uid, "account_id": matched_aid, "remote_sync": "hermetic_read_only_flag"}
+        return {"ok": True, "synced": 0, "remaining": 0, "hermetic": True}
+    if not _REMOTE_READ_WORKER_LOCK.acquire(blocking=False):
+        return {"ok": True, "synced": 0, "busy": True}
+    try:
+        p = _pending_read_sync_path()
+        if not p.is_file():
+            return {"ok": True, "synced": 0, "remaining": 0}
+        lock_p = p.with_name(p.name + ".lock")
+        with paths.cross_process_lock(lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC):
+            snapshot = _load_pending_read_sync_unlocked(p)
+        if not snapshot:
+            return {"ok": True, "synced": 0, "remaining": 0}
 
-    def _bg_sync_read() -> None:
-        try:
-            cfg = load_comms_config()
-            accounts = cfg.get("accounts") or []
-            acc = next((a for a in accounts if isinstance(a, dict) and a.get("id") == matched_aid), None) if matched_aid else (accounts[0] if accounts else None)
+        cfg = load_comms_config()
+        accounts = cfg.get("accounts") or []
+        by_acc: dict[str, list[tuple[str, dict]]] = {}
+        orphan_keys: set[str] = set()
+        for k, item in snapshot.items():
+            acc = _resolve_owning_account_for_uid(accounts, str(item.get("account_id") or ""), str(item.get("uid") or ""))
+            if not isinstance(acc, dict) or not acc.get("id"):
+                orphan_keys.add(k)
+                continue
+            by_acc.setdefault(str(acc["id"]), []).append((k, item))
+
+        succeeded_keys: set[str] = set(orphan_keys)
+        failed_keys: set[str] = set()
+
+        for aid, pairs in by_acc.items():
+            acc = next((a for a in accounts if isinstance(a, dict) and str(a.get("id") or "") == aid), None)
             if not isinstance(acc, dict):
-                return
-            aid = str(acc.get("id") or "")
+                succeeded_keys.update(k for k, _ in pairs)
+                continue
             secret = get_account_secret(aid)
             if not secret:
-                return
+                failed_keys.update(k for k, _ in pairs)
+                continue
             fam = str(acc.get("family") or "gmail").strip().lower()
             auth_mode = str(acc.get("auth_mode") or "app_password").strip().lower()
+            is_oauth = auth_mode == "oauth_token" or str(secret).strip().startswith("{")
             email_addr = str(acc.get("email") or "").strip()
             clean_secret = (
                 _get_valid_oauth_access_token(aid, raw_secret=secret, family=fam)
-                if auth_mode == "oauth_token"
+                if is_oauth
                 else re.sub(r"\s+", "", secret)
             )
             if not clean_secret:
-                return
+                failed_keys.update(k for k, _ in pairs)
+                continue
 
-            # Microsoft 365 Graph API: PATCH /v1.0/me/messages/{id} {"isRead": true}
-            if auth_mode == "oauth_token" and fam == "outlook":
-                if clean_uid and not clean_uid.startswith(("imap-", "sent-", "log-")):
-                    m_url = f"https://graph.microsoft.com/v1.0/me/messages/{urllib.parse.quote(clean_uid)}"
-                    req = urllib.request.Request(
-                        m_url,
-                        data=json.dumps({"isRead": True}).encode("utf-8"),
-                        headers={
-                            "User-Agent": "Anchor-Comms-Connector/1.0",
-                            "Authorization": f"Bearer {clean_secret}",
-                            "Content-Type": "application/json",
-                            "Accept": "application/json",
-                        },
-                        method="PATCH",
-                    )
-                    with paths.safe_urlopen(req, timeout=5.0) as _:
-                        pass
-                return
+            # 1. Microsoft 365 Graph API (`safe=""` encodes `/` inside Graph message IDs)
+            if is_oauth and fam == "outlook":
+                for k, item in pairs:
+                    c_uid = str(item.get("uid") or "").strip()
+                    t_read = bool(item.get("is_read", True))
+                    if not c_uid or c_uid.startswith(("imap-", "sent-", "log-", "sr-")):
+                        succeeded_keys.add(k)
+                        continue
+                    try:
+                        m_url = f"https://graph.microsoft.com/v1.0/me/messages/{urllib.parse.quote(c_uid, safe='')}"
+                        req = urllib.request.Request(
+                            m_url,
+                            data=json.dumps({"isRead": t_read}).encode("utf-8"),
+                            headers={
+                                "User-Agent": "Anchor-Comms-Connector/1.0",
+                                "Authorization": f"Bearer {clean_secret}",
+                                "Content-Type": "application/json",
+                                "Accept": "application/json",
+                            },
+                            method="PATCH",
+                        )
+                        with paths.safe_urlopen(req, timeout=8.0) as _:
+                            pass
+                        succeeded_keys.add(k)
+                    except urllib.error.HTTPError as hexc:
+                        if int(getattr(hexc, "code", 0) or 0) in (400, 404):
+                            succeeded_keys.add(k)
+                        else:
+                            failed_keys.add(k)
+                    except Exception:
+                        failed_keys.add(k)
+                continue
 
-            # Gmail REST API: POST /gmail/v1/users/me/messages/{id}/modify {"removeLabelIds": ["UNREAD"]}
-            if auth_mode == "oauth_token" and fam == "gmail" and clean_uid and not clean_uid.isdigit():
-                g_url = f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{urllib.parse.quote(clean_uid)}/modify"
-                req = urllib.request.Request(
-                    g_url,
-                    data=json.dumps({"removeLabelIds": ["UNREAD"]}).encode("utf-8"),
-                    headers={
-                        "User-Agent": "Anchor-Comms-Connector/1.0",
-                        "Authorization": f"Bearer {clean_secret}",
-                        "Content-Type": "application/json",
-                        "Accept": "application/json",
-                    },
-                    method="POST",
-                )
-                with paths.safe_urlopen(req, timeout=5.0) as _:
-                    pass
-                return
+            # 2. Gmail REST API (`safe=""`)
+            if is_oauth and fam == "gmail" and any(not str(it.get("uid") or "").isdigit() for _, it in pairs):
+                for k, item in pairs:
+                    c_uid = str(item.get("uid") or "").strip()
+                    t_read = bool(item.get("is_read", True))
+                    if not c_uid or c_uid.isdigit():
+                        if not c_uid:
+                            succeeded_keys.add(k)
+                        continue
+                    try:
+                        g_url = f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{urllib.parse.quote(c_uid, safe='')}/modify"
+                        g_payload = {"removeLabelIds": ["UNREAD"]} if t_read else {"addLabelIds": ["UNREAD"]}
+                        req = urllib.request.Request(
+                            g_url,
+                            data=json.dumps(g_payload).encode("utf-8"),
+                            headers={
+                                "User-Agent": "Anchor-Comms-Connector/1.0",
+                                "Authorization": f"Bearer {clean_secret}",
+                                "Content-Type": "application/json",
+                                "Accept": "application/json",
+                            },
+                            method="POST",
+                        )
+                        with paths.safe_urlopen(req, timeout=8.0) as _:
+                            pass
+                        succeeded_keys.add(k)
+                    except urllib.error.HTTPError as hexc:
+                        if int(getattr(hexc, "code", 0) or 0) in (400, 404):
+                            succeeded_keys.add(k)
+                        else:
+                            failed_keys.add(k)
+                    except Exception:
+                        failed_keys.add(k)
+                if all(k in succeeded_keys or k in failed_keys for k, _ in pairs):
+                    continue
 
-            # IMAP SSL: select("INBOX", readonly=False) -> store(mid, "+FLAGS", "\\Seen") (NEVER delete)
+            # 3. Batched single-connection IMAP SSL `UID STORE u1,u2,... +FLAGS (\Seen)` (NEVER deletes/expunges)
             host = str(acc.get("imap_host") or "").strip()
             port = int(acc.get("imap_port") or 993)
             if not host or not email_addr:
-                return
-            ctx = ssl.create_default_context()
-            conn = imaplib.IMAP4_SSL(host, port, ssl_context=ctx, timeout=5.0)
+                failed_keys.update(k for k, _ in pairs if k not in succeeded_keys)
+                continue
             try:
-                _imap_authenticate(conn, email_addr, clean_secret, auth_mode=auth_mode)
-                typ, _ = conn.select("INBOX", readonly=False)
-                if typ != "OK":
-                    return
-                target_uid = clean_uid if clean_uid.isdigit() else ""
-                if not target_uid and clean_subj:
-                    for cand_uid in reversed(_imap_uid_list(conn, "ALL")[-25:]):
-                        tf, hdata = conn.uid("FETCH", str(cand_uid), "(BODY.PEEK[HEADER.FIELDS (SUBJECT)])")
-                        if tf == "OK" and hdata and isinstance(hdata[0], tuple):
-                            raw_s = _decode_mime_words(hdata[0][1].decode("utf-8", errors="replace"))
-                            if clean_subj.lower() in raw_s.lower():
-                                target_uid = str(cand_uid)
-                                break
-                if target_uid:
-                    conn.uid("STORE", target_uid, "+FLAGS", "(\\Seen)")
-            finally:
+                ctx = ssl.create_default_context()
+                conn = imaplib.IMAP4_SSL(host, port, ssl_context=ctx, timeout=10.0)
                 try:
-                    conn.logout()
-                except Exception:
-                    pass
-        except Exception:
-            pass
+                    _imap_authenticate(conn, email_addr, clean_secret, auth_mode=("oauth_token" if is_oauth else auth_mode))
+                    typ, _ = conn.select("INBOX", readonly=False)
+                    if typ != "OK":
+                        failed_keys.update(k for k, _ in pairs if k not in succeeded_keys)
+                        continue
+                    uid_groups: dict[bool, list[tuple[str, str]]] = {True: [], False: []}
+                    recent_uids_cache: list[int] | None = None
+                    for k, item in pairs:
+                        if k in succeeded_keys:
+                            continue
+                        c_uid = str(item.get("uid") or "").strip()
+                        c_subj = str(item.get("subject") or "").strip()
+                        t_read = bool(item.get("is_read", True))
+                        target_uid = c_uid if c_uid.isdigit() else ""
+                        if not target_uid and c_subj:
+                            if recent_uids_cache is None:
+                                recent_uids_cache = _imap_uid_list(conn, "ALL")[-25:]
+                            for cand_uid in reversed(recent_uids_cache):
+                                tf, hdata = conn.uid("FETCH", str(cand_uid), "(BODY.PEEK[HEADER.FIELDS (SUBJECT)])")
+                                if tf == "OK" and hdata and isinstance(hdata[0], tuple):
+                                    raw_s = _decode_mime_words(hdata[0][1].decode("utf-8", errors="replace"))
+                                    if c_subj.lower() in raw_s.lower():
+                                        target_uid = str(cand_uid)
+                                        break
+                        if target_uid:
+                            uid_groups[t_read].append((k, target_uid))
+                        else:
+                            succeeded_keys.add(k)
+                    for t_read_val, k_uid_list in uid_groups.items():
+                        if not k_uid_list:
+                            continue
+                        for chunk_start in range(0, len(k_uid_list), 50):
+                            chunk = k_uid_list[chunk_start:chunk_start + 50]
+                            uid_csv = ",".join(dict.fromkeys(u for _, u in chunk))
+                            st_typ, _ = conn.uid("STORE", uid_csv, "+FLAGS" if t_read_val else "-FLAGS", "(\\Seen)")
+                            if st_typ == "OK":
+                                succeeded_keys.update(k for k, _ in chunk)
+                            else:
+                                failed_keys.update(k for k, _ in chunk)
+                finally:
+                    try:
+                        conn.logout()
+                    except Exception:
+                        pass
+            except Exception:
+                failed_keys.update(k for k, _ in pairs if k not in succeeded_keys)
 
-    threading.Thread(target=_bg_sync_read, name="anchor-mark-email-read", daemon=True).start()
-    return {"ok": True, "uid": clean_uid, "account_id": matched_aid, "remote_sync": "queued_background"}
+        now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        with paths.cross_process_lock(lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC):
+            cur_items = _load_pending_read_sync_unlocked(p)
+            kept_items: dict[str, dict] = {}
+            for k, ent in cur_items.items():
+                snap_ent = snapshot.get(k)
+                if k in succeeded_keys and snap_ent is not None and ent.get("updated_at") == snap_ent.get("updated_at"):
+                    continue
+                if k in failed_keys:
+                    attempts = int(ent.get("attempts") or 0) + 1
+                    if attempts >= MAX_REMOTE_READ_ATTEMPTS:
+                        continue
+                    ent = dict(ent, attempts=attempts, last_attempt_at=now_iso)
+                kept_items[k] = ent
+            paths.atomic_write_json(p, {"version": 1, "items": kept_items, "updated_at": now_iso}, lock_path=lock_p)
+        return {"ok": True, "synced": len(succeeded_keys), "remaining": len(kept_items)}
+    except Exception:
+        return {"ok": False, "synced": 0}
+    finally:
+        _REMOTE_READ_WORKER_LOCK.release()
+
+
+def _schedule_remote_read_flush() -> None:
+    global _REMOTE_READ_THREAD
+    if _is_hermetic():
+        return
+    with _REMOTE_READ_TRIGGER:
+        if _REMOTE_READ_THREAD is not None and _REMOTE_READ_THREAD.is_alive():
+            return
+
+        def _worker() -> None:
+            flush_pending_read_sync()
+            # Drain once more if rapid clicks arrived while the first batch was flushing
+            try:
+                if _load_pending_read_sync_unlocked():
+                    flush_pending_read_sync()
+            except Exception:
+                pass
+
+        t = threading.Thread(target=_worker, name="anchor-mark-email-read", daemon=True)
+        _REMOTE_READ_THREAD = t
+        t.start()
+
+
+def mark_emails_read_remote_batch(items: list[dict]) -> dict:
+    """Batch-mark one or more `(account_id, uid, subject, is_read)` items locally in `comms-sync.json`
+    AND durably enqueue + flush remote provider flags (`isRead` / `\\Seen`). Never deletes mail."""
+    cleaned: list[dict] = []
+    seen_pairs: set[tuple[str, str, str, bool]] = set()
+    for raw in items or []:
+        if not isinstance(raw, dict):
+            continue
+        c_uid = str(raw.get("uid") or "").strip()
+        c_aid = str(raw.get("account_id") or "").strip()
+        c_subj = str(raw.get("subject") or "").strip()
+        t_read = bool(raw.get("is_read", True))
+        if not c_uid and not c_subj:
+            continue
+        sig = (c_aid, c_uid, c_subj.lower(), t_read)
+        if sig in seen_pairs:
+            continue
+        seen_pairs.add(sig)
+        cleaned.append({"account_id": c_aid, "uid": c_uid, "subject": c_subj, "is_read": t_read})
+    if not cleaned:
+        return {"ok": False, "error": "uid or subject required"}
+
+    try:
+        sync_p = _sync_path()
+        sync_lock = sync_p.with_name(sync_p.name + ".lock")
+        with paths.cross_process_lock(sync_lock, timeout_sec=STORE_LOCK_TIMEOUT_SEC):
+            _invalidate_cached_json_file(sync_p)
+            sync_data = load_comms_sync()
+            headers_list = sync_data.get("email_headers") or []
+            changed = False
+            for ent in cleaned:
+                c_uid = ent["uid"]
+                c_aid = ent["account_id"]
+                c_subj = ent["subject"]
+                t_read = ent["is_read"]
+                uid_matches = [
+                    h for h in headers_list
+                    if isinstance(h, dict)
+                    and c_uid
+                    and str(h.get("uid") or "") == c_uid
+                    and (not c_aid or not h.get("account_id") or str(h.get("account_id") or "") == c_aid)
+                ]
+                if not uid_matches and not c_uid and c_subj:
+                    uid_matches = [
+                        h for h in headers_list
+                        if isinstance(h, dict)
+                        and c_subj.lower() == str(h.get("subject") or "").lower()
+                        and (not c_aid or not h.get("account_id") or str(h.get("account_id") or "") == c_aid)
+                    ]
+                distinct_aids = {str(h.get("account_id") or "") for h in uid_matches if h.get("account_id")}
+                for hdr in uid_matches:
+                    if not ent["account_id"] and len(distinct_aids) == 1:
+                        ent["account_id"] = next(iter(distinct_aids))
+                    if not ent["subject"] and hdr.get("subject"):
+                        ent["subject"] = str(hdr.get("subject") or "")
+                    if len(distinct_aids) <= 1 or (c_aid and str(hdr.get("account_id") or "") == c_aid):
+                        if bool(hdr.get("is_read")) != t_read:
+                            hdr["is_read"] = t_read
+                            changed = True
+            if changed:
+                save_comms_sync(sync_data)
+    except Exception:
+        pass
+
+    first = cleaned[0]
+    if _is_hermetic():
+        return {
+            "ok": True,
+            "uid": first["uid"],
+            "account_id": first["account_id"],
+            "is_read": first["is_read"],
+            "count": len(cleaned),
+            "remote_sync": "hermetic_read_only_flag",
+        }
+
+    _enqueue_pending_read_sync(cleaned)
+    _schedule_remote_read_flush()
+    return {
+        "ok": True,
+        "uid": first["uid"],
+        "account_id": first["account_id"],
+        "is_read": first["is_read"],
+        "count": len(cleaned),
+        "remote_sync": "queued_background",
+    }
+
+
+def mark_email_read_remote(account_id: str = "", uid: str = "", subject: str = "", is_read: bool = True) -> dict:
+    """Mark an email as Read or Unread locally in `.anchor/comms-sync.json` AND durably in the live
+    provider (Microsoft 365 Graph `isRead`, Gmail REST `UNREAD` label, or IMAP `\\Seen` flag).
+    HARD LAW: Never deletes any email message."""
+    return mark_emails_read_remote_batch([
+        {"account_id": account_id, "uid": uid, "subject": subject, "is_read": bool(is_read)}
+    ])
+
+
+_DEFAULT_MARK_EMAIL_READ_REMOTE = mark_email_read_remote
+
+
+def _dispatch_remote_read_items(items: list[dict]) -> dict:
+    """Dispatch remote Read/Unread updates, honoring monkeypatched `mark_email_read_remote` in unit tests
+    while batching onto a single lock + provider connection in production."""
+    if mark_email_read_remote is not _DEFAULT_MARK_EMAIL_READ_REMOTE:
+        last_res: dict = {"ok": True}
+        for ent in items or []:
+            if isinstance(ent, dict):
+                r = mark_email_read_remote(
+                    account_id=str(ent.get("account_id") or ""),
+                    uid=str(ent.get("uid") or ""),
+                    subject=str(ent.get("subject") or ""),
+                    is_read=bool(ent.get("is_read", True)),
+                )
+                if isinstance(r, dict):
+                    last_res = r
+        return last_res
+    return mark_emails_read_remote_batch(items)
 
 
 _CONFIRMATION_OR_INVITE_SUBJECT_PREFIXES: tuple[str, ...] = (
@@ -3203,6 +3978,8 @@ def classify_inbox_emails(headers: list[dict], prefs: dict | None = None, sent_h
     }
     down_domains = {str(x).lower() for x in (prefs.get("downgraded_domains") or [])}
     up_domains = {str(x).lower() for x in (prefs.get("upgraded_domains") or [])}
+    spam_uids_set = {str(x).strip() for x in (prefs.get("spam_uids") or []) if str(x).strip()}
+    spam_senders_set = {normalize_spam_sender(x) for x in (prefs.get("spam_senders") or []) if normalize_spam_sender(x)}
     sender_scores = prefs.get("sender_scores") or {}
 
     important_list: list[dict] = []
@@ -3217,6 +3994,7 @@ def classify_inbox_emails(headers: list[dict], prefs: dict | None = None, sent_h
 
     # Gather user's sent emails & Speed Racer queue/archive to detect already-answered or Speed-Racer-queued emails
     _sync_c: dict = {}
+    _cfg_c: dict = {}
     try:
         _sync_c = load_comms_sync()
         _cfg_c = load_comms_config()
@@ -3263,24 +4041,34 @@ def classify_inbox_emails(headers: list[dict], prefs: dict | None = None, sent_h
                 continue
             _am_ns = str(_av.get("norm_subject") or _norm_email_subject(str(_av.get("subject") or ""))).strip()
             _am_sender = f"{_av.get('from') or ''} {_av.get('sender_email') or ''}".strip()
+            _am_acct = str(_av.get("account_id") or "").strip()
+            if not _am_acct and ":" in str(_ak) and not str(_ak).startswith(("http:", "https:")):
+                _am_acct = str(_ak).split(":", 1)[0].strip()
             _am_mid = str(_av.get("message_id") or "").strip()
             if _am_mid:
                 _acted_by_msg_id[_am_mid] = _av
             if _am_ns:
-                _acted_by_norm_subj.setdefault(_am_ns, []).append((_am_sender, _av))
+                _acted_by_norm_subj.setdefault(_am_ns, []).append((_am_acct, _am_sender, _av))
     for _h0 in headers or []:
         if not isinstance(_h0, dict):
             continue
         _u0 = str(_h0.get("uid") or "")
+        _a0 = str(_h0.get("account_id") or "").strip()
         _s0 = str(_h0.get("subject") or "").strip()
         _f0 = f"{_h0.get('from') or ''} {_h0.get('sender_email') or ''}".strip()
         _ns0 = _norm_email_subject(_s0)
         if _ns0 and _u0 and _u0 not in unacted_set:
-            if isinstance(acted_map, dict) and _u0 in acted_map and isinstance(acted_map[_u0], dict):
-                _existing_am_subj = str(acted_map[_u0].get("subject") or "").strip()
+            _am_hit0 = None
+            if isinstance(acted_map, dict):
+                if _a0 and isinstance(acted_map.get(f"{_a0}:{_u0}"), dict):
+                    _am_hit0 = acted_map[f"{_a0}:{_u0}"]
+                elif isinstance(acted_map.get(_u0), dict):
+                    _am_hit0 = acted_map[_u0]
+            if isinstance(_am_hit0, dict):
+                _existing_am_subj = str(_am_hit0.get("subject") or "").strip()
                 if not (_u0.isdigit() and _existing_am_subj and not _subjects_match_thread(_existing_am_subj, _s0)):
                     _enrich_acted_entry(
-                        acted_map[_u0],
+                        _am_hit0,
                         uid=_u0,
                         subject=_s0,
                         sender_email=str(_h0.get("sender_email") or ""),
@@ -3288,10 +4076,13 @@ def classify_inbox_emails(headers: list[dict], prefs: dict | None = None, sent_h
                         date_str=str(_h0.get("date") or ""),
                         message_id=str(_h0.get("message_id") or ""),
                     )
-                    _acted_by_norm_subj.setdefault(_ns0, []).append((_f0, acted_map[_u0]))
+                    if _a0 and not _am_hit0.get("account_id"):
+                        _am_hit0["account_id"] = _a0
+                    _acted_by_norm_subj.setdefault(_ns0, []).append((_a0, _f0, _am_hit0))
             elif _u0 in down_uids and not _u0.isdigit():
-                _acted_by_norm_subj.setdefault(_ns0, []).append((_f0, {
+                _acted_by_norm_subj.setdefault(_ns0, []).append((_a0, _f0, {
                     "uid": _u0,
+                    "account_id": _a0,
                     "status": "⬇ Moved to Other · Not Important",
                     "tone": "sky",
                     "reason": "Marked Not Important / Other in Anchor",
@@ -3302,8 +4093,9 @@ def classify_inbox_emails(headers: list[dict], prefs: dict | None = None, sent_h
                     "date": str(_h0.get("date") or ""),
                 }))
             elif (_u0 in seen_opened_set or _u0 in seen_unopened_set) and not _u0.isdigit():
-                _acted_by_norm_subj.setdefault(_ns0, []).append((_f0, {
+                _acted_by_norm_subj.setdefault(_ns0, []).append((_a0, _f0, {
                     "uid": _u0,
+                    "account_id": _a0,
                     "status": "👁 Looked At",
                     "tone": "sky",
                     "reason": "Thread marked Looked At in Anchor",
@@ -3353,6 +4145,16 @@ def classify_inbox_emails(headers: list[dict], prefs: dict | None = None, sent_h
         _sync_cached_for_cal = load_comms_sync()
     except Exception:
         _sync_cached_for_cal = None
+    _protected_correspondents_set = (
+        _collect_protected_correspondents(
+            prefs=prefs,
+            sync_cache=_sync_c,
+            cfg=_cfg_c,
+            scribe_mem=_scribe_mem_cached,
+        )
+        if spam_senders_set
+        else set()
+    )
 
     for hdr in headers or []:
         if not isinstance(hdr, dict) or not hdr.get("subject"):
@@ -3360,11 +4162,27 @@ def classify_inbox_emails(headers: list[dict], prefs: dict | None = None, sent_h
         folder = str(hdr.get("folder") or "INBOX").upper()
         if folder in ("TRASH", "DELETED ITEMS", "SPAM", "JUNK"):
             continue
-        uid = str(hdr.get("uid") or hashlib.sha1(f"{hdr.get('account_id')}:{hdr.get('subject')}:{hdr.get('date')}".encode("utf-8")).hexdigest()[:12])
+        acct_id_hdr = str(hdr.get("account_id") or "").strip()
+        uid = str(hdr.get("uid") or hashlib.sha1(f"{acct_id_hdr}:{hdr.get('subject')}:{hdr.get('date')}".encode("utf-8")).hexdigest()[:12])
         subj = str(hdr.get("subject") or "").strip()
         frm_raw = str(hdr.get("from") or "Inbox").strip()
         m_addr_hdr = re.search(r"[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}", str(hdr.get("sender_email") or frm_raw))
         s_email = m_addr_hdr.group(0).lower() if m_addr_hdr else str(hdr.get("sender_email") or frm_raw).strip().lower()
+        norm_hdr_sender = normalize_spam_sender(hdr.get("sender_email") or frm_raw or s_email)
+        if _is_spam_uid_match(uid, acct_id_hdr, spam_uids_set) or (
+            norm_hdr_sender
+            and norm_hdr_sender in spam_senders_set
+            and uid not in up_uids
+            and not _is_protected_correspondent(
+                norm_hdr_sender,
+                prefs=prefs,
+                sync_cache=_sync_c,
+                cfg=_cfg_c,
+                scribe_mem=_scribe_mem_cached,
+                protected_set=_protected_correspondents_set,
+            )
+        ):
+            continue
         frm = _proper_capitalize_sender_display(frm_raw) if "_proper_capitalize_sender_display" in globals() else frm_raw
         # Avoid showing user's own sent copy if it appeared in list
         if s_email in own_emails and subj.lower().startswith("re:"):
@@ -3406,7 +4224,14 @@ def classify_inbox_emails(headers: list[dict], prefs: dict | None = None, sent_h
         learned_delta = int(sender_scores.get(s_email) or sender_scores.get(frm.lower()) or 0)
         try:
             _sc_info = _scribe.score_email_interest(
-                {"from": frm_raw, "sender_email": s_email, "subject": subj, "snippet": hdr.get("snippet") or ""},
+                {
+                    "uid": uid,
+                    "account_id": str(hdr.get("account_id") or "").strip(),
+                    "from": frm_raw,
+                    "sender_email": s_email,
+                    "subject": subj,
+                    "snippet": hdr.get("snippet") or "",
+                },
                 memory=_scribe_mem_cached,
             )
             learned_delta += int(_sc_info.get("interest_delta") or 0)
@@ -3540,12 +4365,34 @@ def classify_inbox_emails(headers: list[dict], prefs: dict | None = None, sent_h
             }
         if not acted_entry and uid not in unacted_set and norm_s:
             _in_dt = _parse_comparable_email_ts(str(hdr.get("date") or ""))
-            for _sib_sender, _aent in _acted_by_norm_subj.get(norm_s, []):
+            _hdr_is_unread = not bool(hdr.get("is_read"))
+            _cur_ptoks = _extract_person_tokens(sender_ident)
+            for _sib_tup in _acted_by_norm_subj.get(norm_s, []):
+                if len(_sib_tup) == 3:
+                    _sib_acct, _sib_sender, _aent = _sib_tup
+                else:
+                    _sib_acct, (_sib_sender, _aent) = "", _sib_tup
+                # Never let a handled copy on Account A hide an unread copy on Account B
+                if _hdr_is_unread and _sib_acct and acct_id_hdr and _sib_acct != acct_id_hdr:
+                    continue
+                # Never let marking Person A's reply Seen hide an unread message from Person B (e.g. with attachments)
+                if _hdr_is_unread and _sib_sender and _cur_ptoks:
+                    _sib_ptoks = _extract_person_tokens(_sib_sender)
+                    if _sib_ptoks and not (_sib_ptoks & _cur_ptoks):
+                        continue
                 if _sib_sender and sender_ident and _subjects_match_thread(norm_s, norm_s, sender1=_sib_sender, sender2=sender_ident):
-                    _has_msg_dt = bool(str(_aent.get("date") or "").strip())
-                    _act_dt = _parse_comparable_email_ts(str(_aent.get("date") or _aent.get("at") or _aent.get("ts") or ""))
-                    _tol_h = 0.02 if _has_msg_dt else 8.0
-                    if _act_dt and _in_dt and _sent_ts_is_older_than_inbound(_act_dt, _in_dt, tolerance_hours=_tol_h):
+                    _explicit_act_utc = str(_aent.get("at_utc") or _aent.get("approved_at_utc") or _aent.get("sent_at_utc") or "").strip()
+                    _raw_msg_dt = str(_aent.get("date") or "").strip()
+                    if _explicit_act_utc:
+                        _act_dt = _parse_comparable_email_ts(_explicit_act_utc)
+                    elif _raw_msg_dt:
+                        if str(_aent.get("reason") or "").startswith("Approved & sent via Speed Racer") and not _EXPLICIT_TZ_RE.search(_raw_msg_dt):
+                            _act_dt = _parse_local_or_utc_email_ts(_raw_msg_dt)
+                        else:
+                            _act_dt = _parse_comparable_email_ts(_raw_msg_dt)
+                    else:
+                        _act_dt = _parse_local_or_utc_email_ts(str(_aent.get("at") or _aent.get("ts") or ""))
+                    if _act_dt and _in_dt and _sent_ts_is_older_than_inbound(_act_dt, _in_dt, tolerance_hours=0.02):
                         continue
                     acted_entry = _aent
                     break
@@ -3639,11 +4486,12 @@ def classify_inbox_emails(headers: list[dict], prefs: dict | None = None, sent_h
         else:
             other_list.append(item)
 
-    def _thread_group_key(it: dict) -> tuple[str, str]:
+    def _thread_group_key(it: dict) -> tuple[str, str, str]:
+        acct_k = str(it.get("account_id") or it.get("account_badge") or "").strip().lower()
         norm_subj = _norm_email_subject(str(it.get("subject") or ""))
         if _is_specific_multi_person_thread_subject(norm_subj):
-            return ("__thread__", norm_subj)
-        return (str(it.get("sender_email") or it.get("from") or "").lower(), norm_subj)
+            return (acct_k, "__thread__", norm_subj)
+        return (acct_k, str(it.get("sender_email") or it.get("from") or "").lower(), norm_subj)
 
     # If any message of a multi-participant thread is in important_list, consolidate any unread sibling from other_list into important_list
     if important_list and other_list:
@@ -3664,6 +4512,7 @@ def classify_inbox_emails(headers: list[dict], prefs: dict | None = None, sent_h
         return {
             "uid": it.get("uid"),
             "date": it.get("date"),
+            "raw_date": str(it.get("raw_date") or it.get("date") or ""),
             "from": it.get("from"),
             "sender_email": it.get("sender_email"),
             "direction": it.get("direction") or "inbound",
@@ -3739,19 +4588,35 @@ def classify_inbox_emails(headers: list[dict], prefs: dict | None = None, sent_h
     acted_upon_list.sort(key=lambda x: (_parse_comparable_email_ts(str(x.get("date") or "")), str(x.get("date") or "")), reverse=True)
     dedup_act = _dedup_bucket(acted_upon_list)
     # Cross-bucket deduplication: ensure no thread present in acted_upon_list lingers in important_list or other_list
-    _acted_uids_final = {str(it.get("uid") or "") for it in dedup_act if it.get("uid")}
+    _acted_acct_uid_final = {
+        (str(it.get("account_id") or ""), str(it.get("uid") or ""))
+        for it in dedup_act
+        if it.get("uid")
+    }
     def _is_suppressed_by_acted(cand: dict) -> bool:
         _c_uid = str(cand.get("uid") or "")
-        if _c_uid and _c_uid in _acted_uids_final:
+        _c_aid = str(cand.get("account_id") or "")
+        if _c_uid and (_c_aid, _c_uid) in _acted_acct_uid_final:
+            return True
+        if _c_uid and not _c_aid and any(u == _c_uid for _, u in _acted_acct_uid_final):
             return True
         if _c_uid and _c_uid in unacted_set:
             return False
         _c_subj = str(cand.get("subject") or "")
         _c_sender = f"{cand.get('from') or ''} {cand.get('sender_email') or ''}".strip()
+        _c_ptoks = _extract_person_tokens(_c_sender)
+        _c_unread = not bool(cand.get("is_read"))
         _c_dt = _parse_comparable_email_ts(str(cand.get("date") or ""))
         for _act_it in dedup_act:
+            _a_aid = str(_act_it.get("account_id") or "")
+            if _c_unread and _c_aid and _a_aid and _c_aid != _a_aid:
+                continue
             _a_subj = str(_act_it.get("subject") or "")
             _a_sender = f"{_act_it.get('from') or ''} {_act_it.get('sender_email') or ''}".strip()
+            if _c_unread and _c_ptoks:
+                _a_ptoks = _extract_person_tokens(_a_sender)
+                if _a_ptoks and not (_c_ptoks & _a_ptoks):
+                    continue
             if _subjects_match_thread(_c_subj, _a_subj, sender1=_c_sender, sender2=_a_sender):
                 _a_dt = _parse_comparable_email_ts(str(_act_it.get("date") or ""))
                 if _a_dt and _c_dt and _sent_ts_is_older_than_inbound(_a_dt, _c_dt, tolerance_hours=0.02):
@@ -3788,16 +4653,11 @@ def classify_inbox_emails(headers: list[dict], prefs: dict | None = None, sent_h
                 _remaining_act.append(_act_card)
         dedup_act = _remaining_act
 
-    # Sort thread_messages chronologically on every card so selecting any card renders the complete thread in order at 0ms
+    # Sort thread_messages newest-first (reverse-chronologically) on every card so the most recent email appears at the top
     for _card in (dedup_imp + dedup_oth + dedup_act):
         _tmsgs = _card.get("thread_messages") or []
         if len(_tmsgs) > 1:
-            _tmsgs.sort(
-                key=lambda m: (
-                    _parse_comparable_email_ts(str(m.get("date") or "")) or "9999-99-99",
-                    0 if m.get("direction") == "inbound" else 1,
-                )
-            )
+            _sort_thread_messages_newest_first(_tmsgs)
             _card["thread_count"] = len(_tmsgs)
 
     if isinstance(prefs, dict):
@@ -3939,7 +4799,7 @@ def gather_sent_emails(sync_cache: dict | None = None, cfg: dict | None = None) 
 
 
 def record_email_triage_feedback(body: dict) -> dict:
-    """Record user triage feedback ('opened', 'seen', 'seen_not_important', 'seen_important', 'steward_action', 'already_replied', 'calendar_done', 'unact', 'downgrade', 'upgrade') and update Steward preference weights."""
+    """Record user triage feedback ('opened', 'seen', 'seen_not_important', 'seen_important', 'steward_action', 'already_replied', 'calendar_done', 'unact', 'downgrade', 'upgrade', 'spam', 'unspam') and update Steward preference weights."""
     uid = str(body.get("uid") or "").strip()
     feedback = str(body.get("feedback") or "").strip().lower()
     if feedback == "looked_at_ignore":
@@ -3948,16 +4808,54 @@ def record_email_triage_feedback(body: dict) -> dict:
     sender_email = str(body.get("sender_email") or sender).strip().lower()
     was_opened_param = body.get("was_opened")
 
-    if not uid or feedback not in ("opened", "seen", "seen_not_important", "seen_important", "steward_action", "already_replied", "done", "calendar_done", "unact", "downgrade", "upgrade"):
-        return {"ok": False, "error": "uid and valid feedback ('opened'|'seen'|'seen_not_important'|'seen_important'|'steward_action'|'already_replied'|'done'|'calendar_done'|'unact'|'downgrade'|'upgrade') required"}
+    if not uid or feedback not in (
+        "opened",
+        "seen",
+        "seen_not_important",
+        "seen_important",
+        "steward_action",
+        "already_replied",
+        "done",
+        "calendar_done",
+        "unact",
+        "downgrade",
+        "upgrade",
+        "spam",
+        "unspam",
+    ):
+        return {
+            "ok": False,
+            "error": "uid and valid feedback ('opened'|'seen'|'seen_not_important'|'seen_important'|'steward_action'|'already_replied'|'done'|'calendar_done'|'unact'|'downgrade'|'upgrade'|'spam'|'unspam') required",
+        }
 
     acc_id_fb = str(body.get("account_id") or "").strip()
     subj_fb = str(body.get("subject") or "").strip()
-    if feedback in ("seen", "seen_not_important", "seen_important", "steward_action", "already_replied", "done", "calendar_done", "downgrade"):
-        mark_email_read_remote(account_id=acc_id_fb, uid=uid, subject=subj_fb)
-
     sync_cache = load_comms_sync()
+    cfg_cache = load_comms_config()
+    sender_protected = False
+    norm_spam_addr = normalize_spam_sender(body.get("sender_email") or body.get("sender") or body.get("from") or "")
+    was_read_before_spam = False
+    if isinstance(sync_cache, dict):
+        for _hs in (sync_cache.get("email_headers") or []):
+            if not isinstance(_hs, dict) or str(_hs.get("uid") or "").strip() != uid:
+                continue
+            _hs_acct = str(_hs.get("account_id") or "").strip()
+            if acc_id_fb and _hs_acct and _hs_acct != acc_id_fb:
+                continue
+            if not norm_spam_addr:
+                norm_spam_addr = normalize_spam_sender(_hs.get("sender_email") or _hs.get("from") or "")
+            if not subj_fb and _hs.get("subject"):
+                subj_fb = str(_hs.get("subject") or "").strip()
+            if not acc_id_fb and _hs_acct:
+                acc_id_fb = _hs_acct
+            was_read_before_spam = bool(_hs.get("_pre_spam_is_read", _hs.get("is_read", False)))
+            break
+
+    remote_read_items: list[dict] = []
+
     with COMMS_LOCK:
+        sync_cache = load_comms_sync()
+        cfg_cache = load_comms_config()
         prefs = load_triage_prefs()
         opened_uids = list(prefs.get("opened_uids") or [])
         seen_unopened = list(prefs.get("seen_unopened_uids") or [])
@@ -3966,13 +4864,47 @@ def record_email_triage_feedback(body: dict) -> dict:
         up_uids = list(prefs.get("upgraded_uids") or [])
         down_senders = list(prefs.get("downgraded_senders") or [])
         up_senders = [s for s in (prefs.get("upgraded_senders") or []) if not _is_automated_or_noreply_sender(str(s))]
+        spam_senders = [normalize_spam_sender(s) for s in (prefs.get("spam_senders") or []) if normalize_spam_sender(s)]
+        spam_uids = [str(u).strip() for u in (prefs.get("spam_uids") or []) if str(u).strip()]
+        spam_snapshots = copy.deepcopy(prefs.get("spam_snapshots")) if isinstance(prefs.get("spam_snapshots"), dict) else {}
         scores = dict(prefs.get("sender_scores") or {})
         acted_map = dict(prefs.get("acted_upon_emails") or {})
         unacted_uids = list(prefs.get("unacted_uids") or [])
+        if isinstance(sync_cache, dict):
+            for _hs_lk in (sync_cache.get("email_headers") or []):
+                if not isinstance(_hs_lk, dict) or str(_hs_lk.get("uid") or "").strip() != uid:
+                    continue
+                _hs_lk_acct = str(_hs_lk.get("account_id") or "").strip()
+                if acc_id_fb and _hs_lk_acct and _hs_lk_acct != acc_id_fb:
+                    continue
+                if not norm_spam_addr:
+                    norm_spam_addr = normalize_spam_sender(_hs_lk.get("sender_email") or _hs_lk.get("from") or "")
+                if not subj_fb and _hs_lk.get("subject"):
+                    subj_fb = str(_hs_lk.get("subject") or "").strip()
+                if not acc_id_fb and _hs_lk_acct:
+                    acc_id_fb = _hs_lk_acct
+                was_read_before_spam = bool(_hs_lk.get("_pre_spam_is_read", _hs_lk.get("is_read", False)))
+                break
+
+        if feedback in ("seen", "seen_not_important", "seen_important", "steward_action", "already_replied", "done", "calendar_done", "downgrade"):
+            remote_read_items.append({"account_id": acc_id_fb, "uid": uid, "subject": subj_fb, "is_read": True})
 
         already_opened = (uid in opened_uids) or bool(was_opened_param)
-        key = sender_email or sender
+        key = norm_spam_addr or sender_email or sender
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+        now_utc_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        failed_side_effects: list[str] = []
+
+        if feedback in ("upgrade", "seen_important", "steward_action", "already_replied"):
+            _pos_qual = _spam_uid_key(acc_id_fb, uid)
+            _pos_rm = {uid, _pos_qual} if _pos_qual else {uid}
+            if not acc_id_fb:
+                _pos_rm |= {u for u in spam_uids if str(u).endswith(f":{uid}")}
+            spam_uids = [u for u in spam_uids if u not in _pos_rm]
+            if norm_spam_addr and norm_spam_addr in spam_senders:
+                spam_senders = [s for s in spam_senders if s != norm_spam_addr]
+                if isinstance(spam_snapshots.get("senders"), dict):
+                    spam_snapshots["senders"].pop(norm_spam_addr, None)
 
         if feedback == "opened":
             if uid not in opened_uids:
@@ -3996,11 +4928,13 @@ def record_email_triage_feedback(body: dict) -> dict:
                 scores[key] = max(45, int(scores.get(key) or 0) + 45)
             acted_map[uid] = {
                 "uid": uid,
+                "account_id": acc_id_fb,
                 "status": str(body.get("status_label") or "📋 Steward Action · Task Added"),
                 "tone": "emerald",
                 "reason": f"Steward Action (No Email Reply): {comment_str}",
                 "steward_comment": comment_str,
                 "at": now_str,
+                "at_utc": now_utc_str,
             }
             note = f"Recorded Steward comment/action ('{comment_str[:80]}') & moved email to Acted Upon."
         elif feedback == "seen_important":
@@ -4020,10 +4954,12 @@ def record_email_triage_feedback(body: dict) -> dict:
                 scores[key] = max(45, int(scores.get(key) or 0) + 45)
             acted_map[uid] = {
                 "uid": uid,
+                "account_id": acc_id_fb,
                 "status": "⭐ Seen · Important",
                 "tone": "emerald",
                 "reason": "Marked Seen & Important — removed from active list; Steward learned emails like this are Important",
                 "at": now_str,
+                "at_utc": now_utc_str,
             }
             note = f"Marked Seen & Important — removed from Focused & taught Steward that '{key or uid}' is Important."
         elif feedback == "seen":
@@ -4041,10 +4977,12 @@ def record_email_triage_feedback(body: dict) -> dict:
                     seen_unopened.append(uid)
                 acted_map[uid] = {
                     "uid": uid,
+                    "account_id": acc_id_fb,
                     "status": "👁 Looked At",
                     "tone": "sky",
                     "reason": "Marked Looked At (synced Read to Outlook/Gmail; never deleted)",
                     "at": now_str,
+                    "at_utc": now_utc_str,
                 }
                 note = "Marked Looked At — removed from Focused & marked Read in Outlook/Gmail."
             else:
@@ -4052,10 +4990,12 @@ def record_email_triage_feedback(body: dict) -> dict:
                     seen_opened.append(uid)
                 acted_map[uid] = {
                     "uid": uid,
+                    "account_id": acc_id_fb,
                     "status": "👁 Looked At",
                     "tone": "sky",
                     "reason": "Opened & marked Looked At (synced Read to Outlook/Gmail; never deleted)",
                     "at": now_str,
+                    "at_utc": now_utc_str,
                 }
                 note = "Marked Looked At — removed from Focused & marked Read in Outlook/Gmail."
         elif feedback in ("done", "calendar_done"):
@@ -4067,10 +5007,12 @@ def record_email_triage_feedback(body: dict) -> dict:
                 seen_opened.append(uid)
             acted_map[uid] = {
                 "uid": uid,
+                "account_id": acc_id_fb,
                 "status": "✓ Done",
                 "tone": "emerald",
                 "reason": f"Marked Done ({now_str})",
                 "at": now_str,
+                "at_utc": now_utc_str,
             }
             note = "Marked Done — removed from Prime & marked Read."
         elif feedback == "already_replied":
@@ -4082,25 +5024,37 @@ def record_email_triage_feedback(body: dict) -> dict:
                 seen_opened.append(uid)
             _ar_entry = {
                 "uid": uid,
+                "account_id": acc_id_fb,
                 "status": "✓ Already Replied",
                 "tone": "emerald",
                 "reason": str(body.get("reason") or f"You confirmed reply was already sent ({now_str})"),
                 "at": now_str,
+                "at_utc": now_utc_str,
             }
             acted_map[uid] = _ar_entry
             if subj_fb:
                 try:
+                    _t_ar_orig = _extract_person_tokens(f"{sender} {sender_email} {key}")
                     for _har in (sync_cache.get("email_headers") or []):
                         if isinstance(_har, dict):
                             _suid = str(_har.get("uid") or "")
+                            _har_acct = str(_har.get("account_id") or "").strip()
+                            _har_sender = f"{_har.get('from') or ''} {_har.get('sender_email') or ''}".strip()
+                            _har_unread = not bool(_har.get("is_read"))
+                            _t_har = _extract_person_tokens(_har_sender)
+                            if _har_unread and (
+                                (acc_id_fb and _har_acct and _har_acct != acc_id_fb)
+                                or (_t_ar_orig and _t_har and not (_t_ar_orig & _t_har))
+                            ):
+                                continue
                             if _suid and _suid != uid and _subjects_match_thread(
                                 subj_fb,
                                 str(_har.get("subject") or ""),
                                 sender1=key,
-                                sender2=f"{_har.get('from') or ''} {_har.get('sender_email') or ''}",
+                                sender2=_har_sender,
                             ):
                                 acted_map[_suid] = _enrich_acted_entry(
-                                    dict(_ar_entry, uid=_suid),
+                                    dict(_ar_entry, uid=_suid, account_id=_har_acct or acc_id_fb),
                                     uid=_suid,
                                     subject=str(_har.get("subject") or subj_fb),
                                     sender_email=str(_har.get("sender_email") or sender_email),
@@ -4108,6 +5062,12 @@ def record_email_triage_feedback(body: dict) -> dict:
                                     date_str=str(_har.get("date") or ""),
                                     message_id=str(_har.get("message_id") or ""),
                                 )
+                                remote_read_items.append({
+                                    "account_id": _har_acct or acc_id_fb,
+                                    "uid": _suid,
+                                    "subject": str(_har.get("subject") or subj_fb),
+                                    "is_read": True,
+                                })
                                 if _suid in unacted_uids:
                                     unacted_uids.remove(_suid)
                                 if _suid in up_uids:
@@ -4129,6 +5089,8 @@ def record_email_triage_feedback(body: dict) -> dict:
             if uid not in unacted_uids:
                 unacted_uids.append(uid)
             acted_map.pop(uid, None)
+            if acc_id_fb:
+                acted_map.pop(f"{acc_id_fb}:{uid}", None)
             if uid in down_uids:
                 down_uids.remove(uid)
             if uid in seen_opened:
@@ -4155,10 +5117,12 @@ def record_email_triage_feedback(body: dict) -> dict:
                 scores[key] = min(int(scores.get(key) or 0), 0) - 45
             acted_map[uid] = {
                 "uid": uid,
+                "account_id": acc_id_fb,
                 "status": "⬇ Moved to Other · Not Important",
                 "tone": "sky",
                 "reason": "Marked Not Important / Other — removed from Focused; Steward learned this sender is low priority",
                 "at": now_str,
+                "at_utc": now_utc_str,
             }
             note = f"Downgraded to Not Important — removed from Focused & taught Steward '{key or uid}' is low priority."
         elif feedback == "upgrade":
@@ -4171,6 +5135,8 @@ def record_email_triage_feedback(body: dict) -> dict:
             if uid in seen_opened:
                 seen_opened.remove(uid)
             acted_map.pop(uid, None)
+            if acc_id_fb:
+                acted_map.pop(f"{acc_id_fb}:{uid}", None)
             if uid not in unacted_uids:
                 unacted_uids.append(uid)
             if key and not _is_automated_or_noreply_sender(key):
@@ -4180,22 +5146,540 @@ def record_email_triage_feedback(body: dict) -> dict:
                     down_senders.remove(key)
                 scores[key] = int(scores.get(key) or 0) + 45
             note = f"Upgraded to Emails to Address — Steward learned '{key or uid}' is important."
+        elif feedback == "spam":
+            sender_protected = bool(
+                norm_spam_addr
+                and _is_protected_correspondent(
+                    norm_spam_addr,
+                    prefs=prefs,
+                    sync_cache=sync_cache,
+                    cfg=cfg_cache,
+                )
+            )
+            if norm_spam_addr and not sender_protected and norm_spam_addr not in spam_senders and len(spam_senders) >= MAX_SPAM_SENDERS:
+                return _wave2_failure_dict(
+                    "dependency-returns-garbage",
+                    detail=f"Spam senders bound ({MAX_SPAM_SENDERS}) reached",
+                )
+            qual_spam_uid = _spam_uid_key(acc_id_fb, uid)
+            snap_uid_key = qual_spam_uid or uid
+            sender_uids_sp: set[str] = {uid}
+            if norm_spam_addr and not sender_protected and isinstance(sync_cache, dict):
+                for _h_sp in (sync_cache.get("email_headers") or []):
+                    if isinstance(_h_sp, dict) and normalize_spam_sender(_h_sp.get("sender_email") or _h_sp.get("from") or "") == norm_spam_addr:
+                        _hu = str(_h_sp.get("uid") or "").strip()
+                        if _hu:
+                            sender_uids_sp.add(_hu)
+            uids_snap_dict = spam_snapshots.setdefault("uids", {})
+            uid_snap_entry = (
+                uids_snap_dict.get(qual_spam_uid)
+                if (qual_spam_uid and qual_spam_uid in uids_snap_dict)
+                else uids_snap_dict.get(uid)
+            )
+            canon_acted_key_sp = f"{acc_id_fb}:{uid}" if acc_id_fb else ""
+            existing_acted_sp = (
+                acted_map.get(canon_acted_key_sp)
+                if (canon_acted_key_sp and canon_acted_key_sp in acted_map)
+                else acted_map.get(uid)
+            )
+            if isinstance(existing_acted_sp, dict) and "speed racer" in str(existing_acted_sp.get("status") or "").lower():
+                existing_acted_sp = None
+            if not _is_spam_uid_match(uid, acc_id_fb, set(spam_uids)) or not isinstance(uid_snap_entry, dict):
+                uid_snap_entry = {
+                    "account_id": acc_id_fb,
+                    "in_unacted": uid in unacted_uids,
+                    "in_up_uids": uid in up_uids,
+                    "in_down_uids": uid in down_uids,
+                    "in_seen_unopened": uid in seen_unopened,
+                    "in_seen_opened": uid in seen_opened,
+                    "acted_entry": copy.deepcopy(existing_acted_sp) if isinstance(existing_acted_sp, dict) else None,
+                    "acted_key": canon_acted_key_sp if (canon_acted_key_sp and canon_acted_key_sp in acted_map) else uid,
+                    "was_read": was_read_before_spam,
+                    "norm_spam_addr": norm_spam_addr,
+                    "sender_uids": sorted(sender_uids_sp)[-MAX_SPAM_UIDS:],
+                    "removed_sr_drafts": [],
+                    "removed_proposals": [],
+                    "added_dismissed_keys": [],
+                }
+                if qual_spam_uid and qual_spam_uid != uid:
+                    uids_snap_dict.pop(uid, None)
+                uids_snap_dict[snap_uid_key] = uid_snap_entry
+            else:
+                uid_snap_entry.pop("restore_pending", None)
+                uid_snap_entry.pop("read_restored", None)
+                uid_snap_entry["sender_uids"] = sorted(set(uid_snap_entry.get("sender_uids") or []) | sender_uids_sp)[-MAX_SPAM_UIDS:]
+                if acc_id_fb and not uid_snap_entry.get("account_id"):
+                    uid_snap_entry["account_id"] = acc_id_fb
+                if qual_spam_uid and qual_spam_uid != uid:
+                    uids_snap_dict.pop(uid, None)
+                uids_snap_dict[snap_uid_key] = uid_snap_entry
+            for _u_sp in sender_uids_sp:
+                if _u_sp in unacted_uids:
+                    unacted_uids.remove(_u_sp)
+            if uid in up_uids:
+                up_uids.remove(uid)
+            if uid not in spam_uids:
+                spam_uids.append(uid)
+            if qual_spam_uid and qual_spam_uid not in spam_uids:
+                spam_uids.append(qual_spam_uid)
+            if uid not in seen_opened:
+                seen_opened.append(uid)
+            if norm_spam_addr and not sender_protected:
+                if norm_spam_addr not in spam_senders:
+                    had_down_s = any(
+                        normalize_spam_sender(s) == norm_spam_addr or str(s).strip().lower() == norm_spam_addr
+                        for s in down_senders
+                    )
+                    spam_snapshots.setdefault("senders", {})[norm_spam_addr] = {
+                        "had_down_sender": had_down_s,
+                        "had_score": norm_spam_addr in scores,
+                        "prev_score": scores.get(norm_spam_addr),
+                    }
+                    spam_senders.append(norm_spam_addr)
+                if norm_spam_addr not in down_senders:
+                    down_senders.append(norm_spam_addr)
+                scores[norm_spam_addr] = min(int(scores.get(norm_spam_addr) or 0), -100)
+            for _ak_del in [
+                k for k in list(acted_map.keys())
+                if k in sender_uids_sp or any(str(k).endswith(f":{u}") for u in sender_uids_sp)
+            ]:
+                acted_map.pop(_ak_del, None)
+            # Re-read comms-sync.json under its cross-process lock immediately before mutating so concurrent syncs are never lost
+            try:
+                sync_p_sp = _sync_path()
+                sync_lock_sp = sync_p_sp.with_name(sync_p_sp.name + ".lock")
+                with paths.cross_process_lock(sync_lock_sp, timeout_sec=STORE_LOCK_TIMEOUT_SEC):
+                    _invalidate_cached_json_file(sync_p_sp)
+                    fresh_sync_sp = load_comms_sync()
+                    if isinstance(fresh_sync_sp, dict):
+                        sync_sp_changed = False
+                        updated_sp_headers = []
+                        for _h_orig in (fresh_sync_sp.get("email_headers") or []):
+                            if not isinstance(_h_orig, dict):
+                                updated_sp_headers.append(_h_orig)
+                                continue
+                            _h_u = str(_h_orig.get("uid") or "").strip()
+                            _h_acct = str(_h_orig.get("account_id") or "").strip()
+                            _h_ns = normalize_spam_sender(_h_orig.get("sender_email") or _h_orig.get("from") or "")
+                            _uid_acct_ok = not acc_id_fb or not _h_acct or _h_acct == acc_id_fb
+                            if (_h_u in sender_uids_sp and _uid_acct_ok) or (norm_spam_addr and not sender_protected and _h_ns == norm_spam_addr):
+                                _h_sync = dict(_h_orig)
+                                if "_pre_spam_is_read" not in _h_sync:
+                                    _h_sync["_pre_spam_is_read"] = bool(_h_sync.get("is_read", False))
+                                _h_sync["is_read"] = True
+                                _h_sync["is_spam"] = True
+                                _h_sync["spam_suppressed"] = True
+                                updated_sp_headers.append(_h_sync)
+                                sync_sp_changed = True
+                            else:
+                                updated_sp_headers.append(_h_orig)
+                        if sync_sp_changed:
+                            fresh_sync_sp = dict(fresh_sync_sp)
+                            fresh_sync_sp["email_headers"] = updated_sp_headers
+                            sync_cache = save_comms_sync(fresh_sync_sp)
+                        else:
+                            sync_cache = fresh_sync_sp
+            except Exception:
+                pass
+            mark_email_read_remote(account_id=acc_id_fb, uid=uid, subject=subj_fb, is_read=True)
+            # Clear matching Speed Racer drafts (snapshotting removed drafts for unspam)
+            try:
+                sr_st = load_speed_racer_queue()
+                sr_q = [it for it in (sr_st.get("queue") or []) if isinstance(it, dict)]
+                new_q = []
+                removed_sr = list(uid_snap_entry.get("removed_sr_drafts") or [])
+                seen_sr_ids = {str(d.get("id") or d.get("uid") or "") for d in removed_sr if isinstance(d, dict)}
+                for it in sr_q:
+                    it_uid = str(it.get("uid") or "").strip()
+                    it_acct = str(it.get("account_id") or "").strip()
+                    it_ns = normalize_spam_sender(it.get("to") or it.get("sender_email") or it.get("from") or "")
+                    it_acct_ok = not acc_id_fb or not it_acct or it_acct == acc_id_fb
+                    if (it_uid in sender_uids_sp and it_acct_ok) or (norm_spam_addr and not sender_protected and it_ns == norm_spam_addr):
+                        dk = str(it.get("id") or it_uid)
+                        if dk not in seen_sr_ids and len(removed_sr) < MAX_SPAM_SNAPSHOT_DRAFTS_PER_UID:
+                            removed_sr.append(copy.deepcopy(it))
+                            seen_sr_ids.add(dk)
+                    else:
+                        new_q.append(it)
+                uid_snap_entry["removed_sr_drafts"] = removed_sr[-MAX_SPAM_SNAPSHOT_DRAFTS_PER_UID:]
+                if len(new_q) != len(sr_q):
+                    sr_st["queue"] = new_q
+                    save_speed_racer_queue(sr_st)
+            except Exception:
+                failed_side_effects.append("speed_racer")
+            # Clear matching Working List proposals & record in dismissed_proposal_keys (snapshotting for unspam)
+            try:
+                wl_p_sp = _working_list_path()
+                wl_lock_sp = _working_list_lock_path()
+                if wl_p_sp.exists():
+                    with paths.cross_process_lock(wl_lock_sp, timeout_sec=STORE_LOCK_TIMEOUT_SEC):
+                        wl_st_sp = _read_working_list_unlocked(wl_p_sp)
+                        props_sp = [p for p in (wl_st_sp.get("proposals") or []) if isinstance(p, dict)]
+                        dis_sp = [str(k).strip() for k in (wl_st_sp.get("dismissed_proposal_keys") or []) if str(k).strip()]
+                        dis_set_sp = set(dis_sp)
+                        kept_props_sp = []
+                        wl_sp_changed = False
+                        snap_props = list(uid_snap_entry.get("removed_proposals") or [])
+                        snap_prop_keys = {str(p.get("source_key") or p.get("id") or "") for p in snap_props if isinstance(p, dict)}
+                        snap_dis_keys = list(uid_snap_entry.get("added_dismissed_keys") or [])
+                        for p_it in props_sp:
+                            p_euid = str(p_it.get("email_uid") or "").strip()
+                            p_sk = str(p_it.get("source_key") or "").strip()
+                            if (
+                                p_euid in sender_uids_sp
+                                or p_sk in {f"prime-email:{u}" for u in sender_uids_sp}
+                                or p_sk in {f"steward-dispatch:{u}" for u in sender_uids_sp}
+                            ):
+                                pk_id = p_sk or str(p_it.get("id") or "")
+                                if pk_id and pk_id not in snap_prop_keys:
+                                    snap_props.append(copy.deepcopy(p_it))
+                                    snap_prop_keys.add(pk_id)
+                                if p_sk and p_sk not in dis_set_sp:
+                                    dis_sp.append(p_sk)
+                                    dis_set_sp.add(p_sk)
+                                    if p_sk not in snap_dis_keys:
+                                        snap_dis_keys.append(p_sk)
+                                wl_sp_changed = True
+                            else:
+                                kept_props_sp.append(p_it)
+                        prime_key_sp = f"prime-email:{uid}"
+                        if prime_key_sp not in dis_set_sp:
+                            dis_sp.append(prime_key_sp)
+                            dis_set_sp.add(prime_key_sp)
+                            if prime_key_sp not in snap_dis_keys:
+                                snap_dis_keys.append(prime_key_sp)
+                            wl_sp_changed = True
+                        uid_snap_entry["removed_proposals"] = snap_props[-MAX_WORKING_LIST_PROPOSALS:]
+                        uid_snap_entry["added_dismissed_keys"] = snap_dis_keys[-MAX_WORKING_LIST_PROPOSALS:]
+                        if wl_sp_changed:
+                            wl_st_sp["proposals"] = kept_props_sp
+                            wl_st_sp["dismissed_proposal_keys"] = dis_sp
+                            paths.atomic_write_json(wl_p_sp, wl_st_sp, lock_path=wl_lock_sp, timeout_sec=STORE_LOCK_TIMEOUT_SEC)
+                            _invalidate_cached_json_file(wl_p_sp)
+                            _WORKING_LIST_SPINE_CACHE.clear()
+            except Exception:
+                failed_side_effects.append("proposals")
+            # Close matching Watchlist entries carrying this email_uid (or sender_uids_sp)
+            try:
+                w_p_sp = _watchlist_path()
+                w_lock_sp = _watchlist_lock_path()
+                if w_p_sp.exists():
+                    with paths.cross_process_lock(w_lock_sp, timeout_sec=STORE_LOCK_TIMEOUT_SEC):
+                        w_doc_sp = _read_watchlist_unlocked(w_p_sp)
+                        w_changed_sp = False
+                        for w_it in (w_doc_sp.get("items") or []):
+                            if not isinstance(w_it, dict):
+                                continue
+                            w_euid = str(w_it.get("email_uid") or w_it.get("uid") or "").strip()
+                            if w_euid in sender_uids_sp and str(w_it.get("status") or "open").lower() != "done":
+                                w_it["status"] = "done"
+                                w_it["resolution"] = "spam"
+                                w_it["completed_at"] = now_str
+                                w_changed_sp = True
+                        if w_changed_sp:
+                            w_doc_sp["updated_at"] = now_str
+                            paths.atomic_write_json(w_p_sp, w_doc_sp, lock_path=w_lock_sp, timeout_sec=STORE_LOCK_TIMEOUT_SEC)
+            except Exception:
+                failed_side_effects.append("watchlist")
+            if failed_side_effects:
+                uid_snap_entry["partial_side_effects"] = list(failed_side_effects)
+                note = (
+                    f"Marked '{norm_spam_addr or uid}' as Spam, but cleanup was deferred on locked store(s): "
+                    + ", ".join(failed_side_effects)
+                )
+            else:
+                uid_snap_entry.pop("partial_side_effects", None)
+                note = (
+                    f"Marked message '{uid}' as Spam (correspondent '{norm_spam_addr}' is protected — sender address not blocked)."
+                    if sender_protected
+                    else f"Marked Spam — suppressed '{norm_spam_addr or uid}' and cleared Speed Racer, proposal, and Watchlist entries."
+                )
+        elif feedback == "unspam":
+            qual_unspam_uid = _spam_uid_key(acc_id_fb, uid)
+            uids_snap_un = spam_snapshots.get("uids") if isinstance(spam_snapshots.get("uids"), dict) else {}
+            uid_snap = uids_snap_un.get(qual_unspam_uid) if qual_unspam_uid else None
+            if uid_snap is None:
+                uid_snap = uids_snap_un.get(uid)
+            if uid_snap is None:
+                for _sk_cand, _sv_cand in uids_snap_un.items():
+                    if str(_sk_cand).endswith(f":{uid}") and isinstance(_sv_cand, dict):
+                        uid_snap = _sv_cand
+                        break
+            if isinstance(uid_snap, dict) and not acc_id_fb and uid_snap.get("account_id"):
+                acc_id_fb = str(uid_snap["account_id"]).strip()
+                qual_unspam_uid = _spam_uid_key(acc_id_fb, uid)
+            was_uid_spam = _is_spam_uid_match(uid, acc_id_fb, set(spam_uids))
+            had_uid_snapshot = isinstance(uid_snap, dict) and not bool(uid_snap.get("read_restored"))
+            if not norm_spam_addr:
+                if isinstance(uid_snap, dict) and uid_snap.get("norm_spam_addr"):
+                    norm_spam_addr = str(uid_snap["norm_spam_addr"])
+                elif isinstance(acted_map.get(uid), dict):
+                    norm_spam_addr = normalize_spam_sender(acted_map[uid].get("sender_email") or acted_map[uid].get("from") or "")
+            sender_uids_un: set[str] = {uid}
+            if isinstance(uid_snap, dict):
+                for _su in (uid_snap.get("sender_uids") or []):
+                    if str(_su).strip():
+                        sender_uids_un.add(str(_su).strip())
+            if norm_spam_addr and isinstance(sync_cache, dict):
+                for _h_un in (sync_cache.get("email_headers") or []):
+                    if isinstance(_h_un, dict) and normalize_spam_sender(_h_un.get("sender_email") or _h_un.get("from") or "") == norm_spam_addr:
+                        _hu_un = str(_h_un.get("uid") or "").strip()
+                        if _hu_un:
+                            sender_uids_un.add(_hu_un)
+            keys_to_remove_spam = {uid, qual_unspam_uid} if qual_unspam_uid else {uid}
+            if not acc_id_fb:
+                keys_to_remove_spam |= {u for u in spam_uids if str(u).endswith(f":{uid}")}
+            spam_uids = [u for u in spam_uids if u not in keys_to_remove_spam]
+            if isinstance(uid_snap, dict) or was_uid_spam:
+                if isinstance(uid_snap, dict) and uid_snap.get("in_up_uids"):
+                    if uid not in up_uids:
+                        up_uids.append(uid)
+                if not (isinstance(uid_snap, dict) and uid_snap.get("in_down_uids")) and uid in down_uids:
+                    down_uids.remove(uid)
+                if not (isinstance(uid_snap, dict) and uid_snap.get("in_seen_unopened")) and uid in seen_unopened:
+                    seen_unopened.remove(uid)
+                if not (isinstance(uid_snap, dict) and uid_snap.get("in_seen_opened")) and uid in seen_opened:
+                    seen_opened.remove(uid)
+                for _ak_un in [
+                    k for k in list(acted_map.keys())
+                    if k in sender_uids_un or any(str(k).endswith(f":{u}") for u in sender_uids_un)
+                ]:
+                    acted_map.pop(_ak_un, None)
+                if isinstance(uid_snap, dict) and isinstance(uid_snap.get("acted_entry"), dict):
+                    _restore_ak = str(uid_snap.get("acted_key") or (f"{acc_id_fb}:{uid}" if acc_id_fb else uid))
+                    acted_map[_restore_ak] = copy.deepcopy(uid_snap["acted_entry"])
+                elif not (
+                    isinstance(uid_snap, dict)
+                    and (
+                        uid_snap.get("was_read")
+                        or uid_snap.get("in_down_uids")
+                        or uid_snap.get("in_seen_unopened")
+                        or uid_snap.get("in_seen_opened")
+                    )
+                ):
+                    for _u_un in sender_uids_un:
+                        if _u_un and _u_un not in unacted_uids:
+                            unacted_uids.append(_u_un)
+                if isinstance(uid_snap, dict) and uid_snap.get("in_unacted") and uid not in unacted_uids:
+                    unacted_uids.append(uid)
+            sender_snap = None
+            was_sender_spam = False
+            if norm_spam_addr:
+                sender_snap = (
+                    spam_snapshots["senders"].get(norm_spam_addr)
+                    if isinstance(spam_snapshots.get("senders"), dict)
+                    else None
+                )
+                was_sender_spam = norm_spam_addr in spam_senders
+                spam_senders = [s for s in spam_senders if s != norm_spam_addr]
+                if isinstance(sender_snap, dict):
+                    if not sender_snap.get("had_down_sender"):
+                        down_senders = [
+                            s for s in down_senders
+                            if normalize_spam_sender(s) != norm_spam_addr and str(s).strip().lower() != norm_spam_addr
+                        ]
+                    if sender_snap.get("had_score"):
+                        scores[norm_spam_addr] = sender_snap["prev_score"]
+                    else:
+                        scores.pop(norm_spam_addr, None)
+                elif was_sender_spam:
+                    down_senders = [
+                        s for s in down_senders
+                        if normalize_spam_sender(s) != norm_spam_addr and str(s).strip().lower() != norm_spam_addr
+                    ]
+                    if int(scores.get(norm_spam_addr) or 0) < 0:
+                        scores.pop(norm_spam_addr, None)
+                if isinstance(spam_snapshots.get("senders"), dict):
+                    spam_snapshots["senders"].pop(norm_spam_addr, None)
+            # Restore comms-sync.json header read/spam flags under lock ONLY when a snapshot or spam marker exists
+            restored_was_read = bool(uid_snap.get("was_read", False)) if isinstance(uid_snap, dict) else True
+            target_hdr_had_spam_marker = False
+            try:
+                sync_p_un = _sync_path()
+                sync_lock_un = sync_p_un.with_name(sync_p_un.name + ".lock")
+                with paths.cross_process_lock(sync_lock_un, timeout_sec=STORE_LOCK_TIMEOUT_SEC):
+                    _invalidate_cached_json_file(sync_p_un)
+                    fresh_sync_un = load_comms_sync()
+                    if isinstance(fresh_sync_un, dict):
+                        remaining_spam_uids = set(spam_uids)
+                        remaining_spam_senders = set(spam_senders)
+                        sync_un_changed = False
+                        updated_un_headers = []
+                        for _h_orig in (fresh_sync_un.get("email_headers") or []):
+                            if not isinstance(_h_orig, dict):
+                                updated_un_headers.append(_h_orig)
+                                continue
+                            _h_u = str(_h_orig.get("uid") or "").strip()
+                            _h_acct = str(_h_orig.get("account_id") or "").strip()
+                            _h_ns = normalize_spam_sender(_h_orig.get("sender_email") or _h_orig.get("from") or "")
+                            if _is_spam_uid_match(_h_u, _h_acct, remaining_spam_uids) or (_h_ns and _h_ns in remaining_spam_senders):
+                                updated_un_headers.append(_h_orig)
+                                continue
+                            _uid_un_acct_ok = not acc_id_fb or not _h_acct or _h_acct == acc_id_fb
+                            if (_h_u in sender_uids_un and _uid_un_acct_ok) or (norm_spam_addr and _h_ns == norm_spam_addr):
+                                _hdr_has_marker = bool(
+                                    "_pre_spam_is_read" in _h_orig
+                                    or _h_orig.get("is_spam")
+                                    or _h_orig.get("spam_suppressed")
+                                )
+                                if _hdr_has_marker or (_h_u == uid and (had_uid_snapshot or was_uid_spam)):
+                                    _h_sync = dict(_h_orig)
+                                    _fallback_read = (
+                                        bool(uid_snap.get("was_read", False))
+                                        if (_h_u == uid and isinstance(uid_snap, dict))
+                                        else (False if _hdr_has_marker else bool(_h_orig.get("is_read", False)))
+                                    )
+                                    _prev_r = bool(_h_sync.pop("_pre_spam_is_read", _fallback_read))
+                                    _h_sync["is_read"] = _prev_r
+                                    _h_sync.pop("is_spam", None)
+                                    _h_sync.pop("spam_suppressed", None)
+                                    updated_un_headers.append(_h_sync)
+                                    sync_un_changed = True
+                                    if _h_u == uid:
+                                        restored_was_read = _prev_r
+                                        target_hdr_had_spam_marker = True
+                                    continue
+                            updated_un_headers.append(_h_orig)
+                        if sync_un_changed:
+                            fresh_sync_un = dict(fresh_sync_un)
+                            fresh_sync_un["email_headers"] = updated_un_headers
+                            sync_cache = save_comms_sync(fresh_sync_un)
+                        else:
+                            sync_cache = fresh_sync_un
+            except Exception:
+                pass
+            if (had_uid_snapshot or target_hdr_had_spam_marker or was_uid_spam) and not restored_was_read:
+                mark_email_read_remote(account_id=acc_id_fb, uid=uid, subject=subj_fb, is_read=False)
+            if isinstance(uid_snap, dict):
+                uid_snap["read_restored"] = True
+            restore_complete = True
+            # Symmetrically reinstate Speed Racer drafts removed when marked spam
+            try:
+                removed_sr_un = (uid_snap.get("removed_sr_drafts") or []) if isinstance(uid_snap, dict) else []
+                if removed_sr_un:
+                    sr_st_un = load_speed_racer_queue()
+                    sr_q_un = [it for it in (sr_st_un.get("queue") or []) if isinstance(it, dict)]
+                    existing_sr_keys = {str(it.get("id") or it.get("uid") or "") for it in sr_q_un}
+                    sr_reinstated = False
+                    for d_rest in removed_sr_un:
+                        if not isinstance(d_rest, dict):
+                            continue
+                        dk_rest = str(d_rest.get("id") or d_rest.get("uid") or "").strip()
+                        if dk_rest and dk_rest not in existing_sr_keys:
+                            sr_q_un.append(copy.deepcopy(d_rest))
+                            existing_sr_keys.add(dk_rest)
+                            sr_reinstated = True
+                    if sr_reinstated:
+                        sr_st_un["queue"] = sr_q_un
+                        save_speed_racer_queue(sr_st_un)
+                    if isinstance(uid_snap, dict):
+                        uid_snap["removed_sr_drafts"] = []
+            except Exception:
+                restore_complete = False
+                failed_side_effects.append("speed_racer")
+            # Symmetrically reverse proposal dismissals and reinstate removed proposals
+            try:
+                wl_p_un = _working_list_path()
+                wl_lock_un = _working_list_lock_path()
+                if wl_p_un.exists() and (isinstance(uid_snap, dict) or was_uid_spam or was_sender_spam):
+                    with paths.cross_process_lock(wl_lock_un, timeout_sec=STORE_LOCK_TIMEOUT_SEC):
+                        wl_st_un = _read_working_list_unlocked(wl_p_un)
+                        dis_un = [str(k).strip() for k in (wl_st_un.get("dismissed_proposal_keys") or []) if str(k).strip()]
+                        keys_to_undismiss = (
+                            {f"prime-email:{u}" for u in sender_uids_un}
+                            | {f"steward-dispatch:{u}" for u in sender_uids_un}
+                            | set((uid_snap.get("added_dismissed_keys") or []) if isinstance(uid_snap, dict) else [])
+                        )
+                        new_dis_un = [k for k in dis_un if k not in keys_to_undismiss]
+                        props_un = [p for p in (wl_st_un.get("proposals") or []) if isinstance(p, dict)]
+                        acc_set_un = {str(k).strip() for k in (wl_st_un.get("accepted_proposal_keys") or []) if str(k).strip()}
+                        existing_prop_keys = {str(p.get("source_key") or p.get("id") or "") for p in props_un}
+                        props_reinstated = False
+                        for p_rest in ((uid_snap.get("removed_proposals") or []) if isinstance(uid_snap, dict) else []):
+                            if not isinstance(p_rest, dict):
+                                continue
+                            pk_rest = str(p_rest.get("source_key") or p_rest.get("id") or "").strip()
+                            if pk_rest and pk_rest not in existing_prop_keys and pk_rest not in acc_set_un:
+                                props_un.append(copy.deepcopy(p_rest))
+                                existing_prop_keys.add(pk_rest)
+                                props_reinstated = True
+                        if len(new_dis_un) != len(dis_un) or props_reinstated:
+                            wl_st_un["dismissed_proposal_keys"] = new_dis_un
+                            wl_st_un["proposals"] = props_un
+                            paths.atomic_write_json(wl_p_un, wl_st_un, lock_path=wl_lock_un, timeout_sec=STORE_LOCK_TIMEOUT_SEC)
+                            _invalidate_cached_json_file(wl_p_un)
+                            _WORKING_LIST_SPINE_CACHE.clear()
+                        if isinstance(uid_snap, dict):
+                            uid_snap["removed_proposals"] = []
+                            uid_snap["added_dismissed_keys"] = []
+            except Exception:
+                restore_complete = False
+                failed_side_effects.append("proposals")
+            try:
+                w_p_un = _watchlist_path()
+                w_lock_un = _watchlist_lock_path()
+                if w_p_un.exists() and (isinstance(uid_snap, dict) or was_uid_spam or was_sender_spam):
+                    with paths.cross_process_lock(w_lock_un, timeout_sec=STORE_LOCK_TIMEOUT_SEC):
+                        w_doc_un = _read_watchlist_unlocked(w_p_un)
+                        w_changed_un = False
+                        for w_it in (w_doc_un.get("items") or []):
+                            if not isinstance(w_it, dict):
+                                continue
+                            w_euid = str(w_it.get("email_uid") or w_it.get("uid") or "").strip()
+                            if w_euid in sender_uids_un and str(w_it.get("resolution") or "") == "spam":
+                                w_it["status"] = "open"
+                                w_it.pop("resolution", None)
+                                w_it.pop("completed_at", None)
+                                w_changed_un = True
+                        if w_changed_un:
+                            w_doc_un["updated_at"] = now_str
+                            paths.atomic_write_json(w_p_un, w_doc_un, lock_path=w_lock_un, timeout_sec=STORE_LOCK_TIMEOUT_SEC)
+            except Exception:
+                restore_complete = False
+                failed_side_effects.append("watchlist")
+            if restore_complete:
+                if qual_unspam_uid:
+                    uids_snap_un.pop(qual_unspam_uid, None)
+                uids_snap_un.pop(uid, None)
+                for _sk_rm in [k for k in list(uids_snap_un.keys()) if str(k).endswith(f":{uid}")]:
+                    uids_snap_un.pop(_sk_rm, None)
+                note = f"Reversed Spam status for '{norm_spam_addr or uid}' and restored email to Active Inbox."
+            else:
+                if isinstance(uid_snap, dict):
+                    uid_snap["restore_pending"] = True
+                note = (
+                    f"Reversed Spam status for '{norm_spam_addr or uid}', but restore is pending on locked store(s): "
+                    + ", ".join(failed_side_effects)
+                )
 
         try:
-            if feedback in ("seen_important", "steward_action", "upgrade", "downgrade", "seen_not_important", "already_replied", "seen"):
-                _sc_act = (
-                    "seen_important"
-                    if feedback in ("seen_important", "steward_action", "upgrade")
-                    else ("ignore" if feedback in ("downgrade", "seen_not_important") else ("direct_reply" if feedback == "already_replied" else "seen"))
-                )
+            if feedback in ("seen_important", "steward_action", "upgrade", "downgrade", "seen_not_important", "already_replied", "seen", "spam", "unspam"):
+                if feedback in ("spam", "unspam"):
+                    _sc_act = feedback
+                elif feedback in ("seen_important", "steward_action", "upgrade"):
+                    _sc_act = "seen_important"
+                elif feedback in ("downgrade", "seen_not_important"):
+                    _sc_act = "ignore"
+                elif feedback == "already_replied":
+                    _sc_act = "direct_reply"
+                else:
+                    _sc_act = "seen"
                 _scribe.record_interest_signal(
-                    {"uid": uid, "from": sender or sender_email, "sender_email": sender_email, "subject": subj_fb},
+                    {
+                        "uid": uid,
+                        "account_id": acc_id_fb,
+                        "spam_uid_key": _spam_uid_key(acc_id_fb, uid),
+                        "from": sender or sender_email,
+                        "sender_email": norm_spam_addr or sender_email,
+                        "subject": subj_fb,
+                        "sender_protected": sender_protected,
+                    },
                     action=_sc_act,
                 )
         except Exception:
             pass
 
-        if feedback in ("seen", "seen_not_important", "seen_important", "steward_action", "already_replied", "calendar_done", "downgrade") and uid in acted_map:
+        if feedback in ("seen", "seen_not_important", "seen_important", "steward_action", "already_replied", "done", "calendar_done", "downgrade") and uid in acted_map:
             _enrich_acted_entry(
                 acted_map[uid],
                 uid=uid,
@@ -4205,23 +5689,34 @@ def record_email_triage_feedback(body: dict) -> dict:
                 date_str=str(body.get("date") or ""),
                 sync_headers=sync_cache.get("email_headers") if isinstance(sync_cache, dict) else None,
             )
+            if acc_id_fb and not acted_map[uid].get("account_id"):
+                acted_map[uid]["account_id"] = acc_id_fb
             target_subj = str(acted_map[uid].get("subject") or subj_fb).strip()
             target_sender = f"{acted_map[uid].get('from') or sender} {acted_map[uid].get('sender_email') or sender_email}".strip()
             target_dt = _parse_comparable_email_ts(str(acted_map[uid].get("date") or body.get("date") or ""))
+            _t_target = _extract_person_tokens(target_sender)
             if target_subj and target_sender:
                 for _h in (sync_cache.get("email_headers") or []):
                     if not isinstance(_h, dict):
                         continue
                     _sib_uid = str(_h.get("uid") or "")
+                    _sib_acct = str(_h.get("account_id") or "").strip()
                     _sib_sender = f"{_h.get('from') or ''} {_h.get('sender_email') or ''}".strip()
                     _sib_dt = _parse_comparable_email_ts(str(_h.get("date") or ""))
+                    _sib_unread = not bool(_h.get("is_read"))
+                    _t_sib = _extract_person_tokens(_sib_sender)
+                    if _sib_unread and (
+                        (acc_id_fb and _sib_acct and _sib_acct != acc_id_fb)
+                        or (_t_target and _t_sib and not (_t_target & _t_sib))
+                    ):
+                        continue
                     if (
                         _sib_uid
                         and _sib_uid != uid
                         and _subjects_match_thread(target_subj, str(_h.get("subject") or ""), sender1=target_sender, sender2=_sib_sender)
                         and (not target_dt or not _sib_dt or not _sent_ts_is_older_than_inbound(target_dt, _sib_dt, tolerance_hours=0.02))
                     ):
-                        _sib_entry = dict(acted_map[uid], uid=_sib_uid)
+                        _sib_entry = dict(acted_map[uid], uid=_sib_uid, account_id=_sib_acct or acc_id_fb)
                         _enrich_acted_entry(
                             _sib_entry,
                             uid=_sib_uid,
@@ -4232,6 +5727,12 @@ def record_email_triage_feedback(body: dict) -> dict:
                             message_id=str(_h.get("message_id") or ""),
                         )
                         acted_map.setdefault(_sib_uid, _sib_entry)
+                        remote_read_items.append({
+                            "account_id": _sib_acct or acc_id_fb,
+                            "uid": _sib_uid,
+                            "subject": str(_h.get("subject") or target_subj),
+                            "is_read": True,
+                        })
                         if _sib_uid in unacted_uids:
                             unacted_uids.remove(_sib_uid)
 
@@ -4242,17 +5743,36 @@ def record_email_triage_feedback(body: dict) -> dict:
         prefs["upgraded_uids"] = up_uids[-500:]
         prefs["downgraded_senders"] = down_senders[-200:]
         prefs["upgraded_senders"] = up_senders[-200:]
+        prefs["spam_senders"] = spam_senders[-MAX_SPAM_SENDERS:]
+        prefs["spam_uids"] = spam_uids[-MAX_SPAM_UIDS:]
+        prefs["spam_snapshots"] = _bound_spam_snapshots(
+            spam_snapshots,
+            prefs["spam_uids"],
+            prefs["spam_senders"],
+        )
         prefs["sender_scores"] = scores
         prefs["acted_upon_emails"] = acted_map
         prefs["unacted_uids"] = unacted_uids[-500:]
         save_triage_prefs(prefs)
 
+    if remote_read_items:
+        _dispatch_remote_read_items(remote_read_items)
+        fresh_sc = load_comms_sync()
+        if isinstance(fresh_sc, dict) and fresh_sc.get("email_headers") is not None:
+            sync_cache = fresh_sc
+
     imp, oth = classify_inbox_emails(sync_cache.get("email_headers") or [], prefs)
-    return {
+    res_fb: dict[str, Any] = {
         "ok": True,
         "uid": uid,
         "feedback": feedback,
         "was_opened": already_opened,
+        "sender_email": norm_spam_addr,
+        "sender_protected": sender_protected,
+        "spam_senders": list(prefs.get("spam_senders") or []),
+        "spam_uids": list(prefs.get("spam_uids") or []),
+        "partial_failure": bool(failed_side_effects),
+        "failed_side_effects": failed_side_effects,
         "note": note,
         "important_emails": imp,
         "other_emails": oth,
@@ -4261,6 +5781,12 @@ def record_email_triage_feedback(body: dict) -> dict:
         "sent_emails": gather_sent_emails(sync_cache),
         "speed_racer": load_speed_racer_queue(),
     }
+    if feedback in ("spam", "unspam"):
+        try:
+            res_fb["working_list"] = load_working_list_spine()
+        except Exception:
+            pass
+    return res_fb
 
 
 def _synthesize_clean_steward_task_title(comment: str, subj: str = "") -> str:
@@ -4453,6 +5979,8 @@ def record_email_steward_action(body: dict) -> dict:
                 "reply to",
                 "respond to",
                 "formal response",
+                "polite response",
+                "quick response",
                 "response to this",
                 "draft a response",
                 "draft an email",
@@ -4472,7 +6000,7 @@ def record_email_steward_action(body: dict) -> dict:
                 "account_badge": acct_badge,
                 "from": sender_display,
                 "sender_email": sender_email,
-                "to": f"{sender_display} <{sender_email}>" if ("@" in sender_email and "<" not in sender_display) else (sender_email or sender_display),
+                "to": _format_graph_recipient(sender_display, sender_email) if ("@" in sender_email and "<" not in sender_display) else (sender_email or sender_display),
                 "subject": subj,
                 "incoming_snippet": full_email_body,
                 "steward_directions": comment,
@@ -4498,7 +6026,8 @@ def record_email_steward_action(body: dict) -> dict:
                     "priority": p_num,
                     "cockpit_item": cockpit_item,
                     "cockpit_url": cockpit_url,
-                }
+                },
+                live_reconcile=True,
             )
             wl_state = rec_res.get("working_list") or load_working_list_spine()
         else:
@@ -4908,10 +6437,21 @@ def _resolve_event_rsvp(ev: dict, rsvp_prefs: dict | None = None, sent_haystack:
     raw_st = str(ev.get("rsvp_status") or "").strip().lower()
     is_external_invite_hint = any(h in title_low for h in _UNRESPONDED_INVITE_HINTS)
 
-    # User-requested / locally-created items (e.g. Candidate Interviews, AI Club, Sunday Teaching, Steward-added events) are automatically Accepted
+    is_own_teaching = bool(
+        not title_low.startswith(("synced invitation:", "invitation:", "fw:", "hold for"))
+        and re.search(
+            r"\b(?:mba|hmba|ba\s*815|stat\s*610|sunday\s+teaching|mba\s+teaching)\b",
+            title_low,
+        )
+    )
+
+    # User-requested / locally-created items and recurring MBA/HMBA teaching blocks are automatically Accepted
     if not status and (ev.get("user_requested") or ev.get("local_created")) and not title_low.startswith(("synced invitation:", "invitation:", "fw:", "hold for")):
         status = "responded"
         source = "created_by_you"
+    elif not status and is_own_teaching and raw_st not in ("declined", "tentative", "tentativelyaccepted"):
+        status = "responded"
+        source = "own_teaching_commitment"
 
     if not status:
         if raw_st in ("responded", "accepted", "attending"):
@@ -4937,6 +6477,12 @@ def _resolve_event_rsvp(ev: dict, rsvp_prefs: dict | None = None, sent_haystack:
         if ev.get("local_created") or ev.get("user_requested"):
             status = "responded"
             source = "created_by_you"
+        elif not is_external_invite_hint and re.search(
+            r"\b(?:mba|hmba|ba\s*815|stat\s*610|sunday\s+teaching|mba\s+teaching)\b",
+            title_low,
+        ):
+            status = "responded"
+            source = "own_teaching_commitment"
         else:
             toks = [t for t in _norm_event_tokens(title) if len(t) >= 4 and t not in ("meeting", "session", "business", "college", "zoom", "series")]
             if sent_haystack and toks and any(t in sent_haystack for t in toks):
@@ -5117,7 +6663,7 @@ def _compact_archived_email_item(it: dict) -> dict:
         cp["links"] = cp["links"][:4]
     if isinstance(tmsgs, list):
         slim_tm = []
-        for m in tmsgs[-2:]:
+        for m in tmsgs[:2]:
             if isinstance(m, dict):
                 mc = dict(m)
                 mb = str(mc.get("body") or "")
@@ -5130,6 +6676,121 @@ def _compact_archived_email_item(it: dict) -> dict:
     return cp
 
 
+def _calendar_alarms_path() -> Path:
+    p = paths.data_dir() / ".anchor" / "calendar-alarms.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def _calendar_alarms_lock_path() -> Path:
+    p = _calendar_alarms_path()
+    return p.with_name(p.name + ".lock")
+
+
+def load_calendar_alarm_state() -> dict:
+    p = _calendar_alarms_path()
+    base: dict[str, Any] = {
+        "version": 1,
+        "enabled": True,
+        "lead_minutes": 5,
+        "sound_enabled": True,
+        "popup_enabled": True,
+        "acknowledged": {},
+        "updated_at": "",
+    }
+    if p.is_file():
+        try:
+            raw = json.loads(p.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                if "enabled" in raw:
+                    base["enabled"] = bool(raw.get("enabled"))
+                if "lead_minutes" in raw:
+                    try:
+                        base["lead_minutes"] = max(0, min(60, int(raw.get("lead_minutes"))))
+                    except (TypeError, ValueError):
+                        pass
+                if "sound_enabled" in raw:
+                    base["sound_enabled"] = bool(raw.get("sound_enabled"))
+                if "popup_enabled" in raw:
+                    base["popup_enabled"] = bool(raw.get("popup_enabled"))
+                if isinstance(raw.get("acknowledged"), dict):
+                    base["acknowledged"] = dict(raw["acknowledged"])
+                base["updated_at"] = str(raw.get("updated_at") or "")
+        except Exception:
+            pass
+    return base
+
+
+def update_calendar_alarm_state(body: dict | None = None) -> dict:
+    """Persist calendar alarm acknowledgements ('ack'/'dismiss'/'unack') and user preferences ('prefs')."""
+    payload = dict(body) if isinstance(body, dict) else {}
+    sub_act = str(payload.get("sub_action") or payload.get("op") or "").strip().lower()
+    if not sub_act:
+        if payload.get("alarm_key") or payload.get("key") or payload.get("uid") or payload.get("event_id"):
+            sub_act = "ack"
+        elif any(k in payload for k in ("enabled", "lead_minutes", "sound_enabled", "popup_enabled")):
+            sub_act = "prefs"
+        else:
+            sub_act = "get"
+    if sub_act == "get":
+        return {"ok": True, "status_code": 200, "calendar_alarms": load_calendar_alarm_state()}
+
+    p = _calendar_alarms_path()
+    lock_p = _calendar_alarms_lock_path()
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with paths.cross_process_lock(lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC):
+        st = load_calendar_alarm_state()
+        ack = dict(st.get("acknowledged") or {})
+        if sub_act in ("ack", "dismiss", "exit", "goto"):
+            a_key = str(payload.get("alarm_key") or payload.get("key") or "").strip()
+            ev_uid = str(payload.get("uid") or payload.get("event_id") or "").strip()
+            ev_date = str(payload.get("date") or "")[:10].strip()
+            ev_time = str(payload.get("start_time") or "")[:5].strip()
+            ev_title = str(payload.get("title") or "").strip()
+            if not a_key:
+                base_id = ev_uid or ev_title.lower() or "event"
+                a_key = f"{base_id}@{ev_date}T{ev_time}"
+            ack.pop(a_key, None)
+            ack[a_key] = {
+                "at": now_str,
+                "via": str(payload.get("via") or ("goto" if sub_act == "goto" else "dismiss"))[:24],
+                "uid": ev_uid,
+                "title": ev_title[:120],
+                "date": ev_date,
+                "start_time": ev_time,
+            }
+            if len(ack) > 300:
+                ack = dict(list(ack.items())[-300:])
+            st["acknowledged"] = ack
+        elif sub_act in ("unack", "reset"):
+            if payload.get("all"):
+                st["acknowledged"] = {}
+            else:
+                a_key = str(payload.get("alarm_key") or payload.get("key") or "").strip()
+                if a_key:
+                    ack.pop(a_key, None)
+                    st["acknowledged"] = ack
+        elif sub_act in ("prefs", "settings", "save_prefs"):
+            if "enabled" in payload:
+                st["enabled"] = bool(payload["enabled"])
+            if "lead_minutes" in payload:
+                try:
+                    st["lead_minutes"] = max(0, min(60, int(payload["lead_minutes"])))
+                except (TypeError, ValueError):
+                    pass
+            if "sound_enabled" in payload:
+                st["sound_enabled"] = bool(payload["sound_enabled"])
+            if "popup_enabled" in payload:
+                st["popup_enabled"] = bool(payload["popup_enabled"])
+        else:
+            return {"ok": False, "status_code": 400, "error": f"Unknown calendar_alarm sub_action: {sub_act}"}
+
+        st["updated_at"] = now_str
+        paths.atomic_write_json(p, st, lock_path=lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC)
+    _RECONCILE_COMMS_CACHE.clear()
+    return {"ok": True, "status_code": 200, "sub_action": sub_act, "calendar_alarms": st}
+
+
 def _comms_state_files_sig(today: date, entries_key: tuple) -> tuple:
     sig_parts: list = [today.isoformat(), entries_key]
     for p in (
@@ -5139,6 +6800,7 @@ def _comms_state_files_sig(today: date, entries_key: tuple) -> tuple:
         _speed_racer_path(),
         _working_list_path(),
         _watchlist_path(),
+        _calendar_alarms_path(),
     ):
         try:
             st = p.stat()
@@ -5163,7 +6825,7 @@ def reconcile_comms_with_roadmaps(entries: list[dict] | None = None, facts: dict
         cached_sig = _RECONCILE_COMMS_CACHE.get("sig")
         cached_ts = float(_RECONCILE_COMMS_CACHE.get("ts") or 0.0)
         cached_payload = _RECONCILE_COMMS_CACHE.get("payload")
-        if cached_payload is not None and cached_sig == cur_sig and (time.monotonic() - cached_ts) < 15.0:
+        if cached_payload is not None and cached_sig == cur_sig and (time.monotonic() - cached_ts) < 120.0:
             res_hit = dict(cached_payload)
             res_hit["poller"] = poller_status()
             return res_hit
@@ -5364,6 +7026,7 @@ def reconcile_comms_with_roadmaps(entries: list[dict] | None = None, facts: dict
             important_emails=important_emails,
             sent_emails=sent_emails,
             today=today,
+            live_reconcile=True,
         )
         wl_state = rec_wl.get("working_list") or load_working_list_spine()
     except Exception:
@@ -5423,6 +7086,7 @@ def reconcile_comms_with_roadmaps(entries: list[dict] | None = None, facts: dict
         "scribe_digest": _scribe_digest,
         "working_list": wl_state,
         "watchlist": wl_watchlist,
+        "calendar_alarms": load_calendar_alarm_state(),
         "presets": PROVIDER_PRESETS,
         "poller": poller_status(),
         "gmail_2fa": poll_gmail_2fa_flow(),
@@ -5431,7 +7095,46 @@ def reconcile_comms_with_roadmaps(entries: list[dict] | None = None, facts: dict
         _RECONCILE_COMMS_CACHE["sig"] = _comms_state_files_sig(today, entries_sig)
         _RECONCILE_COMMS_CACHE["ts"] = time.monotonic()
         _RECONCILE_COMMS_CACHE["payload"] = payload_out
+        _RECONCILE_COMMS_CACHE.pop("slim_payload", None)
     return payload_out
+
+
+def _slim_email_row(row: dict) -> dict:
+    if not isinstance(row, dict):
+        return row
+    drop_keys = ("body", "quoted_history", "thread_messages", "links", "sandbox_policy")
+    if not any(k in row for k in drop_keys):
+        return row
+    out_r = {k: v for k, v in row.items() if k not in drop_keys}
+    if not out_r.get("snippet") and row.get("body"):
+        out_r["snippet"] = " ".join(str(row.get("body") or "").split())[:180]
+    out_r["body_slimmed"] = True
+    return out_r
+
+
+def _slim_comms_payload(payload: dict) -> dict:
+    """Strip multi-MB archived email bodies/threads/links from list-polling payloads while keeping active unread Prime/Other bodies intact."""
+    if not isinstance(payload, dict):
+        return payload
+    is_live_prod = not _is_hermetic() and not os.environ.get("PYTEST_CURRENT_TEST")
+    if is_live_prod and _RECONCILE_COMMS_CACHE.get("payload") is payload and isinstance(_RECONCILE_COMMS_CACHE.get("slim_payload"), dict):
+        cached_slim = dict(_RECONCILE_COMMS_CACHE["slim_payload"])
+        cached_slim["poller"] = poller_status()
+        return cached_slim
+    slim = dict(payload)
+    for k_list in ("all_emails", "acted_upon_emails", "sent_emails"):
+        arr = slim.get(k_list)
+        if isinstance(arr, list):
+            slim[k_list] = [_slim_email_row(x) for x in arr]
+    sr = slim.get("speed_racer")
+    if isinstance(sr, dict) and isinstance(sr.get("archive"), list) and len(sr["archive"]) > 30:
+        sr_slim = dict(sr)
+        sr_slim["archive"] = sr["archive"][:30]
+        slim["speed_racer"] = sr_slim
+    slim["slim"] = True
+    if is_live_prod and _RECONCILE_COMMS_CACHE.get("payload") is payload:
+        _RECONCILE_COMMS_CACHE["slim_payload"] = slim
+    return slim
 
 
 # ── Wave 15 Deep Hardening: Background Periodic Polling Daemon, OAuth2 PKCE, and Two-Way Drafts ──
@@ -6113,25 +7816,25 @@ def read_email_message(body: dict | None = None, *, account_id: str = "", uid: s
                 elif items:
                     target_id = str(items[0].get("id") or "")
             if target_id:
-                m_url = f"https://graph.microsoft.com/v1.0/me/messages/{urllib.parse.quote(target_id)}?$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,body,bodyPreview,hasAttachments"
+                m_url = f"https://graph.microsoft.com/v1.0/me/messages/{urllib.parse.quote(target_id, safe='')}?$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,body,bodyPreview,hasAttachments"
                 with paths.safe_urlopen(urllib.request.Request(m_url, headers=req_hdrs), timeout=6.0) as m_resp:
                     item = json.loads(m_resp.read().decode("utf-8", errors="replace"))
                 frm_obj = ((item.get("from") or {}).get("emailAddress") or {})
-                from_str = f"{frm_obj.get('name') or ''} <{frm_obj.get('address') or ''}>".strip(" <>")
+                from_str = _format_graph_recipient(str(frm_obj.get("name") or ""), str(frm_obj.get("address") or ""))
                 to_list = []
                 for r in (item.get("toRecipients") or []):
                     if isinstance(r, dict):
                         ea = (r.get("emailAddress") or {})
                         nm = str(ea.get("name") or "").strip()
                         ad = str(ea.get("address") or "").strip()
-                        to_list.append(f"{nm} <{ad}>".strip(" <>") if (nm and ad and nm != ad) else (ad or nm))
+                        to_list.append(_format_graph_recipient(nm, ad))
                 cc_list = []
                 for r in (item.get("ccRecipients") or []):
                     if isinstance(r, dict):
                         ea = (r.get("emailAddress") or {})
                         nm = str(ea.get("name") or "").strip()
                         ad = str(ea.get("address") or "").strip()
-                        cc_list.append(f"{nm} <{ad}>".strip(" <>") if (nm and ad and nm != ad) else (ad or nm))
+                        cc_list.append(_format_graph_recipient(nm, ad))
                 body_obj = item.get("body") or {}
                 raw_content = str(body_obj.get("content") or item.get("bodyPreview") or "")
                 is_html_body = str(body_obj.get("contentType") or "").lower() == "html"
@@ -6140,7 +7843,7 @@ def read_email_message(body: dict | None = None, *, account_id: str = "", uid: s
                 atts_meta: list[dict] = []
                 if item.get("hasAttachments"):
                     try:
-                        a_url = f"https://graph.microsoft.com/v1.0/me/messages/{urllib.parse.quote(target_id)}/attachments?$select=id,name,size,contentType"
+                        a_url = f"https://graph.microsoft.com/v1.0/me/messages/{urllib.parse.quote(target_id, safe='')}/attachments?$select=id,name,size,contentType"
                         with paths.safe_urlopen(urllib.request.Request(a_url, headers=req_hdrs), timeout=5.0) as a_resp:
                             a_data = json.loads(a_resp.read().decode("utf-8", errors="replace"))
                         for att in a_data.get("value") or []:
@@ -6527,7 +8230,7 @@ def download_email_attachments(
                 msg_res = read_email_message(account_id=aid, subject=want_subj)
                 target_id = str(msg_res.get("uid") or "")
             if target_id:
-                a_url = f"https://graph.microsoft.com/v1.0/me/messages/{urllib.parse.quote(target_id)}/attachments"
+                a_url = f"https://graph.microsoft.com/v1.0/me/messages/{urllib.parse.quote(target_id, safe='')}/attachments"
                 with paths.safe_urlopen(urllib.request.Request(a_url, headers=req_hdrs), timeout=8.0) as a_resp:
                     a_data = json.loads(a_resp.read().decode("utf-8", errors="replace"))
                 for att in a_data.get("value") or []:
@@ -7024,6 +8727,8 @@ def send_email_message(
     def _finalize_sent_and_mark_acted(transport_label: str, transport_warn: str = "") -> dict:
         logs = cfg.setdefault("manual_logs", [])
         acct_badge_s = _account_short_badge(sender_email, str(acc.get("label") or ""), fam)
+        _now_ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        _now_utc_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         log_entry = {
             "id": "log-" + hashlib.sha1(f"{subj}:{time.time()}".encode("utf-8")).hexdigest()[:8],
             "direction": "sent",
@@ -7040,12 +8745,14 @@ def send_email_message(
             "project_name": proj_name,
             "step_id": s_id,
             "reconciled": False,
-            "at": datetime.now().strftime("%b %d %H:%M"),
+            "at": _now_ts,
+            "sent_at_utc": _now_utc_iso,
         }
         logs.append(log_entry)
         save_comms_config(cfg)
 
         _sc_now = load_comms_sync()
+        _sent_remote_read: list[dict] = []
         try:
             with COMMS_LOCK:
                 _pr = load_triage_prefs()
@@ -7053,28 +8760,47 @@ def send_email_message(
                 _ua = list(_pr.get("unacted_uids") or [])
                 _up = list(_pr.get("upgraded_uids") or [])
                 _so = list(_pr.get("seen_opened_uids") or [])
-                _now_ts = datetime.now().strftime("%Y-%m-%d %H:%M")
                 _matched_uids: list[str] = []
+                _acct_by_muid: dict[str, str] = {}
                 if reply_uid:
                     _matched_uids.append(reply_uid)
+                    _acct_by_muid[reply_uid] = aid
+                _t_sent_recip = _extract_person_tokens(f"{recipient_raw} {recipient} {cc_raw}")
                 for _hm in (_sc_now.get("email_headers") or []):
                     if not isinstance(_hm, dict):
                         continue
                     _muid = str(_hm.get("uid") or "").strip()
+                    _hm_acct = str(_hm.get("account_id") or "").strip()
+                    if _muid == reply_uid and _hm_acct:
+                        _acct_by_muid[_muid] = _hm_acct
+                        continue
+                    _hm_sender = f"{_hm.get('from') or ''} {_hm.get('sender_email') or ''}".strip()
+                    _hm_unread = not bool(_hm.get("is_read"))
+                    _t_hm = _extract_person_tokens(_hm_sender)
+                    if _hm_unread and (
+                        (aid and _hm_acct and _hm_acct != aid)
+                        or (_t_sent_recip and _t_hm and not (_t_sent_recip & _t_hm))
+                    ):
+                        continue
                     if _muid and _muid not in _matched_uids and _subjects_match_thread(
                         subj,
                         str(_hm.get("subject") or ""),
                         sender1=recipient_raw or recipient,
-                        sender2=f"{_hm.get('from') or ''} {_hm.get('sender_email') or ''}",
+                        sender2=_hm_sender,
                     ):
                         _matched_uids.append(_muid)
+                        if _hm_acct:
+                            _acct_by_muid[_muid] = _hm_acct
                 for _mu in _matched_uids:
+                    _mu_acct = _acct_by_muid.get(_mu) or aid
                     _sent_entry = {
                         "uid": _mu,
+                        "account_id": _mu_acct,
                         "status": "✓ Replied & Sent",
                         "tone": "emerald",
                         "reason": f"Sent reply to {recipient_raw or recipient}",
                         "at": _now_ts,
+                        "at_utc": _now_utc_iso,
                     }
                     _enrich_acted_entry(
                         _sent_entry,
@@ -7082,9 +8808,11 @@ def send_email_message(
                         subject=subj,
                         sender_email=recipient,
                         sender_from=recipient_raw or recipient,
-                        date_str=_now_ts,
+                        date_str="",
                         sync_headers=_sc_now.get("email_headers") if isinstance(_sc_now, dict) else None,
                     )
+                    if not _sent_entry.get("date"):
+                        _sent_entry["date"] = _now_utc_iso
                     _am[_mu] = _sent_entry
                     if _mu in _ua:
                         _ua.remove(_mu)
@@ -7092,7 +8820,7 @@ def send_email_message(
                         _up.remove(_mu)
                     if _mu not in _so:
                         _so.append(_mu)
-                    mark_email_read_remote(account_id=aid, uid=_mu, subject=subj)
+                    _sent_remote_read.append({"account_id": _mu_acct, "uid": _mu, "subject": subj, "is_read": True})
                 _pr["acted_upon_emails"] = _am
                 _pr["unacted_uids"] = _ua
                 _pr["upgraded_uids"] = _up
@@ -7100,6 +8828,11 @@ def send_email_message(
                 save_triage_prefs(_pr)
         except Exception:
             pass
+        if _sent_remote_read:
+            try:
+                _dispatch_remote_read_items(_sent_remote_read)
+            except Exception:
+                pass
 
         # Also remove any matching Speed Racer queue draft for this uid
         if reply_uid:
@@ -7117,12 +8850,14 @@ def send_email_message(
             reconcile_working_list_activity(
                 sent_event={
                     "uid": reply_uid,
+                    "sr_id": str(payload.get("sr_id") or "").strip(),
                     "subject": subj,
-                    "to": recipient,
+                    "to": recipient_raw or recipient,
                     "cc": cc_addr,
                     "bcc": bcc_addr,
                     "recipient_emails": recips["envelope_addrs"],
-                }
+                },
+                live_reconcile=True,
             )
         except Exception:
             pass
@@ -7149,6 +8884,7 @@ def send_email_message(
             "other_emails": _oth_now,
             "acted_upon_emails": _pr_now.get("_acted_upon_resolved") or [],
             "all_emails": _pr_now.get("_all_emails_resolved") or [],
+            "working_list": load_working_list_spine(),
         }
         if transport_warn:
             res_out["transport_warning"] = transport_warn
@@ -7691,8 +9427,32 @@ def _load_local_calendar_ics_events(today: date | None = None) -> list[dict]:
     return out
 
 
-def sync_comms_now(entries: list[dict] | None = None, facts: dict | None = None, today: date | None = None) -> dict:
+_SYNC_NOW_LOCK = globals().get("_SYNC_NOW_LOCK") or threading.Lock()
+_LAST_SYNC_NOW_MONO = float(globals().get("_LAST_SYNC_NOW_MONO") or 0.0)
+
+
+def sync_comms_now(entries: list[dict] | None = None, facts: dict | None = None, today: date | None = None, *, force: bool = False) -> dict:
     """Run a bounded sync across all configured accounts (ICS + CalDAV/OAuth Calendar + IMAP/REST headers) and reconcile with roadmaps."""
+    is_live_prod = not _is_hermetic() and not os.environ.get("PYTEST_CURRENT_TEST")
+    if not is_live_prod:
+        return _sync_comms_now_inner(entries=entries, facts=facts, today=today)
+    global _LAST_SYNC_NOW_MONO
+    with _SYNC_NOW_LOCK:
+        if not force and _LAST_SYNC_NOW_MONO > 0.0 and (time.monotonic() - _LAST_SYNC_NOW_MONO) < 12.0:
+            coalesced = reconcile_comms_with_roadmaps(entries=entries, facts=facts, today=today)
+            coalesced["sync_coalesced"] = True
+            coalesced.setdefault("sync_notes", [])
+            coalesced.setdefault(
+                "sync_receipt",
+                f"Synced at {coalesced.get('last_sync_at') or datetime.now().strftime('%Y-%m-%d %H:%M')} · {len(coalesced.get('calendar_events') or [])} calendar items · {len(coalesced.get('email_threads') or [])} correspondence tracks",
+            )
+            return coalesced
+        res = _sync_comms_now_inner(entries=entries, facts=facts, today=today)
+        _LAST_SYNC_NOW_MONO = time.monotonic()
+        return res
+
+
+def _sync_comms_now_inner(entries: list[dict] | None = None, facts: dict | None = None, today: date | None = None) -> dict:
     cfg = load_comms_config()
     prev_sync, prev_sync_state = load_comms_sync_state()
     if prev_sync_state == "unknown":
@@ -7812,8 +9572,11 @@ def sync_comms_now(entries: list[dict] | None = None, facts: dict | None = None,
                 ok_imap, msg_imap, hdrs = False, mail_iso["error"], []
             acct_state["mail"] = ("ok" if hdrs else "empty") if ok_imap else "unknown"
             backfill_meta = acc.pop("_imap_backfill", None) or {}
+            rest_capped = bool(acc.pop("_rest_unread_capped", False))
             if ok_imap and backfill_meta.get("has_more_unread"):
                 acct_state["mail_backfill"] = dict(backfill_meta)
+            if ok_imap and rest_capped:
+                acct_state["unread_capped"] = True
             acc["last_imap_note"] = msg_imap
             if ok_imap:
                 all_headers.extend(hdrs)
@@ -7891,20 +9654,97 @@ def sync_comms_now(entries: list[dict] | None = None, facts: dict | None = None,
                 _prev_by_key[(_p_acct, _p_mid)] = _ph
     _seen_merged_keys: set[tuple[str, str]] = set()
     _merged_headers: list[dict] = []
+    _self_heal_read_items: list[dict] = []
+    _pending_read_map = _pending_remote_read_map()
+    _sync_triage_prefs = load_triage_prefs()
+    _sync_unacted = {str(x).strip() for x in (_sync_triage_prefs.get("unacted_uids") or []) if str(x).strip()}
+    _sync_acted_map = _sync_triage_prefs.get("acted_upon_emails") if isinstance(_sync_triage_prefs.get("acted_upon_emails"), dict) else {}
+    _sync_spam_uids = {str(x).strip() for x in (_sync_triage_prefs.get("spam_uids") or []) if str(x).strip()}
+    _sync_spam_senders = {
+        normalize_spam_sender(x)
+        for x in (_sync_triage_prefs.get("spam_senders") or [])
+        if normalize_spam_sender(x)
+    }
+    _sync_protected_correspondents = (
+        _collect_protected_correspondents(
+            prefs=_sync_triage_prefs,
+            sync_cache=prev_sync,
+            cfg=cfg,
+        )
+        if _sync_spam_senders
+        else set()
+    )
     for _ah in all_headers:
         if not isinstance(_ah, dict):
             continue
         _a_acct = str(_ah.get("account_id") or "")
         _a_uid = str(_ah.get("uid") or "")
         _a_mid = str(_ah.get("message_id") or "").strip()
+        _a_norm_sender = normalize_spam_sender(_ah.get("sender_email") or _ah.get("from") or "")
         _p_match = (_prev_by_key.get((_a_acct, _a_mid)) if _a_mid else None) or _prev_by_key.get((_a_acct, _a_uid))
+        _ah_is_spam = bool(
+            _is_spam_uid_match(_a_uid, _a_acct, _sync_spam_uids)
+            or (
+                _a_norm_sender
+                and _a_norm_sender in _sync_spam_senders
+                and not _is_protected_correspondent(
+                    _a_norm_sender,
+                    prefs=_sync_triage_prefs,
+                    sync_cache=prev_sync,
+                    cfg=cfg,
+                    protected_set=_sync_protected_correspondents,
+                )
+            )
+        )
+        _provider_is_read = bool(_ah.get("is_read"))
+        if _ah_is_spam:
+            _pre_spam_read = (
+                bool(_p_match["_pre_spam_is_read"])
+                if (isinstance(_p_match, dict) and "_pre_spam_is_read" in _p_match)
+                else bool(_ah.get("_pre_spam_is_read", _ah.get("is_read", False)))
+            )
+            _ah["_pre_spam_is_read"] = _pre_spam_read
+            _ah["is_read"] = True
+            _ah["is_spam"] = True
+            _ah["spam_suppressed"] = True
+            if not _provider_is_read and _a_uid:
+                _self_heal_read_items.append({
+                    "account_id": _a_acct,
+                    "uid": _a_uid,
+                    "subject": str(_ah.get("subject") or ""),
+                    "is_read": True,
+                })
+        else:
+            _ah.pop("is_spam", None)
+            _ah.pop("spam_suppressed", None)
+            _ah.pop("_pre_spam_is_read", None)
         if _p_match:
             if not _ah.get("body"):
                 for _k_pres in ("body", "snippet", "quoted_history", "links", "body_preloaded", "attachments", "to"):
                     if _k_pres in _p_match and not _ah.get(_k_pres):
                         _ah[_k_pres] = _p_match[_k_pres]
-            if _p_match.get("is_read"):
-                _ah["is_read"] = True
+        if not _ah_is_spam:
+            _pend_val = _pending_read_map.get((_a_acct, _a_uid))
+            if _pend_val is None and _a_uid:
+                _pend_val = _pending_read_map.get(("", _a_uid))
+            if _pend_val is not None:
+                _ah["is_read"] = bool(_pend_val)
+            elif not _provider_is_read and _a_uid and _a_uid not in _sync_unacted:
+                _act_ent = _sync_acted_map.get(f"{_a_acct}:{_a_uid}") if _a_acct else None
+                if _act_ent is None:
+                    _cand_ent = _sync_acted_map.get(_a_uid)
+                    if isinstance(_cand_ent, dict):
+                        _cand_acct = str(_cand_ent.get("account_id") or "").strip()
+                        if not _cand_acct or not _a_acct or _cand_acct == _a_acct:
+                            _act_ent = _cand_ent
+                if isinstance(_act_ent, dict) and "read in primary inbox" not in str(_act_ent.get("status") or "").lower():
+                    _ah["is_read"] = True
+                    _self_heal_read_items.append({
+                        "account_id": _a_acct,
+                        "uid": _a_uid,
+                        "subject": str(_ah.get("subject") or ""),
+                        "is_read": True,
+                    })
         _seen_merged_keys.add((_a_acct, _a_uid))
         if _a_mid:
             _seen_merged_keys.add((_a_acct, _a_mid))
@@ -7921,13 +9761,55 @@ def sync_comms_now(entries: list[dict] | None = None, facts: dict | None = None,
         _p_mid = str(_ph.get("message_id") or "").strip()
         if (_p_acct, _p_uid) in _seen_merged_keys or (_p_mid and (_p_acct, _p_mid) in _seen_merged_keys):
             continue
-        _acct_mail_state = (provider_states.get(_p_acct) or {}).get("mail")
+        _p_norm_sender = normalize_spam_sender(_ph.get("sender_email") or _ph.get("from") or "")
+        _ph_is_spam = bool(
+            _is_spam_uid_match(_p_uid, _p_acct, _sync_spam_uids)
+            or (
+                _p_norm_sender
+                and _p_norm_sender in _sync_spam_senders
+                and not _is_protected_correspondent(
+                    _p_norm_sender,
+                    prefs=_sync_triage_prefs,
+                    sync_cache=prev_sync,
+                    cfg=cfg,
+                    protected_set=_sync_protected_correspondents,
+                )
+            )
+        )
+        _ph = dict(_ph)
+        if _ph_is_spam:
+            if "_pre_spam_is_read" not in _ph:
+                _ph["_pre_spam_is_read"] = bool(_ph.get("is_read", False))
+            _ph["is_read"] = True
+            _ph["is_spam"] = True
+            _ph["spam_suppressed"] = True
+        elif _ph.get("is_spam") or _ph.get("spam_suppressed") or "_pre_spam_is_read" in _ph:
+            _ph["is_read"] = bool(_ph.pop("_pre_spam_is_read", False))
+            _ph.pop("is_spam", None)
+            _ph.pop("spam_suppressed", None)
+        _p_pend = _pending_read_map.get((_p_acct, _p_uid))
+        if _p_pend is None and _p_uid:
+            _p_pend = _pending_read_map.get(("", _p_uid))
+        if _p_pend is not None and not _ph_is_spam:
+            _ph["is_read"] = bool(_p_pend)
+        _p_st_info = provider_states.get(_p_acct) or {}
+        _acct_mail_state = _p_st_info.get("mail")
+        _acct_unread_incomplete = bool(
+            (_p_st_info.get("mail_backfill") or {}).get("has_more_unread")
+            or _p_st_info.get("unread_capped")
+        )
         _ph_iso = _parse_comparable_email_ts(str(_ph.get("date") or ""))[:10]
         if _acct_mail_state in ("ok", "empty"):
-            if not _ph_iso or _ph_iso < _sync_cutoff_14d:
-                continue
-            _ph = dict(_ph)
-            _ph["is_read"] = True
+            if bool(_ph.get("is_read")):
+                if not _ph_iso or _ph_iso < _sync_cutoff_14d:
+                    continue
+            else:
+                if not _ph_iso:
+                    continue
+                if _ph_iso >= _sync_cutoff_14d and not _acct_unread_incomplete:
+                    # Message is within the active 14d unread scan window, yet absent from live INBOX + UNSEEN
+                    # (archived or moved out of Inbox upstream).
+                    _ph["is_read"] = True
         if _per_acct_retained.get(_p_acct, 0) >= 500:
             continue
         _seen_merged_keys.add((_p_acct, _p_uid))
@@ -7937,7 +9819,7 @@ def sync_comms_now(entries: list[dict] | None = None, facts: dict | None = None,
         _merged_headers.append(_ph)
     all_headers = _merged_headers
     for _ch_hdr in all_headers:
-        if not isinstance(_ch_hdr, dict) or _ch_hdr.get("body_deferred"):
+        if not isinstance(_ch_hdr, dict) or _ch_hdr.get("body_deferred") or _ch_hdr.get("is_spam"):
             continue
         _c_aid = str(_ch_hdr.get("account_id") or "").strip()
         _c_uid = str(_ch_hdr.get("uid") or "").strip()
@@ -7965,6 +9847,12 @@ def sync_comms_now(entries: list[dict] | None = None, facts: dict | None = None,
     }
     save_comms_sync(sync_payload)
     if not _is_hermetic():
+        try:
+            if _self_heal_read_items:
+                _enqueue_pending_read_sync(_self_heal_read_items)
+            _schedule_remote_read_flush()
+        except Exception:
+            pass
         try:
             preload_all_cached_email_bodies(max_fetch=40)
         except Exception:
@@ -8330,19 +10218,50 @@ def _proper_capitalize_person_name(raw_name: str) -> str:
     return " ".join(out)
 
 
+_NAME_SUFFIX_TOKENS = frozenset({
+    "llc", "inc", "llp", "lp", "corp", "jr", "sr", "ii", "iii", "iv", "phd", "md", "esq", "cpa",
+})
+
+
+def _normalize_last_first_display_name(raw_name: str) -> str:
+    """Flip institutional `'Last, First'` display names into `'First Last'` while preserving suffixes (`Jr.`, `PhD`, `LLC`)."""
+    disp_clean = str(raw_name or "").strip().strip("\"' ")
+    if "," in disp_clean and "@" not in disp_clean:
+        comma_parts = [p.strip() for p in disp_clean.split(",") if p.strip()]
+        if len(comma_parts) == 2 and comma_parts[1].lower().strip(".") not in _NAME_SUFFIX_TOKENS:
+            disp_clean = f"{comma_parts[1]} {comma_parts[0]}".strip()
+    return _proper_capitalize_person_name(disp_clean) if disp_clean else ""
+
+
 def _proper_capitalize_sender_display(raw_from: str) -> str:
-    """Ensure sender-provided 'From' / 'To' display names are properly capitalized."""
-    s = str(raw_from or "").strip()
+    """Ensure sender-provided 'From' / 'To' display names are properly capitalized and RFC 5322-valid."""
+    s = _repair_corporate_recipient_header(str(raw_from or "").strip())
     if not s:
         return s
+    if "@" in s and s.count("@") > 1:
+        parsed_multi = _parse_recipient_list(s, strict=False)
+        if parsed_multi:
+            out_multi: list[str] = []
+            for item in parsed_multi:
+                nm_norm = _normalize_last_first_display_name(item.get("name") or "")
+                ad_norm = str(item.get("email") or "").strip()
+                if nm_norm and ad_norm:
+                    out_multi.append(_formataddr((nm_norm, ad_norm)) if ("," in nm_norm or ";" in nm_norm) else f"{nm_norm} <{ad_norm}>")
+                elif ad_norm:
+                    out_multi.append(ad_norm)
+            if out_multi:
+                return ", ".join(out_multi)
     if "<" in s and ">" in s:
         disp, rest = s.split("<", 1)
-        disp_clean = disp.strip().strip("\"' ")
-        if disp_clean:
-            return f"{_proper_capitalize_person_name(disp_clean)} <{rest.strip()}"
+        addr_part = rest.split(">", 1)[0].strip()
+        disp_norm = _normalize_last_first_display_name(disp)
+        if disp_norm and addr_part:
+            if "," in disp_norm or ";" in disp_norm:
+                return _formataddr((disp_norm, addr_part))
+            return f"{disp_norm} <{addr_part}>"
         return s
     if "@" not in s:
-        return _proper_capitalize_person_name(s)
+        return _normalize_last_first_display_name(s)
     # Pure email address: check if it matches a known contact
     s_low = s.lower()
     for _k, formatted in _KNOWN_CONTACT_EMAILS.items():
@@ -8631,9 +10550,16 @@ def _compute_reply_all_recipients(
     if is_sent_item and to_str:
         primary_to = _proper_capitalize_sender_display(to_str)
     else:
-        primary_to = _proper_capitalize_sender_display(sender_email) if "<" in sender_email else (
-            _proper_capitalize_sender_display(from_str) if ("<" in from_str and "@" in from_str) else (sender_email or from_str)
-        )
+        clean_from_s = _repair_corporate_recipient_header(str(from_str or "").strip())
+        clean_sem_s = _repair_corporate_recipient_header(str(sender_email or "").strip())
+        if "<" in clean_sem_s:
+            primary_to = _proper_capitalize_sender_display(clean_sem_s)
+        elif "<" in clean_from_s and "@" in clean_from_s:
+            primary_to = _proper_capitalize_sender_display(clean_from_s)
+        elif clean_from_s and "@" not in clean_from_s and clean_sem_s and "@" in clean_sem_s:
+            primary_to = _proper_capitalize_sender_display(_format_graph_recipient(clean_from_s, clean_sem_s))
+        else:
+            primary_to = _proper_capitalize_sender_display(clean_sem_s or clean_from_s)
     m_prim = re.search(r"([\w.+-]+@[\w.-]+\.[a-zA-Z]{2,})", f"{primary_to} {sender_email}")
     prim_low = m_prim.group(1).lower() if m_prim else ""
 
@@ -8645,18 +10571,30 @@ def _compute_reply_all_recipients(
     for raw_field in (to_str, cc_str):
         if not raw_field:
             continue
-        for part in re.split(r"[,;]+(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)", str(raw_field)):
-            p = part.strip()
-            if not p:
-                continue
-            m = re.search(r"([\w.+-]+@[\w.-]+\.[a-zA-Z]{2,})", p)
-            if not m:
-                continue
-            em_low = m.group(1).lower()
-            if em_low in seen_ems:
-                continue
-            seen_ems.add(em_low)
-            extra_cc.append(_proper_capitalize_sender_display(p))
+        parsed_field = _parse_recipient_list(raw_field, strict=False)
+        if parsed_field:
+            for rec in parsed_field:
+                em_low = str(rec.get("email") or "").lower()
+                if not em_low or em_low in seen_ems:
+                    continue
+                seen_ems.add(em_low)
+                rec_disp = _proper_capitalize_sender_display(
+                    _format_graph_recipient(str(rec.get("name") or ""), str(rec.get("email") or ""))
+                )
+                extra_cc.append(rec_disp)
+        else:
+            for part in re.split(r"[,;]+(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)", _repair_corporate_recipient_header(str(raw_field))):
+                p = part.strip()
+                if not p:
+                    continue
+                m = re.search(r"([\w.+-]+@[\w.-]+\.[a-zA-Z]{2,})", p)
+                if not m:
+                    continue
+                em_low = m.group(1).lower()
+                if em_low in seen_ems:
+                    continue
+                seen_ems.add(em_low)
+                extra_cc.append(_proper_capitalize_sender_display(p))
     return {
         "reply_to": primary_to,
         "reply_all_to": primary_to,
@@ -8719,13 +10657,36 @@ def _resolve_full_incoming_email(
             )
         if not matched_hdr and (clean_subj or clean_from):
             norm_s = _norm_email_subject(clean_subj)
-            for h in hdrs:
-                if not isinstance(h, dict):
-                    continue
-                h_subj_norm = _norm_email_subject(str(h.get("subject") or ""))
-                h_from = f"{h.get('from') or ''} {h.get('sender_email') or ''}".lower()
-                if norm_s and h_subj_norm == norm_s:
-                    if not clean_from or any(tok in h_from for tok in _extract_person_tokens(clean_from)):
+            is_placeholder_subj = (not norm_s) or norm_s in ("follow-up", "followup")
+            if not is_placeholder_subj:
+                for h in hdrs:
+                    if not isinstance(h, dict):
+                        continue
+                    h_subj_norm = _norm_email_subject(str(h.get("subject") or ""))
+                    h_from = f"{h.get('from') or ''} {h.get('sender_email') or ''}".lower()
+                    if h_subj_norm == norm_s:
+                        if not clean_from or any(tok in h_from for tok in _extract_person_tokens(clean_from)):
+                            matched_hdr = h
+                            break
+            if not matched_hdr and is_placeholder_subj and clean_from:
+                m_em_f = re.search(r"([\w.+-]+@[\w.-]+\.[A-Za-z]{2,})", clean_from)
+                want_em = m_em_f.group(1).lower() if m_em_f else ""
+                want_toks = [t for t in _extract_person_tokens(clean_from) if len(t) >= 3]
+                inbound_sorted = sorted(
+                    (
+                        h for h in hdrs
+                        if isinstance(h, dict) and str(h.get("direction") or "inbound").lower() != "sent"
+                    ),
+                    key=lambda x: _parse_comparable_email_ts(str(x.get("date") or "")),
+                    reverse=True,
+                )
+                for h in inbound_sorted:
+                    h_sem = str(h.get("sender_email") or "").strip().lower()
+                    h_from_low = f"{h.get('from') or ''} {h_sem}".lower()
+                    if want_em and (want_em == h_sem or want_em in h_from_low):
+                        matched_hdr = h
+                        break
+                    if not want_em and want_toks and any(tok in h_from_low for tok in want_toks):
                         matched_hdr = h
                         break
         if isinstance(matched_hdr, dict) and matched_hdr:
@@ -9066,10 +11027,32 @@ def get_email_dialogue_context(body: dict) -> dict:
         + list(sync_cache.get("sent_email_headers") or [])
         + list(gather_sent_emails(sync_cache, cfg_dlg))
     )
-    cached_hdr = next(
-        (h for h in all_cached_hdrs if isinstance(h, dict) and str(h.get("uid") or "") == uid),
-        {},
-    )
+    cached_hdr = {}
+    if acc_id:
+        cached_hdr = next(
+            (
+                h for h in all_cached_hdrs
+                if isinstance(h, dict)
+                and str(h.get("uid") or "") == uid
+                and str(h.get("account_id") or "") == acc_id
+            ),
+            {},
+        )
+        if not cached_hdr:
+            cached_hdr = next(
+                (
+                    h for h in all_cached_hdrs
+                    if isinstance(h, dict)
+                    and str(h.get("uid") or "") == uid
+                    and not str(h.get("account_id") or "").strip()
+                ),
+                {},
+            )
+    else:
+        cached_hdr = next(
+            (h for h in all_cached_hdrs if isinstance(h, dict) and str(h.get("uid") or "") == uid),
+            {},
+        )
     if not acc_id:
         acc_id = str(cached_hdr.get("account_id") or "")
     if not subj:
@@ -9079,12 +11062,17 @@ def get_email_dialogue_context(body: dict) -> dict:
     if not sender_email:
         sender_email = str(cached_hdr.get("sender_email") or "")
 
-    # Fast path: use preloaded local body if available so opening an email or drafting with Scribe is instant (0ms)
-    cached_body_str = str(cached_hdr.get("body") or cached_hdr.get("snippet") or "").strip()
-    if cached_body_str and (cached_hdr.get("body_preloaded") or len(cached_body_str) > 30):
+    def _is_placeholder_body(val: str) -> bool:
+        low = str(val or "").strip().lower()
+        return low in ("", "no message text.", "(no message text)", "message content loaded from inbox header.")
+
+    # Fast path: use preloaded full local body when available; if only a header snippet is present, fetch full body
+    preloaded_body_only = str(cached_hdr.get("body") or "").strip()
+    cached_snippet_str = str(cached_hdr.get("snippet") or "").strip()
+    if not _is_placeholder_body(preloaded_body_only) and cached_hdr.get("body_preloaded"):
         msg_detail = {
             "ok": True,
-            "body": cached_body_str,
+            "body": preloaded_body_only,
             "quoted_history": str(cached_hdr.get("quoted_history") or ""),
             "links": list(cached_hdr.get("links") or []),
             "attachments": list(cached_hdr.get("attachments") or []),
@@ -9094,8 +11082,9 @@ def get_email_dialogue_context(body: dict) -> dict:
         }
     else:
         msg_detail = read_email_message({"uid": uid, "account_id": acc_id, "subject": subj})
-        if msg_detail.get("ok") and msg_detail.get("body") and isinstance(cached_hdr, dict) and cached_hdr.get("uid"):
-            cached_hdr["body"] = str(msg_detail.get("body") or "")
+        fetched_body_str = str(msg_detail.get("body") or "").strip()
+        if msg_detail.get("ok") and not _is_placeholder_body(fetched_body_str) and isinstance(cached_hdr, dict) and cached_hdr.get("uid"):
+            cached_hdr["body"] = fetched_body_str
             cached_hdr["quoted_history"] = str(msg_detail.get("quoted_history") or "")
             cached_hdr["links"] = list(msg_detail.get("links") or [])
             if msg_detail.get("attachments"):
@@ -9105,6 +11094,17 @@ def get_email_dialogue_context(body: dict) -> dict:
                 save_comms_sync(sync_cache)
             except Exception:
                 pass
+        elif (not _is_placeholder_body(preloaded_body_only)) or cached_snippet_str:
+            msg_detail = {
+                "ok": True,
+                "body": (preloaded_body_only if not _is_placeholder_body(preloaded_body_only) else "") or cached_snippet_str,
+                "quoted_history": str(cached_hdr.get("quoted_history") or ""),
+                "links": list(cached_hdr.get("links") or []),
+                "attachments": list(cached_hdr.get("attachments") or []),
+                "from": from_str,
+                "to": str(cached_hdr.get("to") or ""),
+                "date": str(cached_hdr.get("date") or ""),
+            }
 
     raw_full = str(msg_detail.get("body") or cached_hdr.get("body") or cached_hdr.get("snippet") or "")
     fmt_dlg = format_clean_email_body_and_links(raw_full, is_html=("<" in raw_full and ">" in raw_full))
@@ -9144,11 +11144,13 @@ def get_email_dialogue_context(body: dict) -> dict:
         else f"{from_str} {sender_email}".strip()
     )
     sender_ident = counterparty_ident
+    _cur_raw_dt = str(msg_detail.get("date") or cached_hdr.get("date") or "").strip()
     thread_messages: list[dict] = [{
         "uid": uid,
         "direction": "sent" if is_sent_item else "inbound",
         "from": (f"You → {_proper_capitalize_sender_display(to_hdr_str)}" if (is_sent_item and to_hdr_str) else _proper_capitalize_sender_display(from_str or sender_email or "Sender")),
-        "date": str(msg_detail.get("date") or cached_hdr.get("date") or "")[:16],
+        "date": (_parse_local_or_utc_email_ts(_cur_raw_dt) if (is_sent_item and uid.startswith(("log-", "sr-")) and _cur_raw_dt and not _EXPLICIT_TZ_RE.search(_cur_raw_dt)) else (_parse_comparable_email_ts(_cur_raw_dt) or _cur_raw_dt[:16])),
+        "raw_date": _cur_raw_dt,
         "subject": subj,
         "body": full_body,
         "quoted_history": quoted_history,
@@ -9173,11 +11175,13 @@ def get_email_dialogue_context(body: dict) -> dict:
             h_body_clean = str(h.get("body") or h.get("snippet") or h_subj)
             if h_body_clean.strip() == full_body.strip():
                 continue
+            _h_raw_dt = str(h.get("date") or "").strip()
             thread_messages.append({
                 "uid": h_uid,
                 "direction": "inbound",
                 "from": _proper_capitalize_sender_display(h_from or h_sem),
-                "date": str(h.get("date") or "")[:16],
+                "date": _parse_comparable_email_ts(_h_raw_dt) or _h_raw_dt[:16],
+                "raw_date": _h_raw_dt,
                 "subject": h_subj,
                 "body": h_body_clean,
                 "account_badge": str(h.get("account_badge") or ""),
@@ -9200,11 +11204,18 @@ def get_email_dialogue_context(body: dict) -> dict:
             s_body_clean = str(sent_it.get("body") or sent_it.get("snippet") or "")
             if s_body_clean.strip() == full_body.strip():
                 continue
+            _s_raw_dt = str(sent_it.get("sent_at_utc") or sent_it.get("approved_at_utc") or sent_it.get("date") or "").strip()
+            _s_disp_dt = (
+                _parse_local_or_utc_email_ts(_s_raw_dt)
+                if (s_uid.startswith(("log-", "sr-")) and _s_raw_dt and not _EXPLICIT_TZ_RE.search(_s_raw_dt))
+                else (_parse_comparable_email_ts(_s_raw_dt) or _s_raw_dt[:16])
+            )
             thread_messages.append({
                 "uid": s_uid or f"sent-{len(thread_messages)}",
                 "direction": "sent",
                 "from": f"You → {_proper_capitalize_sender_display(s_to)}",
-                "date": str(sent_it.get("date") or "")[:16],
+                "date": _s_disp_dt,
+                "raw_date": _s_raw_dt,
                 "subject": s_subj,
                 "body": s_body_clean,
                 "account_badge": str(sent_it.get("account_badge") or "Sent"),
@@ -9212,12 +11223,7 @@ def get_email_dialogue_context(body: dict) -> dict:
                 "is_current": False,
             })
 
-    thread_messages.sort(
-        key=lambda m: (
-            _parse_comparable_email_ts(str(m.get("date") or "")) or "9999-99-99",
-            0 if m.get("direction") == "inbound" else 1,
-        )
-    )
+    _sort_thread_messages_newest_first(thread_messages)
 
     cc_hdr_str = str(msg_detail.get("cc") or cached_hdr.get("cc") or "").strip()
     reply_recips = _compute_reply_all_recipients(
@@ -9756,6 +11762,8 @@ def queue_speed_racer_draft(body: dict) -> dict:
     orig_cc_hdr = str(body.get("orig_cc") or "").strip()
     orig_from_hdr = str(body.get("from") or "").strip()
     orig_sender_em = str(body.get("sender_email") or "").strip()
+    sync_cache: dict = {}
+    matched_hdr: dict = {}
     if uid:
         sync_cache = load_comms_sync()
         matched_hdr = next(
@@ -9786,6 +11794,10 @@ def queue_speed_racer_draft(body: dict) -> dict:
     reply_mode = str(body.get("reply_mode") or "reply").strip().lower()
     if reply_mode not in ("reply", "reply_all", "forward"):
         reply_mode = "reply"
+    if reply_mode == "reply" and steward_directions:
+        sd_low = steward_directions.lower()
+        if any(p in sd_low for p in ("include anyone in the cc", "include everyone in the cc", "keep cc", "reply all", "reply-all")):
+            reply_mode = "reply_all"
 
     # Resolve recipient names against the unified address book when to_str is missing, placeholder, or bare name
     addr_book_q = gather_unified_address_book()
@@ -9802,11 +11814,51 @@ def queue_speed_racer_draft(body: dict) -> dict:
                 if (ab_name and re.search(rf"\b{re.escape(ab_name)}\b", search_target, flags=re.I)) or (
                     len(first_tok) >= 3 and re.search(rf"\b{re.escape(first_tok)}\b", search_target, flags=re.I)
                 ):
-                    disp_entry = f"{ab_name} <{ab_em}>" if ab_name else ab_em
+                    disp_entry = _format_graph_recipient(ab_name, ab_em) if ab_name else ab_em
                     if disp_entry not in matched_to_addrs:
                         matched_to_addrs.append(disp_entry)
             if matched_to_addrs:
                 to_str = ", ".join(matched_to_addrs[:4])
+
+    # When triggered from the Speed Racer prompt bar without a bound UID/subject, bind to the sender's latest inbound email
+    if not uid and (not subj or subj.lower() in ("follow-up", "re: follow-up")) and to_str and to_str != "recipient@example.com":
+        sync_cache = sync_cache if sync_cache else load_comms_sync()
+        m_em_q = re.search(r"([\w.+-]+@[\w.-]+\.[A-Za-z]{2,})", to_str)
+        want_em_q = m_em_q.group(1).lower() if m_em_q else ""
+        want_toks_q = [t for t in _extract_person_tokens(to_str) if len(t) >= 3]
+        inbound_q = sorted(
+            (
+                h for h in (sync_cache.get("email_headers") or [])
+                if isinstance(h, dict) and str(h.get("direction") or "inbound").lower() != "sent"
+            ),
+            key=lambda x: _parse_comparable_email_ts(str(x.get("date") or "")),
+            reverse=True,
+        )
+        for _cand_h in inbound_q:
+            _c_sem = str(_cand_h.get("sender_email") or "").strip().lower()
+            _c_from = f"{_cand_h.get('from') or ''} {_c_sem}".lower()
+            if (want_em_q and (want_em_q == _c_sem or want_em_q in _c_from)) or (
+                not want_em_q and want_toks_q and any(t in _c_from for t in want_toks_q)
+            ):
+                matched_hdr = _cand_h
+                uid = str(matched_hdr.get("uid") or "")
+                subj = str(matched_hdr.get("subject") or subj)
+                hdr_full_body = str(matched_hdr.get("body") or matched_hdr.get("snippet") or matched_hdr.get("subject") or "").strip()
+                if not snippet or len(hdr_full_body) > len(snippet):
+                    snippet = hdr_full_body
+                if not acct_badge or acct_badge == "Institutional 365":
+                    acct_badge = str(matched_hdr.get("account_badge") or acct_badge or "Inbox")
+                if not acct_id:
+                    acct_id = str(matched_hdr.get("account_id") or "")
+                if not orig_to_hdr:
+                    orig_to_hdr = str(matched_hdr.get("to") or "")
+                if not orig_cc_hdr:
+                    orig_cc_hdr = str(matched_hdr.get("cc") or "")
+                if not orig_from_hdr:
+                    orig_from_hdr = str(matched_hdr.get("from") or "")
+                if not orig_sender_em:
+                    orig_sender_em = str(matched_hdr.get("sender_email") or "")
+                break
 
     reply_recips_q = _compute_reply_all_recipients(
         from_str=orig_from_hdr or str(body.get("from") or to_str),
@@ -9886,6 +11938,15 @@ def queue_speed_racer_draft(body: dict) -> dict:
             "intent": str(body.get("intent") or "default"),
             "custom_prompt": steward_directions,
         })
+        if not gen.get("ok") and not str(gen.get("draft_body") or "").strip():
+            return {
+                "ok": False,
+                "status_code": int(gen.get("status_code") or 503),
+                "failure_state": str(gen.get("failure_state") or "dependency-missing"),
+                "error_code": str(gen.get("error_code") or "dependency_missing"),
+                "message": str(gen.get("message") or gen.get("steward_note") or "Scribe draft generation failed."),
+                "speed_racer": load_speed_racer_queue(),
+            }
         draft_body = str(gen.get("draft_body") or "")
         gen_note = str(gen.get("steward_note") or "").strip()
         instr_rating_obj = gen.get("instruction_rating") if isinstance(gen.get("instruction_rating"), dict) else {}
@@ -9939,6 +12000,50 @@ def queue_speed_racer_draft(body: dict) -> dict:
     elif not context_reason:
         context_reason = "Steward read the full incoming email and crafted a response for rapid review & approval in Speed Racer."
 
+    sr_quoted_hist = str(matched_hdr.get("quoted_history") or body.get("quoted_history") or "")[:8000]
+    sr_thread_msgs: list[dict] = []
+    if uid or subj:
+        _sc_sr_th = sync_cache if sync_cache else load_comms_sync()
+        _cur_dt_q = str(matched_hdr.get("date") or body.get("date") or "").strip()
+        sr_thread_msgs.append({
+            "uid": uid or draft_id,
+            "direction": "inbound",
+            "from": _proper_capitalize_sender_display(orig_from_hdr or str(body.get("from") or to_str or "Sender")),
+            "date": _parse_comparable_email_ts(_cur_dt_q) or _cur_dt_q[:16],
+            "raw_date": _cur_dt_q,
+            "subject": subj,
+            "body": snippet,
+            "quoted_history": sr_quoted_hist,
+            "account_badge": acct_badge,
+            "is_current": True,
+        })
+        _seen_sr_uids = {str(uid or draft_id)}
+        _cp_sr = f"{orig_from_hdr or body.get('from') or ''} {orig_sender_em or to_str}".strip()
+        for _hs in (_sc_sr_th.get("email_headers") or []):
+            if not isinstance(_hs, dict):
+                continue
+            _hu = str(_hs.get("uid") or "").strip()
+            if not _hu or _hu in _seen_sr_uids:
+                continue
+            if subj and _subjects_match_thread(subj, str(_hs.get("subject") or ""), sender1=_cp_sr, sender2=f"{_hs.get('from') or ''} {_hs.get('sender_email') or ''}"):
+                _seen_sr_uids.add(_hu)
+                _hb = str(_hs.get("body") or _hs.get("snippet") or "").strip()
+                if not _hb or _hb == snippet.strip():
+                    continue
+                _hrd = str(_hs.get("date") or "").strip()
+                sr_thread_msgs.append({
+                    "uid": _hu,
+                    "direction": "inbound",
+                    "from": _proper_capitalize_sender_display(str(_hs.get("from") or _hs.get("sender_email") or "Sender")),
+                    "date": _parse_comparable_email_ts(_hrd) or _hrd[:16],
+                    "raw_date": _hrd,
+                    "subject": str(_hs.get("subject") or subj),
+                    "body": _hb[:6000],
+                    "account_badge": str(_hs.get("account_badge") or acct_badge),
+                    "is_current": False,
+                })
+        _sort_thread_messages_newest_first(sr_thread_msgs)
+
     initial_capped_draft = _proper_capitalize_names_in_prose(draft_body, _first_name_from_sender(str(body.get("from") or to_str)))
     new_item = {
         "id": draft_id,
@@ -9961,6 +12066,8 @@ def queue_speed_racer_draft(body: dict) -> dict:
         "instruction_rating_label": str(instr_rating_obj.get("label") or "5/5 · Read Full Incoming Email & Thread Context"),
         "incoming_snippet": snippet or f"Queued for rapid approval ({reply_subj})",
         "incoming_body": snippet or f"Queued for rapid approval ({reply_subj})",
+        "quoted_history": sr_quoted_hist,
+        "thread_messages": sr_thread_msgs[:12],
         "draft_body": initial_capped_draft,
         "original_scribe_draft": initial_capped_draft,
         "last_scribe_draft": initial_capped_draft,
@@ -9970,13 +12077,16 @@ def queue_speed_racer_draft(body: dict) -> dict:
         "created_at": datetime.now().strftime("%H:%M"),
     }
 
-    queue = [it for it in queue if isinstance(it, dict) and it.get("id") != draft_id and (not uid or it.get("uid") != uid)]
-    queue.insert(0, new_item)
-    state["queue"] = queue[:30]
-    state["last_opened_draft_id"] = draft_id
-    if bool(body.get("open_speed_racer", True)):
-        state["auto_open_ts"] = time.time()
-    save_speed_racer_queue(state)
+    with COMMS_LOCK:
+        state = load_speed_racer_queue()
+        queue = list(state.get("queue") or [])
+        queue = [it for it in queue if isinstance(it, dict) and it.get("id") != draft_id and (not uid or it.get("uid") != uid)]
+        queue.insert(0, new_item)
+        state["queue"] = queue[:30]
+        state["last_opened_draft_id"] = draft_id
+        if bool(body.get("open_speed_racer", True)):
+            state["auto_open_ts"] = time.time()
+        save_speed_racer_queue(state)
 
     # Mark the source email (and any sibling messages in the same thread) as Acted Upon ('🏎️ In Speed Racer') and mark Read in live Outlook/Gmail
     _sc_q = load_comms_sync()
@@ -10003,19 +12113,27 @@ def queue_speed_racer_draft(body: dict) -> dict:
             if uid and uid not in _matched_q_uids:
                 _matched_q_uids.append(uid)
             if not new_item.get("uid") and _matched_q_uids and not _matched_q_uids[0].startswith("sr-"):
+                state = load_speed_racer_queue()
+                for _qi in (state.get("queue") or []):
+                    if isinstance(_qi, dict) and _qi.get("id") == draft_id:
+                        _qi["uid"] = _matched_q_uids[0]
                 new_item["uid"] = _matched_q_uids[0]
                 save_speed_racer_queue(state)
             _now_q = datetime.now().strftime("%Y-%m-%d %H:%M")
+            _now_q_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             for _t_uid in _matched_q_uids:
                 mark_email_read_remote(account_id=acct_id, uid=_t_uid, subject=subj)
                 if _t_uid in _ua_q:
                     _ua_q.remove(_t_uid)
+                _prev_q_entry = _am_q.get(_t_uid) if isinstance(_am_q.get(_t_uid), dict) else {}
+                _prev_q_date = str(_prev_q_entry.get("date") or "").strip()
                 _entry_q = {
                     "uid": _t_uid,
                     "status": "🏎️ In Speed Racer",
                     "tone": "amber",
                     "reason": (f"Steward instructed: {steward_directions}" if steward_directions else "Queued in Speed Racer for Steward response"),
                     "at": _now_q,
+                    "at_utc": _now_q_utc,
                 }
                 _enrich_acted_entry(
                     _entry_q,
@@ -10023,9 +12141,11 @@ def queue_speed_racer_draft(body: dict) -> dict:
                     subject=subj,
                     sender_email=to_str,
                     sender_from=str(body.get("from") or to_str),
-                    date_str=_now_q,
+                    date_str=_prev_q_date,
                     sync_headers=_sc_q.get("email_headers") if isinstance(_sc_q, dict) else None,
                 )
+                if not _entry_q.get("date"):
+                    _entry_q["date"] = _now_q_utc
                 _am_q[_t_uid] = _entry_q
             _pr_q["acted_upon_emails"] = _am_q
             _pr_q["unacted_uids"] = _ua_q
@@ -10215,6 +12335,22 @@ def act_speed_racer_draft(body: dict) -> dict:
             )
         ).strip()
         cur_body_in = str(body.get("current_draft") or item.get("draft_body") or "")
+        target_id = str(item.get("id") or draft_id).strip()
+        target_uid = str(item.get("uid") or req_uid).strip()
+        pre_redraft_ts = float(item.get("updated_at_ts") or 0.0)
+        item["pending_scribe_feedback"] = fb
+        with COMMS_LOCK:
+            pre_state = load_speed_racer_queue()
+            pre_queue = list(pre_state.get("queue") or [])
+            for _pi, _pit in enumerate(pre_queue):
+                if isinstance(_pit, dict) and (
+                    (target_id and str(_pit.get("id") or "") == target_id)
+                    or (not target_id and target_uid and str(_pit.get("uid") or "") == target_uid)
+                ):
+                    pre_queue[_pi] = dict(_pit, pending_scribe_feedback=fb)
+                    pre_state["queue"] = pre_queue
+                    save_speed_racer_queue(pre_state)
+                    break
         gen = generate_steward_reply_draft({
             "uid": str(item.get("uid") or ""),
             "account_id": str(item.get("account_id") or ""),
@@ -10229,41 +12365,91 @@ def act_speed_racer_draft(body: dict) -> dict:
             "custom_prompt": fb if (is_full_redraft or not tone_req) else "",
             "tone": "" if is_full_redraft else tone_req,
         })
-        if not gen.get("ok"):
-            queue[target_idx] = item
-            state["queue"] = queue
-            save_speed_racer_queue(state)
-            return {
-                "ok": False,
-                "status_code": int(gen.get("status_code") or 503),
-                "failure_state": gen.get("failure_state"),
-                "error_code": gen.get("error_code"),
-                "message": str(gen.get("message") or gen.get("steward_note") or ""),
-                "previous_draft_preserved": True,
-                "draft": item,
-                "speed_racer": state,
-            }
-        item["draft_body"] = str(gen.get("draft_body") or item.get("draft_body") or "")
-        if str(gen.get("incoming_body") or "").strip():
-            item["incoming_snippet"] = str(gen.get("incoming_body")).strip()
-            item["incoming_body"] = str(gen.get("incoming_body")).strip()
-        if str(gen.get("to") or "").strip() and "<" not in str(item.get("to") or ""):
-            item["to"] = str(gen.get("to")).strip()
-        if gen.get("cc"):
-            item["cc"] = str(gen.get("cc"))
-        if isinstance(gen.get("instruction_rating"), dict) and gen.get("instruction_rating"):
-            item["instruction_rating"] = gen["instruction_rating"]
-            item["instruction_rating_label"] = str(gen["instruction_rating"].get("label") or "")
-        item["steward_directions"] = fb
-        item["context_reason"] = str(gen.get("steward_note") or f"Scribe redrafted per your instructions: '{fb}'")
-        item["origin"] = f"🪶 Scribe Redrafted ({tone_req or 'custom'}): '{fb[:48]}'"
-        item["last_scribe_draft"] = str(item.get("draft_body") or "")
-        item["user_edited"] = False
-        item["updated_at_ts"] = time.time()
-        queue[target_idx] = item
-        state["queue"] = queue
-        save_speed_racer_queue(state)
-        return {"ok": True, "draft": item, "speed_racer": state}
+        with COMMS_LOCK:
+            fresh_state = load_speed_racer_queue()
+            fresh_queue = list(fresh_state.get("queue") or [])
+            fresh_idx = next(
+                (
+                    i
+                    for i, it in enumerate(fresh_queue)
+                    if isinstance(it, dict)
+                    and (
+                        (target_id and str(it.get("id") or "") == target_id)
+                        or (not target_id and target_uid and str(it.get("uid") or "") == target_uid)
+                    )
+                ),
+                -1,
+            )
+            if fresh_idx < 0:
+                if not gen.get("ok"):
+                    return {
+                        "ok": False,
+                        "status_code": int(gen.get("status_code") or 503),
+                        "failure_state": gen.get("failure_state"),
+                        "error_code": gen.get("error_code"),
+                        "message": str(gen.get("message") or gen.get("steward_note") or ""),
+                        "already_archived": True,
+                        "speed_racer": fresh_state,
+                    }
+                return {"ok": True, "already_archived": True, "speed_racer": fresh_state}
+
+            fresh_item = dict(fresh_queue[fresh_idx])
+            if not gen.get("ok"):
+                fresh_item["pending_scribe_feedback"] = fb
+                fresh_queue[fresh_idx] = fresh_item
+                fresh_state["queue"] = fresh_queue
+                save_speed_racer_queue(fresh_state)
+                return {
+                    "ok": False,
+                    "status_code": int(gen.get("status_code") or 503),
+                    "failure_state": gen.get("failure_state"),
+                    "error_code": gen.get("error_code"),
+                    "message": str(gen.get("message") or gen.get("steward_note") or ""),
+                    "previous_draft_preserved": True,
+                    "draft": fresh_item,
+                    "speed_racer": fresh_state,
+                }
+
+            concurrent_edit = (
+                bool(fresh_item.get("user_edited"))
+                and float(fresh_item.get("updated_at_ts") or 0.0) > pre_redraft_ts
+                and str(fresh_item.get("draft_body") or "") != cur_body_in
+            )
+            if concurrent_edit:
+                fresh_item["last_scribe_draft"] = str(gen.get("draft_body") or fresh_item.get("last_scribe_draft") or "")
+                fresh_item["pending_scribe_feedback"] = ""
+                fresh_queue[fresh_idx] = fresh_item
+                fresh_state["queue"] = fresh_queue
+                save_speed_racer_queue(fresh_state)
+                return {
+                    "ok": True,
+                    "concurrent_user_edit_preserved": True,
+                    "draft": fresh_item,
+                    "speed_racer": fresh_state,
+                }
+
+            fresh_item["draft_body"] = str(gen.get("draft_body") or fresh_item.get("draft_body") or "")
+            if str(gen.get("incoming_body") or "").strip():
+                fresh_item["incoming_snippet"] = str(gen.get("incoming_body")).strip()
+                fresh_item["incoming_body"] = str(gen.get("incoming_body")).strip()
+            if str(gen.get("to") or "").strip() and "<" not in str(fresh_item.get("to") or ""):
+                fresh_item["to"] = str(gen.get("to")).strip()
+            if gen.get("cc"):
+                fresh_item["cc"] = str(gen.get("cc"))
+            if isinstance(gen.get("instruction_rating"), dict) and gen.get("instruction_rating"):
+                fresh_item["instruction_rating"] = gen["instruction_rating"]
+                fresh_item["instruction_rating_label"] = str(gen["instruction_rating"].get("label") or "")
+            fresh_item["steward_directions"] = fb
+            fresh_item["pending_scribe_feedback"] = ""
+            fresh_item["context_reason"] = str(gen.get("steward_note") or f"Scribe redrafted per your instructions: '{fb}'")
+            fresh_item["origin"] = f"🪶 Scribe Redrafted ({tone_req or 'custom'}): '{fb[:48]}'"
+            fresh_item["last_scribe_draft"] = str(fresh_item.get("draft_body") or "")
+            fresh_item["user_edited"] = False
+            fresh_item["updated_at_ts"] = time.time()
+            fresh_queue[fresh_idx] = fresh_item
+            fresh_state["queue"] = fresh_queue
+            save_speed_racer_queue(fresh_state)
+            return {"ok": True, "draft": fresh_item, "speed_racer": fresh_state}
 
     if sub_action in ("dismiss", "discard"):
         removed = queue.pop(target_idx)
@@ -10276,20 +12462,43 @@ def act_speed_racer_draft(body: dict) -> dict:
         state["last_opened_draft_id"] = str(queue[0].get("id") or "") if queue else ""
         save_speed_racer_queue(state)
         rem_uid_d = str(removed.get("uid") or req_uid).strip()
+        rem_acct_d = str(removed.get("account_id") or "").strip()
+        rem_subj_d = str(removed.get("subject") or "").strip()
+        _now_dis_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         if rem_uid_d:
             try:
                 with COMMS_LOCK:
                     _pr_d = load_triage_prefs()
                     _am_d = dict(_pr_d.get("acted_upon_emails") or {})
-                    if rem_uid_d in _am_d and isinstance(_am_d[rem_uid_d], dict):
-                        _am_d[rem_uid_d]["status"] = "✓ Settled · No Reply Needed"
-                        _am_d[rem_uid_d]["tone"] = "emerald"
-                        _am_d[rem_uid_d]["reason"] = "Dropped from Speed Racer (No reply needed)"
-                        _am_d[rem_uid_d]["at"] = removed["dropped_at"]
-                        _pr_d["acted_upon_emails"] = _am_d
-                        save_triage_prefs(_pr_d)
+                    _ua_d = list(_pr_d.get("unacted_uids") or [])
+                    _ent_d = dict(_am_d.get(rem_uid_d) or {})
+                    _ent_d.update({
+                        "uid": rem_uid_d,
+                        "status": "✓ Settled · No Reply Needed",
+                        "tone": "emerald",
+                        "reason": "Dropped from Speed Racer (No reply needed)",
+                        "at": removed["dropped_at"],
+                        "at_utc": _now_dis_utc,
+                    })
+                    if rem_acct_d and not _ent_d.get("account_id"):
+                        _ent_d["account_id"] = rem_acct_d
+                    if rem_subj_d and not _ent_d.get("subject"):
+                        _ent_d["subject"] = rem_subj_d
+                    _am_d[rem_uid_d] = _ent_d
+                    if rem_uid_d in _ua_d:
+                        _ua_d.remove(rem_uid_d)
+                        _pr_d["unacted_uids"] = _ua_d
+                    _pr_d["acted_upon_emails"] = _am_d
+                    save_triage_prefs(_pr_d)
             except Exception:
                 pass
+            if not rem_uid_d.startswith(("sr-", "sent-", "log-")):
+                try:
+                    _dispatch_remote_read_items([
+                        {"account_id": rem_acct_d, "uid": rem_uid_d, "subject": rem_subj_d, "is_read": True}
+                    ])
+                except Exception:
+                    pass
         _sc_sr_dis = load_comms_sync()
         _pr_sr_dis = load_triage_prefs()
         _imp_sr_dis, _oth_sr_dis = classify_inbox_emails(_sc_sr_dis.get("email_headers") or [], _pr_sr_dis)
@@ -10326,20 +12535,23 @@ def act_speed_racer_draft(body: dict) -> dict:
         rem_id = str(removed.get("id") or draft_id)
         rem_uid = str(removed.get("uid") or req_uid)
         # Remove ONLY this specific draft (never wipe other drafts to different recipients that share a subject)
-        queue = [
-            it for it in queue
-            if isinstance(it, dict)
-            and it.get("id") != rem_id
-            and (not rem_uid or str(it.get("uid") or "") != rem_uid)
-        ]
-        state["queue"] = queue
-        state["last_approved"] = removed
-        state["last_opened_draft_id"] = str(queue[0].get("id") or "") if queue else ""
-        save_speed_racer_queue(state)
+        with COMMS_LOCK:
+            state = load_speed_racer_queue()
+            queue = [
+                it for it in (state.get("queue") or [])
+                if isinstance(it, dict)
+                and it.get("id") != rem_id
+                and (not rem_uid or str(it.get("uid") or "") != rem_uid)
+            ]
+            state["queue"] = queue
+            state["last_approved"] = removed
+            state["last_opened_draft_id"] = str(queue[0].get("id") or "") if queue else ""
+            save_speed_racer_queue(state)
 
         clean_to = sr_recips["to_header"]
         send_res = send_email_message({
             "uid": rem_uid,
+            "sr_id": rem_id,
             "to": clean_to,
             "cc": sr_recips["cc_header"],
             "bcc": sr_recips["bcc_header"],
@@ -10354,10 +12566,12 @@ def act_speed_racer_draft(body: dict) -> dict:
             removed["send_ok"] = False
             removed["last_send_error"] = str(send_res.get("message") or send_res.get("error") or "")
             removed["last_send_failure"] = str(send_res.get("error_code") or "send_failed")
-            q_back = [it for it in (state.get("queue") or []) if isinstance(it, dict) and it.get("id") != removed.get("id")]
-            q_back.insert(0, dict(removed))
-            state["queue"] = q_back
-            save_speed_racer_queue(state)
+            with COMMS_LOCK:
+                state = load_speed_racer_queue()
+                q_back = [it for it in (state.get("queue") or []) if isinstance(it, dict) and it.get("id") != removed.get("id")]
+                q_back.insert(0, dict(removed))
+                state["queue"] = q_back
+                save_speed_racer_queue(state)
             return {
                 "ok": False,
                 "uid": rem_uid,
@@ -10373,28 +12587,46 @@ def act_speed_racer_draft(body: dict) -> dict:
         if not rem_uid and send_res.get("uid"):
             rem_uid = str(send_res.get("uid") or "").strip()
             removed["uid"] = rem_uid
+        _now_app_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         removed["approved_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+        removed["approved_at_utc"] = _now_app_utc
         removed["status"] = "Approved & Sent"
         removed["send_ok"] = True
-        arch = [it for it in (state.get("archive") or []) if isinstance(it, dict) and it.get("id") != removed.get("id")]
-        arch.insert(0, dict(removed))
-        state["archive"] = arch[:100]
-        save_speed_racer_queue(state)
+        with COMMS_LOCK:
+            state = load_speed_racer_queue()
+            arch = [it for it in (state.get("archive") or []) if isinstance(it, dict) and it.get("id") != removed.get("id")]
+            arch.insert(0, dict(removed))
+            state["archive"] = arch[:100]
+            state["last_approved"] = removed
+            save_speed_racer_queue(state)
         if rem_uid:
             try:
                 with COMMS_LOCK:
+                    _sc_app_hdrs = (load_comms_sync().get("email_headers") or [])
+                    _hdr_msg_date = ""
+                    _hdr_acct_app = str(removed.get("account_id") or "").strip()
+                    for _ha in _sc_app_hdrs:
+                        if isinstance(_ha, dict) and str(_ha.get("uid") or "").strip() == rem_uid:
+                            _hdr_msg_date = str(_ha.get("date") or "").strip()
+                            if not _hdr_acct_app and _ha.get("account_id"):
+                                _hdr_acct_app = str(_ha.get("account_id") or "").strip()
+                            break
                     _pr_app = load_triage_prefs()
                     _am_app = dict(_pr_app.get("acted_upon_emails") or {})
                     _app_entry = dict(_am_app.get(rem_uid) or {})
+                    _existing_msg_date = str(_app_entry.get("date") or _hdr_msg_date or "").strip()
                     _app_entry.update({
                         "uid": rem_uid,
                         "status": "✓ Replied · Answered",
                         "tone": "emerald",
                         "reason": f"Approved & sent via Speed Racer ({removed['approved_at']})",
                         "at": removed["approved_at"],
-                        "date": removed["approved_at"],
+                        "at_utc": _now_app_utc,
+                        "date": _existing_msg_date or _now_app_utc,
                         "subject": str(removed.get("subject") or ""),
                     })
+                    if _hdr_acct_app and not _app_entry.get("account_id"):
+                        _app_entry["account_id"] = _hdr_acct_app
                     _am_app[rem_uid] = _app_entry
                     _pr_app["acted_upon_emails"] = _am_app
                     save_triage_prefs(_pr_app)
@@ -10536,7 +12768,7 @@ def migrate_calendar_markers_to_watchlist() -> dict:
     wl_p = _watchlist_path()
     lock_p = _watchlist_lock_path()
     try:
-        with paths.cross_process_lock(lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC):
+        with paths.WRITE_LOCK, paths.cross_process_lock(lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC):
             doc = _read_watchlist_unlocked(wl_p)
             items: list[dict] = [dict(x) for x in (doc.get("items") or []) if isinstance(x, dict)]
             migrated_keys: set[str] = {str(k) for k in (doc.get("migrated_keys") or []) if str(k).strip()}
@@ -10671,7 +12903,7 @@ def add_watchlist_item(body: dict) -> dict:
     wl_p = _watchlist_path()
     lock_p = _watchlist_lock_path()
     try:
-        with paths.cross_process_lock(lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC):
+        with paths.WRITE_LOCK, paths.cross_process_lock(lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC):
             doc = _read_watchlist_unlocked(wl_p)
             items: list[dict] = [dict(x) for x in (doc.get("items") or []) if isinstance(x, dict)]
             existing = next((x for x in items if str(x.get("source_key") or "") == source_key), None)
@@ -10730,7 +12962,7 @@ def complete_watchlist_item(body: dict) -> dict:
     wl_p = _watchlist_path()
     lock_p = _watchlist_lock_path()
     try:
-        with paths.cross_process_lock(lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC):
+        with paths.WRITE_LOCK, paths.cross_process_lock(lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC):
             doc = _read_watchlist_unlocked(wl_p)
             items: list[dict] = [dict(x) for x in (doc.get("items") or []) if isinstance(x, dict)]
             matched = None
@@ -10762,7 +12994,7 @@ def get_watchlist_response(*, include_done: bool = False, today: date | None = N
     wl_p = _watchlist_path()
     lock_p = _watchlist_lock_path()
     try:
-        with paths.cross_process_lock(lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC):
+        with paths.WRITE_LOCK, paths.cross_process_lock(lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC):
             doc = _read_watchlist_unlocked(wl_p)
     except TimeoutError as exc:
         err = _wave2_failure_dict("dependency-slow-or-killed", detail=str(exc))
@@ -11171,6 +13403,398 @@ def compute_working_list_horizon_counts(
     }
 
 
+_EXPLICIT_PROPOSAL_SOURCES: frozenset[str] = frozenset({
+    "steward_cli",
+    "propose_change",
+    "manual",
+    "user",
+    "explicit",
+    "cli",
+})
+_EXPLICIT_PROPOSAL_KEY_PREFIXES: tuple[str, ...] = (
+    "manual:",
+    "prop:",
+    "explicit:",
+    "propose:",
+)
+
+
+def _is_pending_proposal(p: dict) -> bool:
+    """Return True strictly when a proposal's `status` is `'pending'`."""
+    if not isinstance(p, dict):
+        return False
+    return str(p.get("status") or "").strip().lower() == "pending"
+
+
+def count_pending_proposals(proposals_or_spine) -> int:
+    """Count strictly proposals whose `status == 'pending'`."""
+    if isinstance(proposals_or_spine, dict):
+        items = proposals_or_spine.get("proposals") or []
+    elif isinstance(proposals_or_spine, list):
+        items = proposals_or_spine
+    else:
+        return 0
+    return sum(1 for p in items if _is_pending_proposal(p))
+
+
+def _is_explicit_propose_entry(p: dict) -> bool:
+    """Return True if `p` was created via explicit `mutate_working_list_spine('propose_change')`."""
+    if not isinstance(p, dict):
+        return False
+    if p.get("explicit_propose"):
+        return True
+    src = str(p.get("source") or "").strip().lower()
+    sk = str(p.get("source_key") or "").strip().lower()
+    if src in _EXPLICIT_PROPOSAL_SOURCES or sk.startswith(_EXPLICIT_PROPOSAL_KEY_PREFIXES):
+        return True
+    return False
+
+
+def _is_steward_dispatch_entry(p: dict) -> bool:
+    """Return True if `p` was created via explicit user `Send to Steward` (`steward_dispatch`)."""
+    if not isinstance(p, dict):
+        return False
+    src = str(p.get("source") or "").strip().lower()
+    sk = str(p.get("source_key") or "").strip().lower()
+    return src == "steward_dispatch" or sk.startswith("steward-dispatch:")
+
+
+def _is_live_allowed_proposal_entry(p: dict) -> bool:
+    """Return True if `p` is sourced from explicit `steward_dispatch` or an active-effort P1 milestone."""
+    if not isinstance(p, dict):
+        return False
+    if _is_steward_dispatch_entry(p):
+        return True
+    src = str(p.get("source") or "").strip().lower()
+    if p.get("is_active_p1_milestone") or src == "active_p1_milestone":
+        return True
+    return False
+
+
+def _is_auto_proposal_stale_or_irrelevant(
+    p: dict,
+    *,
+    tiles_by_id: dict[str, dict],
+    active_tiles: list[dict],
+    active_step_email_uids: set[str],
+    today_iso: str,
+    acted_email_uids: set[str] | None = None,
+    spam_email_uids: set[str] | None = None,
+    done_watchlist_ids: set[str] | None = None,
+    prune_noisy_sources: bool = True,
+) -> bool:
+    """Return True when an auto-proposal is past `due` date, no longer relevant to live tiles/emails/watchlist,
+    or (when `prune_noisy_sources=True`) comes from a noisy background auto-proposal source."""
+    sk = str(p.get("source_key") or "").strip()
+    src = str(p.get("source") or "").strip().lower()
+    prop_op = str(p.get("proposal_op") or p.get("kind") or "add_tile").strip().lower()
+    tid = str(p.get("tile_id") or "").strip()
+
+    # 1. Past due-date criterion
+    due_s = str(p.get("due") or "").strip()[:10]
+    if len(due_s) == 10 and due_s < today_iso:
+        return True
+
+    # 2. Target tile relevance criterion
+    if tid:
+        t_obj = tiles_by_id.get(tid)
+        if t_obj is None:
+            if tiles_by_id or prop_op in ("archive_tile", "reprioritize", "add_step"):
+                return True
+        else:
+            if t_obj.get("done") or t_obj.get("archived"):
+                return True
+            if prop_op == "archive_tile" or sk.startswith("tile-all-steps-done:") or src == "cockpit_all_steps_done":
+                t_steps = [s for s in (t_obj.get("steps") or []) if isinstance(s, dict)]
+                if not t_steps or not all(s.get("done") for s in t_steps):
+                    return True
+            if prop_op == "reprioritize":
+                cur_p = _normalize_priority_number(t_obj.get("priority"), default=3)
+                target_p = _normalize_priority_number(p.get("priority"), default=1)
+                if cur_p <= target_p:
+                    return True
+    elif prop_op == "archive_tile" or sk.startswith("tile-all-steps-done:") or src == "cockpit_all_steps_done":
+        return True
+
+    # 3. Email relevance criterion (already acted, spam, or represented on an active tile step)
+    euid = str(p.get("email_uid") or "").strip()
+    if not euid and sk.startswith("prime-email:"):
+        euid = sk.split("prime-email:", 1)[1].strip()
+    if euid:
+        if euid in active_step_email_uids:
+            return True
+        if spam_email_uids and euid in spam_email_uids:
+            return True
+        if acted_email_uids and euid in acted_email_uids:
+            return True
+
+    # 4. Watchlist completion relevance
+    if sk.startswith("watchlist:") or src.startswith("watchlist"):
+        parts = sk.split(":")
+        wid = parts[1].strip() if len(parts) >= 2 else ""
+        if wid and done_watchlist_ids and wid in done_watchlist_ids:
+            return True
+
+    # 5. Noisy background auto-proposal filtering (on spine load & live_reconcile)
+    if prune_noisy_sources:
+        if not _is_live_allowed_proposal_entry(p):
+            return True
+        if not _is_steward_dispatch_entry(p):
+            if tid and tid in tiles_by_id:
+                if _normalize_priority_number(tiles_by_id[tid].get("priority"), default=2) != 1:
+                    return True
+            elif active_tiles:
+                c_name = str(p.get("cockpitName") or "").strip().lower()
+                if c_name and not any(
+                    _normalize_priority_number(t.get("priority"), default=2) == 1
+                    and c_name in str(t.get("cockpitName") or "").lower()
+                    for t in active_tiles
+                ):
+                    return True
+
+    return False
+
+
+def _clean_autocheck_step_label(raw_step_text: str, tile_title: str = "") -> str:
+    """Distill verbose email-dispatch step text into a concise human-readable 1-line label."""
+    s = str(raw_step_text or "").strip()
+    if not s:
+        return ""
+    s = re.sub(r"\s*\((?:From\s+email|Email)\s*:.*\)\s*$", "", s, flags=re.I | re.S).strip()
+    if len(s) > 95 and re.match(r"^(?:hello|hi|hey|i\s+do\s+not\s+need|i\s+would\s+like\s+you\s+to)\b", s, flags=re.I):
+        synthesized = _synthesize_clean_steward_task_title(s, tile_title)
+        if synthesized:
+            s = synthesized
+    return s
+
+
+def _prune_resolved_auto_checks(tiles: list[dict], raw_auto_checks: list[dict]) -> list[dict]:
+    """Keep only active, unconfirmed auto-check notices whose owning tile is unarchived
+    and whose owning step is still marked `done=True` and unconfirmed."""
+    tiles_by_id = {
+        str(t.get("id") or ""): t
+        for t in (tiles or [])
+        if isinstance(t, dict) and str(t.get("id") or "").strip()
+    }
+    kept: list[dict] = []
+    seen_ids: set[str] = set()
+    for raw in raw_auto_checks or []:
+        if not isinstance(raw, dict):
+            continue
+        if raw.get("undone") or raw.get("confirmed") or raw.get("dismissed"):
+            continue
+        tid = str(raw.get("tile_id") or "").strip()
+        sid = str(raw.get("step_id") or "").strip()
+        t_obj = tiles_by_id.get(tid)
+        if not isinstance(t_obj, dict) or t_obj.get("archived"):
+            continue
+        t_steps = [s for s in (t_obj.get("steps") or []) if isinstance(s, dict)]
+        s_obj = next((s for s in t_steps if str(s.get("id") or "") == sid), None)
+        if not isinstance(s_obj, dict) or not s_obj.get("done") or s_obj.get("auto_check_confirmed"):
+            continue
+        dedup_k = f"{tid}:{sid}" if (tid and sid) else str(raw.get("id") or "")
+        if dedup_k and dedup_k in seen_ids:
+            continue
+        if dedup_k:
+            seen_ids.add(dedup_k)
+        entry = dict(raw)
+        done_cnt = sum(1 for s in t_steps if s.get("done"))
+        tot_cnt = len(t_steps)
+        entry["tile_title"] = str(t_obj.get("title") or entry.get("tile_title") or "")
+        entry["clean_step_text"] = _clean_autocheck_step_label(
+            str(entry.get("step_text") or s_obj.get("text") or ""),
+            entry["tile_title"],
+        )
+        entry["done_steps_count"] = done_cnt
+        entry["total_steps_count"] = tot_cnt
+        entry["all_steps_done"] = bool(tot_cnt > 0 and done_cnt == tot_cnt)
+        kept.append(entry)
+    return kept[-50:]
+
+
+def prune_stale_auto_proposals(
+    spine: dict,
+    *,
+    today: date | None = None,
+    acted_email_uids: set[str] | None = None,
+    spam_email_uids: set[str] | None = None,
+    done_watchlist_ids: set[str] | None = None,
+    prune_noisy_sources: bool = True,
+) -> tuple[dict, list[str]]:
+    """Pure function (zero I/O): move noisy stale auto-proposals and non-pending records into
+    `dismissed_proposal_keys` while preserving explicit `propose_change` entries, explicit
+    `steward_dispatch` entries, and still-relevant active-effort P1 milestone proposals."""
+    if not isinstance(spine, dict):
+        return _default_working_list_state(), []
+    cleaned = copy.deepcopy(spine)
+    raw_proposals = [dict(p) for p in (cleaned.get("proposals") or []) if isinstance(p, dict)]
+    dismissed_list: list[str] = []
+    dismissed_set: set[str] = set()
+    for k in (cleaned.get("dismissed_proposal_keys") or []):
+        ks = str(k or "").strip()
+        if ks and ks not in dismissed_set:
+            dismissed_list.append(ks)
+            dismissed_set.add(ks)
+    accepted_list: list[str] = []
+    accepted_set: set[str] = set()
+    for k in (cleaned.get("accepted_proposal_keys") or []):
+        ks = str(k or "").strip()
+        if ks and ks not in accepted_set:
+            accepted_list.append(ks)
+            accepted_set.add(ks)
+
+    today_iso = (today or datetime.now(timezone.utc).date()).isoformat()
+
+    raw_tiles = [t for t in (cleaned.get("tiles") or []) if isinstance(t, dict)]
+    tiles_by_id = {str(t.get("id") or ""): t for t in raw_tiles if str(t.get("id") or "").strip()}
+    active_tiles = [t for t in raw_tiles if not t.get("done") and not t.get("archived")]
+    active_step_email_uids: set[str] = set()
+    for t in active_tiles:
+        for s in (t.get("steps") or []):
+            if isinstance(s, dict) and not s.get("done"):
+                se_uid = str(s.get("email_uid") or "").strip()
+                if se_uid:
+                    active_step_email_uids.add(se_uid)
+
+    kept_proposals: list[dict] = []
+    pruned_keys: list[str] = []
+
+    for p in raw_proposals:
+        sk = str(p.get("source_key") or p.get("id") or "").strip()
+        pruned_marker = sk or ("anon-" + hashlib.sha1(json.dumps(p, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:10])
+        raw_status = p.get("status")
+        st = "pending" if "status" not in p else str(raw_status or "").strip().lower()
+        if st != "pending":
+            if st == "accepted" and sk and sk not in accepted_set:
+                accepted_list.append(sk)
+                accepted_set.add(sk)
+            elif sk and sk not in dismissed_set and sk not in accepted_set:
+                dismissed_list.append(sk)
+                dismissed_set.add(sk)
+            if pruned_marker not in pruned_keys:
+                pruned_keys.append(pruned_marker)
+            continue
+
+        if _is_explicit_propose_entry(p):
+            if sk and sk in dismissed_set:
+                dismissed_set.discard(sk)
+                dismissed_list = [k for k in dismissed_list if k != sk]
+            if sk and sk in accepted_set:
+                accepted_set.discard(sk)
+                accepted_list = [k for k in accepted_list if k != sk]
+            p_copy = dict(p)
+            p_copy["status"] = "pending"
+            kept_proposals.append(p_copy)
+            continue
+
+        if sk and (sk in dismissed_set or sk in accepted_set):
+            if pruned_marker not in pruned_keys:
+                pruned_keys.append(pruned_marker)
+            continue
+
+        if not _is_auto_proposal_stale_or_irrelevant(
+            p,
+            tiles_by_id=tiles_by_id,
+            active_tiles=active_tiles,
+            active_step_email_uids=active_step_email_uids,
+            today_iso=today_iso,
+            acted_email_uids=acted_email_uids,
+            spam_email_uids=spam_email_uids,
+            done_watchlist_ids=done_watchlist_ids,
+            prune_noisy_sources=prune_noisy_sources,
+        ):
+            p_copy = dict(p)
+            p_copy["status"] = "pending"
+            kept_proposals.append(p_copy)
+            continue
+
+        if sk and sk not in dismissed_set:
+            dismissed_list.append(sk)
+            dismissed_set.add(sk)
+        if pruned_marker not in pruned_keys:
+            pruned_keys.append(pruned_marker)
+
+    cleaned["proposals"] = kept_proposals
+    cleaned["dismissed_proposal_keys"] = dismissed_list
+    cleaned["accepted_proposal_keys"] = accepted_list
+    raw_ac_prune = cleaned.get("auto_checked_log") if isinstance(cleaned.get("auto_checked_log"), list) else (
+        cleaned.get("auto_checked") if isinstance(cleaned.get("auto_checked"), list) else []
+    )
+    pruned_ac = _prune_resolved_auto_checks(raw_tiles, raw_ac_prune)
+    cleaned["auto_checked_log"] = pruned_ac
+    cleaned["auto_checked"] = list(pruned_ac)
+    return cleaned, pruned_keys
+
+
+def _read_and_prune_working_list_locked(
+    wl_p: Path,
+    lock_p: Path,
+    *,
+    backup_date: date | None = None,
+    acted_email_uids: set[str] | None = None,
+    spam_email_uids: set[str] | None = None,
+    done_watchlist_ids: set[str] | None = None,
+    prune_noisy_sources: bool | None = None,
+) -> tuple[dict, list[str]]:
+    """Read `wl_p` while holding `paths.WRITE_LOCK` + `cross_process_lock`, prune stale auto-proposals,
+    and when pruning occurs write a dated `.bak` backup and persist atomically."""
+    if not wl_p.exists():
+        return _default_working_list_state(), []
+    data = _read_working_list_unlocked(wl_p)
+    raw_text = wl_p.read_text(encoding="utf-8")
+    eff_prune_noisy = (
+        bool(prune_noisy_sources)
+        if prune_noisy_sources is not None
+        else (str(data.get("last_reconcile_mode") or "") != "explicit")
+    )
+    pruned_data, pruned_keys = prune_stale_auto_proposals(
+        data,
+        today=backup_date,
+        acted_email_uids=acted_email_uids,
+        spam_email_uids=spam_email_uids,
+        done_watchlist_ids=done_watchlist_ids,
+        prune_noisy_sources=eff_prune_noisy,
+    )
+    prev_ac_raw = data.get("auto_checked_log") if isinstance(data.get("auto_checked_log"), list) else (data.get("auto_checked") or [])
+    if (
+        pruned_keys
+        or len(pruned_data.get("proposals") or []) != len(data.get("proposals") or [])
+        or len(pruned_data.get("auto_checked_log") or []) != len(prev_ac_raw)
+    ):
+        d_iso = (backup_date or date.today()).isoformat()
+        bak_p = wl_p.with_name(f"{wl_p.name}.{d_iso}.bak")
+        if not bak_p.exists():
+            paths.atomic_write_text(bak_p, raw_text)
+        paths.atomic_write_json(wl_p, pruned_data, lock_path=lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC)
+        _WORKING_LIST_SPINE_CACHE.clear()
+        _invalidate_cached_json_file(wl_p)
+    return pruned_data, pruned_keys
+
+
+def prune_and_persist_working_list_spine(
+    p: Path | None = None,
+    *,
+    backup_date: date | None = None,
+    prune_noisy_sources: bool | None = None,
+) -> tuple[dict, list[str]]:
+    """Idempotent imperative shell wrapper around `prune_stale_auto_proposals`:
+    runs under `paths.WRITE_LOCK` + `paths.cross_process_lock` (in canonical lock order),
+    writes a dated `.bak` backup when pruning occurs, and persists via `paths.atomic_write_json`."""
+    wl_p = p or _working_list_path()
+    lock_p = wl_p.with_name(wl_p.name + ".lock")
+    try:
+        with paths.WRITE_LOCK:
+            with paths.cross_process_lock(lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC):
+                return _read_and_prune_working_list_locked(
+                    wl_p,
+                    lock_p,
+                    backup_date=backup_date,
+                    prune_noisy_sources=prune_noisy_sources,
+                )
+    except TimeoutError as exc:
+        raise LockBusyError(str(exc)) from exc
+
+
 def _enrich_working_list_state(
     data: dict,
     live_cats: dict | None = None,
@@ -11191,7 +13815,17 @@ def _enrich_working_list_state(
     data["tiles"] = _normalize_and_sort_working_list_tiles(data.get("tiles") or [])
     if not isinstance(data.get("proposals"), list):
         data["proposals"] = []
-    data["proposals"] = [dict(p) for p in data["proposals"] if isinstance(p, dict)][:MAX_WORKING_LIST_PROPOSALS]
+    norm_props: list[dict] = []
+    for p in data["proposals"]:
+        if not isinstance(p, dict):
+            continue
+        p_norm = dict(p, status="pending") if "status" not in p else dict(p)
+        if not _is_pending_proposal(p_norm):
+            continue
+        p_norm["status"] = "pending"
+        norm_props.append(p_norm)
+    data["proposals"] = norm_props[:MAX_WORKING_LIST_PROPOSALS]
+    data["pending_proposals_count"] = count_pending_proposals(data["proposals"])
     if not isinstance(data.get("dismissed_proposal_keys"), list):
         data["dismissed_proposal_keys"] = []
     if not isinstance(data.get("accepted_proposal_keys"), list):
@@ -11199,7 +13833,7 @@ def _enrich_working_list_state(
     raw_ac = data.get("auto_checked_log") if isinstance(data.get("auto_checked_log"), list) else (
         data.get("auto_checked") if isinstance(data.get("auto_checked"), list) else []
     )
-    data["auto_checked_log"] = [dict(a) for a in raw_ac if isinstance(a, dict)][-50:]
+    data["auto_checked_log"] = _prune_resolved_auto_checks(data["tiles"], raw_ac)
     data["auto_checked"] = list(data["auto_checked_log"])
     for t in data["tiles"]:
         if not isinstance(t, dict):
@@ -11249,8 +13883,7 @@ _WORKING_LIST_SPINE_CACHE: dict[str, tuple[int, int, float, dict]] = {}
 
 def load_working_list_spine() -> dict:
     p = _working_list_path()
-    lock_p = _working_list_lock_path()
-    is_live_prod = not _is_hermetic() and not os.environ.get("PYTEST_CURRENT_TEST")
+    is_live_prod = not _is_hermetic()
     if is_live_prod and p.is_file():
         try:
             st = p.stat()
@@ -11260,11 +13893,7 @@ def load_working_list_spine() -> dict:
                 return copy.deepcopy(hit[3])
         except Exception:
             pass
-    try:
-        with paths.cross_process_lock(lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC):
-            data = _read_working_list_unlocked(p)
-    except TimeoutError as exc:
-        raise LockBusyError(str(exc)) from exc
+    data, _pruned = prune_and_persist_working_list_spine(p)
     enriched = _enrich_working_list_state(data)
     if is_live_prod and p.is_file():
         try:
@@ -11454,13 +14083,16 @@ def reconcile_working_list_activity(
     watchlist_items: list[dict] | None = None,
     now_dt: datetime | None = None,
     today: date | None = None,
+    live_reconcile: bool = False,
 ) -> dict:
     """4-source Reactive Reconciler for *The List* (`.anchor/working-list-spine.json`):
       1. Cockpit step / `final` Deliverable completions -> auto-check linked List sub-steps (`#wlAutoCheckedStrip` + Undo),
          `for_review` Deliverables & all-steps-done tiles -> queue proposals.
       2. Outbound sent replies / Speed Racer approvals -> auto-check matching email steps + mark matching Watchlist items done.
       3. Inbound `Prime` action emails & `Send to Steward` dispatches -> queue `source_key`-deduplicated proposals.
-      4. Watchlist deadlines crossing `7d`, `48h`, and `24h` windows -> queue `source_key`-deduplicated proposals (`<=50` cap)."""
+      4. Watchlist deadlines crossing `7d`, `48h`, and `24h` windows -> queue `source_key`-deduplicated proposals (`<=50` cap).
+      In automatic live reconcile mode (`live_reconcile=True` or background reconcile), suggestions are capped at
+      `<=3` pending items sourced exclusively from explicit `steward_dispatch` or active-effort P1 milestones."""
     wl_p = _working_list_path()
     lock_p = _working_list_lock_path()
     now_val = now_dt or datetime.now(timezone.utc)
@@ -11470,19 +14102,46 @@ def reconcile_working_list_activity(
         now_val = now_val.astimezone(timezone.utc)
     today_d = today or now_val.date()
     now_iso = now_val.strftime("%Y-%m-%d %H:%M UTC")
+    is_live_reconcile = bool(live_reconcile)
+
+    # Pre-collect cockpit events, catalogs, and triage prefs outside WRITE_LOCK so global writers are never blocked
+    ck_evs = list(cockpit_events) if cockpit_events is not None else _collect_live_cockpit_deliverables_and_steps()
+    live_cats_pre = build_live_cockpits_and_goals_catalogs()
+    try:
+        _tp_exp = load_triage_prefs()
+        _acted_exp = set((_tp_exp.get("acted_upon_emails") or {}).keys())
+        _spam_exp = {str(x).strip() for x in (_tp_exp.get("spam_uids") or []) if str(x).strip()}
+        _unacted_exp = {str(x).strip() for x in (_tp_exp.get("unacted_uids") or []) if str(x).strip()}
+    except Exception:
+        _acted_exp, _spam_exp, _unacted_exp = set(), set(), set()
 
     try:
-        with paths.cross_process_lock(lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC):
-            state = _read_working_list_unlocked(wl_p)
+        with paths.WRITE_LOCK, paths.cross_process_lock(lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC):
+            if is_live_reconcile:
+                state, pruned_keys = _read_and_prune_working_list_locked(
+                    wl_p,
+                    lock_p,
+                    backup_date=today_d,
+                    acted_email_uids=_acted_exp - _unacted_exp,
+                    spam_email_uids=_spam_exp,
+                    prune_noisy_sources=True,
+                )
+            else:
+                state = _read_working_list_unlocked(wl_p)
+                pruned_keys = []
             tiles = [dict(t) for t in (state.get("tiles") or []) if isinstance(t, dict)]
-            proposals = [dict(p) for p in (state.get("proposals") or []) if isinstance(p, dict)][:MAX_WORKING_LIST_PROPOSALS]
+            proposals = [
+                dict(p, status="pending")
+                for p in (state.get("proposals") or [])
+                if isinstance(p, dict) and ("status" not in p or _is_pending_proposal(p))
+            ][:MAX_WORKING_LIST_PROPOSALS]
             dismissed_keys = {str(k) for k in (state.get("dismissed_proposal_keys") or []) if str(k).strip()}
             accepted_keys = {str(k) for k in (state.get("accepted_proposal_keys") or []) if str(k).strip()}
             existing_keys = {str(p.get("source_key") or "") for p in proposals if str(p.get("source_key") or "").strip()}
             auto_log = [dict(a) for a in (state.get("auto_checked_log") or state.get("auto_checked") or []) if isinstance(a, dict)]
             seen_auto_keys = {f"{a.get('tile_id')}:{a.get('step_id')}" for a in auto_log}
 
-            mutated = False
+            mutated = bool(pruned_keys)
             added_proposals: list[dict] = []
             newly_auto_checked: list[dict] = []
 
@@ -11491,12 +14150,49 @@ def reconcile_working_list_activity(
                 sk = str(source_key or "").strip()
                 if not sk or sk in existing_keys or sk in dismissed_keys or sk in accepted_keys:
                     return False
-                if len(proposals) >= MAX_WORKING_LIST_PROPOSALS:
+                if count_pending_proposals(proposals) >= MAX_WORKING_LIST_PROPOSALS:
                     return False
+                if is_live_reconcile:
+                    live_pending = sum(
+                        1 for p in proposals
+                        if _is_pending_proposal(p) and not _is_explicit_propose_entry(p)
+                    )
+                    if live_pending >= MAX_LIVE_RECONCILE_PROPOSALS:
+                        if str(prop.get("source") or "") == "steward_dispatch":
+                            evict_idx = next(
+                                (
+                                    i for i, p in enumerate(proposals)
+                                    if _is_pending_proposal(p)
+                                    and not _is_explicit_propose_entry(p)
+                                    and not _is_steward_dispatch_entry(p)
+                                ),
+                                -1,
+                            )
+                            if evict_idx < 0:
+                                evict_idx = next(
+                                    (
+                                        i for i, p in enumerate(proposals)
+                                        if _is_pending_proposal(p)
+                                        and not _is_explicit_propose_entry(p)
+                                    ),
+                                    -1,
+                                )
+                            if evict_idx < 0:
+                                return False
+                            evicted = proposals.pop(evict_idx)
+                            evicted_sk = str(evicted.get("source_key") or "").strip()
+                            existing_keys.discard(evicted_sk)
+                            if evicted_sk:
+                                dismissed_keys.add(evicted_sk)
+                            if evicted in added_proposals:
+                                added_proposals.remove(evicted)
+                        else:
+                            return False
                 p_id = "prop-" + hashlib.sha1(sk.encode("utf-8")).hexdigest()[:10]
                 rec = {
                     "id": p_id,
                     "source_key": sk,
+                    "status": "pending",
                     "proposal_op": str(prop.get("proposal_op") or "add_tile"),
                     "kind": str(prop.get("proposal_op") or "add_tile"),
                     "tile_id": str(prop.get("tile_id") or ""),
@@ -11512,6 +14208,8 @@ def reconcile_working_list_activity(
                     "reason": str(prop.get("reason") or ""),
                     "created_at": now_iso,
                 }
+                if prop.get("is_active_p1_milestone"):
+                    rec["is_active_p1_milestone"] = True
                 proposals.append(rec)
                 existing_keys.add(sk)
                 added_proposals.append(rec)
@@ -11522,8 +14220,13 @@ def reconcile_working_list_activity(
                 nonlocal mutated
                 if step_obj.get("done"):
                     return
+                suppressed_sigs = step_obj.get("auto_check_suppressed_reasons")
+                sig = f"{source}:{reason}"
+                if isinstance(suppressed_sigs, list) and (sig in suppressed_sigs or "*" in suppressed_sigs):
+                    return
                 step_obj["done"] = True
                 step_obj["auto_checked_at"] = now_iso
+                step_obj["auto_checked_sig"] = sig
                 ak = f"{tile_obj.get('id')}:{step_obj.get('id')}"
                 if ak not in seen_auto_keys:
                     entry = {
@@ -11541,183 +14244,7 @@ def reconcile_working_list_activity(
                     seen_auto_keys.add(ak)
                 mutated = True
 
-            # 1. Source 1 — Cockpit step / `final` Deliverable completions & `for_review` / all-steps-done tiles
-            ck_evs = list(cockpit_events) if cockpit_events is not None else _collect_live_cockpit_deliverables_and_steps()
-            for cev in ck_evs:
-                if not isinstance(cev, dict):
-                    continue
-                kind = str(cev.get("kind") or "").strip().lower()
-                c_pid = str(cev.get("pid") or "").strip()
-                c_name = str(cev.get("cockpit_name") or cev.get("cockpitName") or "").strip()
-                c_title = str(cev.get("title") or "").strip()
-                c_sid = str(cev.get("step_id") or "").strip()
-                c_did = str(cev.get("deliverable_id") or c_sid or c_title).strip()
-                if kind in ("step_completed", "deliverable_final", "final"):
-                    for t in tiles:
-                        if t.get("archived") or t.get("done"):
-                            continue
-                        t_match = (
-                            (c_pid and str(t.get("cockpitPid") or "") == c_pid)
-                            or (c_name and c_name.lower() in str(t.get("cockpitName") or "").lower())
-                            or (str(cev.get("tile_id") or "") and str(t.get("id") or "") == str(cev.get("tile_id")))
-                        )
-                        for s in (t.get("steps") or []):
-                            if not isinstance(s, dict) or s.get("done"):
-                                continue
-                            s_txt_low = str(s.get("text") or "").lower()
-                            ck_it = s.get("cockpitItem") if isinstance(s.get("cockpitItem"), dict) else {}
-                            s_match = (
-                                (c_sid and (str(s.get("id") or "") == c_sid or str(s.get("cockpit_step_id") or "") == c_sid))
-                                or (c_did and str(s.get("deliverable_id") or "") == c_did)
-                                or (t_match and c_title and (c_title.lower() in s_txt_low or c_title.lower() in str(ck_it.get("itemLabel") or "").lower()))
-                            )
-                            if s_match:
-                                _auto_check_step(
-                                    t,
-                                    s,
-                                    source="cockpit_final",
-                                    reason=f"Cockpit completed: {c_title or c_sid or c_name}",
-                                )
-                elif kind in ("deliverable_for_review", "for_review"):
-                    matched_tile = next(
-                        (
-                            t for t in tiles
-                            if not t.get("archived")
-                            and (
-                                (c_pid and str(t.get("cockpitPid") or "") == c_pid)
-                                or (c_name and c_name.lower() in str(t.get("cockpitName") or "").lower())
-                                or (str(cev.get("tile_id") or "") and str(t.get("id") or "") == str(cev.get("tile_id")))
-                            )
-                        ),
-                        None,
-                    )
-                    sk_rev = f"cockpit-review:{c_pid or c_name}:{c_did}"
-                    if matched_tile is not None:
-                        _queue_proposal(sk_rev, {
-                            "proposal_op": "add_step",
-                            "tile_id": str(matched_tile.get("id") or ""),
-                            "title": f"Review deliverable: {c_title} ({matched_tile.get('title')})",
-                            "step_text": f"Review & accept deliverable '{c_title}' in {c_name or matched_tile.get('cockpitName') or 'AI Cockpit'}",
-                            "priority": 1,
-                            "source": "cockpit_for_review",
-                            "reason": f"Deliverable '{c_title}' entered for_review",
-                        })
-                    else:
-                        _queue_proposal(sk_rev, {
-                            "proposal_op": "add_tile",
-                            "title": f"Review deliverable: {c_title}",
-                            "step_text": f"Review & accept deliverable '{c_title}'",
-                            "priority": 1,
-                            "cockpitName": c_name,
-                            "source": "cockpit_for_review",
-                            "reason": f"Deliverable '{c_title}' entered for_review",
-                        })
-
-            for t in tiles:
-                if t.get("archived"):
-                    continue
-                t_steps = [s for s in (t.get("steps") or []) if isinstance(s, dict)]
-                if t_steps and all(s.get("done") for s in t_steps):
-                    _queue_proposal(f"tile-all-steps-done:{t.get('id')}", {
-                        "proposal_op": "archive_tile",
-                        "tile_id": str(t.get("id") or ""),
-                        "title": f"Archive completed effort: {t.get('title')}",
-                        "priority": _normalize_priority_number(t.get("priority"), default=3),
-                        "source": "cockpit_all_steps_done",
-                        "reason": f"All {len(t_steps)} step(s) completed on '{t.get('title')}'",
-                    })
-
-            # 2. Source 2 — Outbound sent replies / Speed Racer approvals
-            outbound_candidates: list[dict] = []
-            if isinstance(sent_event, dict):
-                outbound_candidates.append(sent_event)
-            for se in (sent_emails or []):
-                if isinstance(se, dict):
-                    outbound_candidates.append(se)
-
-            sent_watchlist_matches: list[tuple[str, str, set[str]]] = []
-            for s_ev in outbound_candidates:
-                s_uid = str(s_ev.get("uid") or "").strip()
-                s_subj = _norm_email_subject(str(s_ev.get("subject") or ""))
-                parsed_recips = _parse_recipient_list(
-                    s_ev.get("recipient_emails") or s_ev.get("to") or s_ev.get("counterparty") or "",
-                    strict=False,
-                )
-                s_recips = {r["email"].lower() for r in parsed_recips if r.get("email")}
-                s_names = {r["name"].lower().strip() for r in parsed_recips if r.get("name") and len(r["name"].strip()) >= 3}
-                sent_watchlist_matches.append((s_uid, s_subj, s_recips | s_names))
-                for t in tiles:
-                    if t.get("archived") or t.get("done"):
-                        continue
-                    t_notes_low = str(t.get("brainstormNotes") or "").lower()
-                    for s in (t.get("steps") or []):
-                        if not isinstance(s, dict) or s.get("done"):
-                            continue
-                        st_uid = str(s.get("email_uid") or "").strip()
-                        st_txt = str(s.get("text") or "").lower()
-                        combined_st = f"{st_txt} {t_notes_low}"
-                        is_email_step = bool(st_uid) or any(w in st_txt for w in ("reply", "respond", "email", "send", "answer", "follow up"))
-                        if not is_email_step:
-                            continue
-                        matched_by_uid = bool(s_uid and st_uid and s_uid == st_uid)
-                        matched_by_subj = bool(s_subj and len(s_subj) >= 5 and s_subj in _norm_email_subject(combined_st))
-                        matched_by_rcpt = bool(
-                            (s_recips and any(em in combined_st or em.split("@", 1)[0] in combined_st for em in s_recips))
-                            or (s_names and any(nm in combined_st for nm in s_names))
-                        )
-                        if matched_by_uid or matched_by_subj or matched_by_rcpt:
-                            _auto_check_step(
-                                t,
-                                s,
-                                source="sent_email",
-                                reason=f"Sent reply: {s_ev.get('subject') or s_ev.get('to')}",
-                            )
-
-            for t in tiles:
-                if t.get("archived"):
-                    continue
-                t_steps = [s for s in (t.get("steps") or []) if isinstance(s, dict)]
-                if t_steps and all(s.get("done") for s in t_steps):
-                    _queue_proposal(f"tile-all-steps-done:{t.get('id')}", {
-                        "proposal_op": "archive_tile",
-                        "tile_id": str(t.get("id") or ""),
-                        "title": f"Archive completed effort: {t.get('title')}",
-                        "priority": _normalize_priority_number(t.get("priority"), default=3),
-                        "source": "cockpit_all_steps_done",
-                        "reason": f"All {len(t_steps)} step(s) completed on '{t.get('title')}'",
-                    })
-
-            # Mark matching open Watchlist items done when an outbound reply matches
-            if sent_watchlist_matches:
-                try:
-                    wl_store_p = _watchlist_path()
-                    wl_store_lock = _watchlist_lock_path()
-                    if wl_store_p.exists():
-                        with paths.cross_process_lock(wl_store_lock, timeout_sec=STORE_LOCK_TIMEOUT_SEC):
-                            wl_doc = _read_watchlist_unlocked(wl_store_p)
-                            wl_changed = False
-                            for w_it in (wl_doc.get("items") or []):
-                                if not isinstance(w_it, dict) or str(w_it.get("status") or "open").lower() == "done":
-                                    continue
-                                w_uid = str(w_it.get("email_uid") or w_it.get("uid") or "").strip()
-                                w_subj = _norm_email_subject(str(w_it.get("title") or ""))
-                                for s_uid, s_subj, s_recips in sent_watchlist_matches:
-                                    if (
-                                        (s_uid and w_uid and s_uid == w_uid)
-                                        or (s_subj and w_subj and len(s_subj) >= 5 and (s_subj == w_subj or s_subj in w_subj or w_subj in s_subj))
-                                        or (s_recips and any(em in str(w_it.get("notes") or "").lower() for em in s_recips))
-                                    ):
-                                        w_it["status"] = "done"
-                                        w_it["completed_at"] = now_iso
-                                        wl_changed = True
-                                        break
-                            if wl_changed:
-                                wl_doc["updated_at"] = now_iso
-                                paths.atomic_write_json(wl_store_p, wl_doc, lock_path=wl_store_lock, timeout_sec=STORE_LOCK_TIMEOUT_SEC)
-                except Exception:
-                    pass
-
-            # 3. Source 3 — Inbound `Prime` action emails & `Send to Steward` dispatches
+            # Queue explicit `steward_dispatch` before background P1 milestone suggestions so user dispatches are never starved
             if isinstance(dispatch_event, dict) and dispatch_event.get("uid"):
                 d_uid = str(dispatch_event.get("uid") or "").strip()
                 d_title = str(dispatch_event.get("task_title") or dispatch_event.get("subject") or "Steward Follow-Up").strip()
@@ -11761,32 +14288,255 @@ def reconcile_working_list_activity(
                         "reason": f"Sent to Steward: {d_comm[:120]}",
                     })
 
-            for em in (important_emails or []):
-                if not isinstance(em, dict) or em.get("acted_upon"):
+            # 1. Source 1 — Cockpit step / `final` Deliverable completions & `for_review` / all-steps-done tiles
+            for cev in ck_evs:
+                if not isinstance(cev, dict):
                     continue
-                em_uid = str(em.get("uid") or "").strip()
-                if not em_uid:
-                    continue
-                em_subj = str(em.get("subject") or "").strip()
-                em_snip = str(em.get("snippet") or "").strip()
-                em_hay = f"{em_subj} {em_snip}".lower()
-                is_actionable = bool(
-                    em.get("action_required")
-                    or int(em.get("steward_score") or 0) >= 65
-                    or any(k in em_hay for k in ("please review", "action required", "deadline", "sign", "approve", "by friday", "due "))
+                kind = str(cev.get("kind") or "").strip().lower()
+                c_pid = str(cev.get("pid") or "").strip()
+                c_name = str(cev.get("cockpit_name") or cev.get("cockpitName") or "").strip()
+                c_title = str(cev.get("title") or "").strip()
+                c_sid = str(cev.get("step_id") or "").strip()
+                c_did = str(cev.get("deliverable_id") or c_sid or c_title).strip()
+                if kind in ("step_completed", "deliverable_final", "final"):
+                    for t in tiles:
+                        if t.get("archived") or t.get("done"):
+                            continue
+                        t_match = (
+                            (c_pid and str(t.get("cockpitPid") or "") == c_pid)
+                            or (c_name and c_name.lower() in str(t.get("cockpitName") or "").lower())
+                            or (str(cev.get("tile_id") or "") and str(t.get("id") or "") == str(cev.get("tile_id")))
+                        )
+                        for s in (t.get("steps") or []):
+                            if not isinstance(s, dict) or s.get("done"):
+                                continue
+                            s_txt_low = str(s.get("text") or "").lower()
+                            ck_it = s.get("cockpitItem") if isinstance(s.get("cockpitItem"), dict) else {}
+                            s_match = (
+                                (c_sid and (str(s.get("id") or "") == c_sid or str(s.get("cockpit_step_id") or "") == c_sid))
+                                or (c_did and str(s.get("deliverable_id") or "") == c_did)
+                                or (t_match and c_title and (c_title.lower() in s_txt_low or c_title.lower() in str(ck_it.get("itemLabel") or "").lower()))
+                            )
+                            if s_match:
+                                _auto_check_step(
+                                    t,
+                                    s,
+                                    source="cockpit_final",
+                                    reason=f"Cockpit completed: {c_title or c_sid or c_name}",
+                                )
+                elif kind in ("deliverable_for_review", "for_review", "p1_milestone", "milestone"):
+                    matched_tile = next(
+                        (
+                            t for t in tiles
+                            if not t.get("archived")
+                            and not t.get("done")
+                            and (
+                                (c_pid and str(t.get("cockpitPid") or "") == c_pid)
+                                or (c_name and c_name.lower() in str(t.get("cockpitName") or "").lower())
+                                or (str(cev.get("tile_id") or "") and str(t.get("id") or "") == str(cev.get("tile_id")))
+                            )
+                        ),
+                        None,
+                    )
+                    tile_prio = (
+                        _normalize_priority_number(matched_tile.get("priority"), default=2)
+                        if isinstance(matched_tile, dict)
+                        else 2
+                    )
+                    ev_prio = _normalize_priority_number(
+                        cev.get("priority") if "priority" in cev else tile_prio,
+                        default=2,
+                    )
+                    has_active_effort = bool(
+                        (
+                            isinstance(matched_tile, dict)
+                            and not matched_tile.get("archived")
+                            and not matched_tile.get("done")
+                            and tile_prio == 1
+                        )
+                        or cev.get("active_effort") is True
+                    )
+                    is_active_p1 = bool(ev_prio == 1 and has_active_effort)
+                    if is_live_reconcile and not is_active_p1:
+                        continue
+                    sk_rev = f"cockpit-review:{c_pid or c_name}:{c_did}"
+                    if matched_tile is not None:
+                        _queue_proposal(sk_rev, {
+                            "proposal_op": "add_step",
+                            "tile_id": str(matched_tile.get("id") or ""),
+                            "title": f"Review deliverable: {c_title} ({matched_tile.get('title')})",
+                            "step_text": f"Review & accept deliverable '{c_title}' in {c_name or matched_tile.get('cockpitName') or 'AI Cockpit'}",
+                            "priority": 1,
+                            "source": "active_p1_milestone" if is_live_reconcile else "cockpit_for_review",
+                            "is_active_p1_milestone": is_active_p1,
+                            "reason": f"Deliverable '{c_title}' entered for_review",
+                        })
+                    else:
+                        _queue_proposal(sk_rev, {
+                            "proposal_op": "add_tile",
+                            "title": f"Review deliverable: {c_title}",
+                            "step_text": f"Review & accept deliverable '{c_title}'",
+                            "priority": 1,
+                            "cockpitName": c_name,
+                            "source": "active_p1_milestone" if is_live_reconcile else "cockpit_for_review",
+                            "is_active_p1_milestone": is_active_p1,
+                            "reason": f"Deliverable '{c_title}' entered for_review",
+                        })
+
+            # 2. Source 2 — Outbound sent replies / Speed Racer approvals
+            outbound_candidates: list[dict] = []
+            if isinstance(sent_event, dict):
+                outbound_candidates.append(sent_event)
+            for se in (sent_emails or []):
+                if isinstance(se, dict):
+                    outbound_candidates.append(se)
+
+            sent_completed_tile_ids: set[str] = set()
+            sent_watchlist_matches: list[tuple[str, str, set[str]]] = []
+            for s_ev in outbound_candidates:
+                s_uid = str(s_ev.get("uid") or "").strip()
+                s_sr_id = str(s_ev.get("sr_id") or "").strip()
+                s_subj = _norm_email_subject(str(s_ev.get("subject") or ""))
+                hdr_parts = [
+                    str(s_ev.get("to") or ""),
+                    str(s_ev.get("cc") or ""),
+                    str(s_ev.get("bcc") or ""),
+                    str(s_ev.get("counterparty") or ""),
+                ]
+                extra_recips = s_ev.get("recipient_emails")
+                if isinstance(extra_recips, list):
+                    hdr_parts.extend(str(x) for x in extra_recips if x)
+                elif extra_recips:
+                    hdr_parts.append(str(extra_recips))
+                parsed_recips = _parse_recipient_list(
+                    ", ".join(p for p in hdr_parts if p.strip()),
+                    strict=False,
                 )
-                if not is_actionable:
+                s_recips = {r["email"].lower() for r in parsed_recips if r.get("email")}
+                s_names: set[str] = set()
+                for r in parsed_recips:
+                    nm = str(r.get("name") or "").lower().strip()
+                    if len(nm) >= 3:
+                        s_names.add(nm)
+                        for tok in re.findall(r"[a-z]{5,}", nm):
+                            if tok not in ("professor", "doctor", "committee", "office", "department", "university"):
+                                s_names.add(tok)
+                sent_watchlist_matches.append((s_uid, s_subj, s_recips | s_names))
+                for t in tiles:
+                    if t.get("archived") or t.get("done"):
+                        continue
+                    t_title_low = str(t.get("title") or "").lower().strip()
+                    t_notes_low = str(t.get("brainstormNotes") or "").lower()
+                    for s in (t.get("steps") or []):
+                        if not isinstance(s, dict) or s.get("done"):
+                            continue
+                        st_uid = str(s.get("email_uid") or "").strip()
+                        st_txt = str(s.get("text") or "").lower()
+                        combined_st = f"{st_txt} {t_title_low} {t_notes_low}"
+                        is_email_step = bool(st_uid) or any(
+                            w in f"{st_txt} {t_title_low}"
+                            for w in ("reply", "respond", "email", "send", "answer", "follow up", "follow-up")
+                        )
+                        if not is_email_step:
+                            continue
+                        matched_by_uid = bool(
+                            (s_uid and st_uid and s_uid == st_uid)
+                            or (s_sr_id and st_uid and s_sr_id == st_uid)
+                        )
+                        matched_by_subj = bool(s_subj and len(s_subj) >= 5 and s_subj in _norm_email_subject(combined_st))
+                        matched_by_rcpt = bool(
+                            (s_recips and any(em in combined_st or em.split("@", 1)[0] in combined_st for em in s_recips))
+                            or (s_names and any(nm in combined_st for nm in s_names))
+                        )
+                        if matched_by_uid or matched_by_subj or matched_by_rcpt:
+                            _auto_check_step(
+                                t,
+                                s,
+                                source="sent_email",
+                                reason=f"Sent reply: {s_ev.get('subject') or s_ev.get('to')}",
+                            )
+                            sent_completed_tile_ids.add(str(t.get("id") or ""))
+
+            for t in tiles:
+                if t.get("archived"):
                     continue
-                _queue_proposal(f"prime-email:{em_uid}", {
-                    "proposal_op": "add_tile",
-                    "title": f"Follow up: {em_subj[:72]}",
-                    "step_text": f"Respond / act on Prime email from {em.get('from') or 'Sender'}: {em_subj}",
-                    "email_uid": em_uid,
-                    "priority": 1 if int(em.get("steward_score") or 0) >= 80 else 2,
-                    "category": "Business",
-                    "source": "prime_inbox",
-                    "reason": f"Actionable Prime email from {em.get('from') or 'Sender'}",
-                })
+                t_steps = [s for s in (t.get("steps") or []) if isinstance(s, dict)]
+                if t_steps and all(s.get("done") for s in t_steps):
+                    t_id_s = str(t.get("id") or "")
+                    t_title_low = str(t.get("title") or "").lower().strip()
+                    if t_id_s in sent_completed_tile_ids and t_title_low.startswith(("send ", "reply ", "email ", "respond ")):
+                        t["done"] = True
+                        t["archived"] = True
+                        t["completed_at"] = now_iso
+                        mutated = True
+                    elif not is_live_reconcile:
+                        _queue_proposal(f"tile-all-steps-done:{t.get('id')}", {
+                            "proposal_op": "archive_tile",
+                            "tile_id": t_id_s,
+                            "title": f"Archive completed effort: {t.get('title')}",
+                            "priority": _normalize_priority_number(t.get("priority"), default=3),
+                            "source": "cockpit_all_steps_done",
+                            "reason": f"All {len(t_steps)} step(s) completed on '{t.get('title')}'",
+                        })
+
+            # Mark matching open Watchlist items done when an outbound reply matches
+            if sent_watchlist_matches:
+                try:
+                    wl_store_p = _watchlist_path()
+                    wl_store_lock = _watchlist_lock_path()
+                    if wl_store_p.exists():
+                        with paths.cross_process_lock(wl_store_lock, timeout_sec=STORE_LOCK_TIMEOUT_SEC):
+                            wl_doc = _read_watchlist_unlocked(wl_store_p)
+                            wl_changed = False
+                            for w_it in (wl_doc.get("items") or []):
+                                if not isinstance(w_it, dict) or str(w_it.get("status") or "open").lower() == "done":
+                                    continue
+                                w_uid = str(w_it.get("email_uid") or w_it.get("uid") or "").strip()
+                                w_subj = _norm_email_subject(str(w_it.get("title") or ""))
+                                for s_uid, s_subj, s_recips in sent_watchlist_matches:
+                                    if (
+                                        (s_uid and w_uid and s_uid == w_uid)
+                                        or (s_subj and w_subj and len(s_subj) >= 5 and (s_subj == w_subj or s_subj in w_subj or w_subj in s_subj))
+                                        or (s_recips and any(em in str(w_it.get("notes") or "").lower() for em in s_recips))
+                                    ):
+                                        w_it["status"] = "done"
+                                        w_it["completed_at"] = now_iso
+                                        wl_changed = True
+                                        break
+                            if wl_changed:
+                                wl_doc["updated_at"] = now_iso
+                                paths.atomic_write_json(wl_store_p, wl_doc, lock_path=wl_store_lock, timeout_sec=STORE_LOCK_TIMEOUT_SEC)
+                except Exception:
+                    pass
+
+            # 3. Source 3 — Inbound `Prime` action emails (`steward_dispatch` already queued above)
+            if not is_live_reconcile:
+                for em in (important_emails or []):
+                    if not isinstance(em, dict) or em.get("acted_upon") or em.get("is_spam"):
+                        continue
+                    em_uid = str(em.get("uid") or "").strip()
+                    if not em_uid:
+                        continue
+                    em_subj = str(em.get("subject") or "").strip()
+                    em_snip = str(em.get("snippet") or "").strip()
+                    em_hay = f"{em_subj} {em_snip}".lower()
+                    is_actionable = bool(
+                        em.get("action_required")
+                        or int(em.get("steward_score") or 0) >= 65
+                        or any(k in em_hay for k in ("please review", "action required", "deadline", "sign", "approve", "by friday", "due "))
+                    )
+                    if not is_actionable:
+                        continue
+                    _queue_proposal(f"prime-email:{em_uid}", {
+                        "proposal_op": "add_tile",
+                        "title": f"Follow up: {em_subj[:72]}",
+                        "step_text": f"Respond / act on Prime email from {em.get('from') or 'Sender'}: {em_subj}",
+                        "email_uid": em_uid,
+                        "priority": 1 if int(em.get("steward_score") or 0) >= 80 else 2,
+                        "category": "Business",
+                        "source": "prime_inbox",
+                        "reason": f"Actionable Prime email from {em.get('from') or 'Sender'}",
+                    })
 
             # 4. Source 4 — Watchlist deadlines crossing `7d`, `48h`, and `24h` windows
             if watchlist_items is None:
@@ -11806,7 +14556,7 @@ def reconcile_working_list_activity(
                     if isinstance(x, dict) and str(x.get("status") or "open").lower() != "done"
                 ]
 
-            for w_it in wl_open_list:
+            for w_it in (wl_open_list if not is_live_reconcile else []):
                 due_raw = str(w_it.get("due") or "").strip()
                 if not due_raw:
                     continue
@@ -11873,15 +14623,81 @@ def reconcile_working_list_activity(
                         "reason": f"Watchlist deadline crossing {win_lbl} window (due {due_raw[:10]})",
                     })
 
+            # Route proposal expiry through the single pure `prune_stale_auto_proposals` helper
+            _open_wl_ids = {
+                str(x.get("id") or x.get("uid") or x.get("source_key") or "").strip()
+                for x in wl_open_list
+                if isinstance(x, dict)
+            }
+            _all_wl_done_ids: set[str] = set()
+            try:
+                if watchlist_items is not None:
+                    _raw_wl_all = watchlist_items
+                elif _watchlist_path().exists():
+                    _raw_wl_all = (_read_watchlist_unlocked(_watchlist_path()).get("items") or [])
+                else:
+                    _raw_wl_all = []
+                for _wx in _raw_wl_all:
+                    if isinstance(_wx, dict) and str(_wx.get("status") or "open").lower() == "done":
+                        _wid = str(_wx.get("id") or _wx.get("uid") or _wx.get("source_key") or "").strip()
+                        if _wid and _wid not in _open_wl_ids:
+                            _all_wl_done_ids.add(_wid)
+            except Exception:
+                pass
             state["tiles"] = tiles
             state["proposals"] = proposals[:MAX_WORKING_LIST_PROPOSALS]
             state["dismissed_proposal_keys"] = sorted(dismissed_keys)
             state["accepted_proposal_keys"] = sorted(accepted_keys)
+            pruned_state, post_pruned_keys = prune_stale_auto_proposals(
+                state,
+                today=today_d,
+                acted_email_uids=_acted_exp - _unacted_exp,
+                spam_email_uids=_spam_exp,
+                done_watchlist_ids=_all_wl_done_ids,
+                prune_noisy_sources=is_live_reconcile,
+            )
+            if post_pruned_keys:
+                mutated = True
+            final_proposals = list(pruned_state["proposals"])
+            final_dismissed = set(pruned_state["dismissed_proposal_keys"])
+            if is_live_reconcile:
+                non_explicit_indices = [
+                    idx_p for idx_p, p_item in enumerate(final_proposals)
+                    if not _is_explicit_propose_entry(p_item)
+                ]
+                if len(non_explicit_indices) > MAX_LIVE_RECONCILE_PROPOSALS:
+                    ranked_non_explicit = sorted(
+                        non_explicit_indices,
+                        key=lambda idx_p: (0 if _is_steward_dispatch_entry(final_proposals[idx_p]) else 1, idx_p),
+                    )
+                    keep_non_explicit = set(ranked_non_explicit[:MAX_LIVE_RECONCILE_PROPOSALS])
+                    trimmed_proposals: list[dict] = []
+                    for idx_p, p_item in enumerate(final_proposals):
+                        if _is_explicit_propose_entry(p_item) or idx_p in keep_non_explicit:
+                            trimmed_proposals.append(p_item)
+                        else:
+                            sk_trim = str(p_item.get("source_key") or "").strip()
+                            if sk_trim:
+                                final_dismissed.add(sk_trim)
+                            if p_item in added_proposals:
+                                added_proposals.remove(p_item)
+                            mutated = True
+                    final_proposals = trimmed_proposals
+            prev_mode = str(state.get("last_reconcile_mode") or "")
+            target_mode = "live" if is_live_reconcile else "explicit"
+            if prev_mode != target_mode:
+                state["last_reconcile_mode"] = target_mode
+                mutated = True
+            state["proposals"] = final_proposals[:MAX_WORKING_LIST_PROPOSALS]
+            state["dismissed_proposal_keys"] = sorted(final_dismissed)
+            state["accepted_proposal_keys"] = sorted(set(pruned_state["accepted_proposal_keys"]))
             state["auto_checked_log"] = auto_log[-50:]
             state["auto_checked"] = list(state["auto_checked_log"])
-            _enrich_working_list_state(state, watchlist_items=wl_open_list, today=today_d)
+            _enrich_working_list_state(state, live_cats_pre, watchlist_items=wl_open_list, today=today_d)
             if mutated:
                 paths.atomic_write_json(wl_p, state, lock_path=lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC)
+                _WORKING_LIST_SPINE_CACHE.clear()
+                _invalidate_cached_json_file(wl_p)
 
             return {
                 "ok": True,
@@ -11909,488 +14725,636 @@ def mutate_working_list_spine(op_or_body, extra: dict | None = None) -> dict:
     wl_p = _working_list_path()
     lock_p = _working_list_lock_path()
     try:
-        with paths.cross_process_lock(lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC):
-            state = _read_working_list_unlocked(wl_p)
-            _enrich_working_list_state(state)
-            tiles = [t for t in (state.get("tiles") or []) if isinstance(t, dict)]
-            proposals = [p for p in (state.get("proposals") or []) if isinstance(p, dict)]
-            dismissed_keys = list(state.get("dismissed_proposal_keys") or [])
-            accepted_keys = list(state.get("accepted_proposal_keys") or [])
-            auto_log = [a for a in (state.get("auto_checked_log") or []) if isinstance(a, dict)]
+        with paths.WRITE_LOCK:
+            with paths.cross_process_lock(lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC):
+                state = _read_working_list_unlocked(wl_p)
+                if len(state.get("proposals") or []) >= MAX_WORKING_LIST_PROPOSALS:
+                    state, _pruned_mut = _read_and_prune_working_list_locked(wl_p, lock_p)
+                _enrich_working_list_state(state)
+                tiles = [t for t in (state.get("tiles") or []) if isinstance(t, dict)]
+                proposals = [
+                    dict(p, status="pending")
+                    for p in (state.get("proposals") or [])
+                    if isinstance(p, dict) and _is_pending_proposal(p)
+                ]
+                dismissed_keys = list(state.get("dismissed_proposal_keys") or [])
+                accepted_keys = list(state.get("accepted_proposal_keys") or [])
+                auto_log = [a for a in (state.get("auto_checked_log") or []) if isinstance(a, dict)]
 
-            op = str(body.get("wl_op") or body.get("op") or body.get("sub_action") or "").strip().lower()
-            tile_id = str(body.get("tile_id") or body.get("id") or "").strip()
-            step_id = str(body.get("step_id") or "").strip()
-            step_idx_raw = body.get("step_idx")
-            step_idx = int(step_idx_raw) if isinstance(step_idx_raw, int) or (isinstance(step_idx_raw, str) and step_idx_raw.isdigit()) else None
+                op = str(body.get("wl_op") or body.get("op") or body.get("sub_action") or "").strip().lower()
+                tile_id = str(body.get("tile_id") or body.get("id") or "").strip()
+                step_id = str(body.get("step_id") or "").strip()
+                step_idx_raw = body.get("step_idx")
+                step_idx = int(step_idx_raw) if isinstance(step_idx_raw, int) or (isinstance(step_idx_raw, str) and step_idx_raw.isdigit()) else None
 
-            if op in ("", "list", "get"):
-                return {
-                    "ok": True,
-                    "status_code": 200,
-                    "state": state.get("state", "populated"),
-                    "message": state.get("message", ""),
-                    "working_list": state,
-                    "cos_recommendations": state.get("cos_recommendations") or [],
-                }
-
-            if op in ("list_proposals", "proposals"):
-                return {
-                    "ok": True,
-                    "status_code": 200,
-                    "proposals": proposals,
-                    "count": len(proposals),
-                    "working_list": state,
-                }
-
-            if op in ("propose_change", "list_propose", "propose"):
-                prop_op = str(body.get("proposal_op") or body.get("target_op") or "add_tile").strip().lower()
-                if prop_op not in ("add_tile", "add_step", "reprioritize", "archive_tile"):
-                    return _wave2_failure_dict("dependency-returns-garbage", detail=f"Invalid proposal_op: {prop_op}")
-                title_p = str(body.get("title") or body.get("text") or "").strip()
-                if not title_p:
-                    return _wave2_failure_dict("dependency-returns-garbage", detail="Proposal title is required")
-                src_key = str(body.get("source_key") or f"manual:{prop_op}:{title_p.lower()}").strip()
-                existing_p = next((p for p in proposals if str(p.get("source_key") or "") == src_key), None)
-                if existing_p is not None:
+                if op in ("", "list", "get"):
                     return {
                         "ok": True,
                         "status_code": 200,
-                        "deduplicated": True,
-                        "proposal": existing_p,
+                        "state": state.get("state", "populated"),
+                        "message": state.get("message", ""),
+                        "working_list": state,
+                        "cos_recommendations": state.get("cos_recommendations") or [],
+                    }
+
+                if op in ("list_proposals", "proposals"):
+                    return {
+                        "ok": True,
+                        "status_code": 200,
                         "proposals": proposals,
+                        "count": count_pending_proposals(proposals),
                         "working_list": state,
                     }
-                if len(proposals) >= MAX_WORKING_LIST_PROPOSALS:
-                    return _wave2_failure_dict(
-                        "dependency-returns-garbage",
-                        detail=f"Pending proposals cap ({MAX_WORKING_LIST_PROPOSALS}) reached",
+
+                if op in ("propose_change", "list_propose", "propose"):
+                    prop_op = str(body.get("proposal_op") or body.get("target_op") or "add_tile").strip().lower()
+                    if prop_op not in ("add_tile", "add_step", "reprioritize", "archive_tile"):
+                        return _wave2_failure_dict("dependency-returns-garbage", detail=f"Invalid proposal_op: {prop_op}")
+                    title_p = str(body.get("title") or body.get("text") or "").strip()
+                    if not title_p:
+                        return _wave2_failure_dict("dependency-returns-garbage", detail="Proposal title is required")
+                    src_key = str(body.get("source_key") or f"manual:{prop_op}:{title_p.lower()}").strip()
+                    existing_p = next((p for p in proposals if str(p.get("source_key") or "") == src_key and _is_pending_proposal(p)), None)
+                    if existing_p is not None:
+                        return {
+                            "ok": True,
+                            "status_code": 200,
+                            "deduplicated": True,
+                            "proposal": existing_p,
+                            "proposals": proposals,
+                            "working_list": state,
+                        }
+                    if count_pending_proposals(proposals) >= MAX_WORKING_LIST_PROPOSALS:
+                        return _wave2_failure_dict(
+                            "dependency-returns-garbage",
+                            detail=f"Pending proposals cap ({MAX_WORKING_LIST_PROPOSALS}) reached",
+                        )
+                    p_id = str(body.get("proposal_id") or "").strip() or (
+                        "prop-" + hashlib.sha1(f"{src_key}:{time.time_ns()}".encode("utf-8")).hexdigest()[:10]
                     )
-                p_id = str(body.get("proposal_id") or "").strip() or (
-                    "prop-" + hashlib.sha1(f"{src_key}:{time.time_ns()}".encode("utf-8")).hexdigest()[:10]
-                )
-                new_prop = {
-                    "id": p_id,
-                    "source_key": src_key,
-                    "proposal_op": prop_op,
-                    "kind": prop_op,
-                    "tile_id": str(body.get("tile_id") or ""),
-                    "title": title_p,
-                    "step_text": str(body.get("step_text") or body.get("text") or ""),
-                    "priority": _normalize_priority_number(body.get("priority"), default=2),
-                    "category": str(body.get("category") or "Business"),
-                    "due": str(body.get("due") or "")[:10],
-                    "cockpitName": str(body.get("cockpitName") or ""),
-                    "cockpitUrl": str(body.get("cockpitUrl") or ""),
-                    "source": str(body.get("source") or "steward_cli"),
-                    "reason": str(body.get("reason") or ""),
-                    "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
-                }
-                proposals.append(new_prop)
-                state["proposals"] = proposals
-                _enrich_working_list_state(state)
-                paths.atomic_write_json(wl_p, state, lock_path=lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC)
-                return {
-                    "ok": True,
-                    "status_code": 200,
-                    "deduplicated": False,
-                    "proposal": new_prop,
-                    "proposals": state["proposals"],
-                    "working_list": state,
-                }
+                    new_prop = {
+                        "id": p_id,
+                        "source_key": src_key,
+                        "status": "pending",
+                        "explicit_propose": True,
+                        "proposal_op": prop_op,
+                        "kind": prop_op,
+                        "tile_id": str(body.get("tile_id") or ""),
+                        "title": title_p,
+                        "step_text": str(body.get("step_text") or body.get("text") or ""),
+                        "priority": _normalize_priority_number(body.get("priority"), default=2),
+                        "category": str(body.get("category") or "Business"),
+                        "due": str(body.get("due") or "")[:10],
+                        "cockpitName": str(body.get("cockpitName") or ""),
+                        "cockpitUrl": str(body.get("cockpitUrl") or ""),
+                        "source": str(body.get("source") or "steward_cli"),
+                        "reason": str(body.get("reason") or ""),
+                        "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+                    }
+                    proposals.append(new_prop)
+                    dismissed_keys = [k for k in dismissed_keys if str(k).strip() != src_key]
+                    accepted_keys = [k for k in accepted_keys if str(k).strip() != src_key]
+                    state["proposals"] = proposals
+                    state["dismissed_proposal_keys"] = dismissed_keys
+                    state["accepted_proposal_keys"] = accepted_keys
+                    _enrich_working_list_state(state)
+                    paths.atomic_write_json(wl_p, state, lock_path=lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC)
+                    _WORKING_LIST_SPINE_CACHE.clear()
+                    _invalidate_cached_json_file(wl_p)
+                    return {
+                        "ok": True,
+                        "status_code": 200,
+                        "deduplicated": False,
+                        "proposal": new_prop,
+                        "proposals": state["proposals"],
+                        "working_list": state,
+                    }
 
-            if op in ("accept_proposal", "list_accept"):
-                prop_id = str(body.get("proposal_id") or body.get("id") or "").strip()
-                p_idx = next(
-                    (i for i, p in enumerate(proposals) if str(p.get("id") or "") == prop_id or str(p.get("source_key") or "") == prop_id),
-                    -1,
-                )
-                if p_idx < 0:
-                    return _wave2_failure_dict("dependency-returns-garbage", detail=f"Proposal '{prop_id}' not found")
-                chosen = proposals.pop(p_idx)
-                edits_obj = body.get("edits") if isinstance(body.get("edits"), dict) else body
-                applied_tile = _apply_proposal_to_tiles(tiles, chosen, edits=edits_obj)
-                sk_acc = str(chosen.get("source_key") or "").strip()
-                if sk_acc and sk_acc not in accepted_keys:
-                    accepted_keys.append(sk_acc)
-                state["tiles"] = tiles
-                state["proposals"] = proposals
-                state["accepted_proposal_keys"] = accepted_keys
-                _enrich_working_list_state(state)
-                paths.atomic_write_json(wl_p, state, lock_path=lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC)
-                return {
-                    "ok": True,
-                    "status_code": 200,
-                    "accepted": chosen,
-                    "tile": applied_tile,
-                    "working_list": state,
-                    "cos_recommendations": state.get("cos_recommendations") or [],
-                }
-
-            if op == "accept_all_proposals":
-                accepted_list = list(proposals)
-                for p_item in accepted_list:
-                    _apply_proposal_to_tiles(tiles, p_item)
-                    sk_acc = str(p_item.get("source_key") or "").strip()
+                if op in ("accept_proposal", "list_accept"):
+                    prop_id = str(body.get("proposal_id") or body.get("id") or "").strip()
+                    p_idx = next(
+                        (i for i, p in enumerate(proposals) if str(p.get("id") or "") == prop_id or str(p.get("source_key") or "") == prop_id),
+                        -1,
+                    )
+                    if p_idx < 0:
+                        return _wave2_failure_dict("dependency-returns-garbage", detail=f"Proposal '{prop_id}' not found")
+                    chosen = proposals.pop(p_idx)
+                    edits_obj = body.get("edits") if isinstance(body.get("edits"), dict) else body
+                    applied_tile = _apply_proposal_to_tiles(tiles, chosen, edits=edits_obj)
+                    sk_acc = str(chosen.get("source_key") or "").strip()
                     if sk_acc and sk_acc not in accepted_keys:
                         accepted_keys.append(sk_acc)
-                proposals = []
-                state["tiles"] = tiles
-                state["proposals"] = proposals
-                state["accepted_proposal_keys"] = accepted_keys
-                _enrich_working_list_state(state)
-                paths.atomic_write_json(wl_p, state, lock_path=lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC)
-                return {
-                    "ok": True,
-                    "status_code": 200,
-                    "accepted_count": len(accepted_list),
-                    "working_list": state,
-                    "cos_recommendations": state.get("cos_recommendations") or [],
-                }
+                    state["tiles"] = tiles
+                    state["proposals"] = proposals
+                    state["accepted_proposal_keys"] = accepted_keys
+                    _enrich_working_list_state(state)
+                    paths.atomic_write_json(wl_p, state, lock_path=lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC)
+                    _WORKING_LIST_SPINE_CACHE.clear()
+                    _invalidate_cached_json_file(wl_p)
+                    return {
+                        "ok": True,
+                        "status_code": 200,
+                        "accepted": chosen,
+                        "tile": applied_tile,
+                        "working_list": state,
+                        "cos_recommendations": state.get("cos_recommendations") or [],
+                    }
 
-            if op in ("dismiss_proposal", "list_dismiss"):
-                prop_id = str(body.get("proposal_id") or body.get("id") or "").strip()
-                p_idx = next(
-                    (i for i, p in enumerate(proposals) if str(p.get("id") or "") == prop_id or str(p.get("source_key") or "") == prop_id),
-                    -1,
-                )
-                if p_idx < 0:
-                    return _wave2_failure_dict("dependency-returns-garbage", detail=f"Proposal '{prop_id}' not found")
-                removed_p = proposals.pop(p_idx)
-                sk_dis = str(removed_p.get("source_key") or "").strip()
-                if sk_dis and sk_dis not in dismissed_keys:
-                    dismissed_keys.append(sk_dis)
-                state["proposals"] = proposals
-                state["dismissed_proposal_keys"] = dismissed_keys
-                _enrich_working_list_state(state)
-                paths.atomic_write_json(wl_p, state, lock_path=lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC)
-                return {
-                    "ok": True,
-                    "status_code": 200,
-                    "dismissed": removed_p,
-                    "working_list": state,
-                }
+                if op == "accept_all_proposals":
+                    accepted_list = list(proposals)
+                    for p_item in accepted_list:
+                        _apply_proposal_to_tiles(tiles, p_item)
+                        sk_acc = str(p_item.get("source_key") or "").strip()
+                        if sk_acc and sk_acc not in accepted_keys:
+                            accepted_keys.append(sk_acc)
+                    proposals = []
+                    state["tiles"] = tiles
+                    state["proposals"] = proposals
+                    state["accepted_proposal_keys"] = accepted_keys
+                    _enrich_working_list_state(state)
+                    paths.atomic_write_json(wl_p, state, lock_path=lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC)
+                    _WORKING_LIST_SPINE_CACHE.clear()
+                    _invalidate_cached_json_file(wl_p)
+                    return {
+                        "ok": True,
+                        "status_code": 200,
+                        "accepted_count": len(accepted_list),
+                        "working_list": state,
+                        "cos_recommendations": state.get("cos_recommendations") or [],
+                    }
 
-            if op in ("undo_autocheck", "undo_auto_check"):
-                ac_id = str(body.get("auto_check_id") or body.get("autocheck_id") or body.get("id") or "").strip()
-                ac_idx = next(
-                    (
-                        i for i, a in enumerate(auto_log)
-                        if (ac_id and str(a.get("id") or "") == ac_id)
-                        or (tile_id and step_id and str(a.get("tile_id") or "") == tile_id and str(a.get("step_id") or "") == step_id)
-                    ),
-                    len(auto_log) - 1 if (not ac_id and auto_log) else -1,
-                )
-                if ac_idx < 0:
-                    return _wave2_failure_dict("dependency-returns-garbage", detail="Auto-check entry not found")
-                undone_entry = auto_log.pop(ac_idx)
-                u_tid = str(undone_entry.get("tile_id") or "")
-                u_sid = str(undone_entry.get("step_id") or "")
-                for t in tiles:
-                    if str(t.get("id") or "") == u_tid:
+                if op in ("dismiss_proposal", "list_dismiss"):
+                    prop_id = str(body.get("proposal_id") or body.get("id") or "").strip()
+                    p_idx = next(
+                        (i for i, p in enumerate(proposals) if str(p.get("id") or "") == prop_id or str(p.get("source_key") or "") == prop_id),
+                        -1,
+                    )
+                    if p_idx < 0:
+                        return _wave2_failure_dict("dependency-returns-garbage", detail=f"Proposal '{prop_id}' not found")
+                    removed_p = proposals.pop(p_idx)
+                    sk_dis = str(removed_p.get("source_key") or "").strip()
+                    if sk_dis and sk_dis not in dismissed_keys:
+                        dismissed_keys.append(sk_dis)
+                    state["proposals"] = proposals
+                    state["dismissed_proposal_keys"] = dismissed_keys
+                    _enrich_working_list_state(state)
+                    paths.atomic_write_json(wl_p, state, lock_path=lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC)
+                    _WORKING_LIST_SPINE_CACHE.clear()
+                    _invalidate_cached_json_file(wl_p)
+                    return {
+                        "ok": True,
+                        "status_code": 200,
+                        "dismissed": removed_p,
+                        "working_list": state,
+                    }
+
+                if op in ("confirm_autocheck", "confirm_auto_check", "dismiss_autocheck", "dismiss_auto_check"):
+                    ac_id = str(body.get("auto_check_id") or body.get("autocheck_id") or body.get("id") or "").strip()
+                    want_archive = bool(body.get("archive_tile"))
+                    ac_idx = next(
+                        (
+                            i for i, a in enumerate(auto_log)
+                            if (ac_id and str(a.get("id") or "") == ac_id)
+                            or (tile_id and step_id and str(a.get("tile_id") or "") == tile_id and str(a.get("step_id") or "") == step_id)
+                        ),
+                        -1,
+                    )
+                    confirmed_entry = auto_log.pop(ac_idx) if ac_idx >= 0 else {"id": ac_id, "tile_id": tile_id, "step_id": step_id}
+                    c_tid = str(confirmed_entry.get("tile_id") or tile_id or "")
+                    c_sid = str(confirmed_entry.get("step_id") or step_id or "")
+                    now_done_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+                    for t in tiles:
+                        if str(t.get("id") or "") == c_tid:
+                            t_steps_c = [s for s in (t.get("steps") or []) if isinstance(s, dict)]
+                            for idx_s, s in enumerate(t_steps_c):
+                                if (c_sid and str(s.get("id") or "") == c_sid) or (not c_sid and step_idx is not None and idx_s == step_idx):
+                                    s["done"] = True
+                                    s["auto_check_confirmed"] = True
+                            if want_archive:
+                                t["done"] = True
+                                t["archived"] = True
+                                t["completed_at"] = now_done_utc
+                                for s in t_steps_c:
+                                    s["done"] = True
+                                    s["auto_check_confirmed"] = True
+                                proposals = [
+                                    p for p in proposals
+                                    if str(p.get("source_key") or "") != f"tile-all-steps-done:{c_tid}"
+                                ]
+                                auto_log = [a for a in auto_log if str(a.get("tile_id") or "") != c_tid]
+                    state["tiles"] = tiles
+                    state["proposals"] = proposals
+                    state["auto_checked_log"] = auto_log
+                    state["auto_checked"] = list(auto_log)
+                    _enrich_working_list_state(state)
+                    paths.atomic_write_json(wl_p, state, lock_path=lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC)
+                    _WORKING_LIST_SPINE_CACHE.clear()
+                    _invalidate_cached_json_file(wl_p)
+                    return {
+                        "ok": True,
+                        "status_code": 200,
+                        "confirmed": confirmed_entry,
+                        "archived_tile": want_archive,
+                        "working_list": state,
+                        "cos_recommendations": state.get("cos_recommendations") or [],
+                    }
+
+                if op in ("confirm_all_autochecks", "clear_all_autochecks", "dismiss_all_autochecks"):
+                    confirmed_count = len(auto_log)
+                    target_pairs = {(str(a.get("tile_id") or ""), str(a.get("step_id") or "")) for a in auto_log}
+                    for t in tiles:
+                        tid_cur = str(t.get("id") or "")
                         for s in (t.get("steps") or []):
-                            if isinstance(s, dict) and str(s.get("id") or "") == u_sid:
-                                s["done"] = False
-                                s.pop("auto_checked_at", None)
-                        t["done"] = False
-                        t["archived"] = False
-                state["tiles"] = tiles
-                state["auto_checked_log"] = auto_log
-                state["auto_checked"] = list(auto_log)
-                _enrich_working_list_state(state)
-                paths.atomic_write_json(wl_p, state, lock_path=lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC)
-                return {
-                    "ok": True,
-                    "status_code": 200,
-                    "undone": undone_entry,
-                    "working_list": state,
-                }
+                            if not isinstance(s, dict):
+                                continue
+                            sid_cur = str(s.get("id") or "")
+                            if (tid_cur, sid_cur) in target_pairs or (s.get("done") and s.get("auto_checked_at")):
+                                s["auto_check_confirmed"] = True
+                    state["tiles"] = tiles
+                    state["auto_checked_log"] = []
+                    state["auto_checked"] = []
+                    _enrich_working_list_state(state)
+                    paths.atomic_write_json(wl_p, state, lock_path=lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC)
+                    _WORKING_LIST_SPINE_CACHE.clear()
+                    _invalidate_cached_json_file(wl_p)
+                    return {
+                        "ok": True,
+                        "status_code": 200,
+                        "confirmed_count": confirmed_count,
+                        "working_list": state,
+                        "cos_recommendations": state.get("cos_recommendations") or [],
+                    }
 
-            if op == "steward_populate_cos":
-                for t in tiles:
-                    if t.get("archived") or t.get("done"):
-                        continue
-                    steps_t = [s for s in (t.get("steps") or []) if isinstance(s, dict)]
-                    if not steps_t or all(s.get("done") for s in steps_t):
-                        steps_t.append({
-                            "id": "st-" + hashlib.sha1(f"cos:{t.get('id')}:{time.time_ns()}".encode("utf-8")).hexdigest()[:8],
-                            "text": f"Complete final review & deliverable check for {t.get('title')}",
-                            "done": False,
-                            "cockpitItem": {"cockpitName": str(t.get("cockpitName") or "AI Cockpit"), "itemLabel": "Chief-of-Staff Next Action", "kind": "Wave", "href": str(t.get("cockpitHref") or "/steward/v1")},
-                            "cockpitStatus": "⏳ Pre-staged",
-                            "cockpitUrl": str(t.get("cockpitHref") or "/steward/v1"),
-                            "initiativeItem": None,
-                            "initiativeUrl": "",
-                        })
-                        t["steps"] = steps_t
+                if op in ("undo_autocheck", "undo_auto_check"):
+                    ac_id = str(body.get("auto_check_id") or body.get("autocheck_id") or body.get("id") or "").strip()
+                    ac_idx = next(
+                        (
+                            i for i, a in enumerate(auto_log)
+                            if (ac_id and str(a.get("id") or "") == ac_id)
+                            or (tile_id and step_id and str(a.get("tile_id") or "") == tile_id and str(a.get("step_id") or "") == step_id)
+                        ),
+                        len(auto_log) - 1 if (not ac_id and auto_log) else -1,
+                    )
+                    if ac_idx < 0:
+                        return _wave2_failure_dict("dependency-returns-garbage", detail="Auto-check entry not found")
+                    undone_entry = auto_log.pop(ac_idx)
+                    u_tid = str(undone_entry.get("tile_id") or "")
+                    u_sid = str(undone_entry.get("step_id") or "")
+                    u_sig = f"{undone_entry.get('source') or ''}:{undone_entry.get('reason') or ''}"
+                    for t in tiles:
+                        if str(t.get("id") or "") == u_tid:
+                            for s in (t.get("steps") or []):
+                                if isinstance(s, dict) and str(s.get("id") or "") == u_sid:
+                                    s["done"] = False
+                                    prev_sig = str(s.pop("auto_checked_sig", "") or u_sig).strip()
+                                    s.pop("auto_checked_at", None)
+                                    s.pop("auto_check_confirmed", None)
+                                    if prev_sig and prev_sig != ":":
+                                        sup_list = list(s.get("auto_check_suppressed_reasons") or [])
+                                        if prev_sig not in sup_list:
+                                            sup_list.append(prev_sig)
+                                        s["auto_check_suppressed_reasons"] = sup_list[-20:]
+                            t["done"] = False
+                            t["archived"] = False
+                    proposals = [
+                        p for p in proposals
+                        if str(p.get("source_key") or "") != f"tile-all-steps-done:{u_tid}"
+                    ]
+                    state["tiles"] = tiles
+                    state["proposals"] = proposals
+                    state["auto_checked_log"] = auto_log
+                    state["auto_checked"] = list(auto_log)
+                    _enrich_working_list_state(state)
+                    paths.atomic_write_json(wl_p, state, lock_path=lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC)
+                    _WORKING_LIST_SPINE_CACHE.clear()
+                    _invalidate_cached_json_file(wl_p)
+                    return {
+                        "ok": True,
+                        "status_code": 200,
+                        "undone": undone_entry,
+                        "working_list": state,
+                        "cos_recommendations": state.get("cos_recommendations") or [],
+                    }
+
+                if op == "steward_populate_cos":
+                    for t in tiles:
+                        if t.get("archived") or t.get("done"):
+                            continue
+                        steps_t = [s for s in (t.get("steps") or []) if isinstance(s, dict)]
+                        if not steps_t or all(s.get("done") for s in steps_t):
+                            steps_t.append({
+                                "id": "st-" + hashlib.sha1(f"cos:{t.get('id')}:{time.time_ns()}".encode("utf-8")).hexdigest()[:8],
+                                "text": f"Complete final review & deliverable check for {t.get('title')}",
+                                "done": False,
+                                "cockpitItem": {"cockpitName": str(t.get("cockpitName") or "AI Cockpit"), "itemLabel": "Chief-of-Staff Next Action", "kind": "Wave", "href": str(t.get("cockpitHref") or "/steward/v1")},
+                                "cockpitStatus": "⏳ Pre-staged",
+                                "cockpitUrl": str(t.get("cockpitHref") or "/steward/v1"),
+                                "initiativeItem": None,
+                                "initiativeUrl": "",
+                            })
+                            t["steps"] = steps_t
+                    state["tiles"] = tiles
+                    _enrich_working_list_state(state)
+                    paths.atomic_write_json(wl_p, state, lock_path=lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC)
+                    _WORKING_LIST_SPINE_CACHE.clear()
+                    _invalidate_cached_json_file(wl_p)
+                    return {
+                        "ok": True,
+                        "status_code": 200,
+                        "op": op,
+                        "working_list": state,
+                        "cos_recommendations": state.get("cos_recommendations") or [],
+                    }
+
+                if op == "replace_all" and isinstance(body.get("tiles"), list):
+                    state["tiles"] = body["tiles"]
+                    _enrich_working_list_state(state)
+                    paths.atomic_write_json(wl_p, state, lock_path=lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC)
+                    _WORKING_LIST_SPINE_CACHE.clear()
+                    _invalidate_cached_json_file(wl_p)
+                    return {"ok": True, "status_code": 200, "working_list": state, "cos_recommendations": state.get("cos_recommendations") or []}
+
+                if op == "add_tile":
+                    title = str(body.get("title") or body.get("text") or "").strip()
+                    if not title:
+                        return _wave2_failure_dict("dependency-returns-garbage", detail="Tile title required", working_list=state)
+                    cat = str(body.get("category") or "Business").strip()
+                    raw_prio = body.get("priority") if "priority" in body else body.get("prio")
+                    p_num = 1 if body.get("insert_top") and raw_prio is None else _normalize_priority_number(raw_prio, default=2)
+                    new_id = "tile-" + hashlib.sha1(f"{title}:{time.time_ns()}".encode("utf-8")).hexdigest()[:8]
+                    new_tile = {
+                        "id": new_id,
+                        "title": title,
+                        "category": cat,
+                        "priority": p_num,
+                        "prio": str(p_num),
+                        "due": str(body.get("due") or "")[:10],
+                        "cockpitName": str(body.get("cockpitName") or f"{title[:22]} Cockpit"),
+                        "cockpitUrl": str(body.get("cockpitUrl") or "/steward/v1"),
+                        "cockpitHref": str(body.get("cockpitHref") or body.get("cockpitUrl") or "/steward/v1"),
+                        "goalId": str(body.get("goalId") or ""),
+                        "goalName": str(body.get("goalName") or ""),
+                        "skills": list(body.get("skills") or ["researchPrime", "Gandalf"]),
+                        "expanded": False,
+                        "done": False,
+                        "archived": False,
+                        "brainstormNotes": str(body.get("brainstormNotes") or "• Brainstorm notes & steps here..."),
+                        "steps": list(body.get("steps") or [
+                            {
+                                "id": "st-" + hashlib.sha1(f"s1:{new_id}".encode("utf-8")).hexdigest()[:6],
+                                "text": "Scope initial steps & connect to AI Cockpit + Initiative",
+                                "done": False,
+                                "cockpitItem": {"cockpitName": f"{title[:18]} Cockpit", "itemLabel": "Wave 1: Initial Scope", "kind": "Wave", "href": "/steward/v1"},
+                                "cockpitStatus": "⏳ Ready",
+                                "cockpitUrl": "/steward/v1",
+                                "initiativeItem": {"initiativeName": f"Initiative: {title[:24]}", "role": "Initiative", "href": "/?view=cave"},
+                                "initiativeUrl": "/?view=cave",
+                            }
+                        ]),
+                    }
+                    if body.get("insert_top", True):
+                        tiles.insert(0, new_tile)
+                    else:
+                        tiles.append(new_tile)
+                    state["tiles"] = tiles
+                    _enrich_working_list_state(state)
+                    paths.atomic_write_json(wl_p, state, lock_path=lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC)
+                    _WORKING_LIST_SPINE_CACHE.clear()
+                    _invalidate_cached_json_file(wl_p)
+                    return {"ok": True, "status_code": 200, "tile": new_tile, "working_list": state, "cos_recommendations": state.get("cos_recommendations") or []}
+
+                t_idx = next((i for i, t in enumerate(tiles) if t.get("id") == tile_id), -1)
+                if t_idx < 0:
+                    return _wave2_failure_dict("dependency-returns-garbage", detail=f"Working list tile '{tile_id}' not found", working_list=state)
+
+                tile = tiles[t_idx]
+                steps = [s for s in (tile.get("steps") or []) if isinstance(s, dict)]
+
+                def _resolve_step_index() -> int:
+                    if step_idx is not None and 0 <= step_idx < len(steps):
+                        return step_idx
+                    if step_id:
+                        return next((i for i, s in enumerate(steps) if s.get("id") == step_id), -1)
+                    return -1
+
+                if op == "move_tile":
+                    dir_str = str(body.get("dir") or "").strip().lower()
+                    if dir_str in ("up", "down"):
+                        delta = -1 if dir_str == "up" else 1
+                    else:
+                        delta = int(body.get("delta") or -1)
+                    target_idx = max(0, min(len(tiles) - 1, t_idx + delta))
+                    if target_idx != t_idx and not tiles[target_idx].get("archived"):
+                        neighbor_prio = _normalize_priority_number(tiles[target_idx].get("priority") or tiles[target_idx].get("prio"), default=2)
+                        tile["priority"] = neighbor_prio
+                        tile["prio"] = str(neighbor_prio)
+                    item = tiles.pop(t_idx)
+                    tiles.insert(target_idx, item)
+                elif op in ("toggle_tile_done", "complete_tile"):
+                    want_done = bool(body.get("done")) if "done" in body else (not bool(tile.get("done")))
+                    tile["done"] = want_done
+                    if want_done:
+                        tile["archived"] = True
+                        tile["completed_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+                        for s in steps:
+                            s["done"] = True
+                    else:
+                        tile["archived"] = False
+                elif op in ("toggle_expand", "toggle_tile_expanded"):
+                    # Expansion state is client-ephemeral (`_wlExpandedIds`); keep persisted state False
+                    tile["expanded"] = False
+                elif op in ("set_priority", "cycle_prio"):
+                    cur_p = _normalize_priority_number(tile.get("priority") or tile.get("prio"), default=2)
+                    if "priority" in body or "prio" in body:
+                        new_p = _normalize_priority_number(body.get("priority") if "priority" in body else body.get("prio"), default=cur_p)
+                    else:
+                        new_p = (cur_p % 5) + 1
+                    tile["priority"] = new_p
+                    tile["prio"] = str(new_p)
+                elif op == "archive_tile":
+                    if tile.get("archived"):
+                        tile["archived"] = False
+                        tile["done"] = False
+                    else:
+                        tile["done"] = True
+                        tile["archived"] = True
+                        tile["completed_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+                        for s in steps:
+                            s["done"] = True
+                elif op == "restore_tile":
+                    tile["archived"] = False
+                    tile["done"] = False
+                    for s in steps:
+                        if body.get("reset_steps"):
+                            s["done"] = False
+                elif op in ("update_notes", "save_brainstorm"):
+                    tile["brainstormNotes"] = str(body.get("notes") if "notes" in body else (body.get("brainstormNotes") or ""))
+                elif op == "prestage_skill":
+                    sk_name = str(body.get("skill") or "").strip()
+                    if not sk_name or sk_name not in ORANGES_SKILLS:
+                        return _wave2_failure_dict("dependency-returns-garbage", detail=f"Invalid Parable-of-the-Oranges skill: {sk_name}")
+                    cur_skills = [str(x) for x in (tile.get("skills") or []) if str(x).strip()]
+                    if sk_name in cur_skills:
+                        cur_skills.remove(sk_name)
+                    cur_skills.insert(0, sk_name)
+                    tile["skills"] = cur_skills
+                    tile["prestagedSkill"] = sk_name
+                    tile["prestagedAt"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+                elif op == "add_step":
+                    txt = str(body.get("text") or body.get("title") or "").strip()
+                    if not txt:
+                        return _wave2_failure_dict("dependency-returns-garbage", detail="Step text required")
+                    ck_val = body.get("cockpitItem")
+                    in_val = body.get("initiativeItem")
+                    steps.append({
+                        "id": "st-" + hashlib.sha1(f"{txt}:{time.time_ns()}".encode("utf-8")).hexdigest()[:8],
+                        "text": txt,
+                        "done": False,
+                        "email_uid": str(body.get("email_uid") or ""),
+                        "cockpitItem": ck_val,
+                        "cockpitStatus": str(body.get("cockpitStatus") or ("✅ Linked" if ck_val else "")),
+                        "cockpitUrl": str(body.get("cockpitUrl") or (ck_val.get("href") if isinstance(ck_val, dict) else "/steward/v1") if ck_val else ""),
+                        "initiativeItem": in_val,
+                        "initiativeUrl": str(body.get("initiativeUrl") or (in_val.get("href") if isinstance(in_val, dict) else "/?view=cave") if in_val else ""),
+                    })
+                    tile["steps"] = steps
+                    tile["done"] = False
+                    tile["archived"] = False
+                    tile["expanded"] = False
+                elif op in ("toggle_step", "toggle_step_done"):
+                    si = _resolve_step_index()
+                    if 0 <= si < len(steps):
+                        new_done_st = bool(body.get("done")) if "done" in body else (not bool(steps[si].get("done")))
+                        toggled_sid = str(steps[si].get("id") or "")
+                        matched_ac = next(
+                            (
+                                a for a in auto_log
+                                if str(a.get("tile_id") or "") == tile_id and str(a.get("step_id") or "") == toggled_sid
+                            ),
+                            None,
+                        )
+                        prev_sig = str(
+                            steps[si].pop("auto_checked_sig", "")
+                            or (f"{matched_ac.get('source') or ''}:{matched_ac.get('reason') or ''}" if isinstance(matched_ac, dict) else "")
+                        ).strip()
+                        steps[si]["done"] = new_done_st
+                        steps[si].pop("auto_checked_at", None)
+                        steps[si].pop("auto_check_confirmed", None)
+                        if not new_done_st and prev_sig and prev_sig != ":":
+                            sup_list = list(steps[si].get("auto_check_suppressed_reasons") or [])
+                            if prev_sig not in sup_list:
+                                sup_list.append(prev_sig)
+                            steps[si]["auto_check_suppressed_reasons"] = sup_list[-20:]
+                        elif new_done_st:
+                            steps[si].pop("auto_check_suppressed_reasons", None)
+                        state["auto_checked_log"] = [
+                            a for a in auto_log
+                            if not (str(a.get("tile_id") or "") == tile_id and str(a.get("step_id") or "") == toggled_sid)
+                        ]
+                    tile["steps"] = steps
+                    all_done = bool(steps and all(s.get("done") for s in steps))
+                    tile["done"] = all_done
+                    if all_done and body.get("auto_archive"):
+                        tile["archived"] = True
+                        tile["completed_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+                elif op == "delete_step":
+                    si = _resolve_step_index()
+                    if 0 <= si < len(steps):
+                        steps.pop(si)
+                    tile["steps"] = steps
+                elif op in ("connect_step", "save_step_connections"):
+                    si = _resolve_step_index()
+                    if 0 <= si < len(steps):
+                        ck_val = body.get("cockpitItem")
+                        in_val = body.get("initiativeItem")
+                        steps[si]["cockpitItem"] = ck_val
+                        steps[si]["cockpitStatus"] = str(body.get("cockpitStatus") or ("✅ Linked" if ck_val else ""))
+                        steps[si]["cockpitUrl"] = str(body.get("cockpitUrl") or (ck_val.get("href") if isinstance(ck_val, dict) else "/steward/v1") if ck_val else "")
+                        steps[si]["initiativeItem"] = in_val
+                        steps[si]["initiativeUrl"] = str(body.get("initiativeUrl") or (in_val.get("href") if isinstance(in_val, dict) else "/?view=cave") if in_val else "")
+                    tile["steps"] = steps
+                elif op == "set_category":
+                    new_cat = str(body.get("category") or "Business").strip()
+                    if new_cat:
+                        tile["category"] = new_cat
+                elif op == "assign_tile_cockpit":
+                    ck_name = str(body.get("cockpitName") or "").strip()
+                    ck_href = str(body.get("cockpitHref") or body.get("cockpitUrl") or "/steward/v1").strip()
+                    ck_seat = str(body.get("cockpitSeat") or "active").strip()
+                    ck_pid = str(body.get("cockpitPid") or "").strip()
+                    ck_dir = str(body.get("cockpitDir") or "").strip()
+                    tile["cockpitName"] = ck_name
+                    tile["cockpitHref"] = ck_href if ck_name else ""
+                    tile["cockpitUrl"] = ck_href if ck_name else ""
+                    tile["cockpitSeat"] = ck_seat if ck_name else ""
+                    tile["cockpitPid"] = ck_pid if ck_name else ""
+                    tile["cockpitDir"] = ck_dir if ck_name else ""
+                elif op == "create_and_assign_cockpit":
+                    ck_name = str(body.get("cockpitName") or body.get("name") or tile.get("title") or "New AI Cockpit").strip()
+                    folder_group = str(body.get("projectFolder") or body.get("group") or tile.get("category") or "Business").strip()
+                    parent_root = Path(paths.data_dir()).resolve().parent
+                    safe_folder_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "-", ck_name).strip(" .-") or "New-Cockpit"
+                    target_folder = parent_root / safe_folder_name
+                    new_pid = ""
+                    try:
+                        target_folder.mkdir(parents=True, exist_ok=True)
+                        import rnd_registry as _rnd
+                        entry = _rnd.register_project(ck_name, str(target_folder), priority=int(tile.get("priority") or 2))
+                        new_pid = str(entry.get("id") or "")
+                        if new_pid and folder_group:
+                            try:
+                                _rnd.set_group(new_pid, folder_group)
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                    ck_href = f"/steward/v1?pid={new_pid}&dir=" if new_pid else "/steward/v1"
+                    tile["cockpitName"] = ck_name
+                    tile["cockpitHref"] = ck_href
+                    tile["cockpitUrl"] = ck_href
+                    tile["cockpitPid"] = new_pid
+                    tile["cockpitDir"] = ""
+                    tile["cockpitSeat"] = "project"
+                    tile["cockpitFolder"] = str(target_folder)
+                    tile["cockpitGroup"] = folder_group
+                elif op == "assign_tile_goal":
+                    g_name = str(body.get("goalName") or "").strip()
+                    g_role = str(body.get("goalRole") or "Star Chart Goal").strip()
+                    g_href = str(body.get("goalHref") or "/?view=starchart").strip()
+                    g_id = str(body.get("goalId") or "").strip()
+                    tile["goalName"] = g_name
+                    tile["goalRole"] = g_role if g_name else ""
+                    tile["goalHref"] = g_href if g_name else ""
+                    tile["goalId"] = g_id if g_name else ""
+                elif op == "steward_brainstorm_steps":
+                    steps.append({
+                        "id": "st-" + hashlib.sha1(f"bs:{tile_id}:{time.time_ns()}".encode("utf-8")).hexdigest()[:8],
+                        "text": "Verify final deliverable package & sign-off checklist in AI Cockpit",
+                        "done": False,
+                        "cockpitItem": {"cockpitName": str(tile.get("cockpitName") or "AI Cockpit"), "itemLabel": "Final Verification Wave", "kind": "Wave", "href": str(tile.get("cockpitUrl") or "/steward/v1")},
+                        "cockpitStatus": "⏳ Pre-staged",
+                        "cockpitUrl": str(tile.get("cockpitUrl") or "/steward/v1"),
+                        "initiativeItem": {"initiativeName": str(tile.get("goalName") or f"Initiative: {str(tile.get('title') or '').split(':')[0][:32]}"), "role": "Milestone", "href": str(tile.get("goalHref") or "/?view=cave")},
+                        "initiativeUrl": str(tile.get("goalHref") or "/?view=cave"),
+                    })
+                    tile["steps"] = steps
+                    tile["expanded"] = False
+                else:
+                    return _wave2_failure_dict("dependency-returns-garbage", detail=f"Unknown working_list op: {op}")
+
                 state["tiles"] = tiles
                 _enrich_working_list_state(state)
                 paths.atomic_write_json(wl_p, state, lock_path=lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC)
+                _WORKING_LIST_SPINE_CACHE.clear()
+                _invalidate_cached_json_file(wl_p)
                 return {
                     "ok": True,
                     "status_code": 200,
                     "op": op,
+                    "tile": tile,
                     "working_list": state,
                     "cos_recommendations": state.get("cos_recommendations") or [],
                 }
-
-            if op == "replace_all" and isinstance(body.get("tiles"), list):
-                state["tiles"] = body["tiles"]
-                _enrich_working_list_state(state)
-                paths.atomic_write_json(wl_p, state, lock_path=lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC)
-                return {"ok": True, "status_code": 200, "working_list": state, "cos_recommendations": state.get("cos_recommendations") or []}
-
-            if op == "add_tile":
-                title = str(body.get("title") or body.get("text") or "").strip()
-                if not title:
-                    return _wave2_failure_dict("dependency-returns-garbage", detail="Tile title required", working_list=state)
-                cat = str(body.get("category") or "Business").strip()
-                raw_prio = body.get("priority") if "priority" in body else body.get("prio")
-                p_num = 1 if body.get("insert_top") and raw_prio is None else _normalize_priority_number(raw_prio, default=2)
-                new_id = "tile-" + hashlib.sha1(f"{title}:{time.time_ns()}".encode("utf-8")).hexdigest()[:8]
-                new_tile = {
-                    "id": new_id,
-                    "title": title,
-                    "category": cat,
-                    "priority": p_num,
-                    "prio": str(p_num),
-                    "due": str(body.get("due") or "")[:10],
-                    "cockpitName": str(body.get("cockpitName") or f"{title[:22]} Cockpit"),
-                    "cockpitUrl": str(body.get("cockpitUrl") or "/steward/v1"),
-                    "cockpitHref": str(body.get("cockpitHref") or body.get("cockpitUrl") or "/steward/v1"),
-                    "goalId": str(body.get("goalId") or ""),
-                    "goalName": str(body.get("goalName") or ""),
-                    "skills": list(body.get("skills") or ["researchPrime", "Gandalf"]),
-                    "expanded": False,
-                    "done": False,
-                    "archived": False,
-                    "brainstormNotes": str(body.get("brainstormNotes") or "• Brainstorm notes & steps here..."),
-                    "steps": list(body.get("steps") or [
-                        {
-                            "id": "st-" + hashlib.sha1(f"s1:{new_id}".encode("utf-8")).hexdigest()[:6],
-                            "text": "Scope initial steps & connect to AI Cockpit + Initiative",
-                            "done": False,
-                            "cockpitItem": {"cockpitName": f"{title[:18]} Cockpit", "itemLabel": "Wave 1: Initial Scope", "kind": "Wave", "href": "/steward/v1"},
-                            "cockpitStatus": "⏳ Ready",
-                            "cockpitUrl": "/steward/v1",
-                            "initiativeItem": {"initiativeName": f"Initiative: {title[:24]}", "role": "Initiative", "href": "/?view=cave"},
-                            "initiativeUrl": "/?view=cave",
-                        }
-                    ]),
-                }
-                if body.get("insert_top", True):
-                    tiles.insert(0, new_tile)
-                else:
-                    tiles.append(new_tile)
-                state["tiles"] = tiles
-                _enrich_working_list_state(state)
-                paths.atomic_write_json(wl_p, state, lock_path=lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC)
-                return {"ok": True, "status_code": 200, "tile": new_tile, "working_list": state, "cos_recommendations": state.get("cos_recommendations") or []}
-
-            t_idx = next((i for i, t in enumerate(tiles) if t.get("id") == tile_id), -1)
-            if t_idx < 0:
-                return _wave2_failure_dict("dependency-returns-garbage", detail=f"Working list tile '{tile_id}' not found", working_list=state)
-
-            tile = tiles[t_idx]
-            steps = [s for s in (tile.get("steps") or []) if isinstance(s, dict)]
-
-            def _resolve_step_index() -> int:
-                if step_idx is not None and 0 <= step_idx < len(steps):
-                    return step_idx
-                if step_id:
-                    return next((i for i, s in enumerate(steps) if s.get("id") == step_id), -1)
-                return -1
-
-            if op == "move_tile":
-                dir_str = str(body.get("dir") or "").strip().lower()
-                if dir_str in ("up", "down"):
-                    delta = -1 if dir_str == "up" else 1
-                else:
-                    delta = int(body.get("delta") or -1)
-                target_idx = max(0, min(len(tiles) - 1, t_idx + delta))
-                if target_idx != t_idx and not tiles[target_idx].get("archived"):
-                    neighbor_prio = _normalize_priority_number(tiles[target_idx].get("priority") or tiles[target_idx].get("prio"), default=2)
-                    tile["priority"] = neighbor_prio
-                    tile["prio"] = str(neighbor_prio)
-                item = tiles.pop(t_idx)
-                tiles.insert(target_idx, item)
-            elif op in ("toggle_tile_done", "complete_tile"):
-                want_done = bool(body.get("done")) if "done" in body else (not bool(tile.get("done")))
-                tile["done"] = want_done
-                if want_done:
-                    tile["archived"] = True
-                    tile["completed_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-                    for s in steps:
-                        s["done"] = True
-                else:
-                    tile["archived"] = False
-            elif op in ("toggle_expand", "toggle_tile_expanded"):
-                # Expansion state is client-ephemeral (`_wlExpandedIds`); keep persisted state False
-                tile["expanded"] = False
-            elif op in ("set_priority", "cycle_prio"):
-                cur_p = _normalize_priority_number(tile.get("priority") or tile.get("prio"), default=2)
-                if "priority" in body or "prio" in body:
-                    new_p = _normalize_priority_number(body.get("priority") if "priority" in body else body.get("prio"), default=cur_p)
-                else:
-                    new_p = (cur_p % 5) + 1
-                tile["priority"] = new_p
-                tile["prio"] = str(new_p)
-            elif op == "archive_tile":
-                if tile.get("archived"):
-                    tile["archived"] = False
-                    tile["done"] = False
-                else:
-                    tile["done"] = True
-                    tile["archived"] = True
-                    tile["completed_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-                    for s in steps:
-                        s["done"] = True
-            elif op == "restore_tile":
-                tile["archived"] = False
-                tile["done"] = False
-                for s in steps:
-                    if body.get("reset_steps"):
-                        s["done"] = False
-            elif op in ("update_notes", "save_brainstorm"):
-                tile["brainstormNotes"] = str(body.get("notes") if "notes" in body else (body.get("brainstormNotes") or ""))
-            elif op == "prestage_skill":
-                sk_name = str(body.get("skill") or "").strip()
-                if not sk_name or sk_name not in ORANGES_SKILLS:
-                    return _wave2_failure_dict("dependency-returns-garbage", detail=f"Invalid Parable-of-the-Oranges skill: {sk_name}")
-                cur_skills = [str(x) for x in (tile.get("skills") or []) if str(x).strip()]
-                if sk_name in cur_skills:
-                    cur_skills.remove(sk_name)
-                cur_skills.insert(0, sk_name)
-                tile["skills"] = cur_skills
-                tile["prestagedSkill"] = sk_name
-                tile["prestagedAt"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-            elif op == "add_step":
-                txt = str(body.get("text") or body.get("title") or "").strip()
-                if not txt:
-                    return _wave2_failure_dict("dependency-returns-garbage", detail="Step text required")
-                ck_val = body.get("cockpitItem")
-                in_val = body.get("initiativeItem")
-                steps.append({
-                    "id": "st-" + hashlib.sha1(f"{txt}:{time.time_ns()}".encode("utf-8")).hexdigest()[:8],
-                    "text": txt,
-                    "done": False,
-                    "email_uid": str(body.get("email_uid") or ""),
-                    "cockpitItem": ck_val,
-                    "cockpitStatus": str(body.get("cockpitStatus") or ("✅ Linked" if ck_val else "")),
-                    "cockpitUrl": str(body.get("cockpitUrl") or (ck_val.get("href") if isinstance(ck_val, dict) else "/steward/v1") if ck_val else ""),
-                    "initiativeItem": in_val,
-                    "initiativeUrl": str(body.get("initiativeUrl") or (in_val.get("href") if isinstance(in_val, dict) else "/?view=cave") if in_val else ""),
-                })
-                tile["steps"] = steps
-                tile["done"] = False
-                tile["archived"] = False
-                tile["expanded"] = False
-            elif op in ("toggle_step", "toggle_step_done"):
-                si = _resolve_step_index()
-                if 0 <= si < len(steps):
-                    steps[si]["done"] = bool(body.get("done")) if "done" in body else (not bool(steps[si].get("done")))
-                tile["steps"] = steps
-                all_done = bool(steps and all(s.get("done") for s in steps))
-                tile["done"] = all_done
-                if all_done and body.get("auto_archive"):
-                    tile["archived"] = True
-                    tile["completed_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-            elif op == "delete_step":
-                si = _resolve_step_index()
-                if 0 <= si < len(steps):
-                    steps.pop(si)
-                tile["steps"] = steps
-            elif op in ("connect_step", "save_step_connections"):
-                si = _resolve_step_index()
-                if 0 <= si < len(steps):
-                    ck_val = body.get("cockpitItem")
-                    in_val = body.get("initiativeItem")
-                    steps[si]["cockpitItem"] = ck_val
-                    steps[si]["cockpitStatus"] = str(body.get("cockpitStatus") or ("✅ Linked" if ck_val else ""))
-                    steps[si]["cockpitUrl"] = str(body.get("cockpitUrl") or (ck_val.get("href") if isinstance(ck_val, dict) else "/steward/v1") if ck_val else "")
-                    steps[si]["initiativeItem"] = in_val
-                    steps[si]["initiativeUrl"] = str(body.get("initiativeUrl") or (in_val.get("href") if isinstance(in_val, dict) else "/?view=cave") if in_val else "")
-                tile["steps"] = steps
-            elif op == "set_category":
-                new_cat = str(body.get("category") or "Business").strip()
-                if new_cat:
-                    tile["category"] = new_cat
-            elif op == "assign_tile_cockpit":
-                ck_name = str(body.get("cockpitName") or "").strip()
-                ck_href = str(body.get("cockpitHref") or body.get("cockpitUrl") or "/steward/v1").strip()
-                ck_seat = str(body.get("cockpitSeat") or "active").strip()
-                ck_pid = str(body.get("cockpitPid") or "").strip()
-                ck_dir = str(body.get("cockpitDir") or "").strip()
-                tile["cockpitName"] = ck_name
-                tile["cockpitHref"] = ck_href if ck_name else ""
-                tile["cockpitUrl"] = ck_href if ck_name else ""
-                tile["cockpitSeat"] = ck_seat if ck_name else ""
-                tile["cockpitPid"] = ck_pid if ck_name else ""
-                tile["cockpitDir"] = ck_dir if ck_name else ""
-            elif op == "create_and_assign_cockpit":
-                ck_name = str(body.get("cockpitName") or body.get("name") or tile.get("title") or "New AI Cockpit").strip()
-                folder_group = str(body.get("projectFolder") or body.get("group") or tile.get("category") or "Business").strip()
-                parent_root = Path(paths.data_dir()).resolve().parent
-                safe_folder_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "-", ck_name).strip(" .-") or "New-Cockpit"
-                target_folder = parent_root / safe_folder_name
-                new_pid = ""
-                try:
-                    target_folder.mkdir(parents=True, exist_ok=True)
-                    import rnd_registry as _rnd
-                    entry = _rnd.register_project(ck_name, str(target_folder), priority=int(tile.get("priority") or 2))
-                    new_pid = str(entry.get("id") or "")
-                    if new_pid and folder_group:
-                        try:
-                            _rnd.set_group(new_pid, folder_group)
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
-                ck_href = f"/steward/v1?pid={new_pid}&dir=" if new_pid else "/steward/v1"
-                tile["cockpitName"] = ck_name
-                tile["cockpitHref"] = ck_href
-                tile["cockpitUrl"] = ck_href
-                tile["cockpitPid"] = new_pid
-                tile["cockpitDir"] = ""
-                tile["cockpitSeat"] = "project"
-                tile["cockpitFolder"] = str(target_folder)
-                tile["cockpitGroup"] = folder_group
-            elif op == "assign_tile_goal":
-                g_name = str(body.get("goalName") or "").strip()
-                g_role = str(body.get("goalRole") or "Star Chart Goal").strip()
-                g_href = str(body.get("goalHref") or "/?view=starchart").strip()
-                g_id = str(body.get("goalId") or "").strip()
-                tile["goalName"] = g_name
-                tile["goalRole"] = g_role if g_name else ""
-                tile["goalHref"] = g_href if g_name else ""
-                tile["goalId"] = g_id if g_name else ""
-            elif op == "steward_brainstorm_steps":
-                steps.append({
-                    "id": "st-" + hashlib.sha1(f"bs:{tile_id}:{time.time_ns()}".encode("utf-8")).hexdigest()[:8],
-                    "text": "Verify final deliverable package & sign-off checklist in AI Cockpit",
-                    "done": False,
-                    "cockpitItem": {"cockpitName": str(tile.get("cockpitName") or "AI Cockpit"), "itemLabel": "Final Verification Wave", "kind": "Wave", "href": str(tile.get("cockpitUrl") or "/steward/v1")},
-                    "cockpitStatus": "⏳ Pre-staged",
-                    "cockpitUrl": str(tile.get("cockpitUrl") or "/steward/v1"),
-                    "initiativeItem": {"initiativeName": str(tile.get("goalName") or f"Initiative: {str(tile.get('title') or '').split(':')[0][:32]}"), "role": "Milestone", "href": str(tile.get("goalHref") or "/?view=cave")},
-                    "initiativeUrl": str(tile.get("goalHref") or "/?view=cave"),
-                })
-                tile["steps"] = steps
-                tile["expanded"] = False
-            else:
-                return _wave2_failure_dict("dependency-returns-garbage", detail=f"Unknown working_list op: {op}")
-
-            state["tiles"] = tiles
-            _enrich_working_list_state(state)
-            paths.atomic_write_json(wl_p, state, lock_path=lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC)
-            return {
-                "ok": True,
-                "status_code": 200,
-                "op": op,
-                "tile": tile,
-                "working_list": state,
-                "cos_recommendations": state.get("cos_recommendations") or [],
-            }
     except TimeoutError as exc:
         return _wave2_failure_dict("dependency-slow-or-killed", detail=str(exc))
     except LockBusyError as exc:
@@ -12453,6 +15417,50 @@ def handle_comms_get(qs: dict | None = None) -> tuple[dict, int]:
     if view == "watchlist":
         inc_done = _qs_first(qs, "include_done").lower() in ("1", "true", "yes")
         return get_watchlist_response(include_done=inc_done)
+    if view in ("calendar_alarms", "alarms"):
+        alarm_st = load_calendar_alarm_state()
+        try:
+            rec = reconcile_comms_with_roadmaps()
+            evs_all = rec.get("calendar_events_all") or rec.get("calendar_events") or []
+        except Exception:
+            evs_all = []
+        today_s = date.today().isoformat()
+        tomorrow_s = (date.today() + timedelta(days=1)).isoformat()
+        near_evs = [
+            e for e in evs_all
+            if isinstance(e, dict) and today_s <= str(e.get("date") or "")[:10] <= tomorrow_s
+        ]
+        return {
+            "ok": True,
+            "status_code": 200,
+            "calendar_alarms": alarm_st,
+            "calendar_events": near_evs,
+            "server_local_now": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+        }, 200
+    if view == "poincare":
+        import rnd_registry as _rnd_pm
+        import poincare_state_map as _psm
+        if "poincare_state_map" in sys.modules:
+            try:
+                _psm = _importlib.reload(_psm)
+            except Exception:
+                pass
+        flat_qs = {k: _qs_first(qs, k) for k in (qs or {}).keys()}
+        pid_pm = flat_qs.get("pid") or ""
+        proot_pm = None
+        if pid_pm:
+            proj_pm = _rnd_pm.get_project(pid_pm) or {}
+            fp_pm = str(proj_pm.get("folder_path") or "").strip()
+            if fp_pm and os.path.isdir(fp_pm):
+                proot_pm = fp_pm
+            elif pid_pm.lower() in ("campaign", "cave", "__campaign__"):
+                camp_p = paths.CODE_DIR.parent / "Campaign"
+                if camp_p.is_dir():
+                    proot_pm = str(camp_p)
+        obj_pm, code_pm = _psm.handle_poincare_api_get(proot_pm, flat_qs)
+        if isinstance(obj_pm, dict) and obj_pm.get("ok"):
+            obj_pm["cockpit_options"] = _psm.list_cockpit_viewer_options()
+        return obj_pm, code_pm
 
     _, store_state = load_comms_sync_state()
     if store_state == "unknown":
@@ -12473,6 +15481,10 @@ def handle_comms_get(qs: dict | None = None) -> tuple[dict, int]:
         failure = prime_inbox_state([], store_readable=False)
         return {"ok": False, **failure}, int(failure["status_code"])
     prime_state = prime_inbox_state(result.get("important_emails") or [], store_readable=True)
+    if _qs_first(qs, "slim").lower() in ("1", "true", "yes"):
+        result = _slim_comms_payload(result)
+    else:
+        result = dict(result)
     result["prime_inbox_state"] = prime_state
     if prime_state.get("state") == "empty":
         result["message"] = prime_state["message"]
@@ -12547,6 +15559,7 @@ def handle_comms_post(body: dict) -> tuple[dict, int]:
                 dispatch_event=body.get("dispatch_event") if isinstance(body.get("dispatch_event"), dict) else None,
                 important_emails=body.get("important_emails") if isinstance(body.get("important_emails"), list) else None,
                 watchlist_items=body.get("watchlist_items") if isinstance(body.get("watchlist_items"), list) else None,
+                live_reconcile=bool(body.get("live_reconcile", True)),
             )
             res_rec["action"] = action
             return res_rec, 200
@@ -12611,6 +15624,15 @@ def handle_comms_post(body: dict) -> tuple[dict, int]:
         res = set_calendar_rsvp(body)
         res["action"] = action
         return res, (200 if res.get("ok") else 400)
+
+    if action in ("calendar_alarm", "calendar_alarm_ack", "calendar_alarm_prefs"):
+        if action == "calendar_alarm_ack" and not body.get("sub_action"):
+            body = dict(body, sub_action="ack")
+        elif action == "calendar_alarm_prefs" and not body.get("sub_action"):
+            body = dict(body, sub_action="prefs")
+        res_ca = update_calendar_alarm_state(body)
+        res_ca["action"] = action
+        return res_ca, int(res_ca.get("status_code") or (200 if res_ca.get("ok") else 400))
 
     if action == "steward_draft_reply":
         res = generate_steward_reply_draft(body)
@@ -12888,7 +15910,11 @@ def handle_comms_post(body: dict) -> tuple[dict, int]:
         return state, 200
 
     if action == "sync_now":
-        state = sync_comms_now()
+        state = sync_comms_now(force=bool(body.get("force")))
+        if body.get("slim"):
+            state = _slim_comms_payload(state)
+        else:
+            state = dict(state)
         state["action"] = action
         return state, 200
 

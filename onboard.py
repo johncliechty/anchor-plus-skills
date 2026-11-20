@@ -551,6 +551,25 @@ def main(argv=None) -> int:
     term = install_terminal_extra()
     print("  " + term["message"])
 
+    # Standard Homebase link initialization (stored strictly in data_dir/.anchor,
+    # never inside REPO_ROOT). Live network registration runs only when explicitly
+    # requested (`--register-homebase` or `ANCHOR_ONBOARD_REGISTER_HOMEBASE=1`) or
+    # confirmed interactively in Setup Step 2.
+    try:
+        import mothership_updater as _mu_onb
+        data_root_onb = _resolve_data_dir(None)
+        _mu_onb.load_or_init_homebase_link(data_root_onb)
+        if os.environ.get("ANCHOR_ONBOARD_REGISTER_HOMEBASE") == "1" or "--register-homebase" in (argv or sys.argv[1:]):
+            hb_rep = _mu_onb.register_with_homebase(anchor_root=data_root_onb)
+            print("\nAnchor Homebase registration (push updates & journal/error sync): %s" % (
+                "REGISTERED" if hb_rep.get("registered") else ("queued (" + str(hb_rep.get("error") or "offline") + ")")
+            ))
+        else:
+            print("\nAnchor Homebase link initialized. Complete Step 2 in Setup (/onboard-wizard)")
+            print("or run `python mothership_updater.py --register-homebase` once Tailscale is connected.")
+    except Exception:
+        pass
+
     # v1.1.3 honesty: there is NO service registration in the share path (the
     # old step imported a module that can never resolve and printed a port
     # nothing listened on). The launcher genuinely starts the server.

@@ -2953,6 +2953,20 @@ body[data-theme="command"] .composer textarea { border-color: #1e3357; }
   background: var(--panel);
   border-left: 1px solid var(--line);
 }
+@media(max-width:1099px) {
+  .app.app3 .leftcol,
+  .app.statusopen.app3 .rightcol {
+    position: fixed;
+    top: 90px;
+    bottom: 0;
+    z-index: 6;
+    width: min(380px, calc(100vw - 48px));
+    max-width: min(380px, calc(100vw - 48px));
+    box-shadow: 0 0 20px #0008;
+  }
+  .app.app3 .leftcol { left: 0; }
+  .app.statusopen.app3 .rightcol { right: 0; }
+}
 .app3 .bar > .dot[data-att] {
   display: none;
 }
@@ -6755,4 +6769,29 @@ body.is-embed-tile .app .main,
     display: none !important;
   }
 }
+
+.deliv-unit-accept-btn {
+  padding: 1px 8px;
+  font-size: 10.5px;
+  font-weight: 700;
+  border-radius: 999px;
+  border: 1px solid rgba(34, 197, 94, 0.55);
+  background: rgba(34, 197, 94, 0.16);
+  color: #bbf7d0;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.14s, border-color 0.14s;
+}
+.deliv-unit-accept-btn:hover {
+  background: rgba(34, 197, 94, 0.28);
+  border-color: #4ade80;
+  color: #ffffff;
+}
+.snt-btn.review-done-btn {
+  border-color: rgba(16, 185, 129, 0.55);
+  background: rgba(16, 185, 129, 0.16);
+  color: #a7f3d0;
+  font-weight: 700;
+}
+
 
