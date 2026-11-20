@@ -400,22 +400,25 @@ def pull_latest_update(
             mp = root / rel_m
             if mp.is_file():
                 try:
-                    saved_md[rel_m] = mp.read_text(encoding="utf-8")
+                    saved_md[rel_m] = mp.read_text(encoding="utf-8", errors="replace")
                 except OSError:
                     pass
         try:
             root.mkdir(parents=True, exist_ok=True)
-            run(["git", "-C", str(root), "init"], cwd=str(root))
-            run(["git", "-C", str(root), "remote", "add", "origin", DEFAULT_GITHUB_REPO], cwd=str(root))
-            f_res = run(["git", "-C", str(root), "fetch", "--depth=1", "origin", "main"], cwd=str(root))
-            if getattr(f_res, "returncode", 1) == 0:
-                c_res = run(["git", "-C", str(root), "checkout", "-f", "-B", "main", "origin/main"], cwd=str(root))
-                if getattr(c_res, "returncode", 1) == 0:
-                    git_updated = True
-                    details.append("git_bootstrapped_from_origin")
+            i_res = run(["git", "-C", str(root), "init"], cwd=str(root))
+            if getattr(i_res, "returncode", 1) == 0:
+                run(["git", "-C", str(root), "remote", "add", "origin", DEFAULT_GITHUB_REPO], cwd=str(root))
+                f_res = run(["git", "-C", str(root), "fetch", "--depth=1", "origin", "main"], cwd=str(root))
+                if getattr(f_res, "returncode", 1) == 0:
+                    c_res = run(["git", "-C", str(root), "checkout", "-f", "-B", "main", "origin/main"], cwd=str(root))
+                    if getattr(c_res, "returncode", 1) == 0:
+                        git_updated = True
+                        details.append("git_bootstrapped_from_origin")
         except Exception as exc:
             details.append(f"git_bootstrap_skipped:{exc}")
         finally:
+            if not git_updated and (root / ".git").is_dir():
+                shutil.rmtree(root / ".git", ignore_errors=True)
             for rel_m, txt_m in saved_md.items():
                 mp = root / rel_m
                 mp.parent.mkdir(parents=True, exist_ok=True)
@@ -424,20 +427,21 @@ def pull_latest_update(
                 except OSError:
                     pass
 
-    # Also apply bundled overlay if present and newer or if not a git repo
-    try:
-        import importlib.util as _ilu
-        conn_py = root / "shell" / "connect.py"
-        if conn_py.is_file():
-            spec = _ilu.spec_from_file_location("anchor_shell_connect", str(conn_py))
-            if spec and spec.loader:
-                mod = _ilu.module_from_spec(spec)
-                spec.loader.exec_module(mod)
-                if mod._apply_bundled_core_overlay(root):
-                    overlay_extracted = True
-                    details.append("overlay_applied")
-    except Exception:
-        pass
+    # Apply bundled overlay only when git did not already update the tree
+    if not git_updated:
+        try:
+            import importlib.util as _ilu
+            conn_py = root / "shell" / "connect.py"
+            if conn_py.is_file():
+                spec = _ilu.spec_from_file_location("anchor_shell_connect", str(conn_py))
+                if spec and spec.loader:
+                    mod = _ilu.module_from_spec(spec)
+                    spec.loader.exec_module(mod)
+                    if mod._apply_bundled_core_overlay(root):
+                        overlay_extracted = True
+                        details.append("overlay_applied")
+        except Exception:
+            pass
 
     clean_tv = str(target_version or "").strip()
     if (
@@ -480,7 +484,7 @@ def pull_latest_update(
         reg["latest_version"] = after_ver
         changed_reg = True
     if changed_reg:
-        save_mothership_registry(reg, anchor_root=root, write_repo=True)
+        save_mothership_registry(reg, anchor_root=root, write_repo=False)
 
     # Refresh ECGBERHT_ROOT resolution so stale C:\dev\Ecgberht is never used
     ecg_root, _ = paths.resolve_ecgberht_root(anchor_root=root)
