@@ -307,3 +307,44 @@ def test_onboard_wizard_step2_html_receipt_and_distro_gate(tmp_path: Path):
     pairs = [(rel, REPO_ROOT / rel) for rel in selected]
     hits = distro.scan_paths(pairs, root=REPO_ROOT)
     assert hits == [], f"distro gate must remain completely clean: {hits!r}"
+
+
+def test_pull_latest_update_bootstrap_git_preserves_user_markdown_and_anchor_dir(tmp_path: Path):
+    ws = tmp_path / "ws"
+    root = ws / "Anchor"
+    (root / ".anchor").mkdir(parents=True)
+    (root / "domains").mkdir(parents=True)
+    (root / "VERSION").write_text("1.5.1\n", encoding="utf-8")
+    (root / "DASHBOARD.md").write_text("# My Custom Dashboard\n- [ ] Keep this task\n", encoding="utf-8")
+    (root / "domains" / "academic.md").write_text("# My Academic Notes\n", encoding="utf-8")
+    (root / ".anchor" / "user_profile.json").write_text('{"display_name": "TestUser"}\n', encoding="utf-8")
+
+    calls: list[list[str]] = []
+
+    class _FakeRes:
+        def __init__(self, rc: int = 0):
+            self.returncode = rc
+            self.stdout = ""
+            self.stderr = ""
+
+    def _fake_runner(cmd: list[str], cwd=None, timeout=120):
+        calls.append(cmd)
+        if "checkout" in cmd:
+            # Simulate git checkout overwriting tracked starter files and updating VERSION
+            (root / "VERSION").write_text("1.5.3\n", encoding="utf-8")
+            (root / "DASHBOARD.md").write_text("# Starter Blank Dashboard\n", encoding="utf-8")
+        return _FakeRes(0)
+
+    out = mothership_updater.pull_latest_update(
+        anchor_root=root,
+        runner_fn=_fake_runner,
+        sync_skills=False,
+        bootstrap_git=True,
+    )
+    assert out["ok"] is True
+    assert out["git_updated"] is True
+    assert out["after_version"] == "1.5.3"
+    assert "Keep this task" in (root / "DASHBOARD.md").read_text(encoding="utf-8")
+    assert "My Academic Notes" in (root / "domains" / "academic.md").read_text(encoding="utf-8")
+    assert "TestUser" in (root / ".anchor" / "user_profile.json").read_text(encoding="utf-8")
+

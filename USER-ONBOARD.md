@@ -1,4 +1,28 @@
-# Install guide — Anchor + skills (v1.5.2, Windows, Apple Mac / MacBook Air, & Linux)
+# Install guide — Anchor + skills (v1.5.3, Windows, Apple Mac / MacBook Air, & Linux)
+
+## AI Agent One-Shot Setup & Update Runbook (Claude Code / VS Code / Codex / Cursor)
+
+If you have an AI coding agent open in **PowerShell**, **Terminal**, or **VS Code**, you do not need to run manual steps. Just paste the matching prompt below to your agent:
+
+### Prompt A — Fresh Install (First-Time Setup on Windows, macOS, or Linux)
+```text
+Please install and set up Anchor v1.5.3 and its bundled Foundry skills for me from https://github.com/johncliechty/ghostworldlabs-anchor.git:
+1. Check that git, Python 3.10+, Node.js 18+, and Tailscale are installed (on Windows use winget if any are missing; on macOS use brew).
+2. On Windows: clone https://github.com/johncliechty/ghostworldlabs-anchor.git into C:\dev\Anchor, download https://github.com/johncliechty/ghostworldlabs-anchor/releases/latest/download/Anchor.zip and extract the Anchor desktop app folder into $env:LOCALAPPDATA\Programs\Anchor-App (keep it separate from C:\dev\Anchor), then run `python C:\dev\Anchor\onboard.py`. On macOS/Linux: clone into ~/dev/Anchor and run `bash ~/dev/Anchor/install-mac-linux.sh`.
+3. Check `tailscale status`. If Tailscale is not logged in yet, run `tailscale up` and let me sign in, then run `python mothership_updater.py --register-homebase` inside the Anchor repo so my machine registers with Anchor Homebase (https://gwl-server.tailb49f65.ts.net) for automatic updates and sanitized error/journal sync.
+4. Start Anchor (`$env:LOCALAPPDATA\Programs\Anchor-App\Anchor\Anchor.exe` or `python C:\dev\Anchor\launch_anchor_dashboard.py --url http://127.0.0.1:8777/onboard-wizard` on Windows; `/Applications/Anchor.app` on macOS), verify `http://127.0.0.1:8777/api/system/version` reports `1.5.3`, and leave the Guided Onboarding Wizard open for me.
+```
+
+### Prompt B — Update Existing Anchor Install & Register with Homebase
+```text
+Please update my existing Anchor install to the latest release (v1.5.3+) from https://github.com/johncliechty/ghostworldlabs-anchor.git and register it with Anchor Homebase:
+1. Locate my Anchor repo (normally `C:\dev\Anchor` on Windows or `~/dev/Anchor` on macOS/Linux) and cleanly stop any running local `Anchor.exe` or `anchor_gui.py` process so no files are locked, while keeping all `.anchor`, `.ecgberht`, and markdown user files untouched.
+2. If `.git` is already present, run `git fetch origin` and `git pull --ff-only`; if `.git` is missing (zip install), initialize git pointing at `https://github.com/johncliechty/ghostworldlabs-anchor.git`, fetch `origin/main`, and check out the tracked code while preserving `.anchor`, `.ecgberht`, `DASHBOARD.md`, `PROJECTS.md`, `INBOX.md`, and `domains/`. On Windows, if my separate `Anchor.exe` desktop launcher folder exists, also refresh it from `https://github.com/johncliechty/ghostworldlabs-anchor/releases/latest/download/Anchor.zip`.
+3. Run `python mothership_updater.py --pull --register-homebase` inside the Anchor folder to sync all bundled Foundry skills (`overwrite=True`) and register with Anchor Homebase (`https://gwl-server.tailb49f65.ts.net`). If Tailscale is offline (`tailscale status`), prompt me to connect Tailscale (`tailscale up`) and re-run `python mothership_updater.py --register-homebase` until `"registered": true`.
+4. Restart Anchor and verify `http://127.0.0.1:8777/api/system/version` returns `1.5.3`.
+```
+
+---
 
 ## Quick Platform Compatibility FAQ (Windows vs. Apple Mac / Linux)
 

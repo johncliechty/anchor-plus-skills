@@ -358,6 +358,7 @@ def pull_latest_update(
     target_version: str | None = None,
     runner_fn=None,
     sync_skills: bool = True,
+    bootstrap_git: bool = False,
 ) -> dict[str, Any]:
     """Pull and apply the latest Anchor update in-place, refreshing all 20 bundled Foundry skills while preserving `.anchor/`."""
     root = Path(anchor_root).resolve() if anchor_root else paths.CODE_DIR
@@ -380,6 +381,48 @@ def pull_latest_update(
                     details.append("git_pull_ff_only")
         except Exception as exc:
             details.append(f"git_skipped:{exc}")
+    elif bootstrap_git and (runner_fn is not None or shutil.which("git")):
+        # Convert an overlay-extracted C:\dev\Anchor install into a git-tracked install
+        # while preserving all user markdown and .anchor / .ecgberht directories.
+        user_md_rels = (
+            "DASHBOARD.md",
+            "PROJECTS.md",
+            "INBOX.md",
+            "CANCELLED.md",
+            "SAVED_FOR_LATER.md",
+            "domains/academic.md",
+            "domains/commercial.md",
+            "domains/family.md",
+            "domains/writing.md",
+        )
+        saved_md: dict[str, str] = {}
+        for rel_m in user_md_rels:
+            mp = root / rel_m
+            if mp.is_file():
+                try:
+                    saved_md[rel_m] = mp.read_text(encoding="utf-8")
+                except OSError:
+                    pass
+        try:
+            root.mkdir(parents=True, exist_ok=True)
+            run(["git", "-C", str(root), "init"], cwd=str(root))
+            run(["git", "-C", str(root), "remote", "add", "origin", DEFAULT_GITHUB_REPO], cwd=str(root))
+            f_res = run(["git", "-C", str(root), "fetch", "--depth=1", "origin", "main"], cwd=str(root))
+            if getattr(f_res, "returncode", 1) == 0:
+                c_res = run(["git", "-C", str(root), "checkout", "-f", "-B", "main", "origin/main"], cwd=str(root))
+                if getattr(c_res, "returncode", 1) == 0:
+                    git_updated = True
+                    details.append("git_bootstrapped_from_origin")
+        except Exception as exc:
+            details.append(f"git_bootstrap_skipped:{exc}")
+        finally:
+            for rel_m, txt_m in saved_md.items():
+                mp = root / rel_m
+                mp.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    paths.atomic_write_text(mp, txt_m)
+                except OSError:
+                    pass
 
     # Also apply bundled overlay if present and newer or if not a git repo
     try:
@@ -1430,9 +1473,18 @@ def start_background_homebase_telemetry_daemon(interval_seconds: int = 900) -> b
 
 
 if __name__ == "__main__":  # pragma: no cover
-    if "--register-homebase" in sys.argv:
+    _want_pull = ("--pull" in sys.argv) or ("--update" in sys.argv)
+    _want_reg = "--register-homebase" in sys.argv
+    _want_tel = "--sync-telemetry" in sys.argv
+    if _want_pull and _want_reg:
+        _p_out = pull_latest_update(bootstrap_git=True)
+        _r_out = register_with_homebase()
+        print(json.dumps({"ok": bool(_p_out.get("ok")), "pull_update": _p_out, "homebase_registration": _r_out}, indent=2))
+    elif _want_pull:
+        print(json.dumps(pull_latest_update(bootstrap_git=True), indent=2))
+    elif _want_reg:
         print(json.dumps(register_with_homebase(), indent=2))
-    elif "--sync-telemetry" in sys.argv:
+    elif _want_tel:
         print(json.dumps(sync_telemetry_to_homebase(), indent=2))
     else:
         print(json.dumps(get_version_status(), indent=2))
