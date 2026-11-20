@@ -17,7 +17,7 @@ import subprocess
 import threading
 import time
 import tempfile
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 import model_policy
 import paths
@@ -27,6 +27,7 @@ LOGIN_TIMEOUT = 300
 CANCEL_TIMEOUT = 5   # R2-A: the bound on the cancel RPC a wedged native child may ignore
 MAX_OUTPUT = 1024 * 1024
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+_ACTIVE_CHILD_TLS = threading.local()
 
 
 class NativeError(RuntimeError):
@@ -112,6 +113,7 @@ class HiddenProcess:
                                      stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                      shell=False, creationflags=NO_WINDOW,
                                      start_new_session=os.name != "nt")
+        _ACTIVE_CHILD_TLS.pid = self.proc.pid
         self.guard = None
         if os.name == "nt":
             import proc_probe
@@ -299,6 +301,26 @@ def allowance_windows(raw):
                            "resets_at": reset if finite(reset) else None,
                            "window_minutes": duration if finite(duration, 1) else None})
     return result
+
+
+def _find_loopback_listen_port(pid):
+    """Best-effort stdlib lookup of a 127.0.0.1 TCP listen port owned by ``pid``."""
+    try:
+        if os.name == "nt":
+            res = subprocess.run(
+                ["netstat", "-ano", "-p", "TCP"],
+                capture_output=True, text=True, timeout=2, creationflags=NO_WINDOW,
+            )
+            m = re.search(rf"127\.0\.0\.1:(\d+)\s+\S+\s+LISTENING\s+{int(pid)}\b", res.stdout or "")
+            return int(m.group(1)) if m else 0
+        res = subprocess.run(
+            ["lsof", "-Pan", "-p", str(int(pid)), "-iTCP", "-sTCP:LISTEN"],
+            capture_output=True, text=True, timeout=2,
+        )
+        m = re.search(r"127\.0\.0\.1:(\d+)", res.stdout or "")
+        return int(m.group(1)) if m else 0
+    except Exception:
+        return 0
 
 
 def safe_auth_url(value, family):
@@ -556,9 +578,19 @@ class NativeProviders:
             # Prove that this CLI observes this exact separate home before a
             # command capable of replacing credentials is allowed to run.
             self.observe(connection)
+            _ACTIVE_CHILD_TLS.pid = None
+            def _prefer_local_callback(raw_url):
+                pid = getattr(_ACTIVE_CHILD_TLS, "pid", None)
+                if not pid or "platform.claude.com%2Foauth%2Fcode%2Fcallback" not in raw_url:
+                    return raw_url
+                port = _find_loopback_listen_port(pid)
+                if not port:
+                    return raw_url
+                redir = quote(f"http://localhost:{port}/callback", safe="")
+                return re.sub(r"redirect_uri=[^&]+", f"redirect_uri={redir}", raw_url)
             def line_progress(line):
                 for candidate in re.findall(r"https://[^\s<>]+", line):
-                    url = safe_auth_url(candidate.rstrip(".,)"), family)
+                    url = safe_auth_url(_prefer_local_callback(candidate.rstrip(".,)")), family)
                     if url:
                         progress({"state": "awaiting_browser", "url": url, "accepts_code": True,
                                   "message": "Complete native Claude sign-in in the browser on the mother ship. Remote callbacks must return there."})

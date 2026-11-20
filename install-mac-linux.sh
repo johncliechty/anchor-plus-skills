@@ -167,8 +167,24 @@ fi
 echo ""
 
 if [ "${ANCHOR_NO_LAUNCH:-0}" != "1" ]; then
-  echo "[*] Starting Anchor Mother Ship background service (--no-browser) and opening standalone native GUI window..."
-  python3 launch_anchor_dashboard.py --no-browser
+  REMOTE_CONFIGURED="$("$SHELL_VENV/bin/python" - <<'CHK_REMOTE' 2>/dev/null || echo "0"
+import json, os, pathlib, sys
+base = pathlib.Path.home() / ("Library/Application Support/anchor-shell" if sys.platform == "darwin" else ".local/share/anchor-shell")
+sp = base / "settings.json"
+if sp.is_file():
+    addr = str(json.loads(sp.read_text(encoding="utf-8")).get("address") or "").strip()
+    if addr and not addr.startswith(("http://127.0.0.1", "http://localhost", "http://[::1]")):
+        print("1")
+        raise SystemExit(0)
+print("0")
+CHK_REMOTE
+)"
+  if [ "$REMOTE_CONFIGURED" != "1" ]; then
+    echo "[*] Starting Anchor Mother Ship background service (--no-browser)..."
+    python3 launch_anchor_dashboard.py --no-browser
+  else
+    echo "[*] Preserving existing remote Mother Ship connection (skipping local server start)..."
+  fi
   if [ "$OS_NAME" = "Darwin" ] && [ -d "/Applications/Anchor.app" ]; then
     open -a "/Applications/Anchor.app"
   elif [ "$OS_NAME" = "Darwin" ] && [ -d "$ANCHOR_INSTALL_DIR/shell/dist/Anchor.app" ]; then

@@ -95,7 +95,7 @@ SERVICE_CATALOG = {
             },
         },
         "update_cmd": ["claude", "update"],
-        "login_cmd": ["claude", "login"],
+        "login_cmd": ["claude", "auth", "login", "--claudeai"],
     },
     "gemini": {
         "family": "gemini",
@@ -4655,7 +4655,7 @@ def render_onboard_wizard_html(
       <div class="wiz-winctl" aria-label="Window controls">
         <button type="button" data-winctl="minimize" title="Minimize window">&#8212;</button>
         <button type="button" data-winctl="maximize" title="Maximize or restore window">&#9744;</button>
-        <button type="button" class="close" data-winctl="close" title="Close window">&#10005;</button>
+        <button type="button" id="wizCloseOverlayX" class="close" data-overlay-close="1" title="Close and return to Cave of Wonders or AI Cockpit (Esc)" aria-label="Close window and return">&#10005;</button>
       </div>
     </div>
   </header>
@@ -5078,7 +5078,41 @@ def render_onboard_wizard_html(
     const IS_SANDBOX = Boolean(window.ONBOARD_WIZARD_BOOT.sandbox);
     const SANDBOX_ID = "{esc_sid}";
 
+    function closeWizardOverlay() {{
+      if (window.parent && window.parent !== window) {{
+        try {{ window.parent.postMessage({{ type: 'anchor-overlay-close', closeTile: true, source: 'onboard-wizard' }}, window.location.origin); }} catch (e) {{}}
+        try {{ window.parent.postMessage({{ type: 'anchor-setup-close' }}, window.location.origin); }} catch (e) {{}}
+        return;
+      }}
+      try {{
+        if (document.referrer) {{
+          const ref = new URL(document.referrer);
+          if (ref.origin === window.location.origin && /^\\/(high-seat|steward|project\\/)/.test(ref.pathname)) {{
+            window.location.href = ref.pathname + ref.search;
+            return;
+          }}
+        }}
+      }} catch (e) {{}}
+      window.location.href = window.pywebview ? '/static/app.html' : '/high-seat';
+    }}
+
+    if (window.parent !== window) {{
+      document.querySelectorAll('.wiz-winctl [data-winctl="minimize"], .wiz-winctl [data-winctl="maximize"]').forEach((b) => {{ b.hidden = true; }});
+      document.querySelectorAll('a[href^="/high-seat"]').forEach((a) => {{
+        a.addEventListener('click', (ev) => {{ ev.preventDefault(); ev.stopPropagation(); closeWizardOverlay(); }});
+      }});
+    }}
+
+    document.querySelectorAll('[data-overlay-close]').forEach((btn) => {{
+      btn.addEventListener('click', (ev) => {{ ev.preventDefault(); ev.stopPropagation(); closeWizardOverlay(); }});
+    }});
+
+    document.addEventListener('keydown', (ev) => {{
+      if (ev.key === 'Escape') {{ ev.preventDefault(); closeWizardOverlay(); }}
+    }});
+
     function invokeWindowControl(act) {{
+      if (act === 'close') {{ closeWizardOverlay(); return; }}
       try {{
         if (window.pywebview && window.pywebview.api && window.pywebview.api.window_control) {{
           window.pywebview.api.window_control(act);
@@ -5089,7 +5123,6 @@ def render_onboard_wizard_html(
           return;
         }}
       }} catch (e) {{}}
-      if (act === 'close') window.close();
     }}
 
     document.querySelectorAll('[data-winctl]').forEach((btn) => {{

@@ -172,6 +172,7 @@
   function pageKey(r) {
     if (!r || r.blank) return "";
     if ((r.path === "/" || r.path === "/high-seat") && !r.q.has("view")) return "cave";
+    if (/^\/foundry(\/|$)/.test(r.path)) return "foundry";
     if (r.path === "/steward/v1") return "conversation:" + r.q.get("pid") + ":" + (r.q.get("dir") || "") +
       (r.q.get("general") === "1" ? ":terminal:" + (r.q.get("term") || "") : "");
     if (/^\/project\/[^/]+\/?$/.test(r.path) && !r.q.has("doc") && !r.q.has("classic") && !r.q.has("chamber"))
@@ -206,11 +207,17 @@
   // file, a notebook) is a deliverable and opens in the other pane.
   function isPage(path) {
     return path === "/" || path === "/dashboard" || path === "/high-seat" || path === "/doctor" ||
-           path === "/setup" || path === "/setup/install" || path === "/onboard-wizard" ||
-           /^\/foundry\/?$/.test(path) || /^\/project\//.test(path) || /^\/steward\/v[13]\b/.test(path);
+           path === "/setup" || path === "/setup/install" || path === "/onboard-wizard" || path === "/onboard" ||
+           path === "/gwl-admin" || path === "/admin/collaboration" || path === "/recover-account" ||
+           /^\/foundry(\/|$)/.test(path) || /^\/project\//.test(path) || /^\/steward\/v[13]\b/.test(path);
+  }
+  function isOverlayPagePath(path) {
+    return path === "/setup" || path === "/setup/install" || path === "/onboard-wizard" || path === "/onboard" ||
+           path === "/gwl-admin" || path === "/admin/collaboration" || path === "/recover-account" || path === "/doctor";
   }
 
   function labelFor(r) {
+    if (/^\/foundry(\/|$)/.test(r.path)) return "Skill Foundry";
     var p = r.q.get("path");
     if (p) return p.split(/[\\/]/).pop();
     if (r.path === "/steward/v1" && r.q.get("general") !== "1") {
@@ -227,6 +234,12 @@
       var r = resolve(u, fromWin);
       if (!r || (!r.blank && isDownload(r))) return null;      // the native call
       if (!r.blank && r.path === "/static/app.html") return null;
+      if (!r.blank && (r.path === "/static/calendar-alarm.html" || r.q.get("alarm_window") === "1")) {
+        if (window.AnchorCalendarAlarm && typeof window.AnchorCalendarAlarm.showModalFromUrl === "function") {
+          window.AnchorCalendarAlarm.showModalFromUrl(r.url);
+        }
+        return { closed: false, focus: function () {}, close: function () {} };
+      }
       if (!r.blank) r = conversationAlias(r);
       var caller = tileOfWindow(fromWin);
       var from = caller ? shownIn(caller.id) : -1;
@@ -277,9 +290,27 @@
     download: function (u, fromWin) {
       var r = resolve(u, fromWin);
       if (!r || r.blank || !isDownload(r)) return false;
-      var a = document.createElement("a");
-      a.href = r.url; a.download = ""; a.hidden = true;
-      document.body.appendChild(a); a.click(); a.remove();
+      var h = host();
+      if (h && typeof h.save_download === "function") {
+        showDownloadToast("Downloading\u2026", false);
+        fetch(r.url, { credentials: "same-origin" })
+          .then(function (resp) {
+            if (!resp.ok) throw new Error("HTTP " + resp.status);
+            var fname = extractDownloadFilename(resp, r);
+            return resp.arrayBuffer().then(function (buf) {
+              return h.save_download(fname, bufferToBase64(buf));
+            });
+          })
+          .then(function (saved) {
+            var name = (saved && saved.filename) ? saved.filename : "file";
+            showDownloadToast("\u2713 Saved " + name + " to Downloads", false);
+          })
+          .catch(function () {
+            triggerAnchorTagDownload(r.url);
+          });
+        return true;
+      }
+      triggerAnchorTagDownload(r.url);
       return true;
     },
     touch: function (win) {                                    // a click inside a pane makes it the active pane
@@ -656,13 +687,27 @@
       }
       return;
     }
-    if (ev.data.type !== "anchor-setup-close") return;
-    for (var i = 0; i < tiles.length; i++) {
-      if (tiles[i].frame && tiles[i].frame.contentWindow === ev.source) {
-        var k = shownIn(tiles[i].id);
-        if (k >= 0) show("cave", k);
+    if (ev.data.type !== "anchor-setup-close" && ev.data.type !== "anchor-overlay-close") return;
+    var srcTile = tileOfWindow(ev.source);
+    if (!srcTile) return;
+    var k = shownIn(srcTile.id);
+    if (ev.data.closeTile && srcTile.kind !== "cave") {
+      var rSrc = resolve(srcTile.url || srcTile.asked);
+      if (!rSrc || rSrc.path !== "/setup") {
+        closeTile(srcTile.id);
         return;
       }
+    }
+    if (k >= 0) {
+      var targetId = "cave";
+      for (var hi = hist[k].length - 1; hi >= 0; hi--) {
+        var cand = byId(hist[k][hi]);
+        if (!cand) continue;
+        if (cand.kind === "cave") { targetId = "cave"; break; }
+        var rc = resolve(cand.url || cand.asked);
+        if (rc && !rc.blank && !isOverlayPagePath(rc.path)) { targetId = cand.id; break; }
+      }
+      show(targetId, k);
     }
   });
 
@@ -738,6 +783,59 @@
   };
   api.zoomKeys(document);
 
+  function triggerAnchorTagDownload(url) {
+    var a = document.createElement("a");
+    a.href = url; a.download = ""; a.hidden = true;
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  function extractDownloadFilename(resp, r) {
+    try {
+      var cd = (resp.headers && resp.headers.get("Content-Disposition")) || "";
+      var mUtf = cd.match(/filename\*\s*=\s*UTF-8''([^;\s]+)/i);
+      if (mUtf && mUtf[1]) return decodeURIComponent(mUtf[1]);
+      var mQuoted = cd.match(/filename\s*=\s*"([^"]+)"/i);
+      if (mQuoted && mQuoted[1]) return mQuoted[1];
+      var mPlain = cd.match(/filename\s*=\s*([^;\s]+)/i);
+      if (mPlain && mPlain[1]) return mPlain[1].replace(/^['"]|['"]$/g, "");
+    } catch (_e) {}
+    var qPath = (r && r.q && r.q.get("path")) || "";
+    if (qPath) {
+      var parts = qPath.replace(/\\/g, "/").split("/").filter(Boolean);
+      if (parts.length) return parts[parts.length - 1];
+    }
+    var pParts = ((r && r.path) || "").split("/").filter(Boolean);
+    return pParts.length ? decodeURIComponent(pParts[pParts.length - 1]) : "download";
+  }
+
+  function bufferToBase64(buf) {
+    var bytes = new Uint8Array(buf);
+    var chunks = [], step = 0x8000;
+    for (var i = 0; i < bytes.length; i += step) {
+      chunks.push(String.fromCharCode.apply(null, bytes.subarray(i, i + step)));
+    }
+    return btoa(chunks.join(""));
+  }
+
+  var dlToastTimer = null;
+  function showDownloadToast(text, isErr) {
+    var el = document.getElementById("anchor-dl-toast");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "anchor-dl-toast";
+      el.style.cssText = "position:fixed;right:16px;bottom:16px;z-index:99999;padding:8px 14px;border-radius:8px;" +
+        "background:#162030;border:1px solid #3b82f6;color:#e6ebf2;font:600 12.5px/1.35 system-ui,-apple-system,sans-serif;" +
+        "box-shadow:0 8px 24px rgba(0,0,0,0.45);pointer-events:none;transition:opacity 0.2s ease";
+      document.body.appendChild(el);
+    }
+    el.style.borderColor = isErr ? "#ef4444" : "#3b82f6";
+    el.textContent = text;
+    el.style.opacity = "1";
+    el.hidden = false;
+    clearTimeout(dlToastTimer);
+    dlToastTimer = setTimeout(function () { el.style.opacity = "0"; setTimeout(function () { el.hidden = true; }, 220); }, 3600);
+  }
+
   function wireWindow() {
     var h = host();
     if (!h || !h.window_control) return;
@@ -746,8 +844,46 @@
     document.querySelectorAll("#winctl [data-act]").forEach(function (b) {
       b.addEventListener("click", function () { h.window_control(b.dataset.act); });
     });
+    if (!/Windows/i.test(navigator.userAgent || "")) {
+      var barEl = document.getElementById("bar");
+      if (barEl && !barEl.__anchorDragWired) {
+        barEl.__anchorDragWired = true;
+        var interactiveSel = "button, a, .tile, input, select, textarea, [data-act], [role='button']";
+        barEl.addEventListener("mousedown", function (ev) {
+          if (ev.button !== 0 || (ev.target && ev.target.closest && ev.target.closest(interactiveSel))) return;
+          h.window_control("drag");
+        });
+        barEl.addEventListener("dblclick", function (ev) {
+          if (ev.target && ev.target.closest && ev.target.closest(interactiveSel)) return;
+          h.window_control("maximize");
+        });
+      }
+    }
   }
   if (host()) wireWindow(); else window.addEventListener("pywebviewready", wireWindow);
+
+  api.goToCalendarEvent = function (evObj) {
+    var targetPane = two ? active : 0;
+    show("cave", targetPane);
+    active = targetPane;
+    layout();
+    render();
+    var caveTile = byId("cave");
+    var tries = 0;
+    function focusInCave() {
+      tries++;
+      try {
+        var cw = caveTile && caveTile.frame && caveTile.frame.contentWindow;
+        if (cw && typeof cw._focusCaveCalendarEvent === "function") {
+          cw._focusCaveCalendarEvent(evObj || {});
+          return;
+        }
+      } catch (_e) {}
+      if (tries < 25) setTimeout(focusInCave, 160);
+    }
+    focusInCave();
+    return true;
+  };
 
   window.ANCHOR_APP = api;
 

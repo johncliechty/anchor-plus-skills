@@ -34,11 +34,14 @@
   window.open = function (url, target, features) {
     var vUrl = toSplitVideoUrl(url, "");
     if (vUrl && location.pathname !== "/steward-static/video.html") url = vUrl;
+    var rawUrl = String(url == null ? "" : url).trim();
+    if (rawUrl && (/\/static\/calendar-alarm\.html\b/i.test(rawUrl) || /[?&]alarm_window=1\b/i.test(rawUrl))) {
+      return nativeOpen.call(window, url, target, features);
+    }
     try { if (app.download(url, window)) return null; } catch (e) {}
     var w = null;
     try { w = app.open(url, target, window, features); } catch (e) { w = null; }
     if (w) return w;
-    var rawUrl = String(url == null ? "" : url).trim();
     if (!rawUrl || /^about:/i.test(rawUrl)) return null;
     try {
       var u = new URL(rawUrl, window.location.href);

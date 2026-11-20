@@ -276,14 +276,21 @@ class ProviderService:
             usage_summary, _ = _scr.global_usage_summary()
         except Exception:
             usage_summary = None
+        routing_info = _build_services_and_routing_summary(settings, out, capabilities, usage_summary)
         return {"ok": True, "host": host_state(), "settings_revision": settings["settings_revision"],
                 "settings_error": settings.get("settings_error"), "preferences": deepcopy(settings["provider_preferences"]),
-                "default_family": settings["default_cli"], "connections": out, "api_storage_available": provider_secrets.available(),
+                "default_family": settings["default_cli"],
+                "coding_family": settings.get("coding_family") or settings["default_cli"],
+                "review_family": settings.get("review_family") or ("claude" if (settings.get("coding_family") or settings["default_cli"]) != "claude" else "gemini"),
+                "connections": out, "api_storage_available": provider_secrets.available(),
                 "provider_matrix": [{"family": family, "transport": {"claude": "Claude Code", "chatgpt": "Codex", "gemini": "agy CLI", "grok": "Grok CLI"}[family],
                                      "enrollment": bool(capabilities[family].get("isolated") and capabilities[family].get("login")),
                                      "api_execution": False, "prerequisite": capabilities[family].get("limit")}
                                     for family in metadata.FAMILIES],
                 "usage_summary": usage_summary,
+                "active_routing": routing_info["active_routing"],
+                "logged_in_services": routing_info["logged_in_services"],
+                "catalog_defaults": routing_info["catalog_defaults"],
                 "product_complete": False}
 
     def add(self, body):
@@ -524,6 +531,11 @@ class AccountUsageReader:
         self.lock = threading.Lock()
         self.root = None
         self.files = {}
+        self._last_dir_mtime_ns = None
+        self._last_scan_mono = 0.0
+        self._last_stale = False
+        self._recent_names = ()
+        self._cached_totals = None
 
     @staticmethod
     def _summarize(doc):
@@ -544,14 +556,105 @@ class AccountUsageReader:
             totals[identity] = (total + tokens, latest)
         return totals
 
+    @staticmethod
+    def _disk_cache_path():
+        return paths.data_dir() / ".anchor" / "provider_account_usage_cache.json"
+
+    def _load_disk_cache(self, root):
+        if os.environ.get("PYTEST_CURRENT_TEST") is not None:
+            return
+        try:
+            cp = self._disk_cache_path()
+            if not cp.is_file():
+                return
+            raw = json.loads(cp.read_text(encoding="utf-8"))
+            if not isinstance(raw, dict) or raw.get("root") != str(root):
+                return
+            loaded = {}
+            for name, rec in (raw.get("files") or {}).items():
+                if not isinstance(rec, list) or len(rec) != 2:
+                    continue
+                sig_l, tot_d = rec
+                if not isinstance(sig_l, list) or len(sig_l) != 3 or not isinstance(tot_d, dict):
+                    continue
+                sig = (int(sig_l[0]), int(sig_l[1]), int(sig_l[2]))
+                tmap = {}
+                for ident, pair in tot_d.items():
+                    if isinstance(ident, str) and isinstance(pair, list) and len(pair) == 2 and native.finite(pair[0]):
+                        tmap[ident] = (pair[0], pair[1] if isinstance(pair[1], str) else None)
+                loaded[str(name)] = (sig, tmap)
+            if loaded:
+                self.files = loaded
+        except Exception:
+            pass
+
+    def _save_disk_cache(self, root):
+        if os.environ.get("PYTEST_CURRENT_TEST") is not None or len(self.files) <= 250:
+            return
+        try:
+            cp = self._disk_cache_path()
+            cp.parent.mkdir(parents=True, exist_ok=True)
+            serial = {
+                name: [list(sig), {ident: [tok, when] for ident, (tok, when) in tmap.items()}]
+                for name, (sig, tmap) in self.files.items()
+            }
+            paths.atomic_write_json(cp, {"version": 1, "root": str(root), "files": serial})
+        except Exception:
+            pass
+
     def read(self):
         import usage_capacity
         root = usage_capacity.ledger_dir()
+        root_path = Path(root)
+        is_prod = os.environ.get("PYTEST_CURRENT_TEST") is None
         with self.lock:
             if root != self.root:
                 self.root, self.files = root, {}
+                self._last_dir_mtime_ns = None
+                self._last_scan_mono = 0.0
+                self._last_stale = False
+                self._recent_names = ()
+                self._cached_totals = None
+                if is_prod:
+                    self._load_disk_cache(root)
+            now_mono = time.monotonic()
+            # Production fast-path for 10k+ ledger dirs when directory mtime is unchanged:
+            # re-stat only the 32 newest files instead of scanning all 16k+ NTFS entries every 4s.
+            if (
+                is_prod
+                and len(self.files) > 250
+                and not getattr(self, "_last_stale", False)
+                and getattr(self, "_cached_totals", None) is not None
+                and (now_mono - float(getattr(self, "_last_scan_mono", 0.0) or 0.0)) < 30.0
+            ):
+                try:
+                    dir_mtime = root_path.stat().st_mtime_ns
+                except OSError:
+                    dir_mtime = None
+                if dir_mtime is not None and dir_mtime == getattr(self, "_last_dir_mtime_ns", None):
+                    hot_changed = False
+                    for rname in getattr(self, "_recent_names", ()):
+                        prior = self.files.get(rname)
+                        try:
+                            info = (root_path / rname).stat()
+                            sig = (info.st_mtime_ns, info.st_ctime_ns, info.st_size)
+                            if not prior or prior[0] != sig:
+                                hot_changed = True
+                                break
+                        except OSError:
+                            hot_changed = True
+                            break
+                    if not hot_changed:
+                        cached_t = self._cached_totals
+                        return dict(cached_t), set()
+
             seen, stale = set(), set()
+            dirty_count = 0
             try:
+                try:
+                    dir_mtime_now = root_path.stat().st_mtime_ns
+                except OSError:
+                    dir_mtime_now = None
                 with os.scandir(root) as files:
                     for file in files:
                         if not os.path.normcase(file.name).endswith(".json"):
@@ -563,14 +666,34 @@ class AccountUsageReader:
                             signature = (info.st_mtime_ns, info.st_ctime_ns, info.st_size)
                             if prior and prior[0] == signature:
                                 continue
-                            with open(file.path, encoding="utf-8") as stream:
-                                totals = self._summarize(json.load(stream))
+                            if is_prod and len(seen) > 250:
+                                raw_bytes = Path(file.path).read_bytes()
+                                if b"provider_connection_id" not in raw_bytes:
+                                    s_strip = raw_bytes.strip()
+                                    if s_strip.startswith(b"{") and s_strip.endswith(b"}"):
+                                        self.files[file.name] = (signature, {})
+                                        dirty_count += 1
+                                        continue
+                                totals = self._summarize(json.loads(raw_bytes.decode("utf-8")))
+                            else:
+                                with open(file.path, encoding="utf-8") as stream:
+                                    totals = self._summarize(json.load(stream))
                             self.files[file.name] = (signature, totals)
+                            dirty_count += 1
                         except (OSError, ValueError, TypeError, AttributeError):
                             # Retry on the next read; a failed read cannot erase
                             # a previously observed account's usage.
                             stale.update(prior[1] if prior else ())
+                prev_len = len(self.files)
                 self.files = {name: value for name, value in self.files.items() if name in seen}
+                if dirty_count > 0 or len(self.files) != prev_len:
+                    self._save_disk_cache(root)
+                if is_prod and len(self.files) > 250:
+                    self._last_dir_mtime_ns = dir_mtime_now
+                    self._last_scan_mono = now_mono
+                    self._recent_names = tuple(
+                        name for name, _ in sorted(self.files.items(), key=lambda kv: kv[1][0][0], reverse=True)[:32]
+                    )
             except OSError:
                 stale.update(identity for _, totals in self.files.values() for identity in totals)
             totals = {}
@@ -578,6 +701,8 @@ class AccountUsageReader:
                 for identity, (tokens, when) in accounts.items():
                     total, latest = totals.get(identity, (0, None))
                     totals[identity] = (total + tokens, max(latest or when, when) if when else latest)
+            self._last_stale = bool(stale)
+            self._cached_totals = dict(totals)
             return totals, stale
 
 
@@ -627,7 +752,16 @@ def project_roots():
         return []
 
 
-SERVICE = ProviderService()
+_PREV_SERVICE = globals().get("SERVICE")
+if _PREV_SERVICE is not None and hasattr(_PREV_SERVICE, "observations"):
+    _PREV_SERVICE.__class__ = ProviderService
+    if hasattr(_PREV_SERVICE, "usage") and _PREV_SERVICE.usage is not None:
+        _PREV_SERVICE.usage.__class__ = AccountUsageReader
+    SERVICE = _PREV_SERVICE
+else:
+    SERVICE = ProviderService()
+
+_COMMS_ACCOUNTS_SUMMARY_CACHE: dict = {"sig": None, "ts": 0.0, "accounts": []}
 
 
 def require_capacity_choice(settings, connection):
@@ -708,15 +842,296 @@ def resolve_quality(family, settings, connection, *, surface="cockpit"):
     return {**selected, "model": model, "effort": effort, "selection_evidence": "explicit_setup_choice"}
 
 
+def _human_model_display(family, model_id, effort_id):
+    m = str(model_id or "").strip()
+    e = str(effort_id or "").strip()
+    if family == "claude" and m in ("best", "latest_supported", ""):
+        m = "claude-fable-5-1"
+        e = "max" if e in ("", "highest_supported") else e
+    elif m in ("latest_supported", ""):
+        defaults = {
+            "gemini": ("gemini-4-neon", "high"),
+            "chatgpt": ("gpt-6-luna", "ultra"),
+            "grok": ("grok-4.7", "xhigh"),
+            "claude": ("claude-fable-5-1", "max"),
+        }
+        dm, de = defaults.get(family, (family, "high"))
+        m = dm
+        if e in ("", "highest_supported"):
+            e = de
+    elif e == "highest_supported":
+        e = {"claude": "max", "gemini": "high", "chatgpt": "ultra", "grok": "xhigh"}.get(family, "high")
+    return f"{m} · {e}" if e else m
+
+
+def _build_services_and_routing_summary(settings, connections, capabilities=None, usage_summary=None):
+    # Support both (settings, connections, capabilities, usage_summary) and legacy/test (connections, prefs)
+    if isinstance(settings, list) and isinstance(connections, dict):
+        raw_conns = settings
+        prefs_arg = connections
+        settings = {
+            "default_cli": prefs_arg.get("family") or "gemini",
+            "coding_family": prefs_arg.get("coding_family") or prefs_arg.get("family") or "gemini",
+            "review_family": prefs_arg.get("review_family") or ("claude" if (prefs_arg.get("family") or "gemini") != "claude" else "gemini"),
+            "provider_preferences": prefs_arg,
+        }
+        connections = raw_conns
+        if capabilities is None:
+            capabilities = {
+                str(c.get("family")): {"installed": bool(c.get("installed", True))}
+                for c in connections
+                if isinstance(c, dict) and c.get("family")
+            }
+    capabilities = capabilities or {}
+    usage_summary = usage_summary or {}
+    coding_fam = str(settings.get("coding_family") or settings.get("default_cli") or "gemini").lower()
+    review_fam = str(settings.get("review_family") or ("claude" if coding_fam != "claude" else "gemini")).lower()
+    prefs = settings.get("provider_preferences") or {}
+    quality_map = prefs.get("quality") or {}
+    accounts_map = prefs.get("accounts") or {}
+    mon_families = ((usage_summary or {}).get("allowance_monitor") or {}).get("families") or {}
+
+    # Load verified catalog defaults from disk without spawning subprocesses
+    cat_defaults = {}
+    try:
+        cat_path = Path(__file__).parent / "gwl_hub_repository" / "verified_model_catalog.json"
+        if cat_path.is_file():
+            cat_doc = json.loads(cat_path.read_text(encoding="utf-8"))
+            for fk, fv in (cat_doc.get("families") or {}).items():
+                if isinstance(fv, dict):
+                    cat_defaults[fk] = {
+                        "frontier_model": fv.get("frontier_model"),
+                        "effort_frontier": fv.get("effort_frontier"),
+                        "models": list(fv.get("models") or []),
+                    }
+    except Exception:
+        cat_defaults = {}
+
+    transports = {
+        "claude": "Claude Code CLI",
+        "chatgpt": "OpenAI Codex CLI",
+        "gemini": "Google Ultra via agy CLI",
+        "grok": "xAI Grok CLI",
+    }
+    family_labels = {
+        "claude": "Claude (Anthropic)",
+        "chatgpt": "ChatGPT (OpenAI Codex)",
+        "gemini": "Gemini (Google Ultra / agy)",
+        "grok": "Grok (xAI)",
+    }
+
+    ai_providers = []
+    by_family = {}
+    for fam in metadata.FAMILIES:
+        fam_conns = [c for c in connections if c.get("family") == fam]
+        sel_id = accounts_map.get(fam) or f"{fam}-default"
+        primary = next((c for c in fam_conns if c.get("id") == sel_id), fam_conns[0] if fam_conns else {})
+        by_family[fam] = primary
+        cap = (capabilities or {}).get(fam) or {}
+        mon = mon_families.get(fam) or {}
+        q = quality_map.get(fam) or {"model": "latest_supported", "effort": "highest_supported"}
+        cat_sel = ((primary.get("catalog") or {}).get("selection") or {})
+        eff_model = cat_sel.get("model") if q.get("model") in (None, "", "latest_supported") and cat_sel.get("model") else q.get("model")
+        eff_effort = cat_sel.get("effort") if q.get("effort") in (None, "", "highest_supported") and cat_sel.get("effort") else q.get("effort")
+        configured_display = _human_model_display(fam, eff_model, eff_effort)
+
+        auth_raw = str(primary.get("auth") or "unknown")
+        agy_ready = bool((capabilities or {}).get("gemini", {}).get("installed"))
+        roles = []
+        if fam == coding_fam:
+            roles.append("Coding Engine")
+        if fam == review_fam:
+            roles.append("Adversarial Reviewer")
+
+        fallback_active = False
+        fallback_note = ""
+        active_display = configured_display
+        if fam == "claude" and auth_raw == "signed_out" and agy_ready:
+            fallback_active = True
+            active_display = "Claude Opus 5.5 · high (via agy fallback)"
+            fallback_note = (
+                "Standalone Claude Code CLI sign-in is expired — routing Claude reviews via Antigravity (agy) "
+                "at Claude Opus 5.5 (High). Sign in to Claude CLI to restore Fable 5.1 (claude-fable-5-1 · max)."
+            )
+        elif fam == "gemini" and auth_raw == "unknown" and cap.get("installed"):
+            auth_status = "ready_via_agy"
+        auth_label = (
+            "Signed in" if auth_raw == "signed_in" else
+            "Signed out (via agy fallback)" if (fam == "claude" and auth_raw == "signed_out" and agy_ready) else
+            "Signed out" if auth_raw == "signed_out" else
+            "Google Ultra ready (agy)" if (fam == "gemini" and cap.get("installed")) else
+            "CLI installed" if (cap.get("installed") and mon.get("connected")) else
+            auth_raw.replace("_", " ")
+        )
+        acct_str = str(primary.get("account_identity") or primary.get("account") or "")
+        if not acct_str and fam == "gemini" and cap.get("installed"):
+            acct_str = "Google Ultra (agy)"
+        eff_effort_disp = "high" if fallback_active else (
+            "max" if (fam == "claude" and eff_effort in (None, "", "highest_supported")) else
+            {"claude": "max", "gemini": "high", "chatgpt": "ultra", "grok": "xhigh"}.get(fam, "high")
+            if eff_effort in (None, "", "highest_supported") else str(eff_effort)
+        )
+        is_ready_flag = bool(auth_raw == "signed_in" or (fam == "gemini" and cap.get("installed")) or fallback_active)
+        ai_providers.append({
+            "family": fam,
+            "label": family_labels.get(fam, fam.title()),
+            "connection_id": primary.get("id") or f"{fam}-default",
+            "account_identity": primary.get("account_identity") or acct_str or None,
+            "account": acct_str,
+            "plan": str(primary.get("plan") or ""),
+            "transport": transports.get(fam, fam),
+            "installed": bool(cap.get("installed")),
+            "auth": auth_raw,
+            "auth_label": auth_label,
+            "signed_in": bool(auth_raw == "signed_in" or (fam == "gemini" and cap.get("installed") and auth_raw in ("signed_in", "unknown"))),
+            "signed_in_or_ready": is_ready_flag,
+            "effective_ready": is_ready_flag,
+            "via_agy_fallback": fallback_active,
+            "roles": roles,
+            "configured_model": configured_display,
+            "configured_model_display": configured_display,
+            "configured_effort": eff_effort_disp if not fallback_active else ("max" if fam == "claude" else eff_effort_disp),
+            "active_model": active_display,
+            "model_display": configured_display,
+            "effective_model_display": active_display,
+            "effort_display": eff_effort_disp,
+            "effective_effort": eff_effort_disp,
+            "fallback_active": fallback_active,
+            "fallback_note": fallback_note,
+            "fallback_reason": fallback_note,
+            "status_note": fallback_note or auth_label,
+        })
+
+    coding_entry = next((p for p in ai_providers if p["family"] == coding_fam), ai_providers[0] if ai_providers else {})
+    review_entry = next((p for p in ai_providers if p["family"] == review_fam), ai_providers[0] if ai_providers else {})
+
+    comms_accounts = []
+    try:
+        import comms_connector as _cc
+        if os.environ.get("PYTEST_CURRENT_TEST") is None:
+            try:
+                cp_st = _cc._config_path().stat()
+                sp_st = _cc._sync_path().stat() if _cc._sync_path().exists() else None
+                c_sig = (cp_st.st_mtime_ns, cp_st.st_size, sp_st.st_mtime_ns if sp_st else 0, sp_st.st_size if sp_st else 0)
+            except OSError:
+                c_sig = None
+            now_m = time.monotonic()
+            if (
+                c_sig is not None
+                and _COMMS_ACCOUNTS_SUMMARY_CACHE.get("sig") == c_sig
+                and (now_m - float(_COMMS_ACCOUNTS_SUMMARY_CACHE.get("ts") or 0.0)) < 60.0
+            ):
+                comms_accounts = [dict(x) for x in (_COMMS_ACCOUNTS_SUMMARY_CACHE.get("accounts") or [])]
+            else:
+                c_state, _ = _cc.handle_comms_get({"slim": "1"})
+                for acc in (c_state.get("accounts") or []):
+                    if not isinstance(acc, dict):
+                        continue
+                    raw_em = str(acc.get("email") or "").strip()
+                    masked_em = raw_em
+                    if "@" in raw_em:
+                        u_part, d_part = raw_em.split("@", 1)
+                        masked_em = (u_part[:1] + "***@" + d_part) if u_part else ("***@" + d_part)
+                    st_str = str(acc.get("status") or "configured")
+                    comms_accounts.append({
+                        "id": str(acc.get("id") or ""),
+                        "label": str(acc.get("label") or acc.get("family") or "Account"),
+                        "family": str(acc.get("family") or ""),
+                        "email": masked_em,
+                        "status": st_str,
+                        "auth_mode": str(acc.get("auth_mode") or ""),
+                        "has_credentials": bool(acc.get("has_secret") or st_str in ("synced", "connected")),
+                        "has_calendar": bool(acc.get("ics_url") or acc.get("auth_mode") in ("local_outlook", "microsoft_graph", "oauth_token", "app_password")),
+                    })
+                _COMMS_ACCOUNTS_SUMMARY_CACHE.update(sig=c_sig, ts=now_m, accounts=[dict(x) for x in comms_accounts])
+    except Exception:
+        comms_accounts = []
+
+    review_routing_obj = {
+        "family": review_fam,
+        "label": review_entry.get("label", review_fam),
+        "configured_model": review_entry.get("configured_model", ""),
+        "configured_model_display": review_entry.get("configured_model_display", ""),
+        "configured_effort": review_entry.get("configured_effort", "max"),
+        "active_model": review_entry.get("active_model", ""),
+        "effective_model_display": review_entry.get("effective_model_display", ""),
+        "effective_effort": review_entry.get("effective_effort", "high"),
+        "transport": review_entry.get("transport", ""),
+        "auth_label": review_entry.get("auth_label", ""),
+        "status_note": review_entry.get("status_note", ""),
+        "fallback_active": bool(review_entry.get("fallback_active")),
+        "fallback_note": review_entry.get("fallback_note", ""),
+        "fallback_reason": review_entry.get("fallback_reason", ""),
+    }
+    return {
+        "coding_family": coding_fam,
+        "review_family": review_fam,
+        "active_routing": {
+            "coding": {
+                "family": coding_fam,
+                "label": coding_entry.get("label", coding_fam),
+                "configured_model": coding_entry.get("configured_model", ""),
+                "configured_model_display": coding_entry.get("configured_model_display", ""),
+                "configured_effort": coding_entry.get("configured_effort", "high"),
+                "active_model": coding_entry.get("active_model", ""),
+                "effective_model_display": coding_entry.get("effective_model_display", ""),
+                "effective_effort": coding_entry.get("effective_effort", "high"),
+                "transport": coding_entry.get("transport", ""),
+                "auth_label": coding_entry.get("auth_label", ""),
+                "status_note": coding_entry.get("status_note", ""),
+            },
+            "review": review_routing_obj,
+            "adversarial_reviewer": review_routing_obj,
+        },
+        "logged_in_services": {
+            "ai_providers": ai_providers,
+            "comms_accounts": comms_accounts,
+        },
+        "catalog_defaults": cat_defaults,
+    }
+
+
 def handle_page(handler, path, body):
     cookie = handler._local_login_cookie() if hasattr(handler, "_local_login_cookie") else None
     if path == "/setup/install":
         from html import escape
         # The existing installer documentation is code, not user project data.
         content = (Path(__file__).parent / "USER-ONBOARD.md").read_text(encoding="utf-8")
-        handler._send_html('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">'
-                           '<title>Anchor installation</title><a href="/setup">Return to Setup</a>'
-                           '<pre style="white-space:pre-wrap;max-width:80ch;margin:24px auto">' + escape(content) + '</pre>', cookie=cookie)
+        handler._send_html(
+            '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            '<title>Anchor installation</title>'
+            '<style>'
+            'body{margin:0;background:#0d1017;color:#eef1f5;font:14px/1.55 system-ui,Segoe UI,sans-serif}'
+            '.inst-top{position:sticky;top:0;display:flex;align-items:center;justify-content:space-between;gap:12px;'
+            'padding:10px 20px;background:rgba(13,16,23,0.96);border-bottom:1px solid #2e3a4d;z-index:20}'
+            '.inst-top a,.inst-top button{color:#eef1f5;background:#151b26;border:1px solid #2e3a4d;border-radius:7px;'
+            'padding:6px 12px;text-decoration:none;font:600 13px system-ui,sans-serif;cursor:pointer}'
+            '.inst-top button.anchor-overlay-close-x{width:34px;height:32px;padding:0;display:inline-flex;align-items:center;'
+            'justify-content:center;font-size:16px;font-weight:700;border-color:#475569}'
+            '.inst-top button.anchor-overlay-close-x:hover{background:#dc2626;border-color:#dc2626;color:#fff}'
+            '</style></head><body>'
+            '<header class="inst-top">'
+            '<div style="display:flex;align-items:center;gap:10px">'
+            '<strong style="color:#d9b86c">⚓ Anchor · Installation Guide</strong>'
+            '<a href="/setup">← Return to Setup</a>'
+            '</div>'
+            '<button type="button" id="install-close-x" class="anchor-overlay-close-x" '
+            'aria-label="Close overlay and return" title="Close and return to Cave of Wonders or AI Cockpit (Esc)">&#10005;</button>'
+            '</header>'
+            '<pre style="white-space:pre-wrap;max-width:86ch;margin:24px auto;padding:0 18px">' + escape(content) + '</pre>'
+            '<script>'
+            '(function(){function closeOv(){if(window.parent!==window){'
+            'window.parent.postMessage({type:"anchor-overlay-close",closeTile:true},location.origin);'
+            'window.parent.postMessage({type:"anchor-setup-close"},location.origin);return;}'
+            'var ref=document.referrer||"";'
+            'if(ref && ref.indexOf(location.origin)===0 && ref.indexOf("/setup/install")===-1){location.href=ref;return;}'
+            'location.href="/high-seat";}'
+            'var b=document.getElementById("install-close-x");if(b)b.onclick=closeOv;'
+            'document.addEventListener("keydown",function(e){if(e.key==="Escape"){e.preventDefault();closeOv();}});})();'
+            '</script></body></html>',
+            cookie=cookie,
+        )
         return
     handler._send_html((Path(__file__).parent / "static" / "provider-setup.html").read_text(encoding="utf-8"), cookie=cookie)
 

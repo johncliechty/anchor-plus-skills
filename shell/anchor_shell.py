@@ -290,8 +290,10 @@ def bring_forward_existing():
     If the existing window is hung (Not Responding), terminate it and return False so a fresh window opens.
     """
     if not IS_WIN32 or user32 is None:
+        import signal
         import shutil
         import subprocess
+        import time
         if IS_MAC:
             try:
                 subprocess.run(
@@ -299,9 +301,21 @@ def bring_forward_existing():
                     capture_output=True,
                     timeout=3,
                 )
+                return True
+            except subprocess.TimeoutExpired:
+                # AppleEvent activation timed out -> existing Cocoa main runloop is hung; reap locked PID.
+                try:
+                    lock_txt = (DATA / "instance.lock").read_text(encoding="utf-8").strip()
+                    hung_pid = int(lock_txt.split()[0]) if lock_txt else 0
+                    if hung_pid > 1 and hung_pid != os.getpid():
+                        os.kill(hung_pid, getattr(signal, "SIGKILL", 9))
+                        time.sleep(0.35)
+                        return False
+                except Exception:
+                    pass
+                return False
             except Exception:
-                pass
-            return True
+                return True
         if IS_LINUX and shutil.which("wmctrl"):
             try:
                 subprocess.run(["wmctrl", "-a", TITLE], capture_output=True, timeout=3)
@@ -433,6 +447,148 @@ def _message(text, title="Anchor"):
     print("%s: %s" % (title, text), file=sys.stderr)
 
 
+def _unique_download_path(suggested_name, downloads_dir=None):
+    """Choose a non-colliding file path in ~/Downloads without blocking on a modal dialog."""
+    import re
+    base_dir = Path(downloads_dir) if downloads_dir is not None else (Path.home() / "Downloads")
+    base_dir.mkdir(parents=True, exist_ok=True)
+    raw_name = os.path.basename(str(suggested_name or "").strip().replace("\\", "/"))
+    clean_name = re.sub(r'[\x00-\x1f<>:"/\\|?*]+', "_", raw_name).strip(" .") or "download"
+    candidate = base_dir / clean_name
+    if not candidate.exists():
+        return candidate
+    stem, suffix = candidate.stem or "download", candidate.suffix
+    for idx in range(1, 10000):
+        alt = base_dir / f"{stem} ({idx}){suffix}"
+        if not alt.exists():
+            return alt
+    return base_dir / f"{stem}-{os.getpid()}{suffix}"
+
+
+def _install_macos_cocoa_patches(_cocoa, _Foundation, _AppKit=None, downloads_dir=None):
+    """Eliminate synchronous NSSavePanel.runModal() deadlocks inside WebKit download callbacks
+    and fix PyObjC WebKitHost.keyDown_ selectedRange() crashes on macOS."""
+    bv = getattr(_cocoa, "BrowserView", None)
+    if bv is None:
+        return
+
+    # 1. Patch DownloadDelegate (<a download> path) so WebKit streams straight to ~/Downloads
+    #    without calling synchronous NSSavePanel.runModal() inside WKDownload's IPC callback.
+    dd = getattr(bv, "DownloadDelegate", None)
+    if dd is not None and not getattr(dd, "_anchor_dd_patched", False):
+        def _anchor_decide_dest(self_dd, download, response, suggestedFilename, completionHandler):
+            try:
+                dest = _unique_download_path(suggestedFilename or "download", downloads_dir=downloads_dir)
+                completionHandler(_Foundation.NSURL.fileURLWithPath_(str(dest)))
+                return
+            except Exception:
+                try:
+                    completionHandler(None)
+                except Exception:
+                    pass
+
+        dd.download_decideDestinationUsingResponse_suggestedFilename_completionHandler_ = _anchor_decide_dest
+        dd._anchor_dd_patched = True
+
+    # 2. Patch BrowserDelegate (Content-Disposition: attachment navigation response path)
+    #    so non-renderable responses also stream directly to ~/Downloads without runModal().
+    bd = getattr(bv, "BrowserDelegate", None)
+    if bd is not None and not getattr(bd, "_anchor_dl_patched", False):
+        _orig_dl_done = getattr(bd, "download_completionHandler_error_", None)
+        if callable(_orig_dl_done):
+            def _anchor_dl_done(self_bd, temporaryLocation, response, error):
+                try:
+                    if error is None and temporaryLocation is not None and getattr(self_bd, "_file_name", None):
+                        dest_url = _Foundation.NSURL.fileURLWithPath_(self_bd._file_name)
+                        fm = _Foundation.NSFileManager.defaultManager()
+                        if fm.fileExistsAtPath_(self_bd._file_name):
+                            fm.removeItemAtURL_error_(dest_url, None)
+                except Exception:
+                    pass
+                return _orig_dl_done(self_bd, temporaryLocation, response, error)
+
+            bd.download_completionHandler_error_ = _anchor_dl_done
+
+        _orig_nav_resp = getattr(bd, "webView_decidePolicyForNavigationResponse_decisionHandler_", None)
+        if callable(_orig_nav_resp):
+            def _anchor_decide_nav_resp(self_bd, webview_obj, navigationResponse, decisionHandler):
+                try:
+                    if not navigationResponse.canShowMIMEType():
+                        wsettings = getattr(_cocoa, "webview_settings", {}) or {}
+                        if wsettings.get("ALLOW_DOWNLOADS", True):
+                            cancel_pol = getattr(getattr(_cocoa, "WebKit", None), "WKNavigationResponsePolicyCancel", 0)
+                            decisionHandler(cancel_pol)
+                            resp_obj = navigationResponse.response()
+                            suggested = resp_obj.suggestedFilename() if resp_obj is not None else "download"
+                            dest = _unique_download_path(suggested or "download", downloads_dir=downloads_dir)
+                            self_bd._file_name = str(dest)
+                            session = _Foundation.NSURLSession.sharedSession()
+                            task = session.downloadTaskWithURL_completionHandler_(
+                                resp_obj.URL(), self_bd.download_completionHandler_error_
+                            )
+                            task.resume()
+                            return
+                except Exception:
+                    pass
+                return _orig_nav_resp(self_bd, webview_obj, navigationResponse, decisionHandler)
+
+            bd.webView_decidePolicyForNavigationResponse_decisionHandler_ = _anchor_decide_nav_resp
+        bd._anchor_dl_patched = True
+
+    # 3. Patch WebKitHost.keyDown_ so Cmd+C/V/X/A/Z/W/Q never calls nonexistent WKWebView.selectedRange().
+    wk_host = getattr(bv, "WebKitHost", None)
+    appkit = _AppKit or getattr(_cocoa, "AppKit", None)
+    if wk_host is not None and appkit is not None and not getattr(wk_host, "_anchor_key_patched", False):
+        _orig_key_down = getattr(wk_host, "keyDown_", None)
+
+        def _anchor_key_down(self_wk, event):
+            try:
+                cmd_mask = getattr(appkit, "NSCommandKeyMask", getattr(appkit, "NSEventModifierFlagCommand", 1 << 20))
+                if event.modifierFlags() & cmd_mask:
+                    chars = str(
+                        (event.charactersIgnoringModifiers() if hasattr(event, "charactersIgnoringModifiers") else None)
+                        or event.characters()
+                        or ""
+                    ).lower()
+                    win_obj = self_wk.window() if hasattr(self_wk, "window") else None
+                    responder = win_obj.firstResponder() if win_obj is not None else None
+                    if chars == "q" and getattr(bv, "app", None) is not None:
+                        bv.app.stop_(self_wk)
+                        return
+                    if chars == "w" and win_obj is not None:
+                        win_obj.performClose_(event)
+                        return
+                    if responder is not None:
+                        if chars == "x" and hasattr(responder, "cut_"):
+                            responder.cut_(self_wk)
+                            return
+                        if chars == "c" and hasattr(responder, "copy_"):
+                            responder.copy_(self_wk)
+                            return
+                        if chars == "v" and hasattr(responder, "paste_"):
+                            responder.paste_(self_wk)
+                            return
+                        if chars == "a" and hasattr(responder, "selectAll_"):
+                            responder.selectAll_(self_wk)
+                            return
+                        if chars == "z":
+                            um = responder.undoManager() if hasattr(responder, "undoManager") else None
+                            if um is not None and um.canUndo():
+                                um.undo()
+                            return
+            except Exception:
+                pass
+            if callable(_orig_key_down):
+                try:
+                    return super(wk_host, self_wk).keyDown_(event)
+                except Exception:
+                    return None
+            return None
+
+        wk_host.keyDown_ = _anchor_key_down
+        wk_host._anchor_key_patched = True
+
+
 def _read_zoom():
     try:
         z = float(ZOOM_FILE.read_text(encoding="utf-8").strip())
@@ -517,6 +673,81 @@ class HostApi:
                     form.Invoke(Action(lambda: (user32.ReleaseCapture(), user32.SendMessageW(hwnd, 0x00A1, 2, 0))))
                 except Exception:
                     pass
+            elif IS_MAC and w is not None and getattr(w, "native", None) is not None:
+                try:
+                    import threading as _threading
+                    import time as _time
+                    import AppKit as _AppKit
+                    from PyObjCTools import AppHelper as _AppHelper
+
+                    ns_win = w.native
+                    start_mouse = _AppKit.NSEvent.mouseLocation()
+                    start_origin = ns_win.frame().origin
+                    sx, sy = float(start_mouse.x), float(start_mouse.y)
+                    ox, oy = float(start_origin.x), float(start_origin.y)
+
+                    def _mac_drag_loop():
+                        t_end = _time.monotonic() + 30.0
+                        while _time.monotonic() < t_end:
+                            if not (_AppKit.NSEvent.pressedMouseButtons() & 1):
+                                break
+                            cur = _AppKit.NSEvent.mouseLocation()
+                            nx = ox + (float(cur.x) - sx)
+                            ny = oy + (float(cur.y) - sy)
+                            _AppHelper.callAfter(ns_win.setFrameOrigin_, _AppKit.NSMakePoint(nx, ny))
+                            _time.sleep(0.008)
+
+                    _threading.Thread(target=_mac_drag_loop, daemon=True).start()
+                except Exception:
+                    pass
+
+    def save_download(self, filename="", data_b64="", *_args):
+        """Save base64-encoded download bytes directly into ~/Downloads without a blocking modal sheet."""
+        import base64
+
+        raw = base64.b64decode(str(data_b64 or "").encode("ascii"))
+        dest = _unique_download_path(filename or "download")
+        tmp = dest.with_name("." + dest.name + f".part-{os.getpid()}")
+        try:
+            tmp.write_bytes(raw)
+            os.replace(tmp, dest)
+        finally:
+            if tmp.exists():
+                try:
+                    tmp.unlink()
+                except OSError:
+                    pass
+        return {"ok": True, "path": str(dest), "filename": dest.name}
+
+    def alarm_notify(self, payload=None, *_args):
+        """Flash the OS taskbar / restore minimized window when a Calendar Event Alarm triggers."""
+        w = self._window
+        if IS_WIN32 and user32 is not None and w is not None and getattr(w, "native", None) is not None:
+            try:
+                hwnd = int(str(w.native.Handle))
+
+                class _FLASHWINFO(ctypes.Structure):
+                    _fields_ = [
+                        ("cbSize", wintypes.UINT),
+                        ("hwnd", wintypes.HWND),
+                        ("dwFlags", wintypes.DWORD),
+                        ("uCount", wintypes.UINT),
+                        ("dwTimeout", wintypes.DWORD),
+                    ]
+
+                if user32.IsIconic(hwnd):
+                    user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+                fi = _FLASHWINFO(
+                    ctypes.sizeof(_FLASHWINFO),
+                    hwnd,
+                    0x00000003 | 0x0000000C,  # FLASHW_ALL | FLASHW_TIMERNOFG
+                    6,
+                    0,
+                )
+                user32.FlashWindowEx(ctypes.byref(fi))
+            except Exception:
+                pass
+        return True
 
     # ---------- finding Anchor (the setup and offline pages call these) ----------
     def connect(self, text="", *_args):
@@ -700,6 +931,9 @@ def main(argv=None):
         if not acquired:
             if bring_forward_existing():
                 return 0
+            acquired, posix_lock = _acquire_single_instance_lock(DATA)
+            if not acquired:
+                return 0
 
     if FROZEN:
         unblock_extracted_files()
@@ -721,6 +955,20 @@ def main(argv=None):
                         base = (host._address or connect.LOCAL or "http://127.0.0.1:8777").rstrip("/")
                         if uri.startswith(base) or uri.startswith("http://127.0.0.1:") or uri.startswith("http://localhost:"):
                             args.set_Handled(True)
+                            if "alarm_window=1" in uri or "/static/calendar-alarm.html" in uri:
+                                import threading as _threading
+                                _threading.Thread(
+                                    target=lambda: webview.create_window(
+                                        "Anchor — Calendar Alarm",
+                                        uri,
+                                        width=460,
+                                        height=340,
+                                        resizable=True,
+                                        on_top=True,
+                                    ),
+                                    daemon=True,
+                                ).start()
+                                return
                             if "download=1" not in uri:
                                 import json as _json
                                 import threading as _threading
@@ -761,6 +1009,14 @@ def main(argv=None):
                         return _orig_ready(self_ec, sender, args)
                     _edge.EdgeChrome.on_webview_ready = _anchor_webview_ready
                 _edge.EdgeChrome._anchor_patched = True
+        except Exception:
+            pass
+    elif IS_MAC:
+        try:
+            from webview.platforms import cocoa as _cocoa
+            import AppKit as _AppKit
+            import Foundation as _Foundation
+            _install_macos_cocoa_patches(_cocoa, _Foundation, _AppKit)
         except Exception:
             pass
     PROFILE.mkdir(parents=True, exist_ok=True)
