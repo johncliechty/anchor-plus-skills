@@ -754,6 +754,23 @@
   api.zoomKeys = function (doc) {
     doc.addEventListener("keydown", function (ev) {
       if (!(ev.ctrlKey || ev.metaKey) || ev.altKey) return;
+      if (ev.metaKey && !ev.ctrlKey && !ev.shiftKey && /Macintosh|Mac OS X/i.test(navigator.userAgent || "")) {
+        var h = host();
+        if (h && h.window_control) {
+          var k = (ev.key || "").toLowerCase();
+          if (k === "q") {
+            ev.preventDefault();
+            h.window_control("close");
+            return;
+          }
+          if (k === "w") {
+            ev.preventDefault();
+            if (two && panes[1]) closePane(1);
+            else h.window_control("close");
+            return;
+          }
+        }
+      }
       var step = (ev.key === "+" || ev.key === "=") ? 1 : (ev.key === "-" || ev.key === "_") ? -1 : ev.key === "0" ? 0 : null;
       if (step !== null && api.zoom(step)) ev.preventDefault();
     }, true);
@@ -838,7 +855,9 @@
 
   function wireWindow() {
     var h = host();
-    if (!h || !h.window_control) return;
+    if (!h || !h.window_control) return false;
+    if (window.__anchorWindowWired) return true;
+    window.__anchorWindowWired = true;
     document.body.classList.add("hosted");
     queueRows();
     document.querySelectorAll("#winctl [data-act]").forEach(function (b) {
@@ -859,8 +878,13 @@
         });
       }
     }
+    return true;
   }
-  if (host()) wireWindow(); else window.addEventListener("pywebviewready", wireWindow);
+  if (!wireWindow()) {
+    window.addEventListener("pywebviewready", wireWindow);
+    var wirePoll = setInterval(function () { if (wireWindow()) clearInterval(wirePoll); }, 120);
+    setTimeout(function () { clearInterval(wirePoll); }, 10000);
+  }
 
   api.goToCalendarEvent = function (evObj) {
     var targetPane = two ? active : 0;

@@ -447,6 +447,64 @@ def _message(text, title="Anchor"):
     print("%s: %s" % (title, text), file=sys.stderr)
 
 
+_ACTIVE_POSIX_LOCK = None
+_MAC_TERMINATING = False
+
+
+def _wrap_objc_replacement(orig, fn):
+    """Preserve Objective-C selector & C ABI type signature when replacing a PyObjC method."""
+    try:
+        import objc as _objc
+        if orig is not None and hasattr(orig, "selector") and hasattr(orig, "signature"):
+            return _objc.selector(fn, selector=orig.selector, signature=orig.signature)
+    except Exception:
+        pass
+    return fn
+
+
+def _terminate_macos_app(window_obj=None, *, exit_fn=None, exit_delay=0.12):
+    """Cleanly close the macOS window, release instance.lock immediately, wake the Cocoa runloop,
+    and guarantee hard process exit within ``exit_delay`` seconds so Anchor never hangs in the Dock
+    waiting on a missing NSEvent or a non-daemon pywebview js_bridge_call semaphore."""
+    global _ACTIVE_POSIX_LOCK, _MAC_TERMINATING
+    import threading as _threading
+    import time as _time
+
+    lock_ref = _ACTIVE_POSIX_LOCK
+    _ACTIVE_POSIX_LOCK = None
+    if lock_ref is not None:
+        _release_single_instance_lock(lock_ref)
+    try:
+        lock_file = DATA / "instance.lock"
+        if lock_file.exists():
+            lock_file.unlink()
+    except OSError:
+        pass
+
+    if _MAC_TERMINATING and exit_fn is None:
+        return
+    _MAC_TERMINATING = True
+
+    hard_exit = exit_fn or os._exit
+
+    def _force_exit_after_flush():
+        if exit_delay > 0:
+            _time.sleep(exit_delay)
+        hard_exit(0)
+
+    _threading.Thread(target=_force_exit_after_flush, daemon=True).start()
+
+    try:
+        from PyObjCTools import AppHelper as _AppHelper
+
+        ns_win = getattr(window_obj, "native", None) if window_obj is not None else None
+        if ns_win is not None and hasattr(ns_win, "orderOut_"):
+            _AppHelper.callAfter(ns_win.orderOut_, None)
+        _AppHelper.callAfter(_AppHelper.stopEventLoop)
+    except Exception:
+        pass
+
+
 def _unique_download_path(suggested_name, downloads_dir=None):
     """Choose a non-colliding file path in ~/Downloads without blocking on a modal dialog."""
     import re
@@ -465,9 +523,9 @@ def _unique_download_path(suggested_name, downloads_dir=None):
     return base_dir / f"{stem}-{os.getpid()}{suffix}"
 
 
-def _install_macos_cocoa_patches(_cocoa, _Foundation, _AppKit=None, downloads_dir=None):
-    """Eliminate synchronous NSSavePanel.runModal() deadlocks inside WebKit download callbacks
-    and fix PyObjC WebKitHost.keyDown_ selectedRange() crashes on macOS."""
+def _install_macos_cocoa_patches(_cocoa, _Foundation, _AppKit=None, downloads_dir=None, terminate_fn=None):
+    """Eliminate synchronous NSSavePanel.runModal() deadlocks inside WebKit download callbacks,
+    fix PyObjC WebKitHost.keyDown_ selectedRange() crashes, and wire clean app termination on macOS."""
     bv = getattr(_cocoa, "BrowserView", None)
     if bv is None:
         return
@@ -476,6 +534,8 @@ def _install_macos_cocoa_patches(_cocoa, _Foundation, _AppKit=None, downloads_di
     #    without calling synchronous NSSavePanel.runModal() inside WKDownload's IPC callback.
     dd = getattr(bv, "DownloadDelegate", None)
     if dd is not None and not getattr(dd, "_anchor_dd_patched", False):
+        _orig_dd = getattr(dd, "download_decideDestinationUsingResponse_suggestedFilename_completionHandler_", None)
+
         def _anchor_decide_dest(self_dd, download, response, suggestedFilename, completionHandler):
             try:
                 dest = _unique_download_path(suggestedFilename or "download", downloads_dir=downloads_dir)
@@ -487,7 +547,9 @@ def _install_macos_cocoa_patches(_cocoa, _Foundation, _AppKit=None, downloads_di
                 except Exception:
                     pass
 
-        dd.download_decideDestinationUsingResponse_suggestedFilename_completionHandler_ = _anchor_decide_dest
+        dd.download_decideDestinationUsingResponse_suggestedFilename_completionHandler_ = _wrap_objc_replacement(
+            _orig_dd, _anchor_decide_dest
+        )
         dd._anchor_dd_patched = True
 
     # 2. Patch BrowserDelegate (Content-Disposition: attachment navigation response path)
@@ -507,7 +569,7 @@ def _install_macos_cocoa_patches(_cocoa, _Foundation, _AppKit=None, downloads_di
                     pass
                 return _orig_dl_done(self_bd, temporaryLocation, response, error)
 
-            bd.download_completionHandler_error_ = _anchor_dl_done
+            bd.download_completionHandler_error_ = _wrap_objc_replacement(_orig_dl_done, _anchor_dl_done)
 
         _orig_nav_resp = getattr(bd, "webView_decidePolicyForNavigationResponse_decisionHandler_", None)
         if callable(_orig_nav_resp):
@@ -532,7 +594,9 @@ def _install_macos_cocoa_patches(_cocoa, _Foundation, _AppKit=None, downloads_di
                     pass
                 return _orig_nav_resp(self_bd, webview_obj, navigationResponse, decisionHandler)
 
-            bd.webView_decidePolicyForNavigationResponse_decisionHandler_ = _anchor_decide_nav_resp
+            bd.webView_decidePolicyForNavigationResponse_decisionHandler_ = _wrap_objc_replacement(
+                _orig_nav_resp, _anchor_decide_nav_resp
+            )
         bd._anchor_dl_patched = True
 
     # 3. Patch WebKitHost.keyDown_ so Cmd+C/V/X/A/Z/W/Q never calls nonexistent WKWebView.selectedRange().
@@ -552,11 +616,16 @@ def _install_macos_cocoa_patches(_cocoa, _Foundation, _AppKit=None, downloads_di
                     ).lower()
                     win_obj = self_wk.window() if hasattr(self_wk, "window") else None
                     responder = win_obj.firstResponder() if win_obj is not None else None
-                    if chars == "q" and getattr(bv, "app", None) is not None:
-                        bv.app.stop_(self_wk)
+                    if chars == "q":
+                        if getattr(bv, "app", None) is not None and hasattr(bv.app, "stop_"):
+                            bv.app.stop_(self_wk)
+                        if callable(terminate_fn):
+                            terminate_fn()
                         return
                     if chars == "w" and win_obj is not None:
                         win_obj.performClose_(event)
+                        if callable(terminate_fn):
+                            terminate_fn()
                         return
                     if responder is not None:
                         if chars == "x" and hasattr(responder, "cut_"):
@@ -585,8 +654,64 @@ def _install_macos_cocoa_patches(_cocoa, _Foundation, _AppKit=None, downloads_di
                     return None
             return None
 
-        wk_host.keyDown_ = _anchor_key_down
+        wk_host.keyDown_ = _wrap_objc_replacement(_orig_key_down, _anchor_key_down)
         wk_host._anchor_key_patched = True
+
+    # 4. Patch AppDelegate & WindowDelegate so Menu Quit / Dock Quit / last-window close
+    #    always terminate the process cleanly (releasing instance.lock) and Dock clicks un-minimize.
+    ad = getattr(bv, "AppDelegate", None)
+    if ad is not None and not getattr(ad, "_anchor_app_patched", False):
+        _orig_should_term = getattr(ad, "applicationShouldTerminate_", None)
+        if callable(_orig_should_term):
+            def _anchor_should_terminate(self_ad, app):
+                if callable(terminate_fn):
+                    terminate_fn()
+                return getattr(_Foundation, "YES", 1)
+
+            ad.applicationShouldTerminate_ = _wrap_objc_replacement(_orig_should_term, _anchor_should_terminate)
+        try:
+            import objc as _objc
+
+            def _anchor_reopen(self_ad, app, has_visible):
+                try:
+                    for inst in list((getattr(bv, "instances", {}) or {}).values()):
+                        w_nat = getattr(inst, "window", None)
+                        if w_nat is not None:
+                            if hasattr(w_nat, "deminiaturize_"):
+                                w_nat.deminiaturize_(None)
+                            if hasattr(w_nat, "makeKeyAndOrderFront_"):
+                                w_nat.makeKeyAndOrderFront_(None)
+                except Exception:
+                    pass
+                return True
+
+            _objc.classAddMethods(
+                ad,
+                [
+                    _objc.selector(
+                        _anchor_reopen,
+                        selector=b"applicationShouldHandleReopen:hasVisibleWindows:",
+                        signature=b"Z@:@Z",
+                    )
+                ],
+            )
+        except Exception:
+            pass
+        ad._anchor_app_patched = True
+
+    wd = getattr(bv, "WindowDelegate", None)
+    if wd is not None and not getattr(wd, "_anchor_wd_patched", False):
+        _orig_will_close = getattr(wd, "windowWillClose_", None)
+        if callable(_orig_will_close):
+            def _anchor_window_will_close(self_wd, notification):
+                try:
+                    return _orig_will_close(self_wd, notification)
+                finally:
+                    if not getattr(bv, "instances", None) and callable(terminate_fn):
+                        terminate_fn()
+
+            wd.windowWillClose_ = _wrap_objc_replacement(_orig_will_close, _anchor_window_will_close)
+        wd._anchor_wd_patched = True
 
 
 def _read_zoom():
@@ -663,6 +788,9 @@ class HostApi:
                     w.maximize()
                     self._maximized = True
         elif act == "close":
+            if IS_MAC and w is not None and getattr(w, "native", None) is not None:
+                _terminate_macos_app(w)
+                return
             w.destroy()
         elif act == "drag":
             if user32 is not None and getattr(w, "native", None) is not None:
@@ -927,6 +1055,8 @@ def main(argv=None):
             pass
         ensure_shortcut()
     else:
+        global _ACTIVE_POSIX_LOCK, _MAC_TERMINATING
+        _MAC_TERMINATING = False
         acquired, posix_lock = _acquire_single_instance_lock(DATA)
         if not acquired:
             if bring_forward_existing():
@@ -934,6 +1064,7 @@ def main(argv=None):
             acquired, posix_lock = _acquire_single_instance_lock(DATA)
             if not acquired:
                 return 0
+        _ACTIVE_POSIX_LOCK = posix_lock
 
     if FROZEN:
         unblock_extracted_files()
@@ -1016,7 +1147,12 @@ def main(argv=None):
             from webview.platforms import cocoa as _cocoa
             import AppKit as _AppKit
             import Foundation as _Foundation
-            _install_macos_cocoa_patches(_cocoa, _Foundation, _AppKit)
+            _install_macos_cocoa_patches(
+                _cocoa,
+                _Foundation,
+                _AppKit,
+                terminate_fn=lambda: _terminate_macos_app(host._window),
+            )
         except Exception:
             pass
     PROFILE.mkdir(parents=True, exist_ok=True)
@@ -1095,6 +1231,12 @@ def main(argv=None):
             print("frame:", exc, file=sys.stderr)
 
     win.events.shown += on_shown
+    if hasattr(win.events, "closed"):
+        def on_closed():
+            if IS_MAC:
+                _terminate_macos_app(win)
+
+        win.events.closed += on_closed
     try:
         start_kwargs = dict(private_mode=False, storage_path=str(PROFILE))
         if IS_WIN32:
