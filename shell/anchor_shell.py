@@ -272,12 +272,13 @@ def _release_single_instance_lock(lock_handle, flock_mod=None):
     else:
         fh, kind, mod = lock_handle, "fcntl", flock_mod
     try:
-        if kind == "fcntl" and mod is not None:
-            mod.flock(fh.fileno(), mod.LOCK_UN)
-        elif kind == "msvcrt" and mod is not None:
-            fh.seek(0)
-            mod.locking(fh.fileno(), mod.LK_UNLCK, 1)
-    except OSError:
+        if not getattr(fh, "closed", False):
+            if kind == "fcntl" and mod is not None:
+                mod.flock(fh.fileno(), mod.LOCK_UN)
+            elif kind == "msvcrt" and mod is not None:
+                fh.seek(0)
+                mod.locking(fh.fileno(), mod.LK_UNLCK, 1)
+    except (OSError, ValueError):
         pass
     try:
         fh.close()
@@ -451,17 +452,6 @@ _ACTIVE_POSIX_LOCK = None
 _MAC_TERMINATING = False
 
 
-def _wrap_objc_replacement(orig, fn):
-    """Preserve Objective-C selector & C ABI type signature when replacing a PyObjC method."""
-    try:
-        import objc as _objc
-        if orig is not None and hasattr(orig, "selector") and hasattr(orig, "signature"):
-            return _objc.selector(fn, selector=orig.selector, signature=orig.signature)
-    except Exception:
-        pass
-    return fn
-
-
 def _terminate_macos_app(window_obj=None, *, exit_fn=None, exit_delay=0.12):
     """Cleanly close the macOS window, release instance.lock immediately, wake the Cocoa runloop,
     and guarantee hard process exit within ``exit_delay`` seconds so Anchor never hangs in the Dock
@@ -524,8 +514,9 @@ def _unique_download_path(suggested_name, downloads_dir=None):
 
 
 def _install_macos_cocoa_patches(_cocoa, _Foundation, _AppKit=None, downloads_dir=None, terminate_fn=None):
-    """Eliminate synchronous NSSavePanel.runModal() deadlocks inside WebKit download callbacks,
-    fix PyObjC WebKitHost.keyDown_ selectedRange() crashes, and wire clean app termination on macOS."""
+    """Eliminate synchronous NSSavePanel.runModal() deadlocks inside WebKit download callbacks
+    and fix PyObjC WebKitHost.keyDown_ selectedRange() crashes on macOS.
+    (Clean close uses pure-Python HostApi.window_control('close') + pywebview's win.events.closed.)"""
     bv = getattr(_cocoa, "BrowserView", None)
     if bv is None:
         return
@@ -534,8 +525,6 @@ def _install_macos_cocoa_patches(_cocoa, _Foundation, _AppKit=None, downloads_di
     #    without calling synchronous NSSavePanel.runModal() inside WKDownload's IPC callback.
     dd = getattr(bv, "DownloadDelegate", None)
     if dd is not None and not getattr(dd, "_anchor_dd_patched", False):
-        _orig_dd = getattr(dd, "download_decideDestinationUsingResponse_suggestedFilename_completionHandler_", None)
-
         def _anchor_decide_dest(self_dd, download, response, suggestedFilename, completionHandler):
             try:
                 dest = _unique_download_path(suggestedFilename or "download", downloads_dir=downloads_dir)
@@ -547,9 +536,7 @@ def _install_macos_cocoa_patches(_cocoa, _Foundation, _AppKit=None, downloads_di
                 except Exception:
                     pass
 
-        dd.download_decideDestinationUsingResponse_suggestedFilename_completionHandler_ = _wrap_objc_replacement(
-            _orig_dd, _anchor_decide_dest
-        )
+        dd.download_decideDestinationUsingResponse_suggestedFilename_completionHandler_ = _anchor_decide_dest
         dd._anchor_dd_patched = True
 
     # 2. Patch BrowserDelegate (Content-Disposition: attachment navigation response path)
@@ -569,7 +556,7 @@ def _install_macos_cocoa_patches(_cocoa, _Foundation, _AppKit=None, downloads_di
                     pass
                 return _orig_dl_done(self_bd, temporaryLocation, response, error)
 
-            bd.download_completionHandler_error_ = _wrap_objc_replacement(_orig_dl_done, _anchor_dl_done)
+            bd.download_completionHandler_error_ = _anchor_dl_done
 
         _orig_nav_resp = getattr(bd, "webView_decidePolicyForNavigationResponse_decisionHandler_", None)
         if callable(_orig_nav_resp):
@@ -594,9 +581,7 @@ def _install_macos_cocoa_patches(_cocoa, _Foundation, _AppKit=None, downloads_di
                     pass
                 return _orig_nav_resp(self_bd, webview_obj, navigationResponse, decisionHandler)
 
-            bd.webView_decidePolicyForNavigationResponse_decisionHandler_ = _wrap_objc_replacement(
-                _orig_nav_resp, _anchor_decide_nav_resp
-            )
+            bd.webView_decidePolicyForNavigationResponse_decisionHandler_ = _anchor_decide_nav_resp
         bd._anchor_dl_patched = True
 
     # 3. Patch WebKitHost.keyDown_ so Cmd+C/V/X/A/Z/W/Q never calls nonexistent WKWebView.selectedRange().
@@ -654,64 +639,8 @@ def _install_macos_cocoa_patches(_cocoa, _Foundation, _AppKit=None, downloads_di
                     return None
             return None
 
-        wk_host.keyDown_ = _wrap_objc_replacement(_orig_key_down, _anchor_key_down)
+        wk_host.keyDown_ = _anchor_key_down
         wk_host._anchor_key_patched = True
-
-    # 4. Patch AppDelegate & WindowDelegate so Menu Quit / Dock Quit / last-window close
-    #    always terminate the process cleanly (releasing instance.lock) and Dock clicks un-minimize.
-    ad = getattr(bv, "AppDelegate", None)
-    if ad is not None and not getattr(ad, "_anchor_app_patched", False):
-        _orig_should_term = getattr(ad, "applicationShouldTerminate_", None)
-        if callable(_orig_should_term):
-            def _anchor_should_terminate(self_ad, app):
-                if callable(terminate_fn):
-                    terminate_fn()
-                return getattr(_Foundation, "YES", 1)
-
-            ad.applicationShouldTerminate_ = _wrap_objc_replacement(_orig_should_term, _anchor_should_terminate)
-        try:
-            import objc as _objc
-
-            def _anchor_reopen(self_ad, app, has_visible):
-                try:
-                    for inst in list((getattr(bv, "instances", {}) or {}).values()):
-                        w_nat = getattr(inst, "window", None)
-                        if w_nat is not None:
-                            if hasattr(w_nat, "deminiaturize_"):
-                                w_nat.deminiaturize_(None)
-                            if hasattr(w_nat, "makeKeyAndOrderFront_"):
-                                w_nat.makeKeyAndOrderFront_(None)
-                except Exception:
-                    pass
-                return True
-
-            _objc.classAddMethods(
-                ad,
-                [
-                    _objc.selector(
-                        _anchor_reopen,
-                        selector=b"applicationShouldHandleReopen:hasVisibleWindows:",
-                        signature=b"Z@:@Z",
-                    )
-                ],
-            )
-        except Exception:
-            pass
-        ad._anchor_app_patched = True
-
-    wd = getattr(bv, "WindowDelegate", None)
-    if wd is not None and not getattr(wd, "_anchor_wd_patched", False):
-        _orig_will_close = getattr(wd, "windowWillClose_", None)
-        if callable(_orig_will_close):
-            def _anchor_window_will_close(self_wd, notification):
-                try:
-                    return _orig_will_close(self_wd, notification)
-                finally:
-                    if not getattr(bv, "instances", None) and callable(terminate_fn):
-                        terminate_fn()
-
-            wd.windowWillClose_ = _wrap_objc_replacement(_orig_will_close, _anchor_window_will_close)
-        wd._anchor_wd_patched = True
 
 
 def _read_zoom():
@@ -1258,6 +1187,7 @@ def main(argv=None):
     if kernel32 is not None and mutex is not None:
         kernel32.CloseHandle(mutex)
     if posix_lock is not None:
+        _ACTIVE_POSIX_LOCK = None
         _release_single_instance_lock(posix_lock)
     return 0
 
