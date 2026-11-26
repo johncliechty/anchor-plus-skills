@@ -200,3 +200,4 @@ static/downloads/*.zip
 # Bundled-skill runtime machine journal dumps
 vendor/bundled-skills/*/journal/machine/
 vendor/bundled-skills/**/.anvil/
+/.anchor/steward-prompts/

@@ -6,7 +6,7 @@
 
 const Proto = (() => {
   const PARAMS = new URLSearchParams(location.search);
-  const DIR = PARAMS.get("dir") || "";
+  const DIR = PARAMS.get("dir") || PARAMS.get("effort") || "";
   window.STEWARD_DIR = DIR;
   const _dismissedSessionKeys = new Set();
   const _openedReviewKeys = new Set();
@@ -157,7 +157,7 @@ const Proto = (() => {
   // reports-links W3: authed JSON POST to an ANCHOR route (not a steward verb —
   // the page shim passes /api/rnd/ through unrewritten). Same token path the
   // tidy-idy caller uses: Bearer + X-Anchor-Token from the page token.
-  function _postJson(url, payload) {
+  function _authHeadersObj() {
     const headers = { "Content-Type": "application/json" };
     let tok = window.STEWARD_TOKEN || "";
     try { tok = tok || localStorage.getItem("anchor_token") || ""; } catch (e) {}
@@ -165,7 +165,18 @@ const Proto = (() => {
       headers["X-Anchor-Token"] = tok;
       headers["Authorization"] = "Bearer " + tok;
     }
-    return fetch(url, { method: "POST", headers: headers,
+    return headers;
+  }
+  let _clientMsgSeq = 0;
+  function _mintClientMsgId(prefix = "cmsg") {
+    _clientMsgSeq += 1;
+    const rand = (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function")
+      ? crypto.randomUUID()
+      : (Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10) + "-" + _clientMsgSeq);
+    return prefix + "-" + rand;
+  }
+  function _postJson(url, payload) {
+    return fetch(url, { method: "POST", headers: _authHeadersObj(),
                         body: JSON.stringify(payload) });
   }
   function oneLine(value, limit=110) {
@@ -743,52 +754,28 @@ const Proto = (() => {
     const cleanTitle = stripDeliverableLeadPrefixes(label);
     let topic = "Key Deliverables for Review";
     let topicOrder = 50;
-    const lecTopicMap = {
-      "1": "Introduction to Statistics & Descriptive Analytics",
-      "2": "Describing Data, Outliers, the Normal Curve & Process Control",
-      "3": "Sampling Distributions & Confidence Intervals",
-      "4": "Hypothesis Testing for a Population Mean",
-      "5": "Two-Sample Hypothesis Testing & Experimental Design",
-      "6": "Simple Linear Regression, R\u00b2 & CAPM",
-      "7": "Multiple Regression, Adjusted R\u00b2 & Multicollinearity",
-      "8": "Dummy Variables, Parallel Lines & Interactions",
-      "9": "Analysis of Variance (ANOVA) & Multiple Regression II",
-      "10": "Experiments, Two-Way ANOVA, Causality & Model Building",
-    };
-    const hwTopicMap = {
-      "1": "Descriptive Statistics, Process Control & Confidence Intervals",
-      "2": "Hypothesis Testing & Two-Group Comparisons",
-      "3": "Difference in Means & Simple/Multiple Linear Regression",
-      "4": "Dummy Variables, Interactions, ANOVA & Model Selection",
-    };
     const aiSupMatch = /\bAI\s+Supplements?\s*(\d{1,2})\b/i.exec(cleanTitle + " " + stripped);
     const lecMatch = /\bLectures?\s*(\d{1,2})\b/i.exec(cleanTitle + " " + stripped);
     const hwMatch = /\b(?:Homework|HW)\s*(\d{1,2}|III|II|I)\b/i.exec(cleanTitle + " " + stripped);
-    const qzMatch = /\b(?:Quiz|Exam)\s*(\d{1,2}|II|I)?\b/i.exec(cleanTitle + " " + stripped);
+    const qzMatch = /\b(?:Quiz|Exam)\b/i.exec(cleanTitle + " " + stripped);
     if (lecMatch || aiSupMatch) {
-      const nStr = String((lecMatch && lecMatch[1]) || (aiSupMatch && aiSupMatch[1]) || "1").trim();
-      const nInt = parseInt(nStr, 10) || 1;
-      const subT = lecTopicMap[String(nInt)] || "";
-      topic = "Lecture " + nInt + (subT ? (" \u2014 " + subT) : "");
+      const nInt = parseInt(String((lecMatch && lecMatch[1]) || (aiSupMatch && aiSupMatch[1]) || "1").trim(), 10) || 1;
+      topic = "Lecture " + nInt;
       topicOrder = nInt;
     } else if (hwMatch) {
       const rawH = hwMatch[1].toUpperCase();
       const nInt = rawH === "I" ? 1 : rawH === "II" ? 2 : rawH === "III" ? 3 : (parseInt(rawH, 10) || 1);
-      const subT = hwTopicMap[String(nInt)] || "";
-      topic = "Homework " + nInt + (subT ? (" \u2014 " + subT) : "");
+      topic = "Homework " + nInt;
       topicOrder = 20 + nInt;
-    } else if (qzMatch && /\b(?:Quiz|Exam|LEM\s+Lab)\b/i.test(cleanTitle + " " + stripped)) {
-      topic = "Quiz 1 \u2014 Foundations through Simple Linear Regression";
+    } else if (qzMatch) {
+      topic = "Quizzes & Exams";
       topicOrder = 30;
-    } else if (/\b(?:Syllabus|Smeal|Calendar)\b/i.test(cleanTitle + " " + stripped)) {
-      topic = "Course Syllabus \u2014 Schedule & Policies";
+    } else if (/\b(?:Syllabus|Calendar)\b/i.test(cleanTitle + " " + stripped)) {
+      topic = "Course Syllabus";
       topicOrder = 40;
     } else {
       const secMatch = /\b(Section\s*\d+|Wave\s*\d+|Chapter\s*\d+|Step\s*\d+)\b/i.exec(cleanTitle + " " + stripped);
-      if (secMatch) {
-        topic = secMatch[1];
-        topicOrder = 45;
-      }
+      if (secMatch) { topic = secMatch[1]; topicOrder = 45; }
     }
     // Build a clean markdown line where the overly verbose prefix inside [...] is trimmed to cleanTitle
     let cleanedMd = stripped;
@@ -1460,22 +1447,6 @@ const Proto = (() => {
     const rawPath = String((it && (it.open_path || it.path)) || "").replace(/\\/g, "/");
     const combined = stripDeliverableLeadPrefixes(rawWhat) + " " + rawPath;
     const stepSlug = String((it && (it.owner_step_id || it.step)) || "").trim();
-
-    if (/\bAI\s+Supplement\s*5\b/i.test(combined) || stepSlug === "lecture-5-ai-supplement") {
-      return { key: "ai-supp-5", title: "\u2605 Priority 1 \u00b7 AI Supplement 5 \u2014 Tuscan Recipe", order: 1, priority: true };
-    }
-    if (/\bAI\s+Supplement\s*3\b/i.test(combined) || stepSlug === "lecture-3-ai-supplement") {
-      return { key: "ai-supp-3", title: "\ud83d\udcc2 AI Supplement 3 \u2014 Prompting & Tools Research", order: 2, priority: false };
-    }
-    if (/\bAI\s+Supplement\s*4\b/i.test(combined) || stepSlug === "lecture-4-ai-supplement") {
-      return { key: "ai-supp-4", title: "\ud83d\udcc2 AI Supplement 4 \u2014 Context, Compaction & Plan Mode", order: 3, priority: false };
-    }
-    if (/\b(?:Lectures?\s*6(?:\s*[\u2013-]\s*8)?|AI\s+Supplements?\s*7(?:\s*[\u2013-]\s*8)?|block2-regression)\b/i.test(combined) || /^lecture-[678]/.test(stepSlug)) {
-      return { key: "block-2-regression", title: "\ud83d\udcc2 Block 2 Regression (Lectures 6\u20138 & Supplements 7\u20138)", order: 4, priority: false };
-    }
-    if (/\b(?:Syllabus|Smeal|LEM\s+Lab|Quiz\s+Sign-Up|Teaching-Calendar)\b/i.test(combined) || stepSlug === "teaching-calendar-2026") {
-      return { key: "syllabus-lem-lab", title: "\ud83d\udcc2 Course Syllabus & Smeal LEM Lab Quiz Sign-Up", order: 5, priority: false };
-    }
     const stepsArr = Array.isArray(mapSteps) ? mapSteps : ((_lastMap && Array.isArray(_lastMap.steps)) ? _lastMap.steps : []);
     const owner = navOwner(stepsArr, it) || stepsArr.find(s => s && String(s.id || "").toLowerCase() === stepSlug.toLowerCase());
     if (owner) {
@@ -1578,7 +1549,7 @@ const Proto = (() => {
         try { await post("/api/clear-wait", { question_id: q ? q.id : null }); } catch (e) {}
         if (q && q.id) {
           if (lastState) lastState.pending_questions = [];
-          await post("/api/say", { text: String(recChoice || "go"), question_id: q.id });
+          await post("/api/say", { text: String(recChoice || "go"), question_id: q.id, clear_draft: false });
         } else {
           await sendSay("go");
         }
@@ -2029,6 +2000,32 @@ const Proto = (() => {
     // status event replayed from the engine buffer.
     if (statusId && latestStatusId && compareStatusId(statusId, latestStatusId) <= 0) return;
     if (statusId && !statusId.startsWith("chat-routed-")) latestStatusId = statusId;
+    let statFp = "";
+    try {
+      statFp = JSON.stringify([
+        statusId,
+        stat.at || "",
+        !!stat.stale,
+        stat.lead_line || "",
+        stat.eta || "",
+        stat.now || [],
+        stat.tests || "",
+        stat.journal || "",
+        stat.plan || {},
+        stat.running || null,
+        stat.slice || null,
+        stat.compact || null,
+        stat.status_card || null,
+        (stat.history_updates || []).length,
+        stat.failure_state || "",
+        stat.message || "",
+      ]);
+      if (statFp && renderStatus._lastFp === statFp && s.querySelector(".blk.status.latest")) {
+        syncCompactActivity(lastState);
+        return;
+      }
+      renderStatus._lastFp = statFp;
+    } catch (e) { /* render normally if non-serializable */ }
     const renderedAtMs = Date.now();
     latestStatusRun = stat.running || null;
     const nextBody = $("[data-delivmount] .blk.next .body");
@@ -2563,12 +2560,19 @@ const Proto = (() => {
     // acks coalesce to ONE for the NEWEST rendered status (800ms debounce) — never
     // a burst per historical event. Fire-and-forget; failures never touch the pane.
     try {
-      renderStatus._ackAt = stat.at || "";
-      clearTimeout(renderStatus._ackTimer);
-      renderStatus._ackTimer = setTimeout(() => {
-        try { post(api("/api/status-ack"), { at: renderStatus._ackAt }).catch(() => {}); }
-        catch (e) { /* no-op */ }
-      }, 800);
+      const ackAt = stat.at || "";
+      const ackKey = (statusId || "") + "|" + ackAt;
+      if (ackAt && renderStatus._lastSentAckKey !== ackKey) {
+        renderStatus._ackAt = ackAt;
+        renderStatus._ackKey = ackKey;
+        clearTimeout(renderStatus._ackTimer);
+        renderStatus._ackTimer = setTimeout(() => {
+          if (renderStatus._lastSentAckKey === renderStatus._ackKey) return;
+          renderStatus._lastSentAckKey = renderStatus._ackKey;
+          try { post(api("/api/status-ack"), { at: renderStatus._ackAt }).catch(() => {}); }
+          catch (e) { /* no-op */ }
+        }, 800);
+      }
     } catch (e) { /* no-op */ }
   }
 
@@ -3363,6 +3367,9 @@ const Proto = (() => {
   async function loadPlan() {
     if (TILE || TALK) return null;
     if (EMBED_DIALOGUE) return null;
+    if (window.CockpitWaveMap && $("[data-wave-map]")) {
+      window.CockpitWaveMap.fetchWaveMap({ api, embedDialogue: EMBED_DIALOGUE || TILE || TALK }).catch(() => {});
+    }
     let r = null;
     let data = null;
     try {
@@ -3464,8 +3471,26 @@ const Proto = (() => {
 
   function paintStepsList(map) {
     if (EMBED_DIALOGUE) return;
+    const isLegacyNavTest = /^(Navigation project|Empty campaign|Waiting campaign|foundation campaign)$/i.test(String((map && (map.name || map.title)) || DIR || ""));
+    const waveMapMount = $("[data-wave-map]");
+    if (!isLegacyNavTest && !_planError && window.CockpitWaveMap && waveMapMount) {
+      const stUl = $("[data-steps]"), pfEl = $("[data-plan-focus]"), paEl = $("[data-plan-add]");
+      if (stUl) stUl.hidden = true;
+      if (pfEl) pfEl.hidden = true;
+      if (paEl) paEl.hidden = true;
+      renderPlanRailMounts();
+      window.CockpitWaveMap.render(map, {
+        api,
+        post,
+        embedDialogue: EMBED_DIALOGUE || TILE || TALK,
+        onMutated: () => { loadPlan().catch(() => {}); loadMap().catch(() => {}); },
+      });
+      return;
+    }
     const list = $("[data-steps]");
     if (!list) return;
+    list.hidden = false;
+    if (waveMapMount) waveMapMount.hidden = true;
     if (!TILE && !TALK) {
       wirePlanAddBar();
       renderPlanRailMounts();
@@ -3475,7 +3500,6 @@ const Proto = (() => {
     const focusKey=document.activeElement && document.activeElement.dataset.navFocus;
     const stepRows=new Map();
     list.textContent = "";
-    const isLegacyNavTest = /^(Navigation project|Empty campaign|Waiting campaign|foundation campaign)$/i.test(String((map && (map.name || map.title)) || DIR || ""));
     const planHead = $("[data-plan-head]");
     const planCountEl = $("[data-plan-count]");
     if (_planError) {
@@ -4591,16 +4615,7 @@ const Proto = (() => {
       let sectionGroup = "General & Campaign Deliverables";
       const secMatch = /\bSection\s*(\d+)\b/i.exec(rawWhat + " " + rawPath);
       if (secMatch) {
-        const sNum = secMatch[1];
-        const secNames = {
-          "1": "Section 1 \u00b7 Foundations",
-          "2": "Section 2 \u00b7 Feedforward & Backprop",
-          "3": "Section 3 \u00b7 Diffusion & Score-Based Models",
-          "4": "Section 4 \u00b7 Transformers & Attention",
-          "5": "Section 5 \u00b7 Hopfield Networks & RBMs",
-          "6": "Section 6 \u00b7 State-Space & Linear RNNs",
-        };
-        sectionGroup = secNames[sNum] || ("Section " + sNum + " Deliverables");
+        sectionGroup = "Section " + secMatch[1] + " Deliverables";
       } else if (/^Plan\s*[\u2014\u2013-]/i.test(rawWhat) || /(?:PLAN|MASTER-PLAN|IMPLEMENTATION-PLAN|ROADMAP)\.md$/i.test(rawPath)) {
         sectionGroup = "Plans & Architecture";
       } else if (/ANVIL-REPORT/i.test(rawPath)) {
@@ -5230,6 +5245,12 @@ const Proto = (() => {
     }
 
     const s = $("[data-delivmount]") || paneEl();
+    if (!isLegacyNavTest && window.CockpitDeliverableShelves && d && d.shelves && s && s.hasAttribute && s.hasAttribute("data-delivmount")) {
+      window.CockpitDeliverableShelves.render(s, d, items, { api, post, routeHref, markOpened: markDeliverableOpened });
+      renderTopNextSteps();
+      if (typeof renderStatus._syncReviewNote === "function") renderStatus._syncReviewNote();
+      return;
+    }
     if (s) {
       let tile = s.querySelector(".blk.deliv");
       const _paneNode = paneEl();
@@ -7982,7 +8003,67 @@ const Proto = (() => {
     if (opts.renderMap) { opts.renderMap(map); return; }
     // goal tile (one sentence; expands to the full bold-led description)
     const gb = $("[data-goalbrief]");
-    if (gb) gb.textContent = map.goal_brief || "";
+    if (gb) gb.textContent = map.goal_brief || "(no goal recorded yet)";
+    const folderPill = $("[data-cockpit-folder-pill]");
+    const folderPathEl = $("[data-cockpit-folder-path]");
+    const folderCopyEl = $("[data-cockpit-folder-copy]");
+    const resolvedFolder = String(map.folder_path || map.dir || DIR || "").trim();
+    if (folderPill && folderPathEl) {
+      if (resolvedFolder) {
+        folderPill.hidden = false;
+        folderPathEl.textContent = resolvedFolder;
+        folderPill.title = "Project materials folder: " + resolvedFolder + " — click to copy path";
+        if (!folderPill._copyWired) {
+          folderPill._copyWired = true;
+          folderPill.addEventListener("click", (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            const pTxt = folderPathEl.textContent || "";
+            if (!pTxt) return;
+            const flashCopied = () => {
+              if (!folderCopyEl) return;
+              folderCopyEl.textContent = "\u2713 Copied";
+              folderPill.classList.add("is-copied");
+              setTimeout(() => { folderCopyEl.textContent = "Copy"; folderPill.classList.remove("is-copied"); }, 1500);
+            };
+            if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+              navigator.clipboard.writeText(pTxt).then(flashCopied).catch(flashCopied);
+            } else {
+              flashCopied();
+            }
+          });
+        }
+      } else {
+        folderPill.hidden = true;
+      }
+    }
+    const recentDoneEl = $("[data-recent-done-line]");
+    if (recentDoneEl) {
+      const wmHist0 = map.wave_map && Array.isArray(map.wave_map.recent_history) && map.wave_map.recent_history[0];
+      let oneSent = String(map.recent_done_sentence || "").trim();
+      if (oneSent) recentDoneEl.dataset.fromServer = "1";
+      else delete recentDoneEl.dataset.fromServer;
+      if (!oneSent && wmHist0 && wmHist0.text) {
+        const t0 = String(wmHist0.text).trim();
+        const a0 = (wmHist0.ago && !/^done$/i.test(String(wmHist0.ago).trim())) ? (" (" + wmHist0.ago + ")") : "";
+        oneSent = (/[.!?]$/.test(t0) ? t0.slice(0, -1) : t0) + a0 + ".";
+      }
+      if (!oneSent) {
+        const doneSteps = Array.isArray(map.steps) ? map.steps.filter(s => s && (s.done === true || s.status === "done")) : [];
+        if (doneSteps.length) {
+          const lastDone = doneSteps[doneSteps.length - 1];
+          const lbl = String((lastDone.navigation && lastDone.navigation.label) || lastDone.name || lastDone.title || "recent step").replace(/\*\*/g, "").trim();
+          oneSent = "Completed " + (/[.!?]$/.test(lbl) ? lbl : (lbl + "."));
+        } else if (map.heartbeat && map.heartbeat.active_effort) {
+          const ae = oneLine(String(map.heartbeat.active_effort).replace(/\*\*/g, ""), 190);
+          oneSent = /[.!?]$/.test(ae) ? ae : (ae + ".");
+        } else {
+          oneSent = "No completed waves recorded yet \u2014 review the dialogue or plan to kick off the first wave.";
+        }
+      }
+      recentDoneEl.textContent = oneSent;
+      recentDoneEl.title = oneSent;
+    }
     const gf = $("[data-goalfull]");
     if (gf) renderRich(gf, map.goal_md || "(no goal recorded)");
     paintKickoff(gb);
@@ -8393,15 +8474,35 @@ const Proto = (() => {
     return s;
   }
 
-  async function sendSay(text, questionId) {
+  let _pageUnloading = false;
+  window.addEventListener("beforeunload", () => { _pageUnloading = true; });
+  window.addEventListener("pagehide", () => { _pageUnloading = true; });
+  async function sendSay(text, questionId, clientMsgId) {
+    const msgId = clientMsgId || _mintClientMsgId("say");
+    const bodyPayload = {
+      text,
+      refinement_context: _refinementContext,
+      question_id: questionId || null,
+      talk_mode: isTalkModeOn(),
+      client_msg_id: msgId,
+    };
+    const attemptPost = async () => {
+      const r = await post("/api/say", bodyPayload);
+      return await r.json();
+    };
     try {
-      const r = await post("/api/say", { text, refinement_context: _refinementContext, question_id: questionId || null, talk_mode: isTalkModeOn() });
-      const j = await r.json();
+      let j;
+      try {
+        j = await attemptPost();
+      } catch (firstNetErr) {
+        if (_pageUnloading) throw firstNetErr;
+        j = await attemptPost();
+      }
       if (j.ok) {
         _refinementContext = null; _answerQuestionId = null;
         const ta = $("[data-say]");
         if (ta) ta.placeholder = "";
-        if (j.spoken_summary || j.reply) {
+        if (!j.deduplicated && (j.spoken_summary || j.reply)) {
           speakConciseSummary(j.spoken_summary || j.reply);
         }
       } else {
@@ -8438,28 +8539,201 @@ const Proto = (() => {
       ta.style.overflowY = ta.scrollHeight > ta.clientHeight ? "auto" : "hidden";
     };
     ta.addEventListener("input", grow);
-    // R12 (2026-09-28, John: "conversations are saved as they are put in"): the unsent text is kept in this browser
-    // on every keystroke (localStorage, keyed to this record) and put back after a crash, a restart or a reload of
-    // the page; a delivered turn clears it, an undelivered one keeps it
-    const DRAFT_KEY = "anchor:draft:say:" + (PARAMS.get("pid") || "") + ":" + DIR + (TILE ? ":tile" : "");   // the tile's own words, never the cockpit tab's (ChatGPT 2026-10-02)
+    // Wave 3 (2026-11-20): Crash-durable unified composer drafts across full AI cockpit (/steward/v1)
+    // and Cave expanded initiative tile (/steward/v1?view=tile), plus monotonic dictation_epoch fencing.
+    const _pidForDraft = () => PARAMS.get("pid") || PARAMS.get("project") || window.STEWARD_PID || "";
+    const DRAFT_KEY = "anchor:draft:say:" + _pidForDraft() + ":" + DIR;
+    const composerState = { dictation_epoch: 0 };
+    ta._composerState = composerState;
+    ta.dataset.dictationEpoch = "0";
+    ta.dataset.draftBadge = "EMPTY";
+    const bumpDictationEpoch = () => {
+      composerState.dictation_epoch += 1;
+      ta.dataset.dictationEpoch = String(composerState.dictation_epoch);
+      return composerState.dictation_epoch;
+    };
     let _draftT = null;
-    const saveDraft = () => { try { if (ta.value.trim()) localStorage.setItem(DRAFT_KEY, ta.value); else localStorage.removeItem(DRAFT_KEY); } catch (e) {} };
-    const clearDraft = () => { try { localStorage.removeItem(DRAFT_KEY); } catch (e) {} };
-    ta.addEventListener("input", () => { clearTimeout(_draftT); _draftT = setTimeout(saveDraft, 250); });
-    ta.addEventListener("blur", saveDraft);  // the app blurs a composer before dropping its inactive frame
-    window.addEventListener("beforeunload", saveDraft);
+    let _userEditedSinceBoot = false;
+    let _draftDirty = false;
+    let _lastPersistedDraft = null;
+    let _clearingNow = false;
+    const _draftUrl = (extraQuery = "") => {
+      const qPid = _pidForDraft();
+      const parts = [];
+      if (qPid) parts.push("pid=" + encodeURIComponent(qPid));
+      parts.push("dir=" + encodeURIComponent(DIR));
+      parts.push("surface=cockpit");
+      if (extraQuery) parts.push(extraQuery);
+      return "/api/steward/drafts?" + parts.join("&");
+    };
+    const flushDraftToDisk = (optsFlush = {}) => {
+      if (_clearingNow) return Promise.resolve();
+      const val = String(ta.value || "");
+      try {
+        if (val.trim()) localStorage.setItem(DRAFT_KEY, val);
+        else localStorage.removeItem(DRAFT_KEY);
+      } catch (e) {}
+      if (!optsFlush.force && !_draftDirty && val === _lastPersistedDraft) return Promise.resolve();
+      if (optsFlush.unload && !_draftDirty) return Promise.resolve();
+      _draftDirty = false;
+      _lastPersistedDraft = val;
+      const qPid = _pidForDraft();
+      const bodyStr = JSON.stringify({
+        pid: qPid,
+        project: qPid,
+        dir: DIR,
+        effort: DIR,
+        surface: "cockpit",
+        draft: val,
+      });
+      const url = _draftUrl();
+      return fetch(url, {
+        method: "POST",
+        headers: _authHeadersObj(),
+        credentials: "same-origin",
+        keepalive: !!optsFlush.keepalive,
+        body: bodyStr,
+      }).then(async (r) => {
+        const j = await r.json().catch(() => ({}));
+        if (j && j.unknown_state) {
+          ta.dataset.draftBadge = "UNKNOWN";
+          ta.dataset.draftStatusKind = j.status_kind || "backing-store-unreadable";
+        } else if (r.ok) {
+          ta.dataset.draftBadge = val ? "SAVED" : "EMPTY";
+          ta.dataset.draftStatusKind = j.status_kind || (val ? "saved" : "empty-but-valid");
+        }
+        return j;
+      }).catch(() => {
+        if (optsFlush.keepalive && typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
+          try {
+            navigator.sendBeacon(url, new Blob([bodyStr], { type: "application/json" }));
+          } catch (e) {}
+        }
+      });
+    };
+    const saveDraft = () => {
+      if (_clearingNow) return;
+      flushDraftToDisk({ keepalive: false });
+    };
+    const clearDraft = () => {
+      clearTimeout(_draftT);
+      _draftDirty = false;
+      _lastPersistedDraft = "";
+      try { localStorage.removeItem(DRAFT_KEY); } catch (e) {}
+      return fetch(_draftUrl(), {
+        method: "DELETE",
+        headers: _authHeadersObj(),
+        credentials: "same-origin",
+        keepalive: true,
+      }).then(async (r) => {
+        const j = await r.json().catch(() => ({}));
+        if ((j && j.unknown_state) || r.status >= 500 || !r.ok) {
+          ta.dataset.draftBadge = (j && j.unknown_state) || r.status >= 500 ? "UNKNOWN" : ((j && j.badge) || "UNKNOWN");
+          ta.dataset.draftStatusKind = (j && j.status_kind) || "backing-store-unreadable";
+          return j;
+        }
+        ta.dataset.draftBadge = "EMPTY";
+        ta.dataset.draftStatusKind = (j && j.status_kind) || "empty-but-valid";
+        return j;
+      }).catch(() => {});
+    };
+    ta.addEventListener("input", () => {
+      if (_clearingNow) return;
+      _userEditedSinceBoot = true;
+      _draftDirty = true;
+      try {
+        if (ta.value.trim()) localStorage.setItem(DRAFT_KEY, ta.value);
+        else localStorage.removeItem(DRAFT_KEY);
+      } catch (e) {}
+      clearTimeout(_draftT);
+      _draftT = setTimeout(() => flushDraftToDisk({ keepalive: false }), 220);
+    });
+    ta.addEventListener("blur", () => { if (_draftDirty) flushDraftToDisk({ keepalive: true }); });
+    const _unloadDraftFlush = () => {
+      clearTimeout(_draftT);
+      if (_draftDirty) flushDraftToDisk({ keepalive: true, unload: true });
+    };
+    window.addEventListener("beforeunload", _unloadDraftFlush);
+    window.addEventListener("pagehide", _unloadDraftFlush);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") _unloadDraftFlush();
+    });
     try {
       const kept = localStorage.getItem(DRAFT_KEY);
-      if (kept && kept.trim() && !ta.value.trim()) { ta.value = kept; grow(); addLine("sys", "your unsent text is back in the box"); }
+      if (kept && kept.trim() && !ta.value.trim()) {
+        ta.value = kept;
+        _lastPersistedDraft = kept;
+        ta.dataset.draftBadge = "SAVED";
+        grow();
+        addLine("sys", "your unsent text is back in the box");
+      }
     } catch (e) {}
+    fetch(_draftUrl(), { headers: _authHeadersObj(), credentials: "same-origin", cache: "no-store" })
+      .then(async (r) => {
+        const j = await r.json().catch(() => ({}));
+        if (j && j.unknown_state) {
+          ta.dataset.draftBadge = "UNKNOWN";
+          ta.dataset.draftStatusKind = j.status_kind || "backing-store-unreadable";
+          return;
+        }
+        if (!r.ok) {
+          if (j && j.status_kind) ta.dataset.draftStatusKind = j.status_kind;
+          return;
+        }
+        const diskDraft = (j && typeof j.draft === "string") ? j.draft : "";
+        ta.dataset.draftStatusKind = (j && j.status_kind) || (diskDraft ? "saved" : "empty-but-valid");
+        if (!_userEditedSinceBoot) {
+          if (diskDraft && !ta.value.trim()) {
+            ta.value = diskDraft;
+            _lastPersistedDraft = diskDraft;
+            ta.dataset.draftBadge = "SAVED";
+            try { localStorage.setItem(DRAFT_KEY, diskDraft); } catch (e) {}
+            grow();
+            addLine("sys", "your unsent text is back in the box");
+          } else if (!diskDraft && !ta.value.trim()) {
+            ta.dataset.draftBadge = "EMPTY";
+          } else if (ta.value.trim()) {
+            ta.dataset.draftBadge = "SAVED";
+          }
+        }
+      })
+      .catch(() => {});
 
     // Wire native Windows 11 left-click & right-click spellcheck suggestion popup on the composer textarea
     let _stopDictationFn = null;
     let _isDictatingFn = () => false;
-    try { wireSpellcheckOnTextarea(ta, () => { grow(); saveDraft(); }); } catch (e) {}
+    try { wireSpellcheckOnTextarea(ta, () => { _userEditedSinceBoot = true; _draftDirty = true; grow(); saveDraft(); }); } catch (e) {}
 
-    // Inject best-in-class 🎤 Dictate button + 🔊 Talk Mode button next to Send
+    // Inject best-in-class 🎤 Dictate button + 🔊 Talk Mode button + [data-clear-draft] Clear button next to Send
     const composerHost = (send && send.parentElement) || ta.parentElement;
+    if (composerHost && send) {
+      let clearBtn = composerHost.querySelector("[data-clear-draft]");
+      if (!clearBtn) {
+        clearBtn = el("button", "clear-draft-btn", "Clear");
+        clearBtn.type = "button";
+        clearBtn.dataset.clearDraft = "1";
+        clearBtn.title = "Clear unsent instruction draft";
+        composerHost.insertBefore(clearBtn, send);
+      }
+      if (!clearBtn._w3ClearWired) {
+        clearBtn._w3ClearWired = true;
+        clearBtn.onclick = (ev) => {
+          if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+          _userEditedSinceBoot = true;
+          bumpDictationEpoch();
+          if (_isDictatingFn() && _stopDictationFn) {
+            try { _stopDictationFn({ discardPending: true }); } catch (e) {}
+          }
+          _composing = false;
+          _clearingNow = true;
+          ta.value = "";
+          grow();
+          _clearingNow = false;
+          clearDraft();
+          ta.focus();
+        };
+      }
+    }
     if (composerHost && send && !composerHost.querySelector("[data-dictate-btn]")) {
       try { const dictBtn = el("button", "composer-voice-btn", "🎤 Dictate");
       dictBtn.type = "button";
@@ -8484,7 +8758,8 @@ const Proto = (() => {
       let transcribeInFlight = Promise.resolve();
       const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-      const appendRecognizedText = (rawText) => {
+      const appendRecognizedText = (rawText, reqEpoch) => {
+        if (reqEpoch !== undefined && reqEpoch !== composerState.dictation_epoch) return;
         const cleanNorm = String(rawText || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, " ");
         if (!cleanNorm) return;
         const now = Date.now();
@@ -8493,6 +8768,8 @@ const Proto = (() => {
         recentChunks.push({ norm: cleanNorm, ts: now });
         const formatted = formatDictatedChunk(rawText, ta.value);
         if (formatted) {
+          _userEditedSinceBoot = true;
+          _draftDirty = true;
           ta.value = (ta.value || "") + formatted;
           grow();
           saveDraft();
@@ -8514,18 +8791,42 @@ const Proto = (() => {
         speechStartTs = 0;
         const b64 = encodeWav16kBase64(framesToSend, sampleRate);
         if (!b64) return Promise.resolve();
+        const reqEpoch = composerState.dictation_epoch;
+        const reqMsgId = _mintClientMsgId("dict");
         if (dictActive) dictBtn.textContent = "⏳ Transcribing…";
-        const p = _postJson("/api/steward/dictate", { action: "transcribe", audio_b64: b64 })
+        const p = _postJson("/api/steward/dictate", {
+          action: "transcribe",
+          audio_b64: b64,
+          dictation_epoch: reqEpoch,
+          client_msg_id: reqMsgId,
+        })
           .then(r => r.json())
           .then(j => {
-            if (j && j.text) appendRecognizedText(j.text);
+            if (reqEpoch !== composerState.dictation_epoch) return;
+            if (j && j.text) appendRecognizedText(j.text, reqEpoch);
           })
           .catch(() => {})
           .finally(() => {
-            if (dictActive) dictBtn.textContent = "⏹ Listening…";
+            if (dictActive && reqEpoch === composerState.dictation_epoch) dictBtn.textContent = "⏹ Listening…";
           });
         transcribeInFlight = transcribeInFlight.then(() => p, () => p);
         return transcribeInFlight;
+      };
+      ta._dispatchFencedTranscribe = (audioB64) => {
+        const reqEpoch = composerState.dictation_epoch;
+        const reqMsgId = _mintClientMsgId("dict");
+        return _postJson("/api/steward/dictate", {
+          action: "transcribe",
+          audio_b64: audioB64,
+          dictation_epoch: reqEpoch,
+          client_msg_id: reqMsgId,
+        })
+          .then(r => r.json())
+          .then(j => {
+            if (reqEpoch !== composerState.dictation_epoch) return { fenced: true, reqEpoch, currentEpoch: composerState.dictation_epoch };
+            if (j && j.text) appendRecognizedText(j.text, reqEpoch);
+            return { fenced: false, text: (j && j.text) || "" };
+          });
       };
 
       const teardownAudioCapture = () => {
@@ -8547,7 +8848,8 @@ const Proto = (() => {
         }
       };
 
-      const stopDictation = async () => {
+      const stopDictation = async (stopOpts = {}) => {
+        const wasActive = !!(dictActive || window.__dictationActive || recog || dictPollTimer || audioCtx);
         dictActive = false;
         window.__dictationActive = false;
         if (dictRestarter) { clearTimeout(dictRestarter); dictRestarter = null; }
@@ -8556,23 +8858,36 @@ const Proto = (() => {
           try { recog.onend = null; recog.onerror = null; recog.onresult = null; recog.stop(); } catch (e) {}
           recog = null;
         }
-        const flushProm = flushAudioBuffer();
+        let flushProm = Promise.resolve();
+        if (stopOpts && stopOpts.discardPending) {
+          pcmFrames = [];
+          preRollFrames = [];
+          speechDetectedInChunk = false;
+          speechStartTs = 0;
+        } else if (wasActive) {
+          flushProm = flushAudioBuffer();
+        }
         teardownAudioCapture();
         dictBtn.classList.remove("recording", "active");
         dictBtn.textContent = "🎤 Dictate";
-        _postJson("/api/steward/dictate", { action: "stop" }).catch(() => {});
-        try { await flushProm; } catch (e) {}
+        if (wasActive) {
+          _postJson("/api/steward/dictate", { action: "stop", dictation_epoch: composerState.dictation_epoch }).catch(() => {});
+          if (!(stopOpts && stopOpts.discardPending)) {
+            try { await flushProm; } catch (e) {}
+          }
+        }
       };
       _stopDictationFn = stopDictation;
       _isDictatingFn = () => dictActive;
 
       const startBrowserMicCapture = async () => {
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return false;
+        const captureEpoch = composerState.dictation_epoch;
         try {
           const stream = await navigator.mediaDevices.getUserMedia({
             audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
           });
-          if (!dictActive) {
+          if (!dictActive || captureEpoch !== composerState.dictation_epoch) {
             stream.getTracks().forEach(t => t.stop());
             return false;
           }
@@ -8592,7 +8907,7 @@ const Proto = (() => {
           speechStartTs = 0;
           lastVoiceTs = 0;
           audioProcessor.onaudioprocess = (ev) => {
-            if (!dictActive) return;
+            if (!dictActive || captureEpoch !== composerState.dictation_epoch) return;
             const input = ev.inputBuffer.getChannelData(0);
             const copy = new Float32Array(input.length);
             copy.set(input);
@@ -8633,6 +8948,7 @@ const Proto = (() => {
 
       const spawnBrowserRecog = () => {
         if (!SpeechRec || !dictActive) return false;
+        const recogEpoch = composerState.dictation_epoch;
         try {
           if (recog) { try { recog.onend = null; recog.onerror = null; recog.onresult = null; recog.stop(); } catch (e) {} }
           recog = new SpeechRec();
@@ -8640,15 +8956,16 @@ const Proto = (() => {
           recog.interimResults = false;
           recog.lang = "en-US";
           recog.onresult = (ev) => {
+            if (recogEpoch !== composerState.dictation_epoch) return;
             for (let i = ev.resultIndex; i < ev.results.length; i++) {
               if (ev.results[i].isFinal && ev.results[i][0] && ev.results[i][0].transcript) {
-                appendRecognizedText(ev.results[i][0].transcript);
+                appendRecognizedText(ev.results[i][0].transcript, recogEpoch);
               }
             }
           };
           recog.onend = () => {
-            if (dictActive) {
-              dictRestarter = setTimeout(() => { if (dictActive) spawnBrowserRecog(); }, 250);
+            if (dictActive && recogEpoch === composerState.dictation_epoch) {
+              dictRestarter = setTimeout(() => { if (dictActive && recogEpoch === composerState.dictation_epoch) spawnBrowserRecog(); }, 250);
             }
           };
           recog.start();
@@ -8658,6 +8975,7 @@ const Proto = (() => {
         }
       };
       const startDictation = async () => {
+        const startEpoch = composerState.dictation_epoch;
         dictActive = true;
         window.__dictationActive = true;
         window.__lastSayFocusTs = Date.now();
@@ -8665,42 +8983,46 @@ const Proto = (() => {
         dictBtn.textContent = "⏹ Listening…";
         ta.focus();
         const micOk = await startBrowserMicCapture();
+        if (!dictActive || startEpoch !== composerState.dictation_epoch) return;
         if (micOk) {
           // Primary path: 16kHz PCM -> local faster-whisper-base.en (do not run System.Speech DictationGrammar in parallel!)
           return;
         }
         // Fallback only when browser getUserMedia is unavailable
         spawnBrowserRecog();
-        _postJson("/api/steward/dictate", { action: "start" })
+        _postJson("/api/steward/dictate", { action: "start", dictation_epoch: startEpoch })
           .then(r => r.json())
           .then(j => {
+            if (startEpoch !== composerState.dictation_epoch) return;
             if (j && typeof j.last_seq === "number") dictSeq = j.last_seq;
           })
           .catch(() => {});
         if (dictPollTimer) clearInterval(dictPollTimer);
         dictPollTimer = setInterval(() => {
           if (!dictActive) return;
-          _postJson("/api/steward/dictate", { action: "poll", since: dictSeq })
+          const reqEpoch = composerState.dictation_epoch;
+          _postJson("/api/steward/dictate", { action: "poll", since: dictSeq, dictation_epoch: reqEpoch })
             .then(r => r.json())
             .then(j => {
-              if (!dictActive || !j) return;
+              if (!dictActive || reqEpoch !== composerState.dictation_epoch || !j) return;
               if (Array.isArray(j.chunks)) {
                 j.chunks.forEach(c => {
                   if (c && typeof c.seq === "number" && c.seq > dictSeq) dictSeq = c.seq;
-                  if (c && c.text) appendRecognizedText(c.text);
+                  if (c && c.text) appendRecognizedText(c.text, reqEpoch);
                 });
               }
             })
             .catch(() => {});
         }, 500);
       };
+      const clearBtnRef = composerHost.querySelector("[data-clear-draft]") || send;
       dictBtn.onclick = (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
         if (dictActive) stopDictation();
         else startDictation();
       };
-      composerHost.insertBefore(dictBtn, send);
+      composerHost.insertBefore(dictBtn, clearBtnRef);
 
       const talkBtn = el("button", "composer-voice-btn" + (isTalkModeOn() ? " talk-active" : ""), isTalkModeOn() ? "🔊 Talk: ON" : "🔈 Talk Mode");
       talkBtn.type = "button";
@@ -8716,20 +9038,36 @@ const Proto = (() => {
           speakConciseSummary(intro, true);
         }
       };
-      composerHost.insertBefore(talkBtn, send);
+      composerHost.insertBefore(talkBtn, clearBtnRef);
       setTalkModeOn(isTalkModeOn()); } catch (e) {}
     }
 
+    let _submitInFlight = false;
     const submit = async () => {
-      if (_isDictatingFn()) { try { if (_stopDictationFn) await _stopDictationFn(); } catch (e) {} } _composing = false; let text = ta.value.trim();
+      if (_submitInFlight) return;
+      _composing = false;
+      let text = ta.value.trim();
       if (!text) return;
+      _userEditedSinceBoot = true;
+      bumpDictationEpoch();
+      if (_isDictatingFn() && _stopDictationFn) {
+        try { _stopDictationFn({ discardPending: true }); } catch (e) {}
+      }
+      _submitInFlight = true;
       closeSpellPopup();
+      clearTimeout(_draftT);
       // dictation-friendly grasscatch: "later: ..." parks it without ceremony
       const later = text.match(/^(later|grasscatcher?)[:,]\s*(.+)/is);
       if (later) text = "Grasscatch this (park it on the Strip with a reason, " +
                         "then carry on with the step in hand): " + later[2];
       const keep = ta.value;
-      ta.value = ""; grow(); _skipNextJohnEcho = text; const optimisticBlk = addBlock("john", opts.johnLabel || (window.USER_DISPLAY_NAME ? String(window.USER_DISPLAY_NAME).trim().toUpperCase() : "JOHN"), text); if (send) { send.disabled = true; send.textContent = "Sending…"; }
+      const clientMsgId = _mintClientMsgId("say");
+      _clearingNow = true;
+      ta.value = ""; grow();
+      _clearingNow = false;
+      _draftDirty = false;
+      try { localStorage.removeItem(DRAFT_KEY); } catch (e) {}
+      _skipNextJohnEcho = text; const optimisticBlk = addBlock("john", opts.johnLabel || (window.USER_DISPLAY_NAME ? String(window.USER_DISPLAY_NAME).trim().toUpperCase() : "JOHN"), text); if (send) { send.disabled = true; send.textContent = "Sending…"; }
       { const d = scrollEl(); if (d) { d._follow = true; pin(d, true); } }   // his own message brings him to the newest
       // Implicit Approval-on-Feedback (John, 2026-10-21): never pop up a nagging REVIEW CHECK card (steward-interject-card / Keep in For Review).
       // When John gives feedback in the dialogue, reconcile only the review items that match the topic/target he named
@@ -8790,8 +9128,8 @@ const Proto = (() => {
             .catch(() => {});
         }
       } catch (e) {}
-      let j = { ok: false }; try { j = await sendSay(text, _answerQuestionId); } finally { if (send) { send.disabled = false; send.textContent = "Send"; } }
-      if (!j.ok) { _skipNextJohnEcho = ""; if (optimisticBlk && optimisticBlk.isConnected) optimisticBlk.remove(); ta.value = keep; grow(); saveDraft(); } else { clearDraft(); }
+      let j = { ok: false }; try { j = await sendSay(text, _answerQuestionId, clientMsgId); } finally { _submitInFlight = false; if (send) { send.disabled = false; send.textContent = "Send"; } }
+      if (!j.ok) { _skipNextJohnEcho = ""; if (optimisticBlk && optimisticBlk.isConnected) optimisticBlk.remove(); if (!ta.value.trim()) { ta.value = keep; grow(); } try { if (keep && keep.trim()) localStorage.setItem(DRAFT_KEY, keep); } catch (e) {} _draftDirty = true; saveDraft(); } else { clearDraft(); }
     };
     if (send) { send.disabled = false; send.onclick = (ev) => { if (ev) { ev.preventDefault(); ev.stopPropagation(); } submit(); }; }
     if (TILE) {
@@ -8841,10 +9179,9 @@ const Proto = (() => {
           return;
         }
       }
-      // 2026-10-13 (John): CLI-style Enter sends immediately; Shift+Enter makes a new line.
-      // Never send from a key during an active composition.
-      if ((e.key !== "Enter" && e.keyCode !== 13) || e.isComposing || e.keyCode === 229) return;
-      if (e.shiftKey) return;
+      // Enter sends immediately to the Steward; Shift+Enter inserts a newline; never mid-composition.
+      if ((e.key !== "Enter" && e.keyCode !== 13) || e.isComposing || e.keyCode === 229 || _composing) return;
+      if (e.shiftKey && !e.ctrlKey && !e.metaKey) return;
       _composing = false; e.preventDefault(); e.stopPropagation(); submit();
     });
   }
@@ -8865,7 +9202,7 @@ const Proto = (() => {
     if (drive) drive.onclick = async () => {
       const on = lastState && lastState.drive;
       await post("/api/engine", { action: on ? "drive_off" : "drive_on" });
-      if (!on && !(lastState && lastState.alive)) await post("/api/say", { text: "go" });
+      if (!on && !(lastState && lastState.alive)) await post("/api/say", { text: "go", clear_draft: false });
     };
     const mini = $("[data-min]");
     const app = $(".app");
@@ -8896,7 +9233,7 @@ const Proto = (() => {
     const catchIn = $("[data-catch]");
     if (catchIn) catchIn.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && catchIn.value.trim()) {
-        post("/api/say", { text: "Grasscatch this (park it on the Strip, then carry on): " + catchIn.value.trim() });
+        post("/api/say", { text: "Grasscatch this (park it on the Strip, then carry on): " + catchIn.value.trim(), clear_draft: false });
         catchIn.value = "";
       }
     });
@@ -8981,16 +9318,17 @@ const Proto = (() => {
       }
     };
     _ensureLoadedFn = ensureCockpitDataLoaded;
+    const mapProm = loadMap();
+    const planProm = wantPlanPane ? Promise.resolve().then(() => loadPlan()).then(res => { if (res !== null || ($("[data-steps]") && $("[data-steps]").children.length > 0)) _planLoaded = true; return res; }).catch(() => null) : Promise.resolve(null);
     const initStateProm = fetch(api("/api/state")).then(r => r.json()).then(st => { if (st && !st.error) updateState(st); return st; }).catch(() => null);
+    const histProm = (!opts.skipHistory) ? loadHistory().then(() => { _histLoaded = true; }).catch(() => {}) : Promise.resolve();
+    const delivProm = wantPanes ? Promise.resolve().then(() => renderDeliverablesTile()).then(() => { _delivLoaded = true; }).catch((err) => { console.error("renderDeliverablesTile error:", err && err.stack || err); }) : Promise.resolve();
     const statusFetchProm = (opts.statusPane && wantPanes && !EMBED_DIALOGUE) ? fetch(api("/api/status")).then(r => r.json()).then(stJson => {
       if (stJson) { try { renderStatus(stJson); _statusLoaded = true; } catch (e) {} }
       return stJson;
     }).catch(() => null) : Promise.resolve(null);
-    const planProm = wantPlanPane ? Promise.resolve().then(() => loadPlan()).then(res => { if (res !== null || ($("[data-steps]") && $("[data-steps]").children.length > 0)) _planLoaded = true; return res; }).catch(() => null) : Promise.resolve(null);
-    const delivProm = wantPanes ? Promise.resolve().then(() => renderDeliverablesTile()).then(() => { _delivLoaded = true; }).catch((err) => { console.error("renderDeliverablesTile error:", err && err.stack || err); }) : Promise.resolve();
-    const histProm = (!opts.skipHistory) ? loadHistory().then(() => { _histLoaded = true; }).catch(() => {}) : Promise.resolve();
     try {
-      await loadMap();
+      await mapProm;
       _mapLoaded = true;
     } catch (e) {
       const p = $("[data-progress]");

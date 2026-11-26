@@ -80,6 +80,7 @@ SERVICE_CATALOG = {
         "label": "Claude (Anthropic)",
         "cli": "claude",
         "default_role": "Primary Coding & Steward Seat",
+        "free_tier_guide": "Free claude.ai web accounts do not include unlimited Claude Code CLI quota. If using free accounts only, enable Gemini Free Tier below as your primary seat, or paste starter Anthropic API credits with Free Account (Single-Seat Paced) selected.",
         "tiers": {
             "frontier": {
                 "label": "Frontier (Top-Tier Capability)",
@@ -93,6 +94,13 @@ SERVICE_CATALOG = {
                 "reviewer_model": "opus",
                 "effort": "high",
             },
+            "free_tier": {
+                "label": "Free Account / Rate-Limit Friendly (Single-Seat Paced)",
+                "orchestrator_model": "sonnet",
+                "reviewer_model": "sonnet",
+                "effort": "high",
+                "single_seat_pacing": True,
+            },
         },
         "update_cmd": ["claude", "update"],
         "login_cmd": ["claude", "auth", "login", "--claudeai"],
@@ -101,7 +109,8 @@ SERVICE_CATALOG = {
         "family": "gemini",
         "label": "Gemini (Google Antigravity / agy)",
         "cli": "agy",
-        "default_role": "Cross-Family Adversarial Reviewer & Heavy Reader",
+        "default_role": "Cross-Family Adversarial Reviewer & Heavy Reader (Best Free-Account Seat)",
+        "free_tier_guide": "Recommended Free Seat: Sign in with any free Google account via `agy auth login` / Gemini CLI, OR get a free GEMINI_API_KEY at aistudio.google.com (no credit card needed; note Google's free-tier API terms may log prompts/outputs for service improvement and apply daily RPM/RPD caps).",
         "tiers": {
             "frontier": {
                 "label": "Frontier (Top-Tier Capability)",
@@ -115,6 +124,13 @@ SERVICE_CATALOG = {
                 "reviewer_model": "gemini-3.8-flash",
                 "effort": "high",
             },
+            "free_tier": {
+                "label": "Free Account / Google AI Studio Free Tier (Rate-Limit Friendly)",
+                "orchestrator_model": "gemini-3.8-flash",
+                "reviewer_model": "gemini-3.8-flash",
+                "effort": "high",
+                "single_seat_pacing": True,
+            },
         },
         "update_cmd": ["agy", "--version"],
         "login_cmd": ["agy", "auth", "login"],
@@ -124,6 +140,7 @@ SERVICE_CATALOG = {
         "label": "Grok (xAI)",
         "cli": "grok",
         "default_role": "Independent Cross-Family Shark & Refuter",
+        "free_tier_guide": "Optional secondary seat. Sign in with `grok auth` or paste a free/starter xAI API key; safe to uncheck if you only use free Google/OpenAI accounts.",
         "tiers": {
             "frontier": {
                 "label": "Frontier (Top-Tier Capability)",
@@ -137,6 +154,13 @@ SERVICE_CATALOG = {
                 "reviewer_model": "grok-4.7",
                 "effort": "medium",
             },
+            "free_tier": {
+                "label": "Free Account / Rate-Limit Friendly (Single-Seat Paced)",
+                "orchestrator_model": "grok-4.7",
+                "reviewer_model": "grok-4.7",
+                "effort": "medium",
+                "single_seat_pacing": True,
+            },
         },
         "update_cmd": ["grok", "--version"],
         "login_cmd": ["grok", "auth"],
@@ -146,6 +170,7 @@ SERVICE_CATALOG = {
         "label": "ChatGPT / Codex (OpenAI)",
         "cli": "codex",
         "default_role": "Synthesis & Verification Seat",
+        "free_tier_guide": "Sign in via `codex login` or paste an OpenAI API key. Free accounts have lower RPM limits — Free Account mode paces multi-agent skills one request at a time.",
         "tiers": {
             "frontier": {
                 "label": "Frontier (Top-Tier Capability)",
@@ -158,6 +183,13 @@ SERVICE_CATALOG = {
                 "orchestrator_model": "gpt-6-astra",
                 "reviewer_model": "gpt-6-astra",
                 "effort": "high",
+            },
+            "free_tier": {
+                "label": "Free Account / Rate-Limit Friendly (Single-Seat Paced)",
+                "orchestrator_model": "gpt-6-astra",
+                "reviewer_model": "gpt-6-astra",
+                "effort": "high",
+                "single_seat_pacing": True,
             },
         },
         "update_cmd": ["codex", "--version"],
@@ -582,6 +614,31 @@ def get_active_user_profile(
     }
 
 
+def _wizard_license_store_dir(
+    *,
+    sandbox: bool = False,
+    sandbox_id: str = DEFAULT_SANDBOX_ID,
+    base_dir: Path | str | None = None,
+) -> Path:
+    return state_dir(sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)
+
+
+def get_wizard_license_status(
+    *,
+    sandbox: bool = False,
+    sandbox_id: str = DEFAULT_SANDBOX_ID,
+    base_dir: Path | str | None = None,
+) -> dict[str, Any]:
+    import website_portal as _wp
+    sdir = _wizard_license_store_dir(sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)
+    st = _wp.get_local_license_status(store_dir=sdir)
+    if not st.get("accepted") and not sandbox and base_dir is None:
+        st_default = _wp.get_local_license_status(store_dir=None)
+        if st_default.get("accepted"):
+            return st_default
+    return st
+
+
 def save_user_identity(
     display_name: str,
     pseudonym: str = aap.PSEUDONYM_DEFAULT,
@@ -593,12 +650,22 @@ def save_user_identity(
     dual_auth_enabled: bool | None = None,
     dual_auth_method: str = "",
     anchor_token: str = "",
+    accepted_gwl_license: bool | None = None,
+    require_license_ack: bool = False,
     *,
     sandbox: bool = False,
     sandbox_id: str = DEFAULT_SANDBOX_ID,
     base_dir: Path | str | None = None,
 ) -> dict[str, Any]:
-    """Save Step 1 User Identity (Real Name, Collaborator Pseudonym, Contact/Recovery Email & Steward Persona)."""
+    """Save Step 1 User Identity (Real Name, Collaborator Pseudonym, Ghost World Labs License Ack, Credentials & Steward Persona)."""
+    cur_lic = get_wizard_license_status(sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)
+    if require_license_ack and accepted_gwl_license is not True and not cur_lic.get("accepted"):
+        return {
+            "ok": False,
+            "status_code": 400,
+            "error": "license_acceptance_required",
+            "message": "Please check the Ghost World Labs License acknowledgement box (Free Use · No Resale or Commercialization) to continue.",
+        }
     clean_name = str(display_name or "").strip() or "John"
     if isinstance(pseudonym_aliases, str):
         alias_list = [a.strip() for a in pseudonym_aliases.split(",") if a.strip()]
@@ -662,6 +729,23 @@ def save_user_identity(
     else:
         _resolve_or_create_anchor_token(sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)
 
+    lic_receipt = None
+    if accepted_gwl_license is True:
+        try:
+            import website_portal as _wp
+            sdir_lic = _wizard_license_store_dir(sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)
+            lic_res = _wp.accept_non_resale_license(
+                canon_pseudo or clean_name,
+                True,
+                intended_use="personal_or_research",
+                store_dir=sdir_lic,
+            )
+            if lic_res.get("ok"):
+                lic_receipt = lic_res.get("receipt")
+        except Exception:
+            lic_receipt = None
+    final_lic_status = get_wizard_license_status(sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)
+
     profile_doc = {
         "schema": "anchor.user.profile.v1",
         "display_name": clean_name,
@@ -681,6 +765,8 @@ def save_user_identity(
         "did": aap.did_from_pseudonym(canon_pseudo),
         "steward_persona": persona_info["label"],
         "steward_persona_id": persona_key,
+        "gwl_license_accepted": bool(final_lic_status.get("accepted")),
+        "gwl_license_id": final_lic_status.get("license_id") or "GHOST-WORLD-LAB-NON-RESALE-v1",
         "updated_at": _utc_now_iso(),
     }
 
@@ -717,6 +803,8 @@ def save_user_identity(
     return {
         "ok": True,
         "profile": get_active_user_profile(sandbox_id if sandbox else "", sandbox=sandbox, base_dir=base_dir),
+        "license_status": final_lic_status,
+        "license_receipt": lic_receipt,
         "gwl_applicant": gwl_sync.get("applicant"),
     }
 
@@ -953,16 +1041,20 @@ def configure_mothership_topology(
     remote_address: str = "",
     hub_endpoint: str = "https://gwl-server.tailb49f65.ts.net",
     telemetry_enabled: bool = True,
+    auto_pull_updates: bool = True,
+    low_spec_mode: bool | None = None,
     auto_install_tailscale: bool = False,
     sandbox: bool = False,
     sandbox_id: str = DEFAULT_SANDBOX_ID,
     base_dir: Path | str | None = None,
     runner_fn=None,
 ) -> dict[str, Any]:
-    """Configure Step 2: Main Mothership vs. Connect to a Different Mothership + standard Homebase Registration."""
+    """Configure Step 2: Main Mothership vs. Connect to a Different Mothership + Website Auto-Updater + Low-Spec Laptop Mode."""
     norm_mode = str(mode or "main_mothership").strip().lower()
     if norm_mode not in ("main_mothership", "connect_remote_mothership"):
         norm_mode = "main_mothership"
+    hw_prof = paths.detect_host_hardware_profile()
+    eff_low_spec = bool(hw_prof["low_spec_recommended"] if low_spec_mode is None else low_spec_mode)
 
     ts_info = detect_or_install_tailscale(
         sandbox=sandbox,
@@ -1019,13 +1111,22 @@ def configure_mothership_topology(
                 pass
 
     st_doc = load_wizard_state(sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)
+    topology_doc["auto_pull_updates"] = bool(auto_pull_updates)
+    topology_doc["low_spec_mode"] = eff_low_spec
+    topology_doc["hardware_profile"] = hw_prof
     st_doc["topology"] = topology_doc
     if 2 not in st_doc["completed_steps"]:
         st_doc["completed_steps"].append(2)
     st_doc["current_step"] = max(int(st_doc.get("current_step") or 1), 3)
     save_wizard_state(st_doc, sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)
     sync_applicant_signup_to_gwl_hub(sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)
-    hb_summary: dict[str, Any] = {"registered": False, "sandbox": bool(sandbox), "telemetry_enabled": bool(telemetry_enabled)}
+    hb_summary: dict[str, Any] = {
+        "registered": False,
+        "sandbox": bool(sandbox),
+        "telemetry_enabled": bool(telemetry_enabled),
+        "auto_pull_updates": bool(auto_pull_updates),
+        "low_spec_mode": eff_low_spec,
+    }
     if not sandbox:
         try:
             import mothership_updater as _mu
@@ -1034,6 +1135,8 @@ def configure_mothership_topology(
                 anchor_root=eff_root,
                 homebase_url=eff_hub,
                 telemetry_enabled=bool(telemetry_enabled),
+                auto_pull_updates=bool(auto_pull_updates),
+                low_spec_mode=eff_low_spec,
             )
             if base_dir is None and "PYTEST_CURRENT_TEST" not in os.environ:
                 prof_cur = get_active_user_profile("", sandbox=False, base_dir=None)
@@ -1254,6 +1357,8 @@ def detect_ai_services_status(
             "last_test": saved.get("last_test") or None,
             "available_tiers": dyn_tiers,
             "discovered_models": live_models,
+            "free_tier_guide": meta.get("free_tier_guide") or "",
+            "single_seat_pacing": bool(tier_defaults.get("single_seat_pacing", tier_level == "free_tier")),
         }
 
     # Check readiness.json explanation
@@ -1503,6 +1608,37 @@ def configure_service_connection(
             pass
     sync_applicant_signup_to_gwl_hub(sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)
     return {"ok": True, "service": entry}
+
+
+def apply_free_tier_provider_preset(
+    *,
+    sandbox: bool = False,
+    sandbox_id: str = DEFAULT_SANDBOX_ID,
+    base_dir: Path | str | None = None,
+) -> dict[str, Any]:
+    """Configure all AI services for Free-Tier / Rate-Limit Friendly usage (Gemini primary + single-seat pacing)."""
+    results: dict[str, Any] = {}
+    for fam in SERVICE_CATALOG:
+        en = fam in ("gemini", "chatgpt")
+        res = configure_service_connection(
+            fam,
+            enabled=en,
+            auth_mode="subscription",
+            tier_level="free_tier",
+            sandbox=sandbox,
+            sandbox_id=sandbox_id,
+            base_dir=base_dir,
+        )
+        results[fam] = res.get("service")
+    st_doc = load_wizard_state(sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)
+    st_doc["free_tier_pacing"] = True
+    save_wizard_state(st_doc, sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)
+    return {
+        "ok": True,
+        "free_tier_pacing": True,
+        "services": results,
+        "message": "Applied Free-Account Preset: Gemini & ChatGPT set to Free Account (Single-Seat Paced). Sign in with a free Google account (`agy auth login`) or paste a free Google AI Studio API key (`aistudio.google.com`).",
+    }
 
 
 def check_or_update_cli(
@@ -3748,6 +3884,17 @@ def build_readiness_receipt(
             "detail": f"{len(provisioned)} Project(s) registered with Starter AI Cockpits (Active / On Deck / Parked)",
         },
         {
+            "step": 1,
+            "id": "gwl_license",
+            "label": "Ghost World Labs License Acknowledgement",
+            "ok": bool(get_wizard_license_status(sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir).get("accepted")),
+            "detail": (
+                "Accepted (GHOST-WORLD-LAB-NON-RESALE-v1 · Free Use, No Resale or Commercialization)"
+                if get_wizard_license_status(sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir).get("accepted")
+                else "Pending — acknowledge Ghost World Labs License in Step 1"
+            ),
+        },
+        {
             "step": 6,
             "id": "comms",
             "label": "Calendar & Email Integration",
@@ -3762,7 +3909,7 @@ def build_readiness_receipt(
         "sandbox_id": sandbox_id if sandbox else "",
         "profile": profile,
         "checks": checks,
-        "all_core_ready": all(c["ok"] for c in checks if c["id"] != "comms"),
+        "all_core_ready": all(c["ok"] for c in checks if c["id"] not in ("comms", "gwl_license")),
         "provisioned_cockpits": provisioned,
         "readiness": svc_status["readiness"],
         "readiness_explanation": svc_status["readiness_explanation"],
@@ -3857,6 +4004,22 @@ def get_full_wizard_bundle(
     except Exception:
         hub_catalog = {}
         gwl_applicants = []
+    import website_portal as _wp
+    hw_prof = paths.detect_host_hardware_profile()
+    lic_status = get_wizard_license_status(sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)
+    lic_spec = _wp.get_non_resale_license_spec()
+    hb_view = (
+        {
+            "registered": False,
+            "sandbox": True,
+            "homebase_url": "https://gwl-server.tailb49f65.ts.net",
+            "telemetry_enabled": True,
+            "auto_pull_updates": bool((state.get("topology") or {}).get("auto_pull_updates", True)),
+            "low_spec_mode": bool((state.get("topology") or {}).get("low_spec_mode", hw_prof["low_spec_recommended"])),
+        }
+        if sandbox
+        else _homebase_link_summary(base_dir)
+    )
     return {
         "ok": True,
         "admin_edition": paths.is_anchor_admin_edition(base_dir),
@@ -3865,12 +4028,11 @@ def get_full_wizard_bundle(
         "data_dir": str(state_dir(sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)),
         "state": state,
         "profile": profile,
+        "license_spec": lic_spec,
+        "license_status": lic_status,
+        "hardware_profile": hw_prof,
         "tailscale": ts_info,
-        "homebase_link": (
-            {"registered": False, "sandbox": True, "homebase_url": "https://gwl-server.tailb49f65.ts.net", "telemetry_enabled": True}
-            if sandbox
-            else _homebase_link_summary(base_dir)
-        ),
+        "homebase_link": hb_view,
         "ecgberht": {
             "root": str(ecg_path),
             "checked_paths": ecg_checked,
@@ -3908,9 +4070,28 @@ def dispatch_wizard_action(
     use_sandbox = bool(sandbox or body.get("sandbox") in (True, 1, "1", "true"))
     sid = str(body.get("sandbox_id") or sandbox_id or DEFAULT_SANDBOX_ID).strip()
 
+    if act == "accept_gwl_license":
+        import website_portal as _wp
+        sdir_lic = _wizard_license_store_dir(sandbox=use_sandbox, sandbox_id=sid, base_dir=base_dir)
+        prof_cur = get_active_user_profile(sid if use_sandbox else "", sandbox=use_sandbox, base_dir=base_dir)
+        handle = str(body.get("pseudonym_or_handle") or body.get("pseudonym") or prof_cur.get("pseudonym") or prof_cur.get("display_name") or "Collaborator").strip()
+        acc_val = body.get("accepted_gwl_license") if "accepted_gwl_license" in body else body.get("accepted_non_resale")
+        out_lic = _wp.accept_non_resale_license(
+            handle,
+            bool(acc_val is True or acc_val in (1, "1", "true", "yes")),
+            intended_use=str(body.get("intended_use") or "personal_or_research"),
+            store_dir=sdir_lic,
+        )
+        out_lic["status_code"] = int(out_lic.get("code") or (200 if out_lic.get("ok") else 400))
+        return out_lic
+    if act == "apply_free_tier_preset":
+        return apply_free_tier_provider_preset(sandbox=use_sandbox, sandbox_id=sid, base_dir=base_dir)
     if act in ("save_identity", "save_security_credentials"):
         dual_raw = body.get("dual_auth_enabled")
         dual_bool = None if dual_raw is None else bool(dual_raw in (True, 1, "1", "true", "yes"))
+        lic_raw = body.get("accepted_gwl_license")
+        lic_bool = None if lic_raw is None else bool(lic_raw in (True, 1, "1", "true", "yes"))
+        req_lic = bool(body.get("require_license_ack") in (True, 1, "1", "true", "yes"))
         return save_user_identity(
             display_name=str(body.get("display_name") or ""),
             pseudonym=str(body.get("pseudonym") or aap.PSEUDONYM_DEFAULT),
@@ -3922,6 +4103,8 @@ def dispatch_wizard_action(
             dual_auth_enabled=dual_bool,
             dual_auth_method=str(body.get("dual_auth_method") or ""),
             anchor_token=str(body.get("anchor_token") or ""),
+            accepted_gwl_license=lic_bool,
+            require_license_ack=req_lic,
             sandbox=use_sandbox,
             sandbox_id=sid,
             base_dir=base_dir,
@@ -3978,11 +4161,15 @@ def dispatch_wizard_action(
     if act == "configure_topology":
         if not use_sandbox and "_req_auth_ok" in body and not bool(body.get("_req_auth_ok")):
             return {"ok": False, "status_code": 401, "error": "unauthorized"}
+        low_raw = body.get("low_spec_mode")
+        low_bool = None if low_raw is None else bool(low_raw in (True, 1, "1", "true", "yes"))
         return configure_mothership_topology(
             mode=str(body.get("mode") or "main_mothership"),
             remote_address=str(body.get("remote_address") or ""),
             hub_endpoint=str(body.get("hub_endpoint") or "https://gwl-server.tailb49f65.ts.net"),
             telemetry_enabled=bool(body.get("telemetry_enabled", True)),
+            auto_pull_updates=bool(body.get("auto_pull_updates", True)),
+            low_spec_mode=low_bool,
             auto_install_tailscale=bool(body.get("auto_install_tailscale")),
             sandbox=use_sandbox,
             sandbox_id=sid,
@@ -4015,6 +4202,7 @@ def dispatch_wizard_action(
         hb_target = str(
             body.get("homebase_url")
             or body.get("remote_address")
+            or os.environ.get("ANCHOR_HOMEBASE_URL")
             or topo_cur.get("coordination_hub")
             or "https://gwl-server.tailb49f65.ts.net"
         ).strip()
@@ -4043,7 +4231,10 @@ def dispatch_wizard_action(
             return {"ok": False, "status_code": 401, "error": "unauthorized"}
         import mothership_updater as _mu
         eff_root = _resolve_base_dir(base_dir) if base_dir is not None else None
-        return _mu.sync_telemetry_to_homebase(anchor_root=eff_root)
+        return _mu.sync_telemetry_to_homebase(
+            anchor_root=eff_root,
+            heartbeat_even_if_empty=bool(body.get("heartbeat_even_if_empty", True)),
+        )
     if act == "list_homebase_telemetry":
         if not bool(body.get("_req_auth_ok")):
             return {"ok": False, "status_code": 401, "error": "unauthorized"}
@@ -4930,15 +5121,34 @@ def render_onboard_wizard_html(
               <div id="quickRecoveryResultBox" style="margin-top:8px" hidden></div>
             </details>
           </div>
-          <button type="button" class="btn primary" id="btnSaveStep1">Save Identity, Credentials &amp; Continue to Step 2 →</button>
+          <div id="gwlLicenseCard" class="proj-row" style="margin:14px 0;padding:14px 16px;flex-direction:column;align-items:stretch;border:1px solid #d97706;background:#131b29">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+              <strong style="color:#fde68a;font-size:15px">📜 Ghost World Labs License Acknowledgement (Free Use · No Resale or Commercialization)</strong>
+              <span class="pill" id="gwlLicenseStatusPill" style="background:#451a03;color:#fde68a">REQUIRED</span>
+            </div>
+            <p class="muted" style="margin:8px 0 6px;color:#cbd5e1">
+              <strong>Ghost World Lab License — Version 1, Refinement 2 (<code>GHOST-WORLD-LAB-NON-RESALE-v1</code> · All rights reserved — not open source):</strong><br>
+              • <strong>Free Use &amp; Sharing Permitted:</strong> Worldwide, royalty-free permission for personal, academic/research, and internal business use, private modification, and voluntary free sharing without a fee. Your own independent papers, data, code, and outputs belong 100% to you.<br>
+              • <strong>No Resale or Commercialization:</strong> Selling copies of Anchor or its bundled Skill Foundry skills, bundling them into a paid product, charging recurring version-use/subscription fees, or offering Paid Hosted Access requires Separate Written Permission from Ghost World Labs.
+            </p>
+            <details style="margin:4px 0 8px;padding:8px 12px;background:#0d131d;border:1px solid #263449;border-radius:7px">
+              <summary style="cursor:pointer;font-size:12.5px;color:#93c5fd;font-weight:600">Read Full Ghost World Labs License Clauses 1–10 (Plain-English &amp; Operative Summary)</summary>
+              <div id="gwlLicenseClausesList" class="muted" style="margin-top:8px;font-size:12px;line-height:1.5"></div>
+            </details>
+            <label style="display:flex;align-items:flex-start;gap:9px;margin:4px 0 0;font-size:13.5px;color:#f8fafc;cursor:pointer">
+              <input type="checkbox" id="chkAcceptGwlLicense" style="width:auto;margin-top:3px">
+              <span>I have read and agree to the <strong>Ghost World Labs License</strong> (free personal, academic &amp; internal use; strictly no resale, paid bundling, or paid commercialization without Separate Written Permission).</span>
+            </label>
+          </div>
+          <button type="button" class="btn primary" id="btnSaveStep1">Save Identity, Acknowledge License &amp; Continue to Step 2 →</button>
         </div>
       </section>
 
       <!-- STEP 2 -->
       <section class="wiz-step-pane" id="step-pane-2" hidden>
         <div class="wiz-card">
-          <h2>Step 2 · Mothership Topology, Tailscale &amp; Anchor Homebase Registration</h2>
-          <p class="muted">Choose your Mothership role and register with Anchor Homebase (<code>https://gwl-server.tailb49f65.ts.net</code>) as part of standard setup so updates can be pushed to you automatically and sanitized install/skill journal entries and errors report back to Homebase.</p>
+          <h2>Step 2 · Mothership Topology, Automatic Website Updates, Laptop Mode &amp; Optional Tailscale</h2>
+          <p class="muted">Choose your Mothership role, confirm Automatic Website-Watched Version Updates (watches Ghost World Labs' signed <code>release-signal.json</code> online even without Tailscale), enable Low-Memory Saver Mode for older laptops, and optionally link Tailscale / Homebase.</p>
           <div class="form-grid">
             <div>
               <label for="selTopologyMode">Mothership Role</label>
@@ -4948,13 +5158,21 @@ def render_onboard_wizard_html(
               </select>
             </div>
             <div>
-              <label for="inpRemoteMothership">Anchor Homebase / Coordination Hub URL (Tailscale HTTPS or IP)</label>
+              <label for="inpRemoteMothership">Anchor Homebase / Coordination Hub URL (Optional Tailscale HTTPS or IP)</label>
               <input type="text" id="inpRemoteMothership" value="https://gwl-server.tailb49f65.ts.net" placeholder="https://gwl-server.tailb49f65.ts.net">
             </div>
           </div>
-          <label style="display:flex;align-items:center;gap:8px;margin:10px 0;font-size:13px;cursor:pointer">
+          <label style="display:flex;align-items:center;gap:8px;margin:10px 0 6px;font-size:13px;cursor:pointer">
+            <input type="checkbox" id="chkAutoPullWebsiteUpdates" checked>
+            <span><strong>🌐 Automatic Website-Watched Future Updates (Recommended):</strong> Watch <code>release-signal.json</code> online (Ed25519-signed) and automatically pull new Anchor versions + all 20 Foundry skills in-place when idle (no Tailscale required)</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px;cursor:pointer">
+            <input type="checkbox" id="chkLowSpecMode">
+            <span><strong>💻 Older Windows Laptop / Low-Memory Mothership Mode:</strong> Cap hidden live panes to 2 and skip background Cave pre-warming (<span id="hwDetectSummary">checking RAM &amp; CPU…</span>)</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;margin:6px 0 10px;font-size:13px;cursor:pointer">
             <input type="checkbox" id="chkHomebaseTelemetry" checked>
-            <span><strong>Standard Homebase Link:</strong> Receive pushed Anchor updates and send sanitized journal entries &amp; error diagnostics back to Anchor Homebase</span>
+            <span><strong>Standard Homebase Link (Optional over Tailscale):</strong> Receive direct Homebase push updates and send sanitized journal entries &amp; error diagnostics</span>
           </label>
           <div id="tsStatusBox" class="wiz-card" style="background:#101723"></div>
           <div id="homebaseStatusBox" class="proj-row" style="margin-bottom:12px"></div>
@@ -4979,6 +5197,13 @@ def render_onboard_wizard_html(
               <span class="muted" id="nightlyRefreshDetail">Pulling live advertised models directly from installed CLIs (`model_policy.discover`) + Nightly 02:00 refresh.</span>
             </div>
             <span class="pill" style="background:#064e3b;color:#6ee7b7">LIVE CATALOG</span>
+          </div>
+          <div id="freeTierCalloutBanner" class="proj-row" style="margin-bottom:12px;border-color:#0284c7;background:#0c192c">
+            <div>
+              <strong style="color:#7dd3fc">🆓 Using Free-Version AI Provider Accounts?</strong>
+              <div class="muted" style="margin-top:3px">You do NOT need paid Pro/Max subscriptions to run Anchor! Click the preset button to configure <strong>Free Account / Rate-Limit Friendly Mode</strong> (uses single-seat pacing so skills don't slam free RPM limits, with <strong>Google Gemini CLI / free Google AI Studio API key</strong> at <code>aistudio.google.com</code> as your recommended primary free seat).</div>
+            </div>
+            <button type="button" class="btn emerald" id="btnApplyFreeTierPreset">🆓 Apply Free-Account Preset</button>
           </div>
           <p class="muted" id="readinessNoteBox"></p>
           <div id="servicesGrid" class="service-grid"></div>
@@ -5370,9 +5595,11 @@ def render_onboard_wizard_html(
           </select>
           <label style="margin-top:8px">Capability Level / Model Tier (Live Nightly + CLI Catalog)</label>
           <select data-svc-tier="${{svc.family}}">
-            <option value="frontier" ${{svc.tier_level === 'frontier' ? 'selected' : ''}}>Frontier (Top-Tier — ${{svc.available_tiers.frontier.orchestrator_model}} / ${{svc.available_tiers.frontier.subagent_model}})</option>
+            <option value="frontier" ${{svc.tier_level === 'frontier' ? 'selected' : ''}}>Frontier (Top-Tier — ${{svc.available_tiers.frontier.orchestrator_model}})</option>
             <option value="one_tier_down" ${{svc.tier_level === 'one_tier_down' ? 'selected' : ''}}>One Tier Down (Fast / Balanced — ${{svc.available_tiers.one_tier_down.orchestrator_model}})</option>
+            <option value="free_tier" ${{svc.tier_level === 'free_tier' ? 'selected' : ''}}>Free Account / Rate-Limit Friendly (${{(svc.available_tiers.free_tier && svc.available_tiers.free_tier.orchestrator_model) || svc.available_tiers.one_tier_down.orchestrator_model}} · Single-Seat Paced)</option>
           </select>
+          ${{svc.free_tier_guide ? `<div class="muted" style="margin-top:5px;font-size:11.5px;color:#93c5fd">💡 ${{svc.free_tier_guide}}</div>` : ''}}
           <label style="margin-top:8px">Specific Model Override (Advertised by CLI / Nightly Refresh)</label>
           <select data-svc-model="${{svc.family}}">
             ${{modelOptsHtml}}
@@ -5610,6 +5837,37 @@ def render_onboard_wizard_html(
       const chkHbTel = document.getElementById('chkHomebaseTelemetry');
       if (chkHbTel && hb.telemetry_enabled !== undefined) {{
         chkHbTel.checked = Boolean(hb.telemetry_enabled);
+      }}
+      const chkAutoUpd = document.getElementById('chkAutoPullWebsiteUpdates');
+      if (chkAutoUpd && hb.auto_pull_updates !== undefined) {{
+        chkAutoUpd.checked = Boolean(hb.auto_pull_updates);
+      }}
+      const hw = b.hardware_profile || {{}};
+      const chkLowSpec = document.getElementById('chkLowSpecMode');
+      if (chkLowSpec) {{
+        chkLowSpec.checked = (hb.low_spec_mode !== undefined) ? Boolean(hb.low_spec_mode) : Boolean(hw.low_spec_recommended);
+      }}
+      const hwSumEl = document.getElementById('hwDetectSummary');
+      if (hwSumEl) {{
+        hwSumEl.textContent = `${{hw.total_ram_gb ? hw.total_ram_gb + ' GB RAM · ' : ''}}${{hw.cpu_cores || 2}} CPU cores${{hw.low_spec_recommended ? ' · auto-enabled for this laptop' : ''}}`;
+      }}
+      const licSt = b.license_status || {{}};
+      const licSpec = b.license_spec || {{}};
+      const chkLic = document.getElementById('chkAcceptGwlLicense');
+      if (chkLic && licSt.accepted) {{
+        chkLic.checked = true;
+      }}
+      const licPill = document.getElementById('gwlLicenseStatusPill');
+      if (licPill) {{
+        licPill.textContent = licSt.accepted ? `✓ ACCEPTED (${{licSt.license_id || 'GWL-v1'}})` : 'ACKNOWLEDGEMENT REQUIRED';
+        licPill.style.background = licSt.accepted ? '#064e3b' : '#451a03';
+        licPill.style.color = licSt.accepted ? '#6ee7b7' : '#fde68a';
+      }}
+      const licClausesBox = document.getElementById('gwlLicenseClausesList');
+      if (licClausesBox && Array.isArray(licSpec.operative_clauses)) {{
+        licClausesBox.innerHTML = licSpec.operative_clauses.map((c) =>
+          `<div style="margin-bottom:5px"><strong style="color:#fde68a">Section ${{c.section}} · ${{c.title}}:</strong> ${{c.summary}}</div>`
+        ).join('');
       }}
       const inpRem = document.getElementById('inpRemoteMothership');
       if (inpRem && hb.homebase_url && inpRem.value === 'https://gwl-server.tailb49f65.ts.net') {{
@@ -6032,7 +6290,22 @@ def render_onboard_wizard_html(
       }});
     }}
 
+    const btnFreePreset = document.getElementById('btnApplyFreeTierPreset');
+    if (btnFreePreset) {{
+      btnFreePreset.addEventListener('click', async () => {{
+        const out = await callWizardAction('apply_free_tier_preset', {{}});
+        document.getElementById('wizBanner').textContent = out.message || 'Applied Free-Account AI Provider Preset!';
+        await refreshBundle();
+      }});
+    }}
+
     document.getElementById('btnSaveStep1').addEventListener('click', async () => {{
+      const chkLic = document.getElementById('chkAcceptGwlLicense');
+      if (chkLic && !chkLic.checked) {{
+        document.getElementById('wizBanner').textContent = '⚠ Please check the Ghost World Labs License acknowledgement box (Free Use · No Resale or Commercialization) before continuing.';
+        chkLic.focus();
+        return;
+      }}
       const pwd = (document.getElementById('inpPassword') || {{}}).value || '';
       const pwdConf = (document.getElementById('inpPasswordConfirm') || {{}}).value || '';
       if (pwd && pwdConf && pwd !== pwdConf) {{
@@ -6050,21 +6323,31 @@ def render_onboard_wizard_html(
         dual_auth_enabled: Boolean((document.getElementById('chkDualAuth') || {{}}).checked),
         dual_auth_method: (document.getElementById('selDualAuthMethod') || {{}}).value || 'totp_authenticator',
         anchor_token: (document.getElementById('inpAnchorToken') || {{}}).value || '',
+        accepted_gwl_license: true,
+        require_license_ack: true,
       }});
+      if (!out || !out.ok) {{
+        document.getElementById('wizBanner').textContent = '⚠ ' + ((out && out.message) || 'Could not save Step 1.');
+        return;
+      }}
       if (document.getElementById('inpPassword')) document.getElementById('inpPassword').value = '';
       if (document.getElementById('inpPasswordConfirm')) document.getElementById('inpPasswordConfirm').value = '';
       document.getElementById('wizBanner').textContent =
-        `Saved identity & credentials: Steward will address you as "${{out.profile.display_name}}" (Username: ${{out.profile.username}}, Pseudonym: ${{out.profile.pseudonym}}).`;
+        `Saved identity, credentials & Ghost World Labs License receipt: Steward will address you as "${{out.profile.display_name}}" (Username: ${{out.profile.username}}, Pseudonym: ${{out.profile.pseudonym}}).`;
       await refreshBundle();
       showStep(2);
     }});
 
     document.getElementById('btnInstallTailscale').addEventListener('click', async () => {{
       const chkTel = document.getElementById('chkHomebaseTelemetry');
+      const chkAuto = document.getElementById('chkAutoPullWebsiteUpdates');
+      const chkLow = document.getElementById('chkLowSpecMode');
       const out = await callWizardAction('configure_topology', {{
         mode: document.getElementById('selTopologyMode').value,
         remote_address: document.getElementById('inpRemoteMothership').value,
         telemetry_enabled: chkTel ? chkTel.checked : true,
+        auto_pull_updates: chkAuto ? chkAuto.checked : true,
+        low_spec_mode: chkLow ? chkLow.checked : false,
         auto_install_tailscale: true,
       }});
       document.getElementById('wizBanner').textContent = 'Tailscale & Mothership topology verified!';
@@ -6081,18 +6364,22 @@ def render_onboard_wizard_html(
         }});
         document.getElementById('wizBanner').textContent = out.registered
           ? `Registered with Anchor Homebase (${{out.homebase_url}}) — push updates & journal/error sync active!`
-          : `Homebase link initialized locally (${{out.error || 'connect Tailscale to finish live registration'}}).`;
+          : `Homebase link initialized locally (${{out.error || 'website auto-updates are active; connect Tailscale anytime to link Homebase'}}).`;
         await refreshBundle();
       }});
     }}
 
     document.getElementById('btnSaveStep2').addEventListener('click', async () => {{
       const chkTel = document.getElementById('chkHomebaseTelemetry');
+      const chkAuto = document.getElementById('chkAutoPullWebsiteUpdates');
+      const chkLow = document.getElementById('chkLowSpecMode');
       const telOn = chkTel ? chkTel.checked : true;
       await callWizardAction('configure_topology', {{
         mode: document.getElementById('selTopologyMode').value,
         remote_address: document.getElementById('inpRemoteMothership').value,
         telemetry_enabled: telOn,
+        auto_pull_updates: chkAuto ? chkAuto.checked : true,
+        low_spec_mode: chkLow ? chkLow.checked : false,
       }});
       await callWizardAction('register_with_homebase', {{
         homebase_url: document.getElementById('inpRemoteMothership').value,

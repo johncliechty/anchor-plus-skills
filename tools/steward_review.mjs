@@ -291,9 +291,18 @@ async function main() {
   if (result.verdict === 'PASS' && findings.some(f => f && ['BLOCKER', 'MAJOR'].includes(f.severity))) {
     result.verdict = 'FAIL';                 // a PASS that lists a blocking finding is not a pass
   }
-  out({ ok: true, family, model: served.model || null, model_attested: !!served.model_attested, tree_hash: treeHash,
-        verdict: result.verdict, findings: Array.isArray(result.findings) ? result.findings : [],
-        elegance: String(result.elegance || '').slice(0, 600) });
+  out({
+    ok: true,
+    family,
+    model: served.model || null,
+    model_attested: !!served.model_attested,
+    ...(receipt && receipt.requested && receipt.requested.model ? { requested_model: receipt.requested.model } : {}),
+    ...(served.served_via ? { served_via: served.served_via } : {}),
+    tree_hash: treeHash,
+    verdict: result.verdict,
+    findings: Array.isArray(result.findings) ? result.findings : [],
+    elegance: String(result.elegance || '').slice(0, 600),
+  });
 }
 
 main().catch(fail);

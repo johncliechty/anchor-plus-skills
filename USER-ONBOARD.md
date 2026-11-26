@@ -1,4 +1,24 @@
-# Install guide — Anchor + skills (v1.5.3, Windows, Apple Mac / MacBook Air, & Linux)
+# Install guide — Anchor + skills (v1.5.5, Windows, Apple Mac / MacBook Air, & Linux)
+
+## Ghost World Labs License (`GHOST-WORLD-LAB-NON-RESALE-v1` · Version 1, Refinement 2)
+
+**All rights reserved.** Not open source. Use and voluntary free sharing are governed by the **Ghost World Labs Non-Resale License**:
+- **Free Use & Free Sharing Permitted:** Worldwide, royalty-free permission for personal, academic/research, and internal business use, private modification, and voluntary free sharing without a fee. Your own independent papers, data, analyses, and outputs created with Anchor belong 100% to you.
+- **No Resale or Commercialization:** Selling copies of Anchor or its bundled Skill Foundry skills, bundling them into a paid product, charging recurring version-use/subscription fees, or offering Paid Hosted Access requires **Separate Written Permission** from Ghost World Labs.
+- **Setup Acknowledgement:** During first-run setup (`Anchor.exe` installer, `onboard.py --accept-gwl-license`, `/onboard-wizard` Step 1, or `/setup`), you check the Ghost World Labs License box to record a local signed receipt in `.anchor/license_acceptances.json`.
+
+---
+
+## Automatic Website-Watched Updates, Older Windows Laptops & Free-Tier AI Accounts (`v1.5.5`)
+
+- **Automatic Future Version Updates (Watches Website Signal — No Tailscale Required):**
+  Every collaborator Mother Ship automatically watches `https://raw.githubusercontent.com/johncliechty/ghostworldlabs-anchor/main/release-signal.json` (signed with Ghost World Labs' pinned Ed25519 release key `gwl-homebase-2026-v1`) on startup and every 15 minutes in the background. When a new version is published, Anchor verifies the cryptographic signature, waits until no AI Cockpit turn is running, pulls the new Anchor release + refreshes all **20 bundled Foundry skills** in-place (never touching your `.anchor/`, `.ecgberht/`, or markdown files), and lights up the top-bar version pill (`v1.5.5 ⬆ Updated`).
+- **Older Windows Laptop / Low-Memory Mothership Mode:**
+  Anchor automatically detects laptops with `< 12 GB` RAM or `<= 4` CPU cores and enables **Low-Memory Mothership Mode** (capping hidden background WebView2 panes and skipping idle Cave pre-warming; configurable anytime in Setup Step 2 or `/setup`).
+- **Free-Tier AI Provider Accounts Support:**
+  In `/onboard-wizard` Step 3, click **🆓 Apply Free-Account Preset** (or choose **Free Account / Rate-Limit Friendly** on any provider). You can use free accounts (especially **Google Gemini CLI / Antigravity `agy`** with a free Google login or a free **Google AI Studio API key** from `aistudio.google.com` with no credit card required), with single-seat pacing so skills do not hit free-tier RPM limits.
+
+---
 
 ## AI Agent One-Shot Setup & Update Runbook (Claude Code / VS Code / Codex / Cursor)
 

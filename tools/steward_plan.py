@@ -1503,6 +1503,14 @@ def _build_cli_parser() -> argparse.ArgumentParser:
     p_reg.add_argument("--path", default="", help="Relative path inside campaign directory")
     p_reg.add_argument("--status", default="for_review", help="Deliverable status (for_review|in_progress|final)")
 
+    p_cur = sub.add_parser("curate-deliverables", parents=[common], help="Update Steward hierarchical Final Deliverables summary, groups, supersession & recent instruction presentation")
+    p_cur.add_argument("--headline", default=None, help="Concise executive headline for Final Deliverables hierarchy")
+    p_cur.add_argument("--summary", default=None, help="Steward hierarchical summary narrative for Final Deliverables")
+    p_cur.add_argument("--groups-json", default="", help='JSON array of Final groups: [{"title":"...","summary":"...","paths":["..."]}]')
+    p_cur.add_argument("--supersedes-json", default="", help='JSON object mapping winning path -> [superseded paths]')
+    p_cur.add_argument("--recent-paths", default="", help="Comma-separated primary deliverable paths to present for the latest instruction")
+    p_cur.add_argument("--instruction", default="", help="Optional user instruction summary for --recent-paths")
+
     return parser
 
 
@@ -1651,6 +1659,24 @@ def main(argv: list[str] | None = None) -> int:
                     "status": args.status,
                 },
             )
+        elif cmd == "curate-deliverables":
+            from steward_cockpit import deliverable_shelves as _ds
+            root = _resolve_cdir(cdir)
+            cur_body: dict[str, Any] = {}
+            if args.headline is not None:
+                cur_body["headline"] = args.headline
+            if args.summary is not None:
+                cur_body["summary"] = args.summary
+            if args.groups_json:
+                cur_body["final_groups"] = _parse_json_arg(args.groups_json, expected_type=list)
+            if args.supersedes_json:
+                cur_body["supersedes"] = _parse_json_arg(args.supersedes_json, expected_type=dict)
+            if args.recent_paths:
+                cur_body["recent_paths"] = [p.strip() for p in args.recent_paths.split(",") if p.strip()]
+            if args.instruction:
+                cur_body["instruction"] = args.instruction
+            res = _ds.update_curation(root, cur_body)
+            _invalidate_in_process_caches(root)
         else:
             raise PlanValidationError(MSG_DEPENDENCY_GARBAGE)
     except PlanValidationError as exc:

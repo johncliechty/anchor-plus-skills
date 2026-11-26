@@ -427,7 +427,7 @@
   function sendToSteward(text, goal, list, btn, box, DK) { if (dlg) dlg.send(text, goal, list, btn, box, DK); else receipt('The dialogue script did not load \u2014 reload the page.', true); }
   function fitComposer(box) { if (window.StewardDialogue) StewardDialogue.fitComposer(box); }
   function wireComposer(box) { if (!box) return; box.addEventListener('input', function () { fitComposer(box); }); fitComposer(box); }
-  window.addEventListener('resize', function () { $$('.gsay, #say').forEach(fitComposer); });
+  window.addEventListener('resize', function () { $$('.gsay, #exSay, #say').forEach(fitComposer); });
   $$('.place .gsay').forEach(function (box) {
     var goal = box.getAttribute('data-goal'), btn = $('.gsend[data-goal="' + goal + '"]'), list = $('.gthread[data-thread="' + goal + '"]');
     var DK = 'anchor:draft:goal:' + PID + ':' + goal, dt = null;
@@ -436,7 +436,7 @@
     box.addEventListener('input', function () { clearTimeout(dt); dt = setTimeout(function () { try { if (box.value.trim()) localStorage.setItem(DK, box.value); else localStorage.removeItem(DK); } catch (e) {} }, 250); });
     function go(text) { text = (text || box.value || '').trim(); if (!text || btn.disabled) return; sendToSteward(text, goal, list, btn, box, DK); }
     btn.addEventListener('click', function () { go(); });
-    box.addEventListener('keydown', function (e) { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); go(); } });
+    box.addEventListener('keydown', function (e) { if ((e.key === 'Enter' || e.keyCode === 13) && (!e.shiftKey || e.ctrlKey || e.metaKey) && !e.isComposing && e.keyCode !== 229 && !box._composing) { e.preventDefault(); go(); } });
     $$('.chips [data-say]', box.closest('.gconv')).forEach(function (c) { c.addEventListener('click', function () { go(c.getAttribute('data-say')); }); });
   });
 
@@ -460,7 +460,7 @@
   });
 
   // the composer: the effort's own say route
-  var say = $('#say'), send = $('#sendBtn');
+  var say = $('#exSay') || $('#say'), send = $('#exSend') || $('#sendBtn');
   // R12 (2026-09-28, John): the unsent text is kept in this browser on every keystroke and put back after a crash,
   // a restart or a reload; a delivered turn clears it
   var DRAFT_KEY = 'anchor:draft:campaign:' + PID, _draftT = null;
@@ -477,7 +477,7 @@
     sendToSteward(text, null, $('#exList'), send, say, DRAFT_KEY);
   }
   if (send) send.addEventListener('click', doSend);
-  if (say) say.addEventListener('keydown', function (e) { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); doSend(); } });
+  if (say) say.addEventListener('keydown', function (e) { if ((e.key === 'Enter' || e.keyCode === 13) && (!e.shiftKey || e.ctrlKey || e.metaKey) && !e.isComposing && e.keyCode !== 229 && !say._composing) { e.preventDefault(); doSend(); } });
 
   // Wave 20 (2026-10-19): Mission Statement editor, Don Hambrick Strategy Diamond drawer, 5-Horizon Cascade drawer, and 4 Foundry quick-action buttons
   var btnEditMission = $('#btnEditMission'), missionEditBox = $('#missionEditBox'), missionInput = $('#missionInput'), missionQuoteText = $('#missionQuoteText');

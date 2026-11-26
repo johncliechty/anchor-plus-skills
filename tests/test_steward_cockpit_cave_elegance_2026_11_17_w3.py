@@ -130,13 +130,16 @@ def test_w3_watchlist_collapsed_and_horizon_dedup_preserving_shtriage_and_dom_id
     wl_open_tag = m_wl.group(0)
     assert " open" not in wl_open_tag, f"#caveStewardWatchlistDrawer must start collapsed, got: {wl_open_tag}"
 
-    # (2) #shTriage preserves its 3-driver Chief-of-Staff layout & asymmetric horizon pills
+    # (2) #shTriage renders the minimalist Chief-of-Staff bar ([Chief of Staff] + [Running] + [Poincare Map]) + Top-3 panel
     assert 'id="shTriage"' in html
+    assert 'id="btnCosToggleExpand"' in html
+    assert 'id="cosRunningTile"' in html
+    assert "/steward-static/poincare.html" in html
+    assert 'id="cosSuggestionsPanel"' in html
+    assert 'id="cosTopThreeStack"' in html
     assert 'id="cosCompactSummaryRow"' in html
-    for hz_attr in ('data-cos-drill="today"', 'data-cos-drill="week"', 'data-cos-drill="month"', 'data-cos-drill="quarter"'):
-        assert hz_attr in html
-    for skill in ("researchPrime", "Superjump", "Gandalf", "Einstein", "Chekhov", "Legal-Beagle", "Financial-Analyst"):
-        assert f'data-cos-dispatch-skill="{skill}"' in html
+    assert "cosOrangesModal" not in html
+    assert "data-cos-dispatch-skill=" not in html
 
     # (3) Duplicate visual horizon bar inside #caveWorkingListSpine is hidden while #wlHzToday/Week/Month/StarChart remain in DOM
     m_hz_bar = re.search(r'<span\b[^>]*id="wlHorizonCountsBar"[^>]*>', html)

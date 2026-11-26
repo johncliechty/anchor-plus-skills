@@ -5,8 +5,10 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Anchor — Calendar Alarm</title>
 <link rel="icon" href="/vendor/brand/anchor-tab-32.png" type="image/png">
+<script>try{if(localStorage.getItem("anchor_cave_theme")==="light")document.documentElement.setAttribute("data-cave-theme","light");}catch(_){}</script>
 <style>
   :root { color-scheme: dark; }
+  html[data-cave-theme="light"] { color-scheme: light; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     min-height: 100vh;
@@ -108,6 +110,39 @@
   }
   @media (prefers-reduced-motion: reduce) {
     .card { animation: none !important; }
+  }
+  html[data-cave-theme="light"] body {
+    background: #f8fafc;
+    color: #0f172a;
+  }
+  html[data-cave-theme="light"] .card {
+    background: #ffffff;
+    border-color: #f59e0b;
+    box-shadow: 0 14px 36px rgba(15, 23, 42, 0.16);
+  }
+  html[data-cave-theme="light"] .badge { color: #b45309; }
+  html[data-cave-theme="light"] .src {
+    color: #475569;
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+  }
+  html[data-cave-theme="light"] h1 { color: #0f172a; }
+  html[data-cave-theme="light"] .when { color: #92400e; }
+  html[data-cave-theme="light"] .loc { color: #334155; }
+  html[data-cave-theme="light"] .acts { border-top-color: #e2e8f0; }
+  html[data-cave-theme="light"] .btn.exit {
+    background: #fef2f2;
+    border-color: #fca5a5;
+    color: #b91c1c;
+  }
+  html[data-cave-theme="light"] .btn.exit:hover {
+    background: #fee2e2;
+    color: #991b1b;
+  }
+  html[data-cave-theme="light"] .btn.join {
+    background: #dbeafe;
+    border-color: #60a5fa;
+    color: #1d4ed8;
   }
 </style>
 </head>

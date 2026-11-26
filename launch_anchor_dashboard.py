@@ -106,6 +106,11 @@ def ensure_dashboard_running(
             report["reason_codes"].append("anchor_service_unavailable")
 
     if open_browser:
+        import paths as _paths
+        if open_fn is None and _paths.is_windows_service_or_session0():
+            report["browser_opened"] = False
+            report["reason_codes"].append("skipped_browser_in_session0")
+            return report
         opener = open_fn if open_fn is not None else webbrowser.open
         # v1.1.3 token hand-off: give the dashboard the token ONCE via the
         # loopback URL. The page stores it (localStorage), mints the HttpOnly

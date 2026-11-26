@@ -30,10 +30,11 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
 def test_wave1_canonical_version_and_bundled_ecgberht_resolution(tmp_path, monkeypatch):
-    """NS-1: VERSION is 1.5.2 and resolve_ecgberht_root prioritizes bundled/current over stale C:\\dev\\Ecgberht."""
-    assert paths.read_version() == "1.5.2"
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "1.5.2"
-    assert (ROOT / "vendor" / "bundled-skills" / "ecgberht" / "VERSION").read_text(encoding="utf-8").strip() == "1.5.2"
+    """NS-1: VERSION and bundled Ecgberht VERSION are in lockstep (>= 1.5.2) and resolve_ecgberht_root prioritizes bundled/current over stale C:\\dev\\Ecgberht."""
+    cur_ver = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+    assert mothership_updater.parse_version(cur_ver) >= (1, 5, 2)
+    assert paths.read_version() == cur_ver
+    assert (ROOT / "vendor" / "bundled-skills" / "ecgberht" / "VERSION").read_text(encoding="utf-8").strip() == cur_ver
 
     monkeypatch.delenv("ECGBERHT_ROOT", raising=False)
     monkeypatch.delenv("ECGBERHT_DIR", raising=False)
@@ -256,9 +257,10 @@ def test_wave3_mothership_registry_and_push_pull_updater(tmp_path):
 
 def test_wave3_version_badges_in_top_bar_and_settings():
     """NS-4: Version badge is present in static/app.html, high_seat_page.py masthead, and static/provider-setup.html."""
+    cur_ver = paths.read_version()
     app_html = (ROOT / "static" / "app.html").read_text(encoding="utf-8")
     assert 'id="bar-version-pill"' in app_html
-    assert "v1.5.2" in app_html
+    assert f"v{cur_ver}" in app_html
 
     setup_html = (ROOT / "static" / "provider-setup.html").read_text(encoding="utf-8")
     assert 'id="setup-version-pill"' in setup_html
@@ -268,9 +270,9 @@ def test_wave3_version_badges_in_top_bar_and_settings():
     # Merrill's target="_blank" bug on /setup/install must be fixed
     assert 'href="/setup/install" id="setup-install-instructions-link"' in setup_html
 
-    mh_html = high_seat_page._masthead({"build": "1.5.2", "steward": {"label": "Aladdin", "high_seat_name": "High Seat"}})
+    mh_html = high_seat_page._masthead({"build": cur_ver, "steward": {"label": "Aladdin", "high_seat_name": "High Seat"}})
     assert 'id="mhVersionPill"' in mh_html
-    assert "v1.5.2" in mh_html
+    assert f"v{cur_ver}" in mh_html
 
 
 # ==============================================================================

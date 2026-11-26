@@ -1,8 +1,18 @@
-# Re-architecture 2026-07 · W4 — extracted static frontend assets.
+# Re-architecture 2026-07 · W4 & v1.5.4 cross-platform line-ending hygiene.
 # The byte-parity gate compares static/ file BYTES to the source raw string
-# (which Python always reads with LF newlines), so these files must never be
-# CRLF-translated on checkout. Keep them LF everywhere.
-static/*.js text eol=lf
-static/*.css text eol=lf
+# (which Python always reads with LF newlines), so web/source files must never
+# be CRLF-translated on checkout. Keep source/web assets LF and Windows batch/PS1 CRLF.
+* text=auto eol=lf
+*.py text eol=lf
+*.js text eol=lf
+*.mjs text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.md text eol=lf
+*.json text eol=lf
 *.sh text eol=lf
 *.command text eol=lf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+static/*.js text eol=lf
+static/*.css text eol=lf

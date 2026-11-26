@@ -34,11 +34,33 @@
     else openTile(card, card.getAttribute('data-tile'), card.getAttribute('data-dir') || '');
   }
   function compactTiles(root) {
+    var campPid = (window.ANCHOR_BOOT && window.ANCHOR_BOOT.campaign_pid) || '';
     $$('.tile[data-tile]', root).forEach(function (card) {
       if (card._compact || !$('.t-body', card)) return;
       card._compact = true;
+      var pid = card.getAttribute('data-tile') || '';
+      var dir = card.getAttribute('data-dir') || '';
+      var step = card.getAttribute('data-step') || '';
+      var shelf = card.closest('.zone[data-seat]');
+      var curSeat = shelf ? (shelf.getAttribute('data-seat') || '') : '';
+      var lcHtml = '';
+      if (step) {
+        var altSeat = curSeat === 'active' ? 'deck' : 'active';
+        var altLbl = curSeat === 'active' ? '\u25be On deck' : '\u25b4 Active';
+        lcHtml += '<button type="button" class="mini cave-lc-btn" data-seat="' + altSeat + '" data-step="' + step.replace(/"/g, '&quot;') + '" title="Move to ' + (altSeat === 'deck' ? 'On deck' : 'Active') + '">' + altLbl + '</button>';
+        lcHtml += '<button type="button" class="mini cave-lc-btn" data-home="' + step.replace(/"/g, '&quot;') + '" title="Send back to its goal">\u21a9 Back to goal</button>';
+      }
+      if (pid && !(pid === campPid && (!dir || dir.toLowerCase() === 'cave of wonders'))) {
+        var stepAttr = step ? (' data-step="' + step.replace(/"/g, '&quot;') + '"') : '';
+        var pidAttr = ' data-pid="' + pid.replace(/"/g, '&quot;') + '"';
+        var dirAttr = dir ? (' data-dir="' + dir.replace(/"/g, '&quot;') + '"') : '';
+        lcHtml += '<button type="button" class="mini cave-lc-btn" data-cockpit-lifecycle="archive"' + stepAttr + pidAttr + dirAttr + ' title="Archive this AI Cockpit (reversible)">Archive</button>';
+        lcHtml += '<button type="button" class="mini cave-lc-btn danger" data-cockpit-lifecycle="retire"' + stepAttr + pidAttr + dirAttr + ' title="Retire this AI Cockpit (reversible)">Retire</button>';
+      }
       var peek = document.createElement('div'); peek.className = 't-peek';
-      peek.innerHTML = '<div class="t-peek-head"><span>Details</span><button type="button" class="t-peek-close" aria-label="Close details">\u00d7</button></div>';
+      peek.innerHTML = '<div class="t-peek-head"><span>Details</span>'
+        + (lcHtml ? ('<span class="t-peek-lc">' + lcHtml + '</span>') : '')
+        + '<button type="button" class="t-peek-close" aria-label="Close details">\u00d7</button></div>';
       ['.t-face', '.t-acts'].forEach(function (s) { var el = $(s, card); if (el) peek.appendChild(el); });
       var dialogue = document.createElement('button'); dialogue.type = 'button'; dialogue.className = 't-inline-talk'; dialogue.textContent = 'Dialogue';
       $('.t-acts', peek).appendChild(dialogue);
@@ -169,11 +191,67 @@
     location.reload();
   }
   setInterval(function () { if (pendingBuild && !tileOpen() && !typingNow()) renewBuild(pendingBuild); }, 5000);
-  var lastUndo = null;
+  var lastUndo = null, _toastTimer = null;
+  function ensureCaveToast() {
+    var el = document.getElementById('caveToast');
+    if (el) return el;
+    el = document.createElement('div');
+    el.id = 'caveToast';
+    el.className = 'cave-toast';
+    el.hidden = true;
+    el.setAttribute('role', 'status');
+    el.innerHTML = '<span class="ct-mark">\u2713</span><span class="ct-text" id="caveToastText"></span>'
+      + '<button type="button" class="mini ct-undo" id="caveToastUndo" hidden>undo</button>'
+      + '<button type="button" class="ct-close" id="caveToastClose" aria-label="Dismiss">\u00d7</button>';
+    document.body.appendChild(el);
+    var uBtn = el.querySelector('#caveToastUndo');
+    if (uBtn) {
+      uBtn.addEventListener('click', function () {
+        var u = $('#undoBtn'); if (u && !u.disabled) u.click();
+      });
+    }
+    var cBtn = el.querySelector('#caveToastClose');
+    if (cBtn) {
+      cBtn.addEventListener('click', function () {
+        el.hidden = true; if (_toastTimer) { clearTimeout(_toastTimer); _toastTimer = null; }
+      });
+    }
+    return el;
+  }
   function receipt(text, bad, undo) {
-    var r = $('#receipt'), t = $('#receiptText'); if (!r || !t) return;
-    lastUndo = undo || null; var u = $('#undoBtn'); if (u) u.hidden = !undo;
-    t.textContent = text; r.hidden = false; r.classList.toggle('bad', !!bad);
+    var r = $('#receipt'), t = $('#receiptText');
+    lastUndo = undo || null;
+    if (r && t) {
+      var u = $('#undoBtn'); if (u) u.hidden = !undo;
+      t.textContent = text; r.hidden = false; r.classList.toggle('bad', !!bad);
+    }
+    var toast = ensureCaveToast();
+    if (toast && text) {
+      var tt = toast.querySelector('#caveToastText');
+      var tm = toast.querySelector('.ct-mark');
+      var tu = toast.querySelector('#caveToastUndo');
+      if (tt) tt.textContent = text;
+      if (tm) tm.textContent = bad ? '\u26a0' : '\u2713';
+      if (tu) tu.hidden = !undo;
+      toast.classList.toggle('bad', !!bad);
+      toast.hidden = false;
+      if (_toastTimer) clearTimeout(_toastTimer);
+      _toastTimer = setTimeout(function () { toast.hidden = true; _toastTimer = null; }, bad ? 8000 : (undo ? 7000 : 4500));
+    }
+  }
+  function syncServerBuild(j) {
+    if (j && j.error === 'build-mismatch') {
+      if (j.server_build && window.ANCHOR_BOOT) {
+        window.ANCHOR_BOOT.build_id = String(j.server_build);
+        renewVersion = String(j.server_build);
+        renewBuild('A new build is live \u2014 the page is renewed.');
+        return true;
+      }
+      var stale = 'This page was older than the server \u2014 renewing\u2026';
+      receipt(stale, true);
+      renewBuild(stale);
+    }
+    return false;
   }
   try { var keptLine = sessionStorage.getItem('highseat_receipt'); if (keptLine) { var kl = JSON.parse(keptLine); receipt(kl.text, !!kl.bad, kl.undo); sessionStorage.removeItem('highseat_receipt'); } } catch (e) {}
   var undoBtn = $('#undoBtn');
@@ -181,11 +259,17 @@
     if (!lastUndo) return;
     var body = JSON.parse(JSON.stringify(lastUndo)); body.pid = (window.ANCHOR_BOOT && window.ANCHOR_BOOT.campaign_pid) || '';
     undoBtn.disabled = true;
-    fetch('/api/high-seat/campaign', { method: 'POST', headers: headers(), body: JSON.stringify(body) })
-      .then(function (r) { return r.json(); })
-      .then(function (j) { undoBtn.disabled = false; if (!j || !j.ok) { receipt((j && j.receipt) || 'Nothing was undone.', true); return; }
-        renewInPlace(j.receipt, j.undo || null); })
-      .catch(function () { undoBtn.disabled = false; receipt('That did not go through — nothing was undone.', true); });
+    function postUndo(retried) {
+      return fetch('/api/high-seat/campaign', { method: 'POST', headers: headers(), body: JSON.stringify(body) })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          if (j && j.error === 'build-mismatch' && !retried && syncServerBuild(j)) return postUndo(true);
+          undoBtn.disabled = false;
+          if (!j || !j.ok) { receipt((j && j.receipt) || 'Nothing was undone.', true); return; }
+          renewInPlace(j.receipt, j.undo || null);
+        });
+    }
+    postUndo(false).catch(function () { undoBtn.disabled = false; receipt('That did not go through \u2014 nothing was undone.', true); });
   });
 
   // the rail: each destination scrolls to its section and opens it
@@ -234,9 +318,33 @@
     var toggleBodyBtn = e.target.closest && e.target.closest('[data-cos-toggle-body]');
     if (toggleBodyBtn && !e.target.closest('a')) {
       e.preventDefault();
-      var dToday = document.getElementById('hzDrawer-today');
-      var nowOpen = dToday ? dToday.hidden : true;
-      _setCosBodyExpanded(nowOpen, nowOpen ? 'today' : '');
+      _setCosBodyExpanded(!_cosIsOpen);
+      return;
+    }
+
+    var cosOpenCommsBtn = e.target.closest && e.target.closest('[data-cos-open-comms]');
+    if (cosOpenCommsBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      var wantKind = cosOpenCommsBtn.getAttribute('data-cos-open-comms') || 'email';
+      var calEl = document.getElementById('cal');
+      var calTogEl = document.getElementById('calTog');
+      $$('#railNav button').forEach(function (x) {
+        x.classList.toggle('on', x.getAttribute('data-rail') === wantKind);
+      });
+      if (calEl) {
+        calEl.classList.add('open');
+        if (calTogEl) calTogEl.textContent = 'Collapse';
+        setCalTab(wantKind === 'email' ? 'mail' : 'cal');
+        var cmEl = document.getElementById('caveCommsConnectModal');
+        if (cmEl && calEl.getAttribute('data-connected-count') === '0') {
+          cmEl.hidden = false;
+        }
+        if (typeof window._ensureCaveCommsDataLoaded === 'function') {
+          window._ensureCaveCommsDataLoaded();
+        }
+        try { calEl.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_e) {}
+      }
       return;
     }
 
@@ -248,24 +356,54 @@
   var acting = false;
   function act(body) {   // one act in flight; the receipt and its undo stay on the page, the change is placed in it (W4)
     if (acting || !CAMPAIGN) return; acting = true; body.pid = CAMPAIGN;
-    fetch('/api/high-seat/campaign', { method: 'POST', headers: headers(), body: JSON.stringify(body) })
+    var payload = {}; Object.keys(body).forEach(function (k) { if (k !== '_retried') payload[k] = body[k]; });
+    fetch('/api/high-seat/campaign', { method: 'POST', headers: headers(), body: JSON.stringify(payload) })
       .then(function (r) { if (r.status === 401 || r.status === 403) { return { ok: false, receipt: NOT_LOGGED_IN }; } return r.json(); })
       .then(function (j) {
+        if (j && j.error === 'build-mismatch') {
+          if (!body._retried && syncServerBuild(j)) { body._retried = true; acting = false; act(body); return; }
+          acting = false;
+          return;
+        }
         acting = false;
         if (!j || !j.ok) {
           // the act landed in part and the writer refused the rest: the receipt says so and its undo is his
           if (j && j.undo) { renewInPlace(j.receipt || 'Refused.', j.undo, true); return; }
-          receipt((j && j.receipt) || 'Nothing was done.', true); return;
+          receipt((j && (j.receipt || j.error)) || 'Nothing was done.', true); return;
         }
         renewInPlace(j.receipt, j.undo || null);
       })
-      .catch(function () { acting = false; receipt('That did not go through — nothing was done.', true); });
+      .catch(function () { acting = false; receipt('That did not go through \u2014 nothing was done.', true); });
   }
   document.addEventListener('click', function (e) {
+    var lc = e.target.closest('[data-cockpit-lifecycle]');
+    if (lc) {
+      e.preventDefault(); e.stopPropagation();
+      var kindLc = lc.getAttribute('data-cockpit-lifecycle') || 'archive';
+      var cardLc = lc.closest('.tile.peeking'); if (cardLc) hidePeek(cardLc);
+      if (kindLc === 'restore') {
+        act({
+          act: 'restore_cockpit',
+          kind: lc.getAttribute('data-dir') ? 'effort' : 'project',
+          project_id: lc.getAttribute('data-pid') || '',
+          effort_dir: lc.getAttribute('data-dir') || '',
+          label: lc.getAttribute('data-label') || ''
+        });
+      } else {
+        act({
+          act: kindLc === 'retire' ? 'retire_cockpit' : 'archive_cockpit',
+          step: lc.getAttribute('data-step') || '',
+          ref: lc.getAttribute('data-ref') || '',
+          project_id: lc.getAttribute('data-pid') || '',
+          effort_dir: lc.getAttribute('data-dir') || ''
+        });
+      }
+      return;
+    }
     var s = e.target.closest('[data-seat][data-step]');
-    if (s) { e.preventDefault(); e.stopPropagation(); act({ act: 'seat', step: s.getAttribute('data-step'), seat: s.getAttribute('data-seat') }); return; }
+    if (s) { e.preventDefault(); e.stopPropagation(); var cp1 = s.closest('.tile.peeking'); if (cp1) hidePeek(cp1); act({ act: 'seat', step: s.getAttribute('data-step'), seat: s.getAttribute('data-seat') }); return; }
     var h = e.target.closest('[data-home]');
-    if (h) { e.preventDefault(); e.stopPropagation(); act({ act: 'home', step: h.getAttribute('data-home') }); return; }
+    if (h) { e.preventDefault(); e.stopPropagation(); var cp2 = h.closest('.tile.peeking'); if (cp2) hidePeek(cp2); act({ act: 'home', step: h.getAttribute('data-home') }); return; }
     // a candidate not yet on the Campaign: on the map and in the seat in one act (2026-10-02)
     var c = e.target.closest('[data-cand-seat]');
     if (c) { e.preventDefault(); e.stopPropagation(); act({ act: 'seat_new', ref: c.getAttribute('data-ref'), name: c.getAttribute('data-name'), seat: c.getAttribute('data-cand-seat') }); }
@@ -607,12 +745,23 @@
   // rule reaches a closed card's .t-body; the CSS pins [hidden] to none) and parked, so it holds no long-poll. Opening
   // the card reveals that view; closing hides it again. On deck and every other card load on the click, as before.
   var WARM_MAX = 8;   // a bound on the frames held, not a refusal: the rest of a wide Active row loads on the click
+  function isLowSpecMode() {
+    try { return !!(window.__anchorLowSpec || (window.parent && window.parent.__anchorLowSpec) || (window.ANCHOR_BOOT && window.ANCHOR_BOOT.low_spec_mode)); }
+    catch (e) { return !!window.__anchorLowSpec; }
+  }
   function isShellHidden() {
     try { return !!(document.hidden || window.__anchorHidden || (window.frameElement && window.frameElement.hidden)); }
     catch (e) { return !!document.hidden; }
   }
+  function isActiveShelfCollapsed() {
+    var body = document.getElementById('caveCockpitsBody');
+    if (body && body.hidden) return true;
+    var hub = document.getElementById('caveCockpitsTile');
+    if (hub && !hub.classList.contains('open')) return true;
+    return false;
+  }
   function warmTile(card) {
-    if (isShellHidden()) return;
+    if (isLowSpecMode() || isShellHidden() || isActiveShelfCollapsed()) return;
     var body = $('.t-body', card), boot = window.ANCHOR_BOOT || {};
     if (!body || card._warmTalk || card.classList.contains('open') || !card.closest('#shActive')) return;
     if (boot.auth_required && !boot.logged_in && !token()) return;   // a browser that cannot read the record preloads nothing
@@ -622,11 +771,12 @@
     try { startTalk(card, card.getAttribute('data-tile'), card.getAttribute('data-dir') || ''); } finally { card._prewarm = false; }
   }
   function warmActive() {
-    if (isShellHidden()) return;
+    if (isLowSpecMode() || isShellHidden() || isActiveShelfCollapsed()) return;
     var cards = $$('#shActive .tile[data-tile]').filter(function (c) { return !!$('.t-body', c); }).slice(0, WARM_MAX), i = 0;
-    (function next() { if (i >= cards.length || isShellHidden()) return; warmTile(cards[i++]); setTimeout(next, 1500); })();
+    (function next() { if (i >= cards.length || isShellHidden() || isActiveShelfCollapsed()) return; warmTile(cards[i++]); setTimeout(next, 1500); })();
   }
   function warmWhenIdle() { setTimeout(function () { if (window.requestIdleCallback) window.requestIdleCallback(warmActive, { timeout: 3000 }); else warmActive(); }, 1500); }
+  window._caveWarmActiveIfVisible = warmWhenIdle;
   if (document.readyState === 'complete') warmWhenIdle(); else window.addEventListener('load', warmWhenIdle);
   function stopTalk(card) { if (card._talk && card._talk.stop) card._talk.stop(); card._talk = null; }
   // W2e-6 (his ask, 19:0x): a file dropped on the OPEN tile lands in the folder of the cockpit the tile was opened on
@@ -796,30 +946,35 @@
     }
     // the steward's nudge (W3b), proactive triage strip, this-week board, comms pulse, collab strip, and the seeds
     var openHzBtn = $('#shTriage .chz-card.open'), openHzKey = openHzBtn ? openHzBtn.getAttribute('data-hz-toggle') : '';
+    var procWasOpen = !!(window.CaveProcessingDrawer && window.CaveProcessingDrawer.isOpen());
     var wlWasOpen = typeof _wlSpineIsOpen === 'boolean' ? _wlSpineIsOpen : !($('#wlSpineBody') && $('#wlSpineBody').hidden);
     var wlBusyUi = busyIn($('#caveWorkingListSpine'));
+    var triageBusyUi = wlBusyUi || busyIn($('#shTriage'));
+    var srWasOpen = !!($('#caveSpeedRacerBody') && !$('#caveSpeedRacerBody').hidden);
     var calWasOpen = $('#cal') && $('#cal').classList.contains('open');
     var calWasLayout = ($('#commsGrid') && $('#commsGrid').getAttribute('data-layout')) || 'split';
     var mailWasFolder = ($('#caveMailBucketsGrid') && $('#caveMailBucketsGrid').getAttribute('data-mail-folder-mode')) || 'all';
     var calBusyUi = !!(
       (window._caveEmailActionInFlight && window._caveEmailActionInFlight > 0) ||
-      ($('#caveSpeedRacerBody') && !$('#caveSpeedRacerBody').hidden) ||
+      srWasOpen ||
       ($('#caveEmailDialoguePane') && !$('#caveEmailDialoguePane').hidden && !window._emailDlgClosed && window._activeEmailDialogue && window._activeEmailDialogue.uid) ||
       ($('#caveCalDialoguePane') && !$('#caveCalDialoguePane').hidden) ||
       ($('#caveDlgAttachmentPreviewHost') && !$('#caveDlgAttachmentPreviewHost').hidden) ||
       ($('#caveCommsDialogueTile') && !$('#caveCommsDialogueTile').hidden) ||
+      ($('#caveCommsServicesBar') && $('#caveCommsServicesBar').open) ||
       ($('#caveCommsSetupDrawer') && $('#caveCommsSetupDrawer').open) ||
       ($('#caveCommsConnectModal') && !$('#caveCommsConnectModal').hidden) ||
       ($('#caveCommsDeviceFlowBox') && !$('#caveCommsDeviceFlowBox').hidden)
     );
     var collabWasOpen = $('#caveCollabStrip') && $('#caveCollabStrip').classList.contains('open');
+    var calHydrated = !!(window._caveCommsData && window._caveCommsData.ok && $('#cal .cave-mail-card, #cal .cal-ev, #cal [data-cal-day]'));
     ['shTriage', 'thisWeekBoard', 'cal', 'caveCollabStrip'].forEach(function (id) {
-      if (id === 'cal' && calBusyUi) return;
-      if (id === 'shTriage' && wlBusyUi) return;
+      if (id === 'cal' && (calBusyUi || calHydrated)) return;
+      if (id === 'shTriage' && triageBusyUi) return;
       var a = document.getElementById(id), b = doc.getElementById(id);
       if (a && b) morph(a, b);
     });
-    ['nudgeSlot', 'seedCount', 'seedLbl', 'seedPanel', 'ptileCount', 'apGroups'].forEach(function (id) { var a = document.getElementById(id), b = doc.getElementById(id); if (a && b) morph(a, b); });
+    ['nudgeSlot', 'ptileCount', 'apGroups'].forEach(function (id) { var a = document.getElementById(id), b = doc.getElementById(id); if (a && b) morph(a, b); });
     if (openHzKey) {
       var nb = $('#shTriage .chz-card[data-hz-toggle="' + openHzKey + '"]'), nd = document.getElementById('hzDrawer-' + openHzKey);
       if (nb && nd) { nb.classList.add('open'); nb.setAttribute('aria-expanded', 'true'); nd.hidden = false; }
@@ -827,13 +982,16 @@
     if (calWasOpen && $('#cal')) { $('#cal').classList.add('open'); if ($('#calTog')) $('#calTog').textContent = 'Collapse'; }
     if (typeof window._applyCaveCommsLayout === 'function') window._applyCaveCommsLayout(calWasLayout);
     if (!calBusyUi && typeof window._applyCaveMailFolderMode === 'function') window._applyCaveMailFolderMode(mailWasFolder);
-    if (!calBusyUi && typeof window._ensureCaveCommsDataLoaded === 'function') {
+    if (!calBusyUi && !calHydrated && typeof window._ensureCaveCommsDataLoaded === 'function') {
       window._ensureCaveCommsDataLoaded(true);
     } else if (!calBusyUi && typeof window._applySourceFilterToDOM === 'function') {
       window._applySourceFilterToDOM();
     }
     if (typeof window._ensureActiveEmailPaneHydrated === 'function') window._ensureActiveEmailPaneHydrated();
+    if (typeof _setSpeedRacerExpanded === 'function') _setSpeedRacerExpanded(srWasOpen);
     if (typeof _renderCaveSpeedRacerTile === 'function') _renderCaveSpeedRacerTile();
+    if (typeof _syncCosExpandedUi === 'function') _syncCosExpandedUi();
+    if (window.CaveProcessingDrawer && window.CaveProcessingDrawer.restoreAfterMorph) window.CaveProcessingDrawer.restoreAfterMorph(procWasOpen);
     if (typeof _setTheListSpineOpen === 'function') _setTheListSpineOpen(wlWasOpen, true);
     if (typeof _renderWorkingListSpine === 'function') _renderWorkingListSpine();
     if (collabWasOpen && $('#caveCollabStrip')) {
@@ -849,6 +1007,7 @@
       if (morph(cb0, cb1)) { openG.forEach(function (g) { var r = $('.grow[data-g="' + g + '"]', cb0); if (r) r.classList.add('open'); }); bindDrags(cb0); }
     }
     placeShelves(doc);
+    if (window.CaveTidyControls && window.CaveTidyControls.syncAfterMorph) window.CaveTidyControls.syncAfterMorph(doc);
     // the Candidates: the groups and the count; the search, the sort and the open tile stay as he left them
     var c0 = $('#shCands'), c1 = doc.getElementById('shCands');
     if (c0 && !c1) { if (busyIn(c0)) placeSkipped = true; else c0.remove(); }
@@ -857,6 +1016,12 @@
     else if (c0 && c1 && $('#candsTile', c0)) {
       var t0 = $('#candsTile', c0), n0 = $('summary .c', c0), n1 = $('summary .c', c1);
       if (n0 && n1) n0.textContent = n1.textContent;
+      var p0 = $('summary .cand-cockpit-pill', c0), p1 = $('summary .cand-cockpit-pill', c1);
+      if (p0 && p1) p0.textContent = p1.textContent;
+      ['all', 'cockpit', 'task'].forEach(function (fk) {
+        var b0 = $('.cand-flt[data-cand-filter="' + fk + '"]', c0), b1 = $('.cand-flt[data-cand-filter="' + fk + '"]', c1);
+        if (b0 && b1) b0.textContent = b1.textContent;
+      });
       $$('.cand-group', c0).forEach(function (g) { g.remove(); });
       $$('.cand-group', c1).forEach(function (g) { t0.appendChild(document.importNode(g, true)); });
       candApply();
@@ -940,6 +1105,10 @@
   // name, kind, record, acts, resume...: the card is made again from the record, an open one once it closes)
   function withoutFace(html) {
     var t = document.createElement('template'); t.innerHTML = html;
+    var tile = t.content.querySelector('.tile');
+    if (tile) { tile.removeAttribute('data-ready'); tile.removeAttribute('data-attention'); }
+    var tl = t.content.querySelector('.tlight');
+    if (tl) { tl.className = 'tlight'; tl.removeAttribute('title'); tl.removeAttribute('aria-label'); }
     var f = t.content.querySelector('.t-face'); if (f) f.innerHTML = '';
     return t.innerHTML;
   }
@@ -950,7 +1119,16 @@
   }
   function placeFace(card, fresh) {   // the record's lines; activity and attention keep their own continuing read (below)
     var a = $('.t-face', card), b = $('.t-face', fresh);
-    if (a && b && !busyIn(a)) { a.innerHTML = b.innerHTML; card._record = fresh.outerHTML; }
+    if (busyIn(a)) return;
+    if (a && b && a.innerHTML !== b.innerHTML) a.innerHTML = b.innerHTML;
+    var fl = $('.tlight', fresh), cl = $('.tlight', card);
+    if (fl && cl && !card._feedbackEpoch && !card._feedbackRecord) {
+      var m = (fl.className || '').match(/\b(green|orange|red|gray|quiet)\b/);
+      if (m) paintDot(card, m[1]);
+      paintReady(card, fresh.hasAttribute('data-ready'), 'needs your attention');
+      if (fl.title) { cl.title = fl.title; cl.setAttribute('aria-label', fl.title + (card.getAttribute('data-attention') ? '; ' + card.getAttribute('data-attention') : '')); }
+    }
+    card._record = fresh.outerHTML;
   }
   function dropCard(card) {
     if (card._warmTalk) card._warmTalk.stop();
@@ -1395,23 +1573,11 @@
   var DRAFT_KEY = 'anchor:draft:highseat', _draftT = null;
   function saveDraft() { try { if (say && say.value.trim()) localStorage.setItem(DRAFT_KEY, say.value); else localStorage.removeItem(DRAFT_KEY); } catch (e) {} }
   function clearDraft() { try { localStorage.removeItem(DRAFT_KEY); } catch (e) {} }
-  if (say) {
+    if (say) {
     say.addEventListener('input', function () { clearTimeout(_draftT); _draftT = setTimeout(saveDraft, 250); });
     window.addEventListener('beforeunload', saveDraft);
     try { var keptDraft = localStorage.getItem(DRAFT_KEY); if (keptDraft && keptDraft.trim() && !say.value.trim()) { say.value = keptDraft; receipt('Your unsent text is back in the box.'); } } catch (e) {}
   }
-  // the Seeds button opens the seed panel; a seed's button puts the steward's verb in the composer — Send is the word
-  var seedBtn = $('#seedBtn'), seedPanel = $('#seedPanel');
-  if (seedBtn && seedPanel) seedBtn.addEventListener('click', function () {
-    var open = seedPanel.classList.toggle('open'); seedBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
-  });
-  document.addEventListener('click', function (e) {   // delegated (W4): a seed panel placed again keeps its buttons
-    var g = e.target.closest('#seedPanel .go[data-seed-text]'); if (!g || !say) return;
-    say.value = 'make ' + g.getAttribute('data-seed-text') + ' an initiative in tier 3';
-    say.dispatchEvent(new Event('input'));
-    say.focus(); say.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    receipt('The verb is in the composer — add the tier or the life area if you want, then Send.');
-  });
   // W2c-2 (2026-09-30, his word: the dialogue must "engage the steward and then show the dialogue"): the composer is
   // ONE box. A Campaign verb and the new-project ask are answered by the High Seat's own route as before (a receipt,
   // the confirm card); anything else is said to the Campaign's steward — the Desk — and the exchange shows below, live
@@ -1450,16 +1616,37 @@
     if (say) { say.addEventListener('input', grow); say.addEventListener('focus', fit); }
     setTimeout(fit, 400);
   })();
-  function doSend() {
-    var text = (say.value || '').trim(); if (!text || send.disabled) return;
+  var _caveMsgSeq = 0;
+  function _mintCaveClientMsgId(prefix) {
+    _caveMsgSeq += 1;
+    var r = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+      ? crypto.randomUUID()
+      : (Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10) + '-' + _caveMsgSeq);
+    return (prefix || 'cmsg') + '-' + r;
+  }
+  function doSend(_retried) {
+    var text = (say.value || '').trim(); if (!text || (send.disabled && !_retried)) return;
+    if (!_retried) {
+      if (say && typeof say._bumpDictationEpoch === 'function') { try { say._bumpDictationEpoch(); } catch (e) {} }
+      if (say && typeof say._stopDictation === 'function') { try { say._stopDictation({ discardPending: true }); } catch (e) {} }
+    }
+    var clientMsgId = (_retried && say && say._pendingClientMsgId) ? say._pendingClientMsgId : _mintCaveClientMsgId('say');
+    if (say) say._pendingClientMsgId = clientMsgId;
     send.disabled = true; send.textContent = 'Thinking…';
-    fetch('/api/ecgberht/high_seat_say', { method: 'POST', headers: headers(), body: JSON.stringify({ text: text, verbs_only: !!dlg }) })
+    fetch('/api/ecgberht/high_seat_say', { method: 'POST', headers: headers(), body: JSON.stringify({ text: text, verbs_only: !!dlg, client_msg_id: clientMsgId }) })
       .then(function (r) { return r.json(); })
       .then(function (j) {
+        if (j && j.error === 'build-mismatch') {
+          if (!_retried && syncServerBuild(j)) { doSend(true); return; }
+          if (say) say._pendingClientMsgId = '';
+          send.disabled = false; send.textContent = 'Send';
+          return;
+        }
         send.disabled = false; send.textContent = 'Send';
         if (j && j.ok && j.talk && dlg) { dlg.send(text, null, dlg.mainList(), send, say, DRAFT_KEY); return; }   // not a verb: the steward, in the dialogue
+        if (say) say._pendingClientMsgId = '';
         if (!j || !j.ok) { receipt((j && (j.say || j.message || j.error)) || 'No answer came back — nothing was done.', true); return; }
-        say.value = ''; say.dispatchEvent(new Event('input')); clearDraft(); receipt(j.say || '…', false, j.undo || null);
+        say.value = ''; say.dispatchEvent(new Event('input')); clearDraft(); if (say && typeof say._clearServerDraft === 'function') { try { say._clearServerDraft(); } catch (e) {} } receipt(j.say || '…', false, j.undo || null);
         if (window.StewardDialogue && typeof window.StewardDialogue.speakConciseSummary === 'function' && (j.spoken_summary || j.say)) {
           try { window.StewardDialogue.speakConciseSummary(j.spoken_summary || j.say); } catch (e) {}
         }
@@ -1470,22 +1657,30 @@
         if (j.campaign_act && !j.read_only) { renewInPlace(); return; }   // W4: the change is placed in the page; the line and its undo stay
         if (j.project_create && j.project_create.folder) projectCard(j.project_create);   // R11: the card is here, not on the old dashboard
       })
-      .catch(function () { send.disabled = false; send.textContent = 'Send'; receipt('That did not go through — nothing was done.', true); });
+      .catch(function () { if (say) say._pendingClientMsgId = ''; send.disabled = false; send.textContent = 'Send'; receipt('That did not go through — nothing was done.', true); });
   }
-  if (send) send.addEventListener('click', doSend);
-  if (say) say.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); doSend(); } });
+  if (send) send.addEventListener('click', function () { doSend(false); });
+  if (say) say.addEventListener('keydown', function (e) { if ((e.key === 'Enter' || e.keyCode === 13) && (!e.shiftKey || e.ctrlKey || e.metaKey) && !e.isComposing && e.keyCode !== 229 && !say._composing) { e.preventDefault(); doSend(false); } });
 
   // a redeploy reloads the open page, as the old home did (the verification law: a mechanism, not "refresh"): /api/version
   // every 30 s; a build other than the one this page booted with reloads it once — never while he is typing
   (function () {
-    var mine = (window.ANCHOR_BOOT && window.ANCHOR_BOOT.build_id) || '';
+    var mine = (window.ANCHOR_BOOT && window.ANCHOR_BOOT.build_id) || '', bootId = '';
     if (!mine) return;
+    fetch('/api/version', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (d) { if (d && d.boot) bootId = String(d.boot); }).catch(function () {});
     // W2c-4: never while he types; W3b: never under an open tile either - the reload waits (renewBuild), the draft and the open tile come back after it
     setInterval(function () {
       fetch('/api/version', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (d) {
         // W3 (2026-10-08): the banner's facts moved (a report, a verified candidate) - placed in the page, never a reload
         var h = d && d.health;
         if (h && h !== healthSig) { healthPending = h; renewInPlace(); }   // acknowledged only once placed (ChatGPT W3 r2)
+        if (d && d.boot) {
+          if (!bootId) bootId = String(d.boot);
+          else if (String(d.boot) === bootId) {
+            if (d.version && d.version !== mine) { mine = String(d.version); if (window.ANCHOR_BOOT) window.ANCHOR_BOOT.build_id = mine; }
+            return;
+          }
+        }
         var v = d && d.version; if (!v || v === mine) return;
         try { if (sessionStorage.getItem('highseat_reloaded_for') === String(v)) return; } catch (e) {}
         renewVersion = String(v); renewBuild('A new build is live \u2014 the page is renewed.');
@@ -2514,32 +2709,6 @@
       wBtn.textContent = '🧭 Setup & Onboard';
       hdrRight.insertBefore(wBtn, hdrRight.firstChild);
     }
-    if (!document.getElementById('hs-download-test-exe-btn')) {
-      var tBtn = document.createElement('a');
-      tBtn.id = 'hs-download-test-exe-btn';
-      tBtn.className = 'btn';
-      tBtn.href = '/static/downloads/Anchor-Test-Onboard.zip?download=1';
-      tBtn.setAttribute('download', 'Anchor-Test-Onboard.zip');
-      tBtn.title = 'Download isolated Desktop Onboard-Test Anchor.exe package (runs on port 8787 + isolated AppData so your live Anchor.exe & Tailscale stay untouched)';
-      tBtn.style.cssText = 'text-decoration:none;border-color:rgba(245,158,11,0.55);color:#fcd34d;font-weight:600';
-      tBtn.textContent = '🧪 Desktop Onboard-Test.exe';
-      var ref = document.getElementById('hs-onboard-wizard-btn');
-      if (ref && ref.nextSibling) hdrRight.insertBefore(tBtn, ref.nextSibling);
-      else hdrRight.appendChild(tBtn);
-    }
-    if (!document.getElementById('hs-download-prod-exe-btn')) {
-      var pBtn = document.createElement('a');
-      pBtn.id = 'hs-download-prod-exe-btn';
-      pBtn.className = 'btn';
-      pBtn.href = '/static/downloads/Anchor.zip?download=1';
-      pBtn.setAttribute('download', 'Anchor.zip');
-      pBtn.title = 'Download production Anchor.exe package (shareable with collaborators)';
-      pBtn.style.cssText = 'text-decoration:none;border-color:rgba(16,185,129,0.55);color:#6ee7b7;font-weight:600';
-      pBtn.textContent = '📦 Anchor.exe';
-      var ref2 = document.getElementById('hs-onboard-wizard-btn');
-      if (ref2 && ref2.nextSibling) hdrRight.insertBefore(pBtn, ref2.nextSibling);
-      else hdrRight.appendChild(pBtn);
-    }
   }
   ensureHeaderDownloadButtons();
 
@@ -2798,6 +2967,14 @@
     var railBtn = $('#railNav button[data-rail="email"]');
     if (railBtn) {
       railBtn.classList.toggle('has-unread', cnt > 0);
+    }
+    var cosEmCntEl = document.getElementById('cosEmailCount');
+    if (cosEmCntEl) {
+      cosEmCntEl.textContent = String(cnt);
+    }
+    var cosEmTile = document.getElementById('cosEmailTile');
+    if (cosEmTile) {
+      cosEmTile.classList.toggle('has-unread', cnt > 0);
     }
   }
   window._syncRailEmailCount = _syncRailEmailCount;
@@ -3246,6 +3423,8 @@
     });
     var visCntEl = document.getElementById('caveCalVisibleCount');
     if (visCntEl) visCntEl.textContent = String(allEvs.length);
+    var cosCalCntEl = document.getElementById('cosCalendarCount');
+    if (cosCalCntEl) cosCalCntEl.textContent = String(allEvs.length);
     if (!_caveCalDay) {
       _caveCalDay = nowIso;
     }
@@ -3769,6 +3948,241 @@
     } catch (e) {}
   }
 
+  var _emailDirComposerState = { dictation_epoch: 0, dirtyUid: '', dirtyVal: null, timer: 0, hydrateTimer: 0, hydrateAbort: null, clearingNow: false };
+  function _currentEmailDraftUid() {
+    var curE = (typeof _resolveRightPaneEmailCtx === 'function' && _resolveRightPaneEmailCtx()) || _activeEmailDialogue || {};
+    return String(curE.uid || curE.id || 'default');
+  }
+  function _syncEmailDirEpochAttr() {
+    var el = document.getElementById('caveDlgStewardDirectionsInput');
+    if (el) {
+      el._composerState = _emailDirComposerState;
+      el.dataset.dictationEpoch = String(_emailDirComposerState.dictation_epoch);
+    }
+  }
+  function _bumpEmailDirectionsEpoch() {
+    _emailDirComposerState.dictation_epoch += 1;
+    _syncEmailDirEpochAttr();
+    var el = document.getElementById('caveDlgStewardDirectionsInput');
+    if (el && typeof el._stopDictation === 'function') {
+      try { el._stopDictation({ discardPending: true }); } catch (e) {}
+    }
+    return _emailDirComposerState.dictation_epoch;
+  }
+  function _flushEmailServerDraft(uid, val, keepalive) {
+    if (_emailDirComposerState.clearingNow) return Promise.resolve();
+    var u = String(uid || 'default');
+    var v = String(val == null ? '' : val);
+    _emailDirComposerState.dirtyVal = null;
+    var bodyStr = JSON.stringify({ surface: 'email', uid: u, draft: v });
+    var hdrs = window.StewardDialogue ? window.StewardDialogue.authHeaders(headers()) : headers();
+    return fetch('/api/steward/drafts?surface=email&uid=' + encodeURIComponent(u), {
+      method: 'POST',
+      headers: hdrs,
+      credentials: 'same-origin',
+      keepalive: !!keepalive,
+      body: bodyStr
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        var el = document.getElementById('caveDlgStewardDirectionsInput');
+        if (el && _currentEmailDraftUid() === u) {
+          if (j && j.unknown_state) el.dataset.draftBadge = 'UNKNOWN';
+          else if (r.ok) el.dataset.draftBadge = v ? 'SAVED' : 'EMPTY';
+        }
+        return j;
+      });
+    }).catch(function () {
+      if (keepalive && typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+        try { navigator.sendBeacon('/api/steward/drafts?surface=email&uid=' + encodeURIComponent(u), new Blob([bodyStr], { type: 'application/json' })); } catch (e) {}
+      }
+    });
+  }
+  function _deleteEmailServerDraft(uid) {
+    clearTimeout(_emailDirComposerState.timer);
+    _emailDirComposerState.dirtyVal = null;
+    var u = String(uid || 'default');
+    var hdrs = window.StewardDialogue ? window.StewardDialogue.authHeaders(headers()) : headers();
+    return fetch('/api/steward/drafts?surface=email&uid=' + encodeURIComponent(u), {
+      method: 'DELETE',
+      headers: hdrs,
+      credentials: 'same-origin',
+      keepalive: true
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        var el = document.getElementById('caveDlgStewardDirectionsInput');
+        if (el && _currentEmailDraftUid() === u) {
+          if ((j && j.unknown_state) || r.status >= 500 || !r.ok) {
+            el.dataset.draftBadge = 'UNKNOWN';
+            el.dataset.draftStatusKind = (j && j.status_kind) || 'backing-store-unreadable';
+          } else {
+            el.dataset.draftBadge = 'EMPTY';
+            el.dataset.draftStatusKind = (j && j.status_kind) || 'empty-but-valid';
+          }
+        }
+        return j;
+      });
+    }).catch(function () {});
+  }
+  function _hydrateEmailServerDraft(uid) {
+    var u = String(uid || 'default');
+    if (_emailDirComposerState.hydrateAbort) {
+      try { _emailDirComposerState.hydrateAbort.abort(); } catch (e) {}
+      _emailDirComposerState.hydrateAbort = null;
+    }
+    var ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
+    _emailDirComposerState.hydrateAbort = ctrl;
+    var hdrs = window.StewardDialogue ? window.StewardDialogue.authHeaders(headers()) : headers();
+    var fetchOpts = {
+      headers: hdrs,
+      credentials: 'same-origin',
+      cache: 'no-store'
+    };
+    if (ctrl) fetchOpts.signal = ctrl.signal;
+    return fetch('/api/steward/drafts?surface=email&uid=' + encodeURIComponent(u), fetchOpts).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        if (_emailDirComposerState.hydrateAbort === ctrl) _emailDirComposerState.hydrateAbort = null;
+        var el = document.getElementById('caveDlgStewardDirectionsInput');
+        if (!el || _currentEmailDraftUid() !== u) return;
+        if (j && j.unknown_state) { el.dataset.draftBadge = 'UNKNOWN'; return; }
+        if (!r.ok) return;
+        var d = (j && typeof j.draft === 'string') ? j.draft : '';
+        if (d && !String(el.value || '').trim()) {
+          el.value = d;
+          _saveLocalDraft(_stewardDirDraftKey(u === 'default' ? '' : u), d);
+          _autoGrowTextarea(el);
+          el.dataset.draftBadge = 'SAVED';
+        } else if (!d && !String(el.value || '').trim()) {
+          el.dataset.draftBadge = 'EMPTY';
+        }
+      });
+    }).catch(function () {
+      if (_emailDirComposerState.hydrateAbort === ctrl) _emailDirComposerState.hydrateAbort = null;
+    });
+  }
+  function _scheduleEmailServerDraftHydrate(uid) {
+    var u = String(uid || 'default');
+    clearTimeout(_emailDirComposerState.hydrateTimer);
+    if (_emailDirComposerState.hydrateAbort) {
+      try { _emailDirComposerState.hydrateAbort.abort(); } catch (e) {}
+      _emailDirComposerState.hydrateAbort = null;
+    }
+    _emailDirComposerState.hydrateTimer = setTimeout(function () {
+      if (_currentEmailDraftUid() === u) _hydrateEmailServerDraft(u);
+    }, 35);
+  }
+  function _wireEmailDirectionsComposerOnce() {
+    var dirIn = document.getElementById('caveDlgStewardDirectionsInput');
+    if (!dirIn || dirIn._w3EmailWired) return;
+    dirIn._w3EmailWired = true;
+    _syncEmailDirEpochAttr();
+    dirIn.dataset.draftBadge = dirIn.value && dirIn.value.trim() ? 'SAVED' : 'EMPTY';
+    dirIn._bumpDictationEpoch = _bumpEmailDirectionsEpoch;
+    dirIn._dispatchFencedTranscribe = function (audioB64) {
+      var reqEpoch = _emailDirComposerState.dictation_epoch;
+      var reqMsgId = _mintCaveClientMsgId('emdict');
+      var hdrs = window.StewardDialogue ? window.StewardDialogue.authHeaders(headers()) : headers();
+      return fetch('/api/steward/dictate', {
+        method: 'POST',
+        headers: hdrs,
+        body: JSON.stringify({ action: 'transcribe', audio_b64: audioB64, dictation_epoch: reqEpoch, client_msg_id: reqMsgId })
+      }).then(function (r) { return r.json(); }).then(function (j) {
+        if (reqEpoch !== _emailDirComposerState.dictation_epoch) {
+          return { fenced: true, reqEpoch: reqEpoch, currentEpoch: _emailDirComposerState.dictation_epoch };
+        }
+        if (j && j.text) {
+          var cur = dirIn.value || '';
+          var sep = (cur && !/\s$/.test(cur)) ? ' ' : '';
+          dirIn.value = cur + sep + String(j.text).trim();
+          dirIn.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        return { fenced: false, text: (j && j.text) || '' };
+      });
+    };
+    var btnsHost = document.querySelector('#caveDlgStewardDirectionsBar .cave-scribe-bar-btns');
+    if (btnsHost && !btnsHost.querySelector('[data-email-dictate-btn]')) {
+      var dictBtn = document.createElement('button');
+      dictBtn.type = 'button';
+      dictBtn.className = 'tw-btn cave-voice-btn';
+      dictBtn.setAttribute('data-email-dictate-btn', '1');
+      dictBtn.textContent = '🎤 Dictate';
+      dictBtn.title = 'Start/stop voice dictation for email directions';
+      var emActive = false, emPollT = null, emSeq = 0;
+      function stopEmDict(opts) {
+        opts = opts || {};
+        var wasActive = !!(emActive || emPollT);
+        emActive = false;
+        if (emPollT) { clearInterval(emPollT); emPollT = null; }
+        dictBtn.classList.remove('recording');
+        dictBtn.textContent = '🎤 Dictate';
+        if (wasActive) {
+          var hdrs = window.StewardDialogue ? window.StewardDialogue.authHeaders(headers()) : headers();
+          fetch('/api/steward/dictate', {
+            method: 'POST',
+            headers: hdrs,
+            body: JSON.stringify({ action: 'stop', dictation_epoch: _emailDirComposerState.dictation_epoch })
+          }).catch(function () {});
+        }
+      }
+      dirIn._stopDictation = stopEmDict;
+      dictBtn.addEventListener('click', function (ev) {
+        ev.preventDefault(); ev.stopPropagation();
+        if (emActive) { stopEmDict(); return; }
+        var startEpoch = _emailDirComposerState.dictation_epoch;
+        emActive = true;
+        dictBtn.classList.add('recording');
+        dictBtn.textContent = '⏹ Listening…';
+        dirIn.focus();
+        var hdrs = window.StewardDialogue ? window.StewardDialogue.authHeaders(headers()) : headers();
+        fetch('/api/steward/dictate', {
+          method: 'POST',
+          headers: hdrs,
+          body: JSON.stringify({ action: 'start', dictation_epoch: startEpoch })
+        }).then(function (r) { return r.json(); }).then(function (j) {
+          if (startEpoch !== _emailDirComposerState.dictation_epoch) return;
+          if (j && typeof j.last_seq === 'number') emSeq = j.last_seq;
+        }).catch(function () {});
+        if (emPollT) clearInterval(emPollT);
+        emPollT = setInterval(function () {
+          if (!emActive) return;
+          var reqEpoch = _emailDirComposerState.dictation_epoch;
+          fetch('/api/steward/dictate', {
+            method: 'POST',
+            headers: hdrs,
+            body: JSON.stringify({ action: 'poll', since: emSeq, dictation_epoch: reqEpoch })
+          }).then(function (r) { return r.json(); }).then(function (j) {
+            if (!emActive || reqEpoch !== _emailDirComposerState.dictation_epoch || !j) return;
+            if (Array.isArray(j.chunks)) {
+              j.chunks.forEach(function (c) {
+                if (c && typeof c.seq === 'number' && c.seq > emSeq) emSeq = c.seq;
+                if (c && c.text) {
+                  var cur = dirIn.value || '';
+                  var sep = (cur && !/\s$/.test(cur)) ? ' ' : '';
+                  dirIn.value = cur + sep + String(c.text).trim();
+                  dirIn.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+              });
+            }
+          }).catch(function () {});
+        }, 500);
+      });
+      btnsHost.insertBefore(dictBtn, btnsHost.firstChild);
+    }
+    var unloadEm = function () {
+      clearTimeout(_emailDirComposerState.timer);
+      if (_emailDirComposerState.dirtyVal !== null) {
+        _flushEmailServerDraft(_emailDirComposerState.dirtyUid || _currentEmailDraftUid(), _emailDirComposerState.dirtyVal, true);
+      }
+    };
+    window.addEventListener('beforeunload', unloadEm);
+    window.addEventListener('pagehide', unloadEm);
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'hidden') unloadEm();
+    });
+    _hydrateEmailServerDraft(_currentEmailDraftUid());
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _wireEmailDirectionsComposerOnce);
+  else setTimeout(_wireEmailDirectionsComposerOnce, 0);
+
   function _clearLocalDraft(key) {
     try { localStorage.removeItem(key); } catch (e) {}
   }
@@ -3778,8 +4192,16 @@
     if (!t || !t.classList || !t.classList.contains('cave-autogrow-ta')) return;
     _autoGrowTextarea(t);
     if (t.id === 'caveDlgStewardDirectionsInput') {
+      if (_emailDirComposerState.clearingNow) return;
       var curE = _resolveRightPaneEmailCtx() || _activeEmailDialogue || {};
-      _saveLocalDraft(_stewardDirDraftKey(curE.uid || ''), t.value || '');
+      var curUid = curE.uid || curE.id || '';
+      _saveLocalDraft(_stewardDirDraftKey(curUid), t.value || '');
+      _emailDirComposerState.dirtyUid = curUid || 'default';
+      _emailDirComposerState.dirtyVal = t.value || '';
+      clearTimeout(_emailDirComposerState.timer);
+      _emailDirComposerState.timer = setTimeout(function () {
+        _flushEmailServerDraft(_emailDirComposerState.dirtyUid, t.value || '', false);
+      }, 220);
     } else if (t.id === 'caveSrFeedbackInput') {
       var qSr = (_srState && Array.isArray(_srState.queue)) ? (_srState.queue[_srIdx] || _srState.queue[0] || {}) : {};
       _saveLocalDraft(_srFeedbackDraftKey(qSr.id || qSr.uid || ''), t.value || '');
@@ -3991,6 +4413,7 @@
     if (dirIn) {
       dirIn.value = _loadLocalDraft(_stewardDirDraftKey(d.uid || ''));
       _autoGrowTextarea(dirIn);
+      if (!dirIn.value) _scheduleEmailServerDraftHydrate(d.uid || 'default');
     }
     var dlgPrevHost = document.getElementById('caveDlgAttachmentPreviewHost');
     if (dlgPrevHost) { dlgPrevHost.hidden = true; dlgPrevHost.innerHTML = ''; }
@@ -4066,12 +4489,284 @@
     if (bccIn) bccIn.value = '';
     if (subIn) subIn.value = /^re:/i.test(rawSubj) ? rawSubj : ('Re: ' + rawSubj);
     if (bodyIn) bodyIn.value = '';
+    _syncAllRecipDropdownBadges();
     var drwInit = document.getElementById('caveDlgDirectReplyDrawer');
     if (drwInit) drwInit.open = false;
     _applyDlgReplyModeBtnStyles('reply');
     if (noteEl) noteEl.textContent = 'Type a manual response below or refine with Scribe.';
     setTimeout(_syncCaveMailOvalScrollbar, 25);
   }
+
+  function _parseRecipientTokens(rawVal) {
+    var s = String(rawVal || '');
+    var out = [];
+    var cur = '';
+    var inQuote = false;
+    var angleDepth = 0;
+    for (var i = 0; i < s.length; i++) {
+      var ch = s.charAt(i);
+      if (ch === '"' && (i === 0 || s.charAt(i - 1) !== '\\')) {
+        inQuote = !inQuote;
+        cur += ch;
+      } else if (!inQuote && ch === '<') {
+        angleDepth++;
+        cur += ch;
+      } else if (!inQuote && ch === '>' && angleDepth > 0) {
+        angleDepth--;
+        cur += ch;
+      } else if (!inQuote && angleDepth === 0 && (ch === ',' || ch === ';')) {
+        var trimmed = cur.trim();
+        if (trimmed) out.push(trimmed);
+        cur = '';
+      } else {
+        cur += ch;
+      }
+    }
+    var tail = cur.trim();
+    if (tail) out.push(tail);
+    return out.map(function (tok) {
+      var m = tok.match(/^(.*?)<([^>]+)>$/);
+      var name = m ? m[1].trim().replace(/^["']+|["']+$/g, '') : '';
+      var email = m ? m[2].trim() : tok.trim();
+      return {
+        raw: tok,
+        name: name,
+        email: email,
+        display: name && email && name.toLowerCase() !== email.toLowerCase()
+          ? (name + ' <' + email + '>')
+          : (email || tok)
+      };
+    });
+  }
+
+  function _syncAllRecipDropdownBadges() {
+    $$('[data-recip-dropdown-for]').forEach(function (btn) {
+      var targetId = btn.getAttribute('data-recip-dropdown-for') || '';
+      var inp = targetId ? document.getElementById(targetId) : null;
+      if (!inp) return;
+      var parsed = _parseRecipientTokens(inp.value || '');
+      var cnt = parsed.length;
+      btn.classList.toggle('has-multi', cnt > 1);
+      btn.setAttribute('data-recip-count', String(cnt));
+      btn.innerHTML = cnt > 0 ? (cnt + ' &#9662;') : '&#9662;';
+      btn.title = cnt > 0
+        ? (cnt + ' recipient' + (cnt === 1 ? '' : 's') + ' in field — click to view complete list or add/remove')
+        : 'Click to view or add recipients from Unified Address Book';
+    });
+  }
+
+  var _recipPopoverEl = null;
+  var _recipPopoverInputId = '';
+
+  function _hideRecipInspectorPopover() {
+    if (_recipPopoverEl) _recipPopoverEl.hidden = true;
+    _recipPopoverInputId = '';
+  }
+
+  function _ensureRecipInspectorPopover() {
+    if (_recipPopoverEl && _recipPopoverEl.isConnected !== false) return _recipPopoverEl;
+    var existingPop = document.getElementById('caveRecipInspectorPopover');
+    if (existingPop) {
+      _recipPopoverEl = existingPop;
+      return existingPop;
+    }
+    var pop = document.createElement('div');
+    pop.id = 'caveRecipInspectorPopover';
+    pop.hidden = true;
+    document.body.appendChild(pop);
+    _recipPopoverEl = pop;
+    pop.addEventListener('click', function (ev) {
+      var closeBtn = ev.target && ev.target.closest && ev.target.closest('[data-recip-pop-close]');
+      if (closeBtn) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        _hideRecipInspectorPopover();
+        return;
+      }
+      var remBtn = ev.target && ev.target.closest && ev.target.closest('[data-recip-remove-idx]');
+      if (remBtn && _recipPopoverInputId) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        var inp = document.getElementById(_recipPopoverInputId);
+        if (!inp) return;
+        var idx = parseInt(remBtn.getAttribute('data-recip-remove-idx') || '-1', 10);
+        var list = _parseRecipientTokens(inp.value || '');
+        if (idx >= 0 && idx < list.length) {
+          list.splice(idx, 1);
+          inp.value = list.map(function (x) { return x.raw; }).join(', ');
+          inp.dispatchEvent(new Event('input', { bubbles: true }));
+          inp.dispatchEvent(new Event('change', { bubbles: true }));
+          _syncAllRecipDropdownBadges();
+          _renderRecipInspectorPopoverBody(inp, ((document.getElementById('caveRecipAddSearch') || {}).value || ''));
+        }
+        return;
+      }
+      var addRow = ev.target && ev.target.closest && ev.target.closest('[data-recip-add-val]');
+      if (addRow && _recipPopoverInputId) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        var inpA = document.getElementById(_recipPopoverInputId);
+        if (!inpA) return;
+        var addVal = addRow.getAttribute('data-recip-add-val') || '';
+        if (!addVal) return;
+        var curTokens = _parseRecipientTokens(inpA.value || '');
+        var addEm = (addVal.match(/<([^>]+)>/) ? addVal.match(/<([^>]+)>/)[1] : addVal).trim().toLowerCase();
+        var exists = curTokens.some(function (t) { return String(t.email || '').toLowerCase() === addEm; });
+        if (!exists) {
+          var nextArr = curTokens.map(function (x) { return x.raw; });
+          nextArr.push(addVal);
+          inpA.value = nextArr.join(', ');
+          inpA.dispatchEvent(new Event('input', { bubbles: true }));
+          inpA.dispatchEvent(new Event('change', { bubbles: true }));
+          _syncAllRecipDropdownBadges();
+        }
+        _renderRecipInspectorPopoverBody(inpA, '');
+        return;
+      }
+    });
+    pop.addEventListener('input', function (ev) {
+      if (ev.target && ev.target.id === 'caveRecipAddSearch' && _recipPopoverInputId) {
+        var inpS = document.getElementById(_recipPopoverInputId);
+        if (inpS) _renderRecipInspectorPopoverControls(inpS, ev.target.value || '');
+      }
+    });
+    return pop;
+  }
+
+  function _renderRecipInspectorPopoverControls(inp, filterQ) {
+    var contactsHost = document.getElementById('caveRecipPopContactsHost');
+    if (!contactsHost || !inp) return;
+    var curTokens = _parseRecipientTokens(inp.value || '');
+    var curEmails = {};
+    curTokens.forEach(function (t) {
+      if (t.email) curEmails[String(t.email).toLowerCase()] = true;
+    });
+    var q = String(filterQ || '').trim().toLowerCase();
+    var pool = Array.isArray(window.ANCHOR_UNIFIED_ADDRESS_BOOK) ? window.ANCHOR_UNIFIED_ADDRESS_BOOK : [];
+    var matches = pool.filter(function (c) {
+      if (!c || !c.email) return false;
+      var emL = String(c.email).trim().toLowerCase();
+      if (curEmails[emL]) return false;
+      if (!q) return true;
+      return emL.indexOf(q) >= 0 || String(c.name || '').toLowerCase().indexOf(q) >= 0;
+    }).slice(0, 14);
+    if (!matches.length) {
+      contactsHost.innerHTML = '<div style="font-size:11px;color:#64748b;padding:4px 2px">' + (q ? 'No matching contacts not already in list.' : 'Type above to search Unified Address Book.') + '</div>';
+      return;
+    }
+    contactsHost.innerHTML = matches.map(function (c) {
+      var nm = String(c.name || '').trim();
+      var em = String(c.email || '').trim();
+      var formatted = nm ? (nm.indexOf(',') >= 0 ? ('"' + nm.replace(/"/g, '') + '" <' + em + '>') : (nm + ' <' + em + '>')) : em;
+      return (
+        '<div class="cave-recip-pop-add" data-recip-add-val="' + _escH(formatted) + '">' +
+          '<span><b>' + _escH(nm || em) + '</b>' + (nm ? (' <span style="color:#7dd3fc">&lt;' + _escH(em) + '&gt;</span>') : '') + '</span>' +
+          '<span style="color:#6ee7b7;font-weight:800;font-size:11px">+ Add</span>' +
+        '</div>'
+      );
+    }).join('');
+  }
+
+  function _renderRecipInspectorPopoverBody(inp, filterQ) {
+    var pop = _ensureRecipInspectorPopover();
+    if (!inp) return;
+    var fieldLbl = 'Recipients';
+    if (/Cc/i.test(inp.id)) fieldLbl = 'CC Recipients';
+    else if (/Bcc/i.test(inp.id)) fieldLbl = 'BCC Recipients';
+    else if (/To/i.test(inp.id)) fieldLbl = 'To Recipients';
+    var parsed = _parseRecipientTokens(inp.value || '');
+    var rowsHtml = parsed.length
+      ? parsed.map(function (r, idx) {
+          return (
+            '<div class="cave-recip-pop-row" data-recip-row-idx="' + idx + '">' +
+              '<div style="min-width:0;flex:1"><span style="color:#7dd3fc;font-family:var(--mono);font-weight:800;margin-right:6px">' + (idx + 1) + '.</span>' +
+                (r.name ? ('<b style="color:#f8fafc">' + _escH(r.name) + '</b> <span style="color:#94a3b8">&lt;' + _escH(r.email) + '&gt;</span>') : ('<b style="color:#f8fafc">' + _escH(r.email || r.raw) + '</b>')) +
+              '</div>' +
+              '<button type="button" class="mini" data-recip-remove-idx="' + idx + '" title="Remove recipient" style="color:#fda4af;border-color:rgba(244,63,94,0.45);padding:1px 6px">&times;</button>' +
+            '</div>'
+          );
+        }).join('')
+      : '<div style="font-size:11.5px;color:#94a3b8;padding:6px 4px">No recipients currently in ' + _escH(fieldLbl) + '.</div>';
+
+    pop.innerHTML =
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding-bottom:6px;margin-bottom:6px;border-bottom:1px solid #1e293b">' +
+        '<b style="font-size:12px;color:#e0f2fe">' + _escH(fieldLbl) + ' (' + parsed.length + ' in list)</b>' +
+        '<button type="button" class="mini" data-recip-pop-close="1" style="padding:1px 7px">&times; Close</button>' +
+      '</div>' +
+      '<div id="caveRecipPopCurrentList" style="max-height:190px;overflow-y:auto;margin-bottom:8px">' + rowsHtml + '</div>' +
+      '<div style="border-top:1px dashed #283548;padding-top:7px">' +
+        '<input type="text" id="caveRecipAddSearch" value="' + _escH(filterQ || '') + '" placeholder="+ Add person from Address Book (name or email)..." style="width:100%;box-sizing:border-box;padding:5px 8px;border-radius:6px;border:1px solid #334155;background:#070b12;color:#f8fafc;font-size:11.5px;margin-bottom:5px">' +
+        '<div id="caveRecipPopContactsHost" style="max-height:135px;overflow-y:auto"></div>' +
+      '</div>';
+    _renderRecipInspectorPopoverControls(inp, filterQ || '');
+  }
+
+  function _openRecipInspectorPopover(btn, inp) {
+    if (!btn || !inp) return;
+    var pop = _ensureRecipInspectorPopover();
+    if (!pop.hidden && _recipPopoverInputId === inp.id) {
+      _hideRecipInspectorPopover();
+      return;
+    }
+    _recipPopoverInputId = inp.id;
+    _renderRecipInspectorPopoverBody(inp, '');
+    pop.hidden = false;
+    var rect = inp.getBoundingClientRect();
+    var popW = Math.min(440, window.innerWidth - 20);
+    var leftPx = Math.max(10, Math.min(Math.round(rect.left), window.innerWidth - popW - 10));
+    var spaceBelow = window.innerHeight - rect.bottom - 12;
+    pop.style.width = popW + 'px';
+    pop.style.left = leftPx + 'px';
+    if (spaceBelow < 220 && rect.top > 240) {
+      pop.style.top = 'auto';
+      pop.style.bottom = Math.max(10, Math.round(window.innerHeight - rect.top + 4)) + 'px';
+    } else {
+      pop.style.bottom = 'auto';
+      pop.style.top = Math.max(10, Math.round(rect.bottom + 4)) + 'px';
+    }
+    if (!Array.isArray(window.ANCHOR_UNIFIED_ADDRESS_BOOK) || !window.ANCHOR_UNIFIED_ADDRESS_BOOK.length) {
+      fetch('/api/steward/comms?view=contacts&q=', { headers: headers(), cache: 'no-store' })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d && d.ok && Array.isArray(d.contacts)) {
+            _syncAddressBookDatalist(d.contacts);
+            if (!pop.hidden && _recipPopoverInputId === inp.id) {
+              var sEl = document.getElementById('caveRecipAddSearch');
+              _renderRecipInspectorPopoverControls(inp, sEl ? sEl.value : '');
+            }
+          }
+        })
+        .catch(function () {});
+    }
+  }
+
+  document.addEventListener('click', function (ev) {
+    var ddBtn = ev.target && ev.target.closest && ev.target.closest('[data-recip-dropdown-for]');
+    if (ddBtn) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      var targetId = ddBtn.getAttribute('data-recip-dropdown-for') || '';
+      var inp = targetId ? document.getElementById(targetId) : null;
+      if (inp) _openRecipInspectorPopover(ddBtn, inp);
+      return;
+    }
+    if (_recipPopoverEl && !_recipPopoverEl.hidden && !(ev.target && ev.target.closest && ev.target.closest('#caveRecipInspectorPopover'))) {
+      _hideRecipInspectorPopover();
+    }
+  });
+
+  document.addEventListener('keydown', function (ev) {
+    if (ev && ev.key === 'Escape' && _recipPopoverEl && !_recipPopoverEl.hidden) {
+      _hideRecipInspectorPopover();
+    }
+  });
+
+  document.addEventListener('input', function (ev) {
+    var t = ev && ev.target;
+    if (t && t.id && _RECIPIENT_INPUT_IDS[t.id]) {
+      _syncAllRecipDropdownBadges();
+    }
+  });
 
   function _syncAddressBookDatalist(addrBook) {
     var list = Array.isArray(addrBook) ? addrBook : (window.ANCHOR_UNIFIED_ADDRESS_BOOK || []);
@@ -4188,6 +4883,7 @@
     if (splitEl) splitEl.classList.toggle('email-dlg-closed', !isOpen);
     if (barCloseBtn) barCloseBtn.hidden = !isOpen;
     if (!isOpen) {
+      ++_emailDlgReqSeq;
       _setActiveEmailDialogue(null);
       $$('#caveMailBucketsGrid .cave-mail-card').forEach(function (c) {
         c.classList.remove('is-selected');
@@ -4772,7 +5468,136 @@
   }
 
   window._caveSessionActedUids = window._caveSessionActedUids || new Map();
+  window._caveSessionActedThreads = window._caveSessionActedThreads || new Map();
+  window._triageMutationSeq = window._triageMutationSeq || 0;
   window._caveEmailActionInFlight = window._caveEmailActionInFlight || 0;
+  var _scribeClientReqSeq = 0;
+  var _scribeQueueWatchTimer = 0;
+
+  function _recordTriageTombstone(uid, meta) {
+    var u = String(uid || '').trim();
+    if (u && window._caveSessionActedUids) {
+      window._caveSessionActedUids.set(u, Date.now());
+    }
+    if (meta && typeof meta === 'object' && window._caveSessionActedThreads) {
+      var nSubj = _normThreadSubjClient(meta.subject || '');
+      var nAddr = _extractEmailAddrClient(meta.recipient || meta.sender || '');
+      if (nSubj && nSubj.length >= 3 && nAddr) {
+        window._caveSessionActedThreads.set(nSubj + '||' + nAddr, { ts: Date.now(), uid: u });
+      }
+    }
+  }
+
+  function _clearTriageTombstone(uid) {
+    var u = String(uid || '').trim();
+    if (u && window._caveSessionActedUids) {
+      window._caveSessionActedUids.delete(u);
+    }
+    if (u && window._caveSessionActedThreads) {
+      window._caveSessionActedThreads.forEach(function (val, k) {
+        if (val && val.uid === u) window._caveSessionActedThreads.delete(k);
+      });
+    }
+  }
+
+  function _isEmailTombstoned(em) {
+    if (!em) return false;
+    var u = String(em.uid || '').trim();
+    if (u && window._caveSessionActedUids && window._caveSessionActedUids.has(u)) return true;
+    if (window._caveSessionActedThreads && window._caveSessionActedThreads.size > 0) {
+      var nSubj = _normThreadSubjClient(em.subject || '');
+      var nAddr = _extractEmailAddrClient((em.sender_email || '') + ' ' + (em.from || ''));
+      if (nSubj && nAddr && window._caveSessionActedThreads.has(nSubj + '||' + nAddr)) return true;
+    }
+    return false;
+  }
+
+  function _computeClientScribeQueueCounts(countsOverride) {
+    var q = (_srState && Array.isArray(_srState.queue)) ? _srState.queue : [];
+    var localPending = 0;
+    var localReady = 0;
+    var localError = 0;
+    for (var i = 0; i < q.length; i++) {
+      var st = String((q[i] && q[i].status) || '').toLowerCase();
+      if (st === 'queued' || st === 'drafting') localPending++;
+      else if (st === 'error') localError++;
+      else localReady++;
+    }
+    if (countsOverride && typeof countsOverride === 'object') {
+      var srvPending = Number(countsOverride.pending || 0);
+      var srvReady = Number(countsOverride.ready || 0);
+      var srvError = Number(countsOverride.error || 0);
+      return {
+        pending: Math.max(localPending, srvPending),
+        ready: Math.max(localReady, srvReady),
+        error: Math.max(localError, srvError),
+        total: Math.max(q.length, Number(countsOverride.total || 0))
+      };
+    }
+    return { pending: localPending, ready: localReady, error: localError, total: q.length };
+  }
+
+  function _updateScribeQueuePill(countsOverride) {
+    var pill = document.getElementById('caveScribeQueuePill');
+    var c = _computeClientScribeQueueCounts(countsOverride);
+    if (pill) {
+      pill.setAttribute('data-scribe-queue-pending', String(c.pending));
+      pill.setAttribute('data-scribe-queue-ready', String(c.ready));
+      if (c.pending > 0) {
+        pill.setAttribute('data-scribe-queue-state', 'active');
+        pill.style.borderColor = 'rgba(245,158,11,0.65)';
+        pill.style.background = 'rgba(245,158,11,0.18)';
+        pill.style.color = '#fde68a';
+        pill.innerHTML = '&#9203; Scribe Queue &middot; ' + c.pending + ' drafting' + (c.ready > 0 ? (' (' + c.ready + ' ready)') : '');
+      } else if (c.ready > 0) {
+        pill.setAttribute('data-scribe-queue-state', 'ready');
+        pill.style.borderColor = 'rgba(16,185,129,0.55)';
+        pill.style.background = 'rgba(16,185,129,0.16)';
+        pill.style.color = '#a7f3d0';
+        pill.innerHTML = '&#9203; Scribe Queue &middot; ' + c.ready + ' ready';
+      } else {
+        pill.setAttribute('data-scribe-queue-state', 'idle');
+        pill.style.borderColor = 'rgba(56,189,248,0.45)';
+        pill.style.background = 'rgba(56,189,248,0.12)';
+        pill.style.color = '#bae6fd';
+        pill.innerHTML = '&#9203; Scribe Queue &middot; 0';
+      }
+    }
+    if (c.pending > 0) {
+      _ensureScribeQueueWatcher();
+    }
+    return c;
+  }
+  window._updateScribeQueuePill = _updateScribeQueuePill;
+
+  function _ensureScribeQueueWatcher() {
+    if (_scribeQueueWatchTimer) return;
+    _scribeQueueWatchTimer = setInterval(function () {
+      if (document.hidden) return;
+      fetch('/api/steward/comms', {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({ action: 'speed_racer_act', sr_action: 'list' })
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d && d.speed_racer) {
+            if (typeof _syncSpeedRacerFromServer === 'function') {
+              _syncSpeedRacerFromServer(d.speed_racer, false);
+            } else {
+              _srState = _mergeSrStateKeepLocal(d.speed_racer, true);
+              _updateSrBadges();
+            }
+            var cNow = _updateScribeQueuePill(d.scribe_queue_counts);
+            if (cNow.pending <= 0 && _scribeQueueWatchTimer) {
+              clearInterval(_scribeQueueWatchTimer);
+              _scribeQueueWatchTimer = 0;
+            }
+          }
+        })
+        .catch(function () {});
+    }, 600);
+  }
 
   function _mergePreloadedEmailBodies(prevData, nextData) {
     if (!prevData || !nextData) return;
@@ -4820,14 +5645,14 @@
     if (Array.isArray(d.important_emails)) {
       d.important_emails = d.important_emails.filter(function (em) {
         if (!em || em.is_read === true || em.acted_upon === true) return false;
-        if (window._caveSessionActedUids && window._caveSessionActedUids.has(String(em.uid || ''))) return false;
+        if (_isEmailTombstoned(em)) return false;
         return true;
       });
     }
     if (Array.isArray(d.other_emails)) {
       d.other_emails = d.other_emails.filter(function (em) {
         if (!em || em.is_read === true || em.acted_upon === true) return false;
-        if (window._caveSessionActedUids && window._caveSessionActedUids.has(String(em.uid || ''))) return false;
+        if (_isEmailTombstoned(em)) return false;
         return true;
       });
     }
@@ -4944,81 +5769,28 @@
     if (d.speed_racer && typeof _syncSpeedRacerFromServer === 'function') {
       _syncSpeedRacerFromServer(d.speed_racer);
     }
-    setTimeout(_syncCaveMailOvalScrollbar, 35);
-    var accBar = document.getElementById('caveConnectedAccountsBar');
-    var syncBtnToolbar = document.getElementById('btnCaveCommsSync');
-    if (syncBtnToolbar && syncBtnToolbar.parentElement && !document.getElementById('btnCaveToolbarChangePw')) {
-      syncBtnToolbar.insertAdjacentHTML(
-        'beforebegin',
-        '<button type="button" class="mini comms-sync-btn" id="btnCaveToolbarChangePw" data-open-comms-connect="1" style="border-color:#fbbf24;color:#fde68a;font-weight:700" title="Open box to change password or connect an account">\u270f\ufe0f Change Password / Account</button>'
-      );
+    if (d.scribe_queue_counts) {
+      _updateScribeQueuePill(d.scribe_queue_counts);
     }
-    if (accBar && Array.isArray(d.accounts)) {
-      var allConnected = true;
-      var pillsHtml = [];
-      d.accounts.forEach(function (a) {
-        if (!a || !a.id) return;
-        var aid = _escH(a.id);
-        var albl = _escH(a.label || a.family || 'Account');
-        var aem = _escH(a.email || 'Calendar ICS');
-        var astat = String(a.status || 'configured').toLowerCase();
-        var famL = String(a.family || 'gmail').toLowerCase();
-        var noteTip = _escH(String(a.last_imap_note || a.last_ics_note || '').slice(0, 180));
-        var editBtnHtml =
-          '<button type="button" class="mini" data-comms-edit-account="' + aid + '" data-comms-edit-email="' + aem + '" data-comms-edit-label="' + albl + '" data-comms-edit-family="' + _escH(famL) + '" ' +
-          'title="Open box to change/update password for ' + aem + '" ' +
-          'style="border-color:#94a3b8;color:#e2e8f0;background:rgba(148,163,184,0.14);padding:1px 7px;font-size:11px;font-weight:650">' +
-          '\u270f\ufe0f Change Password</button> ';
-        if (astat === 'paused_safety' || astat === 'auth_error') {
-          allConnected = false;
-          var fixBtn = '';
-          if (famL === 'outlook') {
-            fixBtn =
-              '<button type="button" class="mini" data-comms-ms-device-auth="' + aid + '" data-comms-ms-email="' + aem + '" data-comms-ms-label="' + albl + '" ' +
-              'title="Sign in safely with your Microsoft 365 password + 2FA in browser" ' +
-              'style="border-color:#fbbf24;color:#fde68a;background:rgba(245,158,11,0.18);padding:1px 8px;font-size:11px;font-weight:700">' +
-              '\ud83d\udd11 Sign In with Microsoft 365 (2FA)</button> ';
-          } else {
-            fixBtn =
-              '<button type="button" class="mini" data-comms-gmail-2fa="' + aid + '" data-comms-edit-account="' + aid + '" data-comms-edit-email="' + aem + '" data-comms-edit-label="' + albl + '" data-comms-edit-family="' + _escH(famL) + '" ' +
-              'title="Trigger Google 2FA prompt on your phone" ' +
-              'style="border-color:#38bdf8;color:#7dd3fc;background:rgba(56,189,248,0.15);padding:1px 7px;font-size:11px;font-weight:700">' +
-              '\ud83d\udd11 Authenticate 2FA</button> ';
-          }
-          pillsHtml.push(
-            '<span class="comms-pill amber" title="' + noteTip + '" style="display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(245,158,11,0.5);background:rgba(245,158,11,0.1);color:#fde68a">' +
-            '\u26a0 ' + albl + ' (' + aem + ') \u00b7 <span style="font-size:10.5px;opacity:0.9">Needs Sign-In / 2FA</span> ' +
-            fixBtn + editBtnHtml +
-            '<button type="button" class="mini" data-comms-remove-id="' + aid + '" title="Remove this account" style="padding:0 5px;font-size:11px;line-height:1.2">&times;</button>' +
-            '</span>'
-          );
-        } else {
-          pillsHtml.push(
-            '<span class="comms-pill emerald" title="' + noteTip + '" style="display:inline-flex;align-items:center;gap:6px">' +
-            '\u2713 ' + albl + ' (' + aem + ') ' +
-            editBtnHtml +
-            '<button type="button" class="mini" data-comms-remove-id="' + aid + '" title="Disconnect this account" style="padding:0 5px;font-size:11px;line-height:1.2">&times;</button>' +
-            '</span>'
-          );
-        }
-      });
-      if (pillsHtml.length) {
-        accBar.innerHTML = pillsHtml.join('');
-      }
-      if (allConnected) {
-        var devBox = document.getElementById('caveCommsDeviceFlowBox');
-        if (devBox) devBox.hidden = true;
-      }
+    setTimeout(_syncCaveMailOvalScrollbar, 35);
+    if (window.CaveTidyControls && typeof window.CaveTidyControls.renderCommsServicesBar === 'function') {
+      window.CaveTidyControls.renderCommsServicesBar(d);
     }
   }
   window._hydrateMailCardsFromCommsData = _hydrateMailCardsFromCommsData;
 
   function _ensureCaveCommsDataLoaded(force) {
     if (_caveCommsData && !force) return Promise.resolve(_caveCommsData);
+    var seqAtStart = window._triageMutationSeq || 0;
     return fetch('/api/steward/comms?slim=1', { headers: headers(), cache: 'no-store' })
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (d && d.ok) {
+          if (d.scribe_queue_counts) _updateScribeQueuePill(d.scribe_queue_counts);
+          if ((window._triageMutationSeq || 0) !== seqAtStart) {
+            // A user triage or Send-to-Scribe happened while this GET was in flight — never overwrite or cycle the pane!
+            return _caveCommsData || d;
+          }
           _mergePreloadedEmailBodies(_caveCommsData, d);
           _caveCommsData = d;
           _hydrateMailCardsFromCommsData(d);
@@ -5107,11 +5879,11 @@
     var matchedUids = Object.keys(matchedSet);
     var primaryUid = u || matchedUids[0] || '';
     if (!primaryUid && !meta.forceAdvance) return;
-    if (window._caveSessionActedUids) {
-      matchedUids.forEach(function (mu) {
-        if (mu) window._caveSessionActedUids.set(mu, Date.now());
-      });
-    }
+    ++_emailDlgReqSeq;
+    matchedUids.forEach(function (mu) {
+      if (mu) _recordTriageTombstone(mu, meta);
+    });
+    if (primaryUid) _recordTriageTombstone(primaryUid, meta);
     window._caveEmailActionInFlight = (window._caveEmailActionInFlight || 0) + 1;
     setTimeout(function () {
       window._caveEmailActionInFlight = Math.max(0, (window._caveEmailActionInFlight || 1) - 1);
@@ -5353,6 +6125,7 @@
       if (toInM) toInM.value = recips.to || '';
       if (ccInM) ccInM.value = recips.cc || '';
       if (subInM) subInM.value = recips.subject || '';
+      _syncAllRecipDropdownBadges();
       if (rMode === 'forward') {
         if (bodyInM && bodyInM.value.indexOf('Forwarded message') < 0) {
           bodyInM.value = (bodyInM.value ? (bodyInM.value + recips.bodyPrefix) : recips.bodyPrefix.replace(/^\n+/, ''));
@@ -5652,6 +6425,24 @@
       _setEmailDialogueOpen(false, 'Closed Email dialogue.');
       return;
     }
+    var dlgClearDirBtn = e.target.closest && e.target.closest('#btnCaveDlgClearDirectionsDraft');
+    if (dlgClearDirBtn) {
+      e.preventDefault(); e.stopPropagation();
+      _bumpEmailDirectionsEpoch();
+      var clrE = _resolveRightPaneEmailCtx() || _activeEmailDialogue || {};
+      var clrUid = clrE.uid || clrE.id || '';
+      var clrInput = document.getElementById('caveDlgStewardDirectionsInput');
+      _emailDirComposerState.clearingNow = true;
+      if (clrInput) {
+        clrInput.value = '';
+        _autoGrowTextarea(clrInput);
+        clrInput.focus();
+      }
+      _emailDirComposerState.clearingNow = false;
+      _clearLocalDraft(_stewardDirDraftKey(clrUid));
+      _deleteEmailServerDraft(clrUid || 'default');
+      return;
+    }
     var dlgStewardActionBtn = e.target.closest && e.target.closest('#btnCaveDlgSendStewardAction, #btnCaveDlgMullSteward');
     if (dlgStewardActionBtn) {
       e.preventDefault(); e.stopPropagation();
@@ -5667,6 +6458,7 @@
           return;
         }
       }
+      _bumpEmailDirectionsEpoch();
       var curActE = _resolveRightPaneEmailCtx() || _activeEmailDialogue;
       if (!curActE) {
         receipt('Select an email first so the Cave of Wonders Steward can attach its context.', true);
@@ -5674,12 +6466,14 @@
       }
       var actUid = curActE.uid || curActE.id || '';
       var fullBody = curActE.body || curActE.incoming_body || curActE.incoming_snippet || curActE.snippet || '';
+      var actClientMsgId = 'emsa-' + Date.now() + '-' + (++_scribeClientReqSeq);
       dlgStewardActionBtn.disabled = true;
       fetch('/api/steward/comms', {
         method: 'POST',
         headers: headers(),
         body: JSON.stringify({
           action: 'email_steward_action',
+          client_msg_id: actClientMsgId,
           uid: actUid,
           account_id: curActE.account_id || '',
           account_badge: curActE.account_badge || curActE.account || 'Institutional 365',
@@ -5690,6 +6484,7 @@
           body: fullBody,
           snippet: fullBody.slice(0, 4000),
           comment: commentTxt,
+          async_draft: true,
           also_queue_speed_racer: false
         })
       })
@@ -5699,7 +6494,11 @@
           var d = res.data || {};
           if (res.status === 503) {
             _clearLocalDraft(_stewardDirDraftKey(actUid));
-            if (actInput) { actInput.value = ''; _autoGrowTextarea(actInput); }
+            _deleteEmailServerDraft(actUid || 'default');
+            if (actInput && (!_activeEmailDialogue || String(_activeEmailDialogue.uid || '') === String(actUid))) {
+              actInput.value = '';
+              _autoGrowTextarea(actInput);
+            }
             if (d.working_list && typeof _renderWorkingListSpine === 'function') {
               _wlState = d.working_list;
               _renderWorkingListSpine();
@@ -5708,26 +6507,25 @@
             return;
           }
           if (res.status < 400 && d && d.ok) {
+            _clearLocalDraft(_stewardDirDraftKey(actUid));
+            _deleteEmailServerDraft(actUid || 'default');
+            if (actInput && (!_activeEmailDialogue || String(_activeEmailDialogue.uid || '') === String(actUid))) {
+              actInput.value = '';
+              _autoGrowTextarea(actInput);
+            }
             if (actUid) {
               _optimisticallyRemoveEmailFromLists(actUid, '\ud83e\udded Steward', commentTxt);
             }
-            _clearLocalDraft(_stewardDirDraftKey(actUid));
-            if (actInput) { actInput.value = ''; _autoGrowTextarea(actInput); }
             if (d.working_list && typeof _renderWorkingListSpine === 'function') {
               _wlState = d.working_list;
               _renderWorkingListSpine();
             }
-            if (!_caveCommsData) _caveCommsData = { ok: true };
-            if (Array.isArray(d.important_emails)) _caveCommsData.important_emails = _mergeStableEmailOrder(_caveCommsData.important_emails, d.important_emails);
-            if (Array.isArray(d.other_emails)) _caveCommsData.other_emails = d.other_emails;
-            if (Array.isArray(d.acted_upon_emails)) _caveCommsData.acted_upon_emails = d.acted_upon_emails;
-            if (Array.isArray(d.all_emails)) _caveCommsData.all_emails = d.all_emails;
             if (d.speed_racer) {
-              _caveCommsData.speed_racer = d.speed_racer;
-              _syncSpeedRacerFromServer(d.speed_racer);
+              if (_caveCommsData) _caveCommsData.speed_racer = d.speed_racer;
+              _srState = _mergeSrStateKeepLocal(d.speed_racer, true);
+              _updateSrBadges();
+              _updateScribeQueuePill(d.scribe_queue_counts);
             }
-            _caveCommsData._interleavedOnce = true;
-            _hydrateMailCardsFromCommsData(_caveCommsData);
             if (dlg && typeof dlg.resume === 'function') {
               try { dlg.resume(); } catch (err) {}
             }
@@ -5761,7 +6559,8 @@
       var replyBodyEl = document.getElementById('caveReplyBody');
       var curDraftBody = replyBodyEl ? replyBodyEl.value.trim() : '';
       var sdAtts = (curE.steward_draft && Array.isArray(curE.steward_draft.attachments)) ? curE.steward_draft.attachments : [];
-      var srUid = curE.uid || '';
+      var srUid = String(curE.uid || '');
+      var origSubjForMatch = String(curE.subject || '');
       var replyToInputEl = document.getElementById('caveReplyTo');
       var replyCcInputEl = document.getElementById('caveReplyCc');
       var activeModeBtnEl = document.querySelector('[data-dlg-reply-mode].active');
@@ -5776,14 +6575,60 @@
       var srBody = curE.body || curE.snippet || '';
       var srAcctId = curE.account_id || '';
       var srAcctBadge = curE.account_badge || 'Institutional 365';
-      var origSrBtnHtml = dlgSrBtn.innerHTML;
-      dlgSrBtn.disabled = true;
-      dlgSrBtn.innerHTML = '&#9203; Drafting&hellip;';
+      var clientReqId = 'srq-' + Date.now() + '-' + (++_scribeClientReqSeq);
+      var optDraftId = 'sr-opt-' + clientReqId;
+
+      // 0ms (<50 ms) synchronous optimistic enqueue: clear ONLY srUid's draft, update #caveScribeQueuePill,
+      // and advance #caveEmailDialoguePane immediately without disabling #btnCaveDlgSendDirectionsToSr or scrolling!
+      _bumpEmailDirectionsEpoch();
+      ++window._triageMutationSeq;
+      clearTimeout(_emailDirComposerState.timer);
+      _emailDirComposerState.dirtyVal = null;
+      _clearLocalDraft(_stewardDirDraftKey(srUid));
+      _emailDirComposerState.clearingNow = true;
+      if (dirInput) {
+        dirInput.value = '';
+        _autoGrowTextarea(dirInput);
+      }
+      _emailDirComposerState.clearingNow = false;
+      if (!_srState || typeof _srState !== 'object') _srState = { queue: [], archive: [], auto_open_ts: 0 };
+      if (!Array.isArray(_srState.queue)) _srState.queue = [];
+      _srState.queue.push({
+        id: optDraftId,
+        client_req_id: clientReqId,
+        uid: srUid || optDraftId,
+        account_id: srAcctId,
+        account: srAcctBadge,
+        account_badge: srAcctBadge,
+        reply_mode: activeReplyMode,
+        to: srTo,
+        cc: srCc,
+        bcc: srBcc,
+        subject: srSubj,
+        steward_directions: userDirs,
+        status: 'queued',
+        draft_body: userDirs ? '' : curDraftBody,
+        updated_at_ts: Date.now() / 1000
+      });
+      _updateSrBadges();
+      _updateScribeQueuePill();
+      _optimisticallyRemoveEmailFromLists(
+        srUid,
+        '\u23f3 Queued for Scribe',
+        userDirs ? ('Queued for Scribe: ' + userDirs.slice(0, 60)) : 'Queued for Scribe FIFO worker',
+        { subject: origSubjForMatch || srSubj, recipient: srTo, forceAdvance: true }
+      );
+      receipt('\u23f3 Queued "' + (origSubjForMatch || srSubj) + '" for Scribe \u2014 advancing immediately!');
+
       fetch('/api/steward/comms', {
         method: 'POST',
         headers: headers(),
         body: JSON.stringify({
           action: 'speed_racer_queue',
+          async_draft: true,
+          open_speed_racer: false,
+          client_req_id: clientReqId,
+          client_msg_id: clientReqId,
           uid: srUid,
           account_id: srAcctId,
           account: srAcctBadge,
@@ -5801,37 +6646,42 @@
       })
         .then(function (r) { return r.json().then(function (d) { return { status: r.status, data: d }; }); })
         .then(function (res) {
-          dlgSrBtn.disabled = false;
-          dlgSrBtn.innerHTML = origSrBtnHtml;
           var d = res.data || {};
           if (res.status < 400 && d && d.ok) {
-            _optimisticallyRemoveEmailFromLists(srUid, '\ud83c\udfce\ufe0f Speed Racer', 'Queued in Speed Racer for review');
-            _clearLocalDraft(_stewardDirDraftKey(srUid));
-            if (dirInput) { dirInput.value = ''; _autoGrowTextarea(dirInput); }
-            if (!_caveCommsData) _caveCommsData = { ok: true };
-            if (Array.isArray(d.important_emails)) _caveCommsData.important_emails = _mergeStableEmailOrder(_caveCommsData.important_emails, d.important_emails);
-            if (Array.isArray(d.other_emails)) _caveCommsData.other_emails = d.other_emails;
-            if (Array.isArray(d.acted_upon_emails)) _caveCommsData.acted_upon_emails = d.acted_upon_emails;
-            if (d.speed_racer) _caveCommsData.speed_racer = d.speed_racer;
-            _caveCommsData._interleavedOnce = true;
-            _hydrateMailCardsFromCommsData(_caveCommsData);
-            if (d.speed_racer) {
-              _srState = _mergeSrStateKeepLocal(d.speed_racer, true);
-              _srIdx = 0;
-              window._srUserCollapsed = false;
-              _setSpeedRacerExpanded(true);
-              _renderCaveSpeedRacerTile(true, true);
-              var srTile = document.getElementById('caveSpeedRacerTile');
-              if (srTile && srTile.scrollIntoView) srTile.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            // Only clear dirInput if the reading pane is somehow still on srUid (never touch the next email's draft!)
+            if (dirInput && _activeEmailDialogue && String(_activeEmailDialogue.uid || '') === srUid) {
+              dirInput.value = '';
+              _autoGrowTextarea(dirInput);
             }
-            receipt('\ud83c\udfce\ufe0f Drafted in Speed Racer' + (userDirs ? ' with your Scribe directions' : '') + ' & moved email out of Prime to Acted Upon!');
+            if (d.speed_racer) {
+              if (_caveCommsData) _caveCommsData.speed_racer = d.speed_racer;
+              var mergedSrv = _mergeSrStateKeepLocal(d.speed_racer, true);
+              // Keep any other in-flight optimistic items whose POSTs haven't resolved yet
+              var stillInFlightOpt = (_srState && Array.isArray(_srState.queue))
+                ? _srState.queue.filter(function (it) {
+                    return it && String(it.id || '').indexOf('sr-opt-') === 0 && String(it.id) !== optDraftId;
+                  })
+                : [];
+              mergedSrv.queue = (mergedSrv.queue || []).concat(stillInFlightOpt);
+              _srState = mergedSrv;
+            }
+            _updateSrBadges();
+            _updateScribeQueuePill(d.scribe_queue_counts);
           } else {
+            if (_srState && Array.isArray(_srState.queue)) {
+              _srState.queue = _srState.queue.filter(function (it) { return it && String(it.id || '') !== optDraftId; });
+            }
+            _updateSrBadges();
+            _updateScribeQueuePill(d && d.scribe_queue_counts);
             receipt((d && (d.message || d.error)) || 'Could not queue draft in Speed Racer.', true);
           }
         })
         .catch(function () {
-          dlgSrBtn.disabled = false;
-          dlgSrBtn.innerHTML = origSrBtnHtml;
+          if (_srState && Array.isArray(_srState.queue)) {
+            _srState.queue = _srState.queue.filter(function (it) { return it && String(it.id || '') !== optDraftId; });
+          }
+          _updateSrBadges();
+          _updateScribeQueuePill();
           receipt('Speed Racer queue request could not reach Anchor.', true);
         });
       return;
@@ -5869,23 +6719,33 @@
       var curSubj = attrSubj || curTriageE.subject || '';
       var curBadge = curTriageE.account_badge || '';
       var dlgRollback = (fb === 'spam') ? _snapshotSpamRollbackState(curUid) : null;
-      dlgTriageBtn.disabled = true;
+      var triageMutSeq = ++window._triageMutationSeq;
+      var triageClientReqId = 'tri-' + Date.now() + '-' + triageMutSeq;
+      // NEVER disable shared reading-pane controls (#btnCaveDlgSeen, #btnCaveDlgDowngrade, etc.) across emails!
       if (fb === 'spam') {
         window._lastCaveSpamCtx = { uid: curUid, account_id: curAcctId, sender_email: curSender, from: curSender, subject: curSubj, account_badge: curBadge, from_sr: false };
         _syncCaveSpamUndoUi(window._lastCaveSpamCtx, false);
-        _optimisticallyRemoveEmailFromLists(curUid, '\ud83d\udeab Spam', 'Marked Spam');
+        _optimisticallyRemoveEmailFromLists(curUid, '\ud83d\udeab Spam', 'Marked Spam', { subject: curSubj, recipient: curSender, forceAdvance: true });
       } else if (fb === 'unspam') {
-        if (window._caveSessionActedUids) window._caveSessionActedUids.delete(String(curUid || ''));
+        _clearTriageTombstone(curUid);
       } else if (fb === 'upgrade') {
-        if (window._caveSessionActedUids) window._caveSessionActedUids.delete(String(curUid || ''));
+        _clearTriageTombstone(curUid);
       } else {
-        _optimisticallyRemoveEmailFromLists(curUid, fb === 'already_replied' ? '\u2713 Answered' : (fb === 'done' ? '\u2713 Done' : '\u2713 Acted'), 'Marked ' + fb);
+        _optimisticallyRemoveEmailFromLists(
+          curUid,
+          fb === 'already_replied' ? '\u2713 Answered' : (fb === 'done' ? '\u2713 Done' : (fb === 'downgrade' ? '\u2b07 Irrational' : '\ud83d\udc41 Looked At')),
+          'Marked ' + fb,
+          { subject: curSubj, recipient: curSender, forceAdvance: true }
+        );
       }
+      var isRestoreOrSpam = (fb === 'unspam' || fb === 'upgrade' || fb === 'spam');
       fetch('/api/steward/comms', {
         method: 'POST',
         headers: headers(),
         body: JSON.stringify({
           action: 'email_triage_feedback',
+          fast_triage: !isRestoreOrSpam,
+          client_req_id: triageClientReqId,
           uid: curUid,
           account_id: curAcctId,
           sender: curSender,
@@ -5898,7 +6758,6 @@
       })
         .then(function (r) { return r.json().then(function (d) { return { okHttp: r.status < 400, data: d }; }); })
         .then(function (res) {
-          dlgTriageBtn.disabled = false;
           var d = res.data;
           if (res.okHttp && d && d.ok) {
             if (fb === 'unspam') {
@@ -5909,21 +6768,25 @@
               window._lastCaveSpamCtx = null;
               _syncCaveSpamUndoUi(null, false);
             }
-            if (!_caveCommsData) _caveCommsData = { ok: true };
-            if (Array.isArray(d.important_emails)) _caveCommsData.important_emails = _mergeStableEmailOrder(_caveCommsData.important_emails, d.important_emails);
-            if (Array.isArray(d.other_emails)) _caveCommsData.other_emails = d.other_emails;
-            if (Array.isArray(d.acted_upon_emails)) _caveCommsData.acted_upon_emails = d.acted_upon_emails;
             if (d.speed_racer) {
-              _caveCommsData.speed_racer = d.speed_racer;
+              if (_caveCommsData) _caveCommsData.speed_racer = d.speed_racer;
               _srState = _mergeSrStateKeepLocal(d.speed_racer, true);
-              _renderCaveSpeedRacerTile(true, true);
+              _updateSrBadges();
+              _updateScribeQueuePill(d.scribe_queue_counts);
             }
             if (d.working_list) {
               _wlState = d.working_list;
               _renderWorkingListSpine();
             }
-            _caveCommsData._interleavedOnce = true;
-            _hydrateMailCardsFromCommsData(_caveCommsData);
+            // Only re-hydrate lists on restore/spam when no newer triage happened — NEVER cycle #caveEmailDialoguePane on Seen/Downgrade!
+            if (isRestoreOrSpam && triageMutSeq === window._triageMutationSeq) {
+              if (!_caveCommsData) _caveCommsData = { ok: true };
+              if (Array.isArray(d.important_emails)) _caveCommsData.important_emails = _mergeStableEmailOrder(_caveCommsData.important_emails, d.important_emails);
+              if (Array.isArray(d.other_emails)) _caveCommsData.other_emails = d.other_emails;
+              if (Array.isArray(d.acted_upon_emails)) _caveCommsData.acted_upon_emails = d.acted_upon_emails;
+              _caveCommsData._interleavedOnce = true;
+              _hydrateMailCardsFromCommsData(_caveCommsData);
+            }
             receipt(d.note || (fb === 'unspam' ? 'Reversed Spam and restored email to Active Inbox.' : 'Email moved out of Prime Inbox to Acted Upon.'));
           } else {
             if (fb === 'spam') _restoreSpamRollbackState(dlgRollback, '');
@@ -5931,7 +6794,6 @@
           }
         })
         .catch(function () {
-          dlgTriageBtn.disabled = false;
           if (fb === 'spam') _restoreSpamRollbackState(dlgRollback, '');
           receipt('Email triage request did not reach Anchor.', true);
         });
@@ -5952,7 +6814,9 @@
       if (mailFolderBtn.closest('#calHead') || curLayoutF === 'cal') {
         applyCommsLayout(mailFolderBtn.closest('#calHead') ? 'mail' : 'split');
       }
-      if (typeof _setSpeedRacerExpanded === 'function') {
+      if (typeof _collapseSpeedRacerByUser === 'function') {
+        _collapseSpeedRacerByUser();
+      } else if (typeof _setSpeedRacerExpanded === 'function') {
         window._srUserCollapsed = true;
         _setSpeedRacerExpanded(false);
       }
@@ -6054,29 +6918,33 @@
         || '';
       var tSender = triageBtn.getAttribute('data-mail-sender') || (fallbackSpamCtx && fallbackSpamCtx.sender_email) || '';
       var wasOpened = mCard ? (mCard.getAttribute('data-mail-opened') === '1') : false;
-      triageBtn.disabled = true;
       var tSubj = triageBtn.getAttribute('data-mail-subject') || (fallbackSpamCtx && fallbackSpamCtx.subject) || '';
       var cardRollback = (tAct === 'spam') ? _snapshotSpamRollbackState(tUid) : null;
+      var rowMutSeq = ++window._triageMutationSeq;
+      var rowReqId = 'tri-row-' + Date.now() + '-' + rowMutSeq;
+      var isRowRestoreOrSpam = (tAct === 'unspam' || tAct === 'unact' || tAct === 'upgrade' || tAct === 'spam');
       if (tAct === 'spam') {
         window._lastCaveSpamCtx = { uid: tUid, account_id: tAcctId, sender_email: tSender, from: tSender, subject: tSubj, from_sr: false };
         _syncCaveSpamUndoUi(window._lastCaveSpamCtx, false);
         if (window._optimisticallyRemoveEmailFromLists) {
-          window._optimisticallyRemoveEmailFromLists(tUid, '\ud83d\udeab Spam', 'Marked Spam');
+          window._optimisticallyRemoveEmailFromLists(tUid, '\ud83d\udeab Spam', 'Marked Spam', { subject: tSubj, recipient: tSender });
         }
       } else if (tAct === 'unspam') {
-        if (window._caveSessionActedUids) window._caveSessionActedUids.delete(String(tUid || ''));
+        _clearTriageTombstone(tUid);
       } else if (tAct === 'unact' || tAct === 'upgrade') {
-        if (window._caveSessionActedUids) window._caveSessionActedUids.delete(String(tUid || ''));
+        _clearTriageTombstone(tUid);
         _captureNextEmailInCurrentList(tUid);
         if (_activeEmailDialogue && _activeEmailDialogue.uid === tUid) _setActiveEmailDialogue(null);
       } else if (window._optimisticallyRemoveEmailFromLists) {
-        window._optimisticallyRemoveEmailFromLists(tUid, '\u2713 Acted', 'Marked ' + tAct);
+        window._optimisticallyRemoveEmailFromLists(tUid, '\u2713 Acted', 'Marked ' + tAct, { subject: tSubj, recipient: tSender });
       }
       fetch('/api/steward/comms', {
         method: 'POST',
         headers: headers(),
         body: JSON.stringify({
           action: 'email_triage_feedback',
+          fast_triage: !isRowRestoreOrSpam,
+          client_req_id: rowReqId,
           uid: tUid,
           account_id: tAcctId,
           sender: tSender,
@@ -6088,7 +6956,6 @@
       })
         .then(function (r) { return r.json().then(function (d) { return { okHttp: r.status < 400, data: d }; }); })
         .then(function (res) {
-          triageBtn.disabled = false;
           var d = res.data;
           if (res.okHttp && d && d.ok) {
             if (tAct === 'unspam') {
@@ -6099,21 +6966,24 @@
               window._lastCaveSpamCtx = null;
               _syncCaveSpamUndoUi(null, false);
             }
-            if (!_caveCommsData) _caveCommsData = { ok: true };
-            if (Array.isArray(d.important_emails)) _caveCommsData.important_emails = _mergeStableEmailOrder(_caveCommsData.important_emails, d.important_emails);
-            if (Array.isArray(d.other_emails)) _caveCommsData.other_emails = d.other_emails;
-            if (Array.isArray(d.acted_upon_emails)) _caveCommsData.acted_upon_emails = d.acted_upon_emails;
             if (d.speed_racer) {
-              _caveCommsData.speed_racer = d.speed_racer;
+              if (_caveCommsData) _caveCommsData.speed_racer = d.speed_racer;
               _srState = _mergeSrStateKeepLocal(d.speed_racer, true);
-              _renderCaveSpeedRacerTile(true, true);
+              _updateSrBadges();
+              _updateScribeQueuePill(d.scribe_queue_counts);
             }
             if (d.working_list) {
               _wlState = d.working_list;
               _renderWorkingListSpine();
             }
-            _caveCommsData._interleavedOnce = true;
-            _hydrateMailCardsFromCommsData(_caveCommsData);
+            if (isRowRestoreOrSpam && rowMutSeq === window._triageMutationSeq) {
+              if (!_caveCommsData) _caveCommsData = { ok: true };
+              if (Array.isArray(d.important_emails)) _caveCommsData.important_emails = _mergeStableEmailOrder(_caveCommsData.important_emails, d.important_emails);
+              if (Array.isArray(d.other_emails)) _caveCommsData.other_emails = d.other_emails;
+              if (Array.isArray(d.acted_upon_emails)) _caveCommsData.acted_upon_emails = d.acted_upon_emails;
+              _caveCommsData._interleavedOnce = true;
+              _hydrateMailCardsFromCommsData(_caveCommsData);
+            }
             receipt(d.note || 'Updated Steward email triage preference.');
           } else {
             if (tAct === 'spam') _restoreSpamRollbackState(cardRollback, '');
@@ -6121,7 +6991,6 @@
           }
         })
         .catch(function () {
-          triageBtn.disabled = false;
           if (tAct === 'spam') _restoreSpamRollbackState(cardRollback, '');
           receipt('Email triage request did not reach Anchor.', true);
         });
@@ -6159,184 +7028,262 @@
     }
   });
 
-  // Wave 21 (2026-11-02): Option 1 (Mockup 4) Chief-of-Staff Asymmetric Horizon Strip, Break-Between-Cockpits Filter,
-  // Q1 -> Q2 Deep-Work Unlock Meter, Parable-of-the-Oranges Skill Pre-Stage, and 1-Click Rotate
-  var _cosClearedCount = 0;
-  function _setCosBodyExpanded(open, focusCol) {
-    var body = document.getElementById('cosExpandableBody');
+  // Minimalist Chief of Staff (#shTriage):
+  //   - Header shows ONLY: [Chief of Staff (N)] check-toggle, [N Running] tile, and [Poincare Map].
+  //   - Parable of the Oranges prepares plans silently in the background.
+  //   - Checking Chief of Staff displays <= 3 ordered suggestions + a 4th "+N other suggestions" line.
+  //   - Acting, adding to The List, postponing, or deleting promotes item #4 into slot #3 immediately and teaches Steward.
+  var _cosIsOpen = false;
+  try {
+    var _savedCosOpen = window.localStorage && window.localStorage.getItem('anchor.cave.cosOpen');
+    if (_savedCosOpen === '1' || _savedCosOpen === 'true') {
+      _cosIsOpen = true;
+    }
+  } catch (_eCos) {}
+  var _cosExpandedSugId = '';
+  var _cosOverflowOpen = false;
+
+  function _syncCosExpandedUi() {
+    var panel = document.getElementById('cosSuggestionsPanel');
     var strip = document.getElementById('shTriage');
     var btn = document.getElementById('btnCosToggleExpand');
-    var targetCol = focusCol || 'today';
-    if (body) body.hidden = !open;
-    if (strip) {
-      strip.classList.toggle('is-collapsed', !open);
-      $$('#shTriage .chz-drawer').forEach(function (d) {
-        d.hidden = !(open && d.id === ('hzDrawer-' + targetCol));
-      });
-    }
-    if (btn) {
-      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-      var cntMatch = (btn.textContent || '').match(/\(\d+\)/);
-      var cntStr = cntMatch ? (' ' + cntMatch[0]) : '';
-      btn.innerHTML = (open ? '&#9652; Collapse Recommendations' : '&#9662; Recommendations') + cntStr;
-    }
-    $$('#cosCompactSummaryRow .cos-cs-pill').forEach(function (p) {
-      var isMatch = !!(open && p.getAttribute('data-cos-drill') === targetCol);
-      p.classList.toggle('active-drill', isMatch);
-      p.setAttribute('aria-expanded', isMatch ? 'true' : 'false');
-    });
-    if (open && focusCol) {
-      _expandCosColumn(focusCol);
+    var glyph = document.getElementById('cosCheckGlyph');
+    if (panel) panel.hidden = !_cosIsOpen;
+    if (strip) strip.classList.toggle('is-collapsed', !_cosIsOpen);
+    if (btn) btn.setAttribute('aria-expanded', _cosIsOpen ? 'true' : 'false');
+    if (glyph) glyph.innerHTML = _cosIsOpen ? '&#9745;' : '&#9744;';
+  }
+
+  function _setCosBodyExpanded(open) {
+    _cosIsOpen = typeof open === 'boolean' ? open : !_cosIsOpen;
+    try {
+      if (window.localStorage) {
+        window.localStorage.setItem('anchor.cave.cosOpen', _cosIsOpen ? '1' : '0');
+      }
+    } catch (_eCosSave) {}
+    _syncCosExpandedUi();
+    if (_cosIsOpen) {
+      _renderCosSuggestionsPanel(_wlState && _wlState.cos_suggestions);
     }
   }
 
-  function _expandCosColumn(colKey) {
-    var strip = document.getElementById('cosHorizonStrip');
-    if (!strip) return;
-    strip.classList.remove('expanded-week', 'expanded-month', 'expanded-quarter');
-    ['today', 'week', 'month', 'quarter'].forEach(function (k) {
-      var el = document.getElementById('cosCol-' + k);
-      if (el) el.classList.remove('hz-focused', 'is-wide');
-    });
-    if (colKey === 'week') {
-      strip.classList.add('expanded-week');
-      var t1 = document.getElementById('cosCol-today'); if (t1) t1.classList.add('is-wide');
-      var w1 = document.getElementById('cosCol-week'); if (w1) { w1.classList.add('is-wide', 'hz-focused'); }
-    } else if (colKey === 'month') {
-      strip.classList.add('expanded-month');
-      var t2 = document.getElementById('cosCol-today'); if (t2) t2.classList.add('is-wide');
-      var m1 = document.getElementById('cosCol-month'); if (m1) { m1.classList.add('is-wide', 'hz-focused'); }
-    } else if (colKey === 'quarter') {
-      strip.classList.add('expanded-quarter');
-      var t3 = document.getElementById('cosCol-today'); if (t3) t3.classList.add('is-wide');
-      var q1 = document.getElementById('cosCol-quarter'); if (q1) { q1.classList.add('is-wide', 'hz-focused'); }
-    } else {
-      var t0 = document.getElementById('cosCol-today'); if (t0) { t0.classList.add('is-wide', 'hz-focused'); }
-      var w0 = document.getElementById('cosCol-week'); if (w0) w0.classList.add('is-wide');
+  function _renderCosSuggestionRowClient(sug, rank) {
+    var rawId = String((sug && sug.id) || '');
+    var sid = _escH(rawId);
+    var sk = _escH((sug && sug.source_key) || '');
+    var title = _escH((sug && sug.title) || 'Suggested Effort');
+    var summary = _escH((sug && sug.summary) || '');
+    var detail = _escH((sug && sug.detail) || '');
+    var ckName = _escH((sug && sug.cockpit_name) || 'Cave of Wonders');
+    var ckHref = _escH((sug && sug.cockpit_href) || '/steward/v1');
+    var emailUid = _escH((sug && sug.email_uid) || '');
+    var cat = _escH((sug && sug.category) || 'Business');
+    var prio = _normPrioNum((sug && sug.priority) || 2);
+    var rankLbl = typeof rank === 'number' ? ('#' + rank) : '&#8226;';
+    var isDetailOpen = !!(_cosExpandedSugId && _cosExpandedSugId === rawId);
+    var prevInputEl = rawId ? document.getElementById('cosDirIn-' + rawId) : null;
+    var savedDirVal = prevInputEl ? prevInputEl.value : '';
+    var stepsArr = (sug && Array.isArray(sug.plan_steps)) ? sug.plan_steps : [];
+    var stepsHtml = stepsArr.map(function (st) {
+      var sTxt = String(st || '').trim();
+      return sTxt ? ('<li>' + _escH(sTxt) + '</li>') : '';
+    }).join('');
+    return (
+      '<div class="cos-min-row" data-cos-sug-id="' + sid + '" data-cos-source-key="' + sk + '"' + (emailUid ? (' data-cos-email-uid="' + emailUid + '"') : '') + '>' +
+        '<div class="cos-min-main" data-cos-toggle-detail="' + sid + '">' +
+          '<span class="cos-min-rank">' + rankLbl + '</span>' +
+          '<div class="cos-min-text">' +
+            '<span class="cos-min-title">' + title + '</span>' +
+            '<span class="cos-min-sub">' + summary + (ckName ? (' &middot; <em>' + ckName + '</em>') : '') + '</span>' +
+          '</div>' +
+          '<div class="cos-min-acts">' +
+            '<a class="cos-min-btn act" href="' + ckHref + '" target="_blank" rel="noopener" data-cos-act="act_now" data-cos-id="' + sid + '" title="Open &amp; act immediately">&#8599; Act</a>' +
+            '<button type="button" class="cos-min-btn add" data-cos-act="add_to_list" data-cos-id="' + sid + '" title="Add to The List">+ List</button>' +
+            '<button type="button" class="cos-min-btn later" data-cos-act="postpone" data-cos-id="' + sid + '" title="Postpone for later">Later</button>' +
+            '<button type="button" class="cos-min-btn del" data-cos-act="delete" data-cos-id="' + sid + '" title="Delete suggestion">&times;</button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="cos-min-detail" id="cosSugDetail-' + sid + '"' + (isDetailOpen ? '' : ' hidden') + '>' +
+          '<div class="cos-min-why">' + detail + '</div>' +
+          '<div class="cos-min-plan-lbl">Proposed Plan (' + cat + ' &middot; Priority #' + prio + '):</div>' +
+          '<ol class="cos-min-plan-list">' + stepsHtml + '</ol>' +
+          '<div class="cos-min-dir-row">' +
+            '<input type="text" class="cos-min-dir-in" id="cosDirIn-' + sid + '" value="' + _escH(savedDirVal) + '" placeholder="Give Steward modifying directions or refine plan...">' +
+            '<button type="button" class="cos-min-btn act" data-cos-act="send_to_steward" data-cos-id="' + sid + '">Send to Steward</button>' +
+            '<button type="button" class="cos-min-btn add" data-cos-act="add_to_list" data-cos-id="' + sid + '" data-cos-with-edits="1">+ List with Edits</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>'
+    );
+  }
+
+  function _renderCosSuggestionsPanel(bundleOverride) {
+    var bundle = (bundleOverride && typeof bundleOverride === 'object')
+      ? bundleOverride
+      : ((_wlState && _wlState.cos_suggestions && typeof _wlState.cos_suggestions === 'object') ? _wlState.cos_suggestions : null);
+    if (!bundle) return;
+    var topThree = Array.isArray(bundle.top_three) ? bundle.top_three.slice(0, 3) : [];
+    var overflow = Array.isArray(bundle.overflow) ? bundle.overflow : [];
+    var overflowCount = typeof bundle.overflow_count === 'number' ? bundle.overflow_count : overflow.length;
+    var totCount = typeof bundle.total_count === 'number' ? bundle.total_count : (topThree.length + overflowCount);
+
+    var totBadge = document.getElementById('cosTotalCountBadge');
+    if (totBadge) totBadge.textContent = String(totCount);
+
+    var aEl = document.activeElement;
+    if (aEl && aEl.classList && aEl.classList.contains('cos-min-dir-in')) {
+      return;
     }
+
+    var topStack = document.getElementById('cosTopThreeStack');
+    if (topStack) {
+      topStack.innerHTML = topThree.length
+        ? topThree.map(function (s, idx) { return _renderCosSuggestionRowClient(s, idx + 1); }).join('')
+        : '<div class="tw-empty" style="padding:8px 10px;font-size:12px">No pending suggestions right now &mdash; Chief of Staff is watching your AI Cockpits, Cave dialogue, and inbox in the background.</div>';
+    }
+
+    var ovWrap = document.getElementById('cosOverflowWrap');
+    var ovBtn = document.getElementById('btnCosOverflowToggle');
+    var ovList = document.getElementById('cosOverflowList');
+    if (ovWrap) {
+      ovWrap.hidden = overflowCount <= 0;
+    }
+    if (ovBtn) {
+      ovBtn.setAttribute('aria-expanded', (_cosOverflowOpen && overflowCount > 0) ? 'true' : 'false');
+      ovBtn.innerHTML = '+<span id="cosOverflowCount">' + overflowCount + '</span> other suggestion' + (overflowCount === 1 ? '' : 's') + ' ' + ((_cosOverflowOpen && overflowCount > 0) ? '&#9652;' : '&#9662;');
+    }
+    if (ovList) {
+      ovList.hidden = !(_cosOverflowOpen && overflowCount > 0);
+      ovList.innerHTML = overflow.map(function (s, idx) { return _renderCosSuggestionRowClient(s, idx + 4); }).join('');
+    }
+    _syncCosExpandedUi();
+  }
+
+  function _findCosSuggestionById(sid) {
+    var bundle = (_wlState && _wlState.cos_suggestions) || {};
+    var pool = [].concat(bundle.suggestions || [], bundle.top_three || [], bundle.overflow || []);
+    for (var i = 0; i < pool.length; i++) {
+      if (pool[i] && String(pool[i].id || '') === String(sid || '')) return pool[i];
+    }
+    return null;
   }
 
   document.addEventListener('click', function (e) {
-    var breakBtn = e.target.closest && e.target.closest('[data-cos-break]');
-    if (breakBtn) {
+    var cosOvBtn = e.target.closest && e.target.closest('[data-cos-toggle-overflow]');
+    if (cosOvBtn) {
       e.preventDefault();
-      var mode = breakBtn.getAttribute('data-cos-break') || 'all';
-      var bar = breakBtn.closest('.cos-break-selector');
-      if (bar) {
-        bar.querySelectorAll('.cos-break-btn').forEach(function (b) { b.classList.remove('active'); });
+      e.stopPropagation();
+      _cosOverflowOpen = !_cosOverflowOpen;
+      _renderCosSuggestionsPanel();
+      return;
+    }
+
+    var cosActBtn = e.target.closest && e.target.closest('[data-cos-act]');
+    if (cosActBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      var actKind = cosActBtn.getAttribute('data-cos-act') || '';
+      var sugId = cosActBtn.getAttribute('data-cos-id') || '';
+      var rowEl = cosActBtn.closest('.cos-min-row');
+      var srcKey = (rowEl && rowEl.getAttribute('data-cos-source-key')) || '';
+      var dirIn = sugId ? document.getElementById('cosDirIn-' + sugId) : null;
+      var dirsTxt = dirIn ? dirIn.value.trim() : '';
+      var sugObj = _findCosSuggestionById(sugId) || {};
+      if (_cosExpandedSugId === sugId) _cosExpandedSugId = '';
+      if (dirIn) dirIn.value = '';
+
+      if (actKind === 'act_now') {
+        var emUid = String(sugObj.email_uid || (rowEl && rowEl.getAttribute('data-cos-email-uid')) || '').trim();
+        var href = cosActBtn.getAttribute('href') || sugObj.cockpit_href || '/steward/v1';
+        if (emUid && (!sugObj.pid || href.indexOf('/steward/v1') < 0)) {
+          var calSec = document.getElementById('cal');
+          if (calSec && !calSec.classList.contains('open')) {
+            calSec.classList.add('open');
+            var calTog = document.getElementById('calTog');
+            if (calTog) calTog.textContent = 'Collapse';
+          }
+          _openEmailDialogueTile(emUid, sugObj.title || '', '', 'Inbox', false);
+        } else if (href) {
+          openWin(href);
+        }
       }
-      breakBtn.classList.add('active');
-      $$('#shTriage [data-cos-card]').forEach(function (card) {
-        var tags = (card.getAttribute('data-break') || '').split(/\s+/);
-        card.style.display = (mode === 'all' || tags.indexOf(mode) >= 0) ? '' : 'none';
+
+      _wlMutate('cos_act', {
+        cos_action: actKind,
+        suggestion_id: sugId,
+        source_key: srcKey || sugObj.source_key || '',
+        directions: dirsTxt,
+        title: sugObj.title || '',
+        category: sugObj.category || 'Business',
+        priority: sugObj.priority || 2,
+        plan_steps: sugObj.plan_steps || [],
+        cockpit_name: sugObj.cockpit_name || '',
+        cockpit_href: sugObj.cockpit_href || '',
+        pid: sugObj.pid || '',
+        effort_dir: sugObj.effort_dir || ''
+      }).then(function (d) {
+        if (!d || !d.ok) return;
+        if (d.cos_suggestions && _wlState) {
+          _wlState.cos_suggestions = d.cos_suggestions;
+        }
+        _renderCosSuggestionsPanel(d.cos_suggestions);
+        if (actKind === 'add_to_list') {
+          _setTheListSpineOpen(true);
+          receipt('\u2713 Added "' + (sugObj.title || 'item') + '" to The List & promoted next suggestion.');
+        } else if (actKind === 'postpone') {
+          receipt('\u23f8 Postponed "' + (sugObj.title || 'suggestion') + '" — promoted next suggestion.');
+        } else if (actKind === 'delete') {
+          receipt('Removed suggestion & updated Steward preferences.');
+        } else if (actKind === 'send_to_steward') {
+          if (!d.steward_dispatched && say) {
+            var planJoined = Array.isArray(sugObj.plan_steps) ? sugObj.plan_steps.join('; ') : '';
+            say.value = '[Chief of Staff · ' + (sugObj.title || 'Effort') + '] ' + (dirsTxt ? (dirsTxt + ' — ') : '') + (planJoined ? ('Plan: ' + planJoined) : '');
+            say.dispatchEvent(new Event('input'));
+            var sendSayBtn = document.getElementById('sayBtn') || document.querySelector('#sayForm button[type="submit"]');
+            if (sendSayBtn && !sendSayBtn.disabled) sendSayBtn.click();
+          }
+          receipt('\ud83e\udded Sent plan & directions to Steward.');
+        } else if (actKind === 'act_now') {
+          receipt('\u2197 Opened "' + (sugObj.title || 'effort') + '" & promoted next suggestion.');
+        }
       });
-      if (mode === 'family') _expandCosColumn('month');
-      else if (mode === 'deep') _expandCosColumn('quarter');
-      else _expandCosColumn('today');
       return;
     }
 
-    var expEl = e.target.closest && e.target.closest('[data-cos-expand-col]');
-    if (expEl && !e.target.closest('a, [data-cos-prestage-prompt], [data-mark-done], [data-cos-rotate], [data-cos-modal-open]')) {
+    var cosToggleDet = e.target.closest && e.target.closest('[data-cos-toggle-detail]');
+    if (cosToggleDet && !e.target.closest('a, button, input')) {
       e.preventDefault();
-      _expandCosColumn(expEl.getAttribute('data-cos-expand-col') || 'today');
-      return;
-    }
-
-    var preBtn = e.target.closest && e.target.closest('[data-cos-prestage-prompt]');
-    if (preBtn) {
-      e.preventDefault(); e.stopPropagation();
-      var pr = preBtn.getAttribute('data-cos-prestage-prompt') || '';
-      var sk = preBtn.getAttribute('data-cos-skill') || 'Foundry Skill';
-      if (say && pr) {
-        say.value = pr;
-        say.dispatchEvent(new Event('input'));
-        say.focus();
-      }
-      receipt('\ud83c\udf4a Parable of the Oranges: Pre-staged ' + sk + ' brief in Steward composer!');
-      return;
-    }
-
-    var dispBtn = e.target.closest && e.target.closest('[data-cos-dispatch-skill]');
-    if (dispBtn) {
-      e.preventDefault(); e.stopPropagation();
-      var dSkill = dispBtn.getAttribute('data-cos-dispatch-skill') || 'researchPrime';
-      var mTitle = (document.getElementById('cosModalTitle') || {}).textContent || 'this effort';
-      if (say) {
-        say.value = 'Pre-stage and run /' + dSkill + ' for "' + mTitle + '" so the AI Cockpit is ready when I open it.';
-        say.dispatchEvent(new Event('input'));
-        say.focus();
-      }
-      var mClose0 = document.getElementById('cosOrangesModal');
-      if (mClose0) mClose0.hidden = true;
-      receipt('\ud83c\udf4a Dispatched ' + dSkill + ' pre-stage request for ' + mTitle + '!');
-      return;
-    }
-
-    var modalOpen = e.target.closest && e.target.closest('[data-cos-modal-open]');
-    if (modalOpen) {
-      e.preventDefault(); e.stopPropagation();
-      var m = document.getElementById('cosOrangesModal');
-      if (m) {
-        var tEl = document.getElementById('cosModalTitle');
-        var trEl = document.getElementById('cosModalTier');
-        var drEl = document.getElementById('cosModalDriver');
-        var orEl = document.getElementById('cosModalOranges');
-        var opBtn = document.getElementById('cosModalOpenBtn');
-        if (tEl) tEl.textContent = modalOpen.getAttribute('data-cos-title') || 'Effort';
-        if (trEl) trEl.textContent = modalOpen.getAttribute('data-cos-tier') || 'Next-Best Effort';
-        if (drEl) drEl.innerHTML = '<strong>Signal / Driver Provenance:</strong> ' + _escH(modalOpen.getAttribute('data-cos-driver') || '');
-        if (orEl) orEl.innerHTML = '\ud83c\udf4a <strong>Parable of the Oranges Pre-Staging:</strong> ' + _escH(modalOpen.getAttribute('data-cos-oranges') || '');
-        if (opBtn) opBtn.href = modalOpen.getAttribute('data-cos-href') || '/steward/v1';
-        m.hidden = false;
+      var detSid = cosToggleDet.getAttribute('data-cos-toggle-detail') || '';
+      if (!detSid) return;
+      _cosExpandedSugId = (_cosExpandedSugId === detSid) ? '' : detSid;
+      var detEl = document.getElementById('cosSugDetail-' + detSid);
+      $$('#cosSuggestionsPanel .cos-min-detail').forEach(function (el) {
+        el.hidden = (el !== detEl) || !_cosExpandedSugId;
+      });
+      if (_cosExpandedSugId && detEl) {
+        var dirFocus = document.getElementById('cosDirIn-' + detSid);
+        if (dirFocus) setTimeout(function () { dirFocus.focus(); }, 20);
       }
       return;
     }
+  });
 
-    if (e.target.closest && (e.target.closest('#btnCosModalClose') || e.target.id === 'cosOrangesModal')) {
-      var mHide = document.getElementById('cosOrangesModal');
-      if (mHide) mHide.hidden = true;
-      return;
-    }
-
-    var rotBtn = e.target.closest && e.target.closest('[data-cos-rotate]');
-    if (rotBtn) {
-      e.preventDefault(); e.stopPropagation();
-      var rId = rotBtn.getAttribute('data-cos-rotate') || '';
-      var rCard = document.getElementById(rId) || rotBtn.closest('.cos-effort-card');
-      if (rCard) {
-        var parentCol = rCard.parentElement;
-        if (parentCol) parentCol.appendChild(rCard);
-        receipt('\u23ed Rotated effort — promoted next candidate in Steward queue!');
-      }
-      return;
-    }
-
-    var clrBtn = e.target.closest && e.target.closest('[data-cos-clear-id]');
-    if (clrBtn) {
-      var cId = clrBtn.getAttribute('data-cos-clear-id') || '';
-      var cCard = document.getElementById(cId);
-      if (cCard) cCard.style.opacity = '0.4';
-      _cosClearedCount++;
-      var lbl = document.getElementById('cosQ2UnlockLabel');
-      var segU = document.getElementById('cosSegUrg');
-      var segD = document.getElementById('cosSegDeep');
-      if (_cosClearedCount === 1) {
-        if (lbl) lbl.innerHTML = '1 Urgent effort cleared! <strong>1 left</strong> &rarr; <strong>3.25 hrs</strong> Q2 Deep Work unlocked today';
-        if (segU) segU.style.width = '14%';
-        if (segD) segD.style.width = '59%';
-      } else {
-        if (lbl) lbl.innerHTML = '\ud83c\udf89 All Urgent Q1 items cleared! <strong>Full 3.75 hrs Quadrant II Deep Work</strong> unlocked!';
-        if (segU) segU.style.width = '0%';
-        if (segD) segD.style.width = '73%';
-      }
+  document.addEventListener('keydown', function (e) {
+    if (!e || e.key !== 'Enter' || e.shiftKey || e.isComposing) return;
+    var t = e.target;
+    if (t && t.classList && t.classList.contains('cos-min-dir-in')) {
+      e.preventDefault();
+      var row = t.closest('.cos-min-row');
+      var sendBtn = row ? row.querySelector('[data-cos-act="send_to_steward"]') : null;
+      if (sendBtn) sendBtn.click();
     }
   });
 
   // =========================================================================
-  // Wave 22 (2026-11-06):
-  //   1) Expandable Speed Racer Tile inside Email Hub + Steward Auto-Open
-  //   2) Variation A Persistent Working List Spine with Per-Step AI Cockpit & Initiative Connections
+  // Wave 22 + 2026-11-23 Overhaul:
+  //   1) Expandable Speed Racer Tile inside Email Hub — Auto-Opens ONLY on Genuinely New Ready Drafts
+  //      (NEVER re-opens after user closes it or while user is typing!)
+  //   2) Persistent Living "The List" Spine with Inline Steward Step-Count Self-Check
   // =========================================================================
   var _srState = window.ANCHOR_SPEED_RACER_INIT || { queue: [], sent_log: [], auto_open_ts: 0 };
   var _srIdx = 0;
@@ -6345,6 +7292,177 @@
   var _srLocalEditsById = {};
   var _srClosedById = {};
   var _srAutoSaveTimer = 0;
+  var _SR_SEEN_READY_STORAGE_KEY = 'anchor.cave.srSeenReadyById';
+  var _SR_COLLAPSED_STORAGE_KEY = 'anchor.cave.srCollapsed';
+  var _srDeferredAutoOpenTimer = 0;
+
+  try {
+    var _savedSrCol = window.localStorage && window.localStorage.getItem(_SR_COLLAPSED_STORAGE_KEY);
+    if (_savedSrCol === '1' || _savedSrCol === 'true') {
+      window._srUserCollapsed = true;
+    } else if (_savedSrCol === '0' || _savedSrCol === 'false') {
+      window._srUserCollapsed = false;
+    }
+  } catch (_eSrCol) {}
+
+  function _isReadySrItem(it) {
+    if (!it || typeof it !== 'object') return false;
+    var idStr = String(it.id || '');
+    if (!idStr || idStr.indexOf('sr-opt-') === 0) return false;
+    var st = String(it.status || '').toLowerCase();
+    return st !== 'queued' && st !== 'drafting' && st !== 'error';
+  }
+
+  function _srItemReadyStamp(it) {
+    if (!it || typeof it !== 'object') return 1;
+    var rTs = Number(it.ready_at_ts || it.created_at_ts || 0);
+    return (rTs > 0 && !isNaN(rTs)) ? rTs : 1;
+  }
+
+  function _loadSrSeenReadyMap() {
+    try {
+      var raw = window.localStorage && window.localStorage.getItem(_SR_SEEN_READY_STORAGE_KEY);
+      if (!raw) return {};
+      var parsed = JSON.parse(raw);
+      return (parsed && typeof parsed === 'object') ? parsed : {};
+    } catch (_e) {
+      return {};
+    }
+  }
+
+  function _saveSrSeenReadyMap(mapObj) {
+    try {
+      if (window.localStorage) {
+        window.localStorage.setItem(_SR_SEEN_READY_STORAGE_KEY, JSON.stringify(mapObj || {}));
+      }
+    } catch (_e) {}
+  }
+
+  function _pruneAndGetUnseenReadySrItems(queueArr) {
+    var q = Array.isArray(queueArr) ? queueArr : [];
+    var seenMap = _loadSrSeenReadyMap();
+    var activeIds = {};
+    q.forEach(function (it) {
+      if (it && it.id) activeIds[String(it.id)] = true;
+    });
+    var changed = false;
+    Object.keys(seenMap).forEach(function (k) {
+      if (!activeIds[k]) {
+        delete seenMap[k];
+        changed = true;
+      }
+    });
+    if (changed) _saveSrSeenReadyMap(seenMap);
+    return q.filter(function (it) {
+      if (!_isReadySrItem(it)) return false;
+      var k = String(it.id || '');
+      var seenTs = Number(seenMap[k] || 0);
+      return !(seenTs >= _srItemReadyStamp(it));
+    });
+  }
+
+  function _markReadyDraftsSeen(itemsArr) {
+    var arr = Array.isArray(itemsArr) ? itemsArr : ((_srState && Array.isArray(_srState.queue)) ? _srState.queue : []);
+    var seenMap = _loadSrSeenReadyMap();
+    var changed = false;
+    arr.forEach(function (it) {
+      if (!_isReadySrItem(it)) return;
+      var k = String(it.id || '');
+      var stamp = _srItemReadyStamp(it);
+      if (k && Number(seenMap[k] || 0) < stamp) {
+        seenMap[k] = stamp;
+        changed = true;
+      }
+    });
+    if (changed) _saveSrSeenReadyMap(seenMap);
+    var srBtn = document.getElementById('btnCaveOpenSpeedRacer');
+    if (srBtn) srBtn.classList.remove('has-new-ready');
+  }
+
+  function _setSrCollapsedPref(collapsed) {
+    window._srUserCollapsed = !!collapsed;
+    try {
+      if (window.localStorage) {
+        window.localStorage.setItem(_SR_COLLAPSED_STORAGE_KEY, collapsed ? '1' : '0');
+      }
+    } catch (_e) {}
+  }
+
+  function _collapseSpeedRacerByUser() {
+    if (_srDeferredAutoOpenTimer) {
+      clearTimeout(_srDeferredAutoOpenTimer);
+      _srDeferredAutoOpenTimer = 0;
+    }
+    _markReadyDraftsSeen();
+    _setSrCollapsedPref(true);
+    _setSpeedRacerExpanded(false);
+  }
+
+  function _openSpeedRacerByUser() {
+    _setSrCollapsedPref(false);
+    _markReadyDraftsSeen();
+    _setSpeedRacerExpanded(true);
+  }
+
+  function _isUserActivelyTypingAnywhere() {
+    var a = document.activeElement;
+    if (a && (a.tagName === 'TEXTAREA' || a.tagName === 'INPUT' || a.isContentEditable)) {
+      var tp = String(a.type || '').toLowerCase();
+      if (a.tagName !== 'INPUT' || (tp !== 'button' && tp !== 'checkbox' && tp !== 'radio' && tp !== 'submit')) {
+        return true;
+      }
+    }
+    if ((Date.now() - lastKey) < 6000) return true;
+    if ($$('.tile.open').some(function (c) { return !!c._typing || busyIn(c); })) return true;
+    return false;
+  }
+
+  function _triggerAutoOpenForNewReadyDrafts(unseenReady) {
+    if (!Array.isArray(unseenReady) || !unseenReady.length) return;
+    var firstNew = unseenReady[0];
+    var q = (_srState && Array.isArray(_srState.queue)) ? _srState.queue : [];
+    for (var i = 0; i < q.length; i++) {
+      if (q[i] && String(q[i].id || '') === String(firstNew.id || '')) {
+        _srIdx = i;
+        break;
+      }
+    }
+    if (_isUserActivelyTypingAnywhere()) {
+      var srBtn = document.getElementById('btnCaveOpenSpeedRacer');
+      if (srBtn) srBtn.classList.add('has-new-ready');
+      if (!_srDeferredAutoOpenTimer) {
+        _srDeferredAutoOpenTimer = setInterval(function () {
+          var stillUnseen = _pruneAndGetUnseenReadySrItems((_srState && _srState.queue) || []);
+          if (!stillUnseen.length) {
+            clearInterval(_srDeferredAutoOpenTimer);
+            _srDeferredAutoOpenTimer = 0;
+            return;
+          }
+          if (!_isUserActivelyTypingAnywhere()) {
+            clearInterval(_srDeferredAutoOpenTimer);
+            _srDeferredAutoOpenTimer = 0;
+            var calSec = document.getElementById('cal');
+            if (calSec && !calSec.classList.contains('open')) {
+              calSec.classList.add('open');
+              var calTog = document.getElementById('calTog');
+              if (calTog) calTog.textContent = 'Collapse';
+            }
+            _openSpeedRacerByUser();
+            _renderCaveSpeedRacerTile(true, true);
+          }
+        }, 2000);
+      }
+      return;
+    }
+    var calSecNow = document.getElementById('cal');
+    if (calSecNow && !calSecNow.classList.contains('open')) {
+      calSecNow.classList.add('open');
+      var calTogNow = document.getElementById('calTog');
+      if (calTogNow) calTogNow.textContent = 'Collapse';
+    }
+    _openSpeedRacerByUser();
+    _renderCaveSpeedRacerTile(true, true);
+  }
 
   function _markSrDraftClosed(idOrUid) {
     var k = String(idOrUid || '');
@@ -6612,6 +7730,7 @@
     if (b3) b3.textContent = n + (n === 1 ? ' Draft Awaiting Approval' : ' Drafts Awaiting Approval');
     if (bArc) bArc.textContent = String(arch.length);
     if (bArcBar) bArcBar.textContent = String(arch.length);
+    _updateScribeQueuePill();
     _renderCaveSpeedRacerArchive();
   }
 
@@ -6752,9 +7871,16 @@
     if (_srIdx >= q.length) _srIdx = 0;
     if (_srIdx < 0) _srIdx = q.length - 1;
     var item = _applySrLocalEditToItem(q[_srIdx]);
+    var queueSig = q.map(function (it) { return String(it.id || '') + ':' + String(it.updated_at_ts || 0); }).join('|');
     var activeCard = host.querySelector('.sr-card[data-sr-active-id]');
     var activeBodyEl = document.getElementById('caveSrBodyInput');
-    if (!forceRebuild && activeCard && activeBodyEl && String(activeCard.getAttribute('data-sr-active-id') || '') === String(item.id || '')) {
+    if (
+      !forceRebuild &&
+      activeCard &&
+      activeBodyEl &&
+      String(activeCard.getAttribute('data-sr-active-id') || '') === String(item.id || '') &&
+      (item._dirty || String(activeCard.getAttribute('data-sr-queue-sig') || '') === queueSig)
+    ) {
       return;
     }
     var navPills = q.map(function (it, idx) {
@@ -6774,13 +7900,12 @@
       ? '\u270e Editing \u2014 auto-saving\u2026'
       : (item.user_edited ? '\u2713 Edits saved & Scribe updated' : '\u2713 Direct edits auto-save & teach Scribe');
     host.innerHTML =
-      '<div class="sr-card" data-sr-active-id="' + _escH(item.id || '') + '">' +
+      '<div class="sr-card" data-sr-active-id="' + _escH(item.id || '') + '" data-sr-queue-sig="' + _escH(queueSig) + '">' +
         '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding-bottom:7px;border-bottom:1px solid #1e293b">' +
           '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
             '<span class="comms-badge amber" style="font-weight:800">Draft ' + (_srIdx + 1) + ' of ' + q.length + '</span>' +
             '<span class="comms-badge sky">' + _escH(item.account || 'Institutional 365') + '</span>' +
             '<span class="comms-badge emerald">' + _escH(item.urgency || 'Steward Staged') + '</span>' +
-            '<span class="comms-badge emerald" id="caveSrInstructionRatingBadge" style="border:1px solid rgba(16,185,129,0.55);background:rgba(16,185,129,0.22);color:#ecfdf5;font-weight:800" title="Scribe reads the full incoming email, past correspondence, and rates/executes every instruction before creating a draft">&#127919; Instruction &amp; Email Check: ' + _escH(ratingLbl) + '</span>' +
             '<span class="comms-badge sky" id="caveSrScribeLearnedBadge"' + (learnedNote ? '' : ' hidden') + ' style="border:1px solid rgba(56,189,248,0.55);background:rgba(56,189,248,0.18);color:#e0f2fe;font-weight:750">' + _escH(learnedNote) + '</span>' +
             (item.queued_by ? '<span style="font-size:10.5px;color:#c4b5fd">Queued via ' + _escH(item.queued_by) + '</span>' : '') +
           '</div>' +
@@ -6788,7 +7913,6 @@
             '<button type="button" class="tw-btn" data-sr-nav="-1" title="Previous Draft">&larr; Prev</button>' +
             navPills +
             '<button type="button" class="tw-btn" data-sr-nav="1" title="Next Draft">Next &rarr;</button>' +
-            '<button type="button" class="tw-btn" data-cave-close-speed-racer="1" style="border-color:rgba(244,63,94,0.55);background:rgba(244,63,94,0.14);color:#fda4af;font-weight:750" title="Close the Speed Racer dialogue">&#10005; Close Speed Racer</button>' +
           '</div>' +
         '</div>' +
         '<div class="sr-diff-grid">' +
@@ -6814,15 +7938,15 @@
                 '<button type="button" class="tw-btn' + (item.reply_mode === 'reply_all' ? ' active' : '') + '" data-sr-reply-mode="reply_all" style="font-size:10px;padding:1px 8px;' + (item.reply_mode === 'reply_all' ? 'border-color:#38bdf8;background:rgba(56,189,248,0.18);color:#e0f2fe;font-weight:800' : 'border-color:#334155;color:#cbd5e1') + '">&#8617;&#8617; Reply All</button>' +
                 '<button type="button" class="tw-btn' + (item.reply_mode === 'forward' ? ' active' : '') + '" data-sr-reply-mode="forward" style="font-size:10px;padding:1px 8px;' + (item.reply_mode === 'forward' ? 'border-color:#38bdf8;background:rgba(56,189,248,0.18);color:#e0f2fe;font-weight:800' : 'border-color:#334155;color:#cbd5e1') + '">&#10150; Forward</button>' +
               '</div>' +
-              '<span style="font-size:10px;color:#7dd3fc">&#128214; Unified Address Book active on To, Cc &amp; Bcc</span>' +
+              '<span style="font-size:10px;color:#7dd3fc">&#128214; Click &#9662; on To, Cc or Bcc to inspect full list</span>' +
             '</div>' +
             '<div style="display:grid;grid-template-columns:1fr 0.85fr 0.85fr 1fr;gap:6px">' +
               '<div><label style="font-size:10px;color:#94a3b8;display:block">To</label>' +
-              '<input type="text" id="caveSrToInput" list="caveUnifiedAddressBookList" value="' + _escH(item.to || '') + '" placeholder="recipient@example.org (or type a name)" style="width:100%;box-sizing:border-box;padding:4px 7px;border-radius:5px;border:1px solid #334155;background:#070b12;color:#f8fafc;font-size:11.5px"></div>' +
+              '<div class="sr-recip-wrap"><input type="text" id="caveSrToInput" value="' + _escH(item.to || '') + '" placeholder="recipient@example.org (or type a name)" style="width:100%;box-sizing:border-box;padding:4px 7px;border-radius:5px;border:1px solid #334155;background:#070b12;color:#f8fafc;font-size:11.5px"><button type="button" class="sr-recip-dd-btn" data-recip-dropdown-for="caveSrToInput" title="View complete To recipient list &amp; add from Address Book">&#9662;</button></div></div>' +
               '<div><label style="font-size:10px;color:#94a3b8;display:block">Cc (Optional)</label>' +
-              '<input type="text" id="caveSrCcInput" list="caveUnifiedAddressBookList" value="' + _escH(item.cc || '') + '" placeholder="cc@example.org (optional)" style="width:100%;box-sizing:border-box;padding:4px 7px;border-radius:5px;border:1px solid #334155;background:#070b12;color:#f8fafc;font-size:11.5px"></div>' +
+              '<div class="sr-recip-wrap"><input type="text" id="caveSrCcInput" value="' + _escH(item.cc || '') + '" placeholder="cc@example.org (optional)" style="width:100%;box-sizing:border-box;padding:4px 7px;border-radius:5px;border:1px solid #334155;background:#070b12;color:#f8fafc;font-size:11.5px"><button type="button" class="sr-recip-dd-btn" data-recip-dropdown-for="caveSrCcInput" title="View complete CC recipient list &amp; add from Address Book">&#9662;</button></div></div>' +
               '<div><label style="font-size:10px;color:#94a3b8;display:block">Bcc (Optional)</label>' +
-              '<input type="text" id="caveSrBccInput" list="caveUnifiedAddressBookList" value="' + _escH(item.bcc || '') + '" placeholder="bcc@example.org (blind copy)" style="width:100%;box-sizing:border-box;padding:4px 7px;border-radius:5px;border:1px solid #334155;background:#070b12;color:#f8fafc;font-size:11.5px"></div>' +
+              '<div class="sr-recip-wrap"><input type="text" id="caveSrBccInput" value="' + _escH(item.bcc || '') + '" placeholder="bcc@example.org (blind copy)" style="width:100%;box-sizing:border-box;padding:4px 7px;border-radius:5px;border:1px solid #334155;background:#070b12;color:#f8fafc;font-size:11.5px"><button type="button" class="sr-recip-dd-btn" data-recip-dropdown-for="caveSrBccInput" title="View complete BCC recipient list &amp; add from Address Book">&#9662;</button></div></div>' +
               '<div><label style="font-size:10px;color:#94a3b8;display:block">Subject</label>' +
               '<input type="text" id="caveSrSubjInput" value="' + _escH(item.subject || '') + '" style="width:100%;box-sizing:border-box;padding:4px 7px;border-radius:5px;border:1px solid #334155;background:#070b12;color:#f8fafc;font-size:11.5px"></div>' +
             '</div>' +
@@ -6861,16 +7985,15 @@
             '<span id="caveSrSaveStatus" style="font-size:10.5px;color:#6ee7b7;font-weight:700">' + _escH(saveStatusInit) + '</span>' +
           '</div>' +
           '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
-            '<button type="button" class="tw-btn" id="btnCaveSrSaveModified" style="border-color:rgba(56,189,248,0.55);color:#7dd3fc;font-weight:750" title="Save any modifications you made to To, Cc, Bcc, Subject, or Draft Body">&#128190; Save Modifications</button>' +
             '<button type="button" class="tw-btn" id="btnCaveSrSkip" title="Keep in queue and move to next draft">&#9197; Skip / Later</button>' +
             '<button type="button" class="tw-btn" id="btnCaveSrSpam" data-sr-spam="1" style="border-color:rgba(244,63,94,0.55);background:rgba(244,63,94,0.12);color:#fda4af;font-weight:750" title="Mark sender as Spam and remove draft from Speed Racer">&#128683; Spam</button>' +
             '<button type="button" class="tw-btn" id="btnCaveSrDiscard" style="border-color:rgba(244,63,94,0.55);background:rgba(244,63,94,0.12);color:#fda4af;font-weight:750" title="Cancel and remove this draft from Speed Racer without sending">&#10005; Cancel / Discard</button>' +
             '<button type="button" class="tw-btn done" id="btnCaveSrApproveSend" style="border-color:#10b981;background:rgba(16,185,129,0.24);color:#ecfdf5;font-weight:800;padding:4px 12px">&#10003; Approve &amp; Send</button>' +
-            '<button type="button" class="tw-btn" data-cave-close-speed-racer="1" style="border-color:rgba(244,63,94,0.55);background:rgba(244,63,94,0.14);color:#fda4af;font-weight:750" title="Close the Speed Racer dialogue">&#10005; Close Speed Racer</button>' +
           '</div>' +
         '</div>' +
       '</div>';
     _autoGrowTextarea(document.getElementById('caveSrFeedbackInput'));
+    _syncAllRecipDropdownBadges();
   }
 
   function _setSpeedRacerExpanded(open) {
@@ -6937,17 +8060,19 @@
         }
       }
     }
-    if (Array.isArray(_srState.queue) && _srState.queue.length > 0 && !window._srUserCollapsed) {
-      _setSpeedRacerExpanded(true);
-    } else if (!Array.isArray(_srState.queue) || _srState.queue.length === 0) {
+    var qNow = Array.isArray(_srState.queue) ? _srState.queue : [];
+    var readyItems = qNow.filter(_isReadySrItem);
+    var unseenReady = _pruneAndGetUnseenReadySrItems(qNow);
+    _updateScribeQueuePill();
+    _renderCaveSpeedRacerTile(!!forceRebuild);
+    if (!qNow.length || !readyItems.length) {
+      _setSpeedRacerExpanded(false);
+    } else if (unseenReady.length > 0) {
+      _triggerAutoOpenForNewReadyDrafts(unseenReady);
+    } else if (window._srUserCollapsed) {
       _setSpeedRacerExpanded(false);
     }
-    _renderCaveSpeedRacerTile(!!forceRebuild);
-    var ts = Number(srObj.auto_open_ts || 0);
-    if (ts > _srLastAutoOpenTs) {
-      _srLastAutoOpenTs = ts;
-      window.openCaveSpeedRacer();
-    }
+    _srLastAutoOpenTs = Number(srObj.auto_open_ts || _srLastAutoOpenTs);
   }
 
   window.openCaveSpeedRacer = function (draftId) {
@@ -6961,8 +8086,7 @@
     if (curGrid && curGrid.getAttribute('data-layout') === 'cal') {
       applyCommsLayout('split');
     }
-    window._srUserCollapsed = false;
-    _setSpeedRacerExpanded(true);
+    _openSpeedRacerByUser();
     _renderCaveSpeedRacerTile(false);
     fetch('/api/steward/comms', {
       method: 'POST',
@@ -6974,6 +8098,7 @@
         if (d && d.speed_racer) {
           _srState = _mergeSrStateKeepLocal(d.speed_racer);
           _srLastAutoOpenTs = Number(_srState.auto_open_ts || _srLastAutoOpenTs);
+          _markReadyDraftsSeen(_srState.queue);
         }
         var q = (_srState && Array.isArray(_srState.queue)) ? _srState.queue : [];
         if (draftId) {
@@ -7108,10 +8233,9 @@
     var closeSrBtn = e.target.closest && e.target.closest('[data-cave-close-speed-racer]');
     if (closeSrBtn) {
       e.preventDefault(); e.stopPropagation();
-      window._srUserCollapsed = true;
       var archDrawerClose = document.getElementById('caveSpeedRacerArchiveDrawer');
       if (archDrawerClose) archDrawerClose.hidden = true;
-      _setSpeedRacerExpanded(false);
+      _collapseSpeedRacerByUser();
       receipt('Closed Speed Racer dialogue.');
       return;
     }
@@ -7145,9 +8269,12 @@
       e.preventDefault();
       var body = document.getElementById('caveSpeedRacerBody');
       var nextOpen = body ? body.hidden : true;
-      window._srUserCollapsed = !nextOpen;
-      _setSpeedRacerExpanded(nextOpen);
-      if (nextOpen) _renderCaveSpeedRacerTile(false);
+      if (nextOpen) {
+        _openSpeedRacerByUser();
+        _renderCaveSpeedRacerTile(false);
+      } else {
+        _collapseSpeedRacerByUser();
+      }
       return;
     }
     var srSaveModBtn = e.target.closest && e.target.closest('#btnCaveSrSaveModified');
@@ -7175,8 +8302,7 @@
       var srBodyToggle = document.getElementById('caveSpeedRacerBody');
       if (calWasOpen && srTileToggle && srTileToggle.classList.contains('open') && srBodyToggle && !srBodyToggle.hidden) {
         _flushSpeedRacerAutoSaveNow();
-        window._srUserCollapsed = true;
-        _setSpeedRacerExpanded(false);
+        _collapseSpeedRacerByUser();
         receipt('Closed Speed Racer dialogue.');
       } else {
         window.openCaveSpeedRacer();
@@ -7202,14 +8328,40 @@
           ? ((cleanDispQ.indexOf(',') >= 0 || cleanDispQ.indexOf(';') >= 0) ? ('"' + cleanDispQ + '" <' + mTo + '>') : (cleanDispQ + ' <' + mTo + '>'))
           : mTo;
       }
-      var origQueueMailHtml = queueMailBtn.innerHTML;
-      queueMailBtn.disabled = true;
-      queueMailBtn.innerHTML = '&#9203;';
+      var rowClientReqId = 'srq-row-' + Date.now() + '-' + (++_scribeClientReqSeq);
+      var rowOptId = 'sr-opt-' + rowClientReqId;
+      ++window._triageMutationSeq;
+      if (!_srState || typeof _srState !== 'object') _srState = { queue: [], archive: [], auto_open_ts: 0 };
+      if (!Array.isArray(_srState.queue)) _srState.queue = [];
+      _srState.queue.push({
+        id: rowOptId,
+        client_req_id: rowClientReqId,
+        uid: mUid || rowOptId,
+        account_id: mAcctIdQ,
+        account: mAcct,
+        to: formattedCardTo,
+        subject: mSubj.indexOf('Re:') === 0 ? mSubj : ('Re: ' + mSubj),
+        status: 'queued',
+        updated_at_ts: Date.now() / 1000
+      });
+      _updateSrBadges();
+      _updateScribeQueuePill();
+      if (window._optimisticallyRemoveEmailFromLists) {
+        window._optimisticallyRemoveEmailFromLists(mUid, '\u23f3 Queued for Scribe', 'Queued in Scribe FIFO worker', {
+          subject: mSubj,
+          recipient: mTo,
+          forceAdvance: Boolean(_activeEmailDialogue && String(_activeEmailDialogue.uid || '') === String(mUid))
+        });
+      }
+      receipt('\u23f3 Queued "' + mSubj + '" for Scribe FIFO worker.');
       fetch('/api/steward/comms', {
         method: 'POST',
         headers: headers(),
         body: JSON.stringify({
           action: 'speed_racer_queue',
+          async_draft: true,
+          open_speed_racer: false,
+          client_req_id: rowClientReqId,
           uid: mUid,
           account_id: mAcctIdQ,
           from: mFrom,
@@ -7224,39 +8376,35 @@
         .then(function (r) { return r.json().then(function (d) { return { status: r.status, data: d }; }); })
         .then(function (res) {
           var d = res.data;
-          queueMailBtn.disabled = false;
-          queueMailBtn.innerHTML = origQueueMailHtml;
           if (res.status >= 400 || !d || !d.ok) {
+            if (_srState && Array.isArray(_srState.queue)) {
+              _srState.queue = _srState.queue.filter(function (it) { return it && String(it.id || '') !== rowOptId; });
+            }
+            _updateSrBadges();
+            _updateScribeQueuePill(d && d.scribe_queue_counts);
             receipt((d && (d.message || d.error)) || 'Could not queue Speed Racer draft.', true);
             return;
           }
-          if (window._optimisticallyRemoveEmailFromLists) {
-            window._optimisticallyRemoveEmailFromLists(mUid, '\ud83c\udfce\ufe0f Speed Racer', 'Queued in Speed Racer for review');
-          } else {
-            _captureNextEmailInCurrentList(mUid);
-          }
           if (d.speed_racer) {
-            if (!_caveCommsData) _caveCommsData = { ok: true };
-            if (Array.isArray(d.important_emails)) _caveCommsData.important_emails = _mergeStableEmailOrder(_caveCommsData.important_emails, d.important_emails);
-            if (Array.isArray(d.other_emails)) _caveCommsData.other_emails = d.other_emails;
-            if (Array.isArray(d.acted_upon_emails)) _caveCommsData.acted_upon_emails = d.acted_upon_emails;
-            _caveCommsData._interleavedOnce = true;
-            _hydrateMailCardsFromCommsData(_caveCommsData);
-            _srState = _mergeSrStateKeepLocal(d.speed_racer);
-            _srIdx = 0;
-            window._srUserCollapsed = false;
-            _setSpeedRacerExpanded(true);
-            _renderCaveSpeedRacerTile(true);
-            var srTile = document.getElementById('caveSpeedRacerTile');
-            if (srTile) {
-              try { srTile.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (err) {}
-            }
-            receipt('\ud83c\udfce\ufe0f Queued "' + mSubj + '" into Speed Racer for your review & approval.');
+            if (_caveCommsData) _caveCommsData.speed_racer = d.speed_racer;
+            var mergedRowSr = _mergeSrStateKeepLocal(d.speed_racer, true);
+            var stillOptRow = (_srState && Array.isArray(_srState.queue))
+              ? _srState.queue.filter(function (it) {
+                  return it && String(it.id || '').indexOf('sr-opt-') === 0 && String(it.id) !== rowOptId;
+                })
+              : [];
+            mergedRowSr.queue = (mergedRowSr.queue || []).concat(stillOptRow);
+            _srState = mergedRowSr;
           }
+          _updateSrBadges();
+          _updateScribeQueuePill(d.scribe_queue_counts);
         })
         .catch(function () {
-          queueMailBtn.disabled = false;
-          queueMailBtn.innerHTML = origQueueMailHtml;
+          if (_srState && Array.isArray(_srState.queue)) {
+            _srState.queue = _srState.queue.filter(function (it) { return it && String(it.id || '') !== rowOptId; });
+          }
+          _updateSrBadges();
+          _updateScribeQueuePill();
           receipt('Speed Racer queue request could not reach Anchor.', true);
         });
       return;
@@ -7349,8 +8497,7 @@
           if (d.speed_racer) {
             _srState = _mergeSrStateKeepLocal(d.speed_racer);
             _srIdx = 0;
-            window._srUserCollapsed = false;
-            _setSpeedRacerExpanded(true);
+            _openSpeedRacerByUser();
             _renderCaveSpeedRacerTile(true);
             receipt('\ud83e\udeb6 Scribe read email, thread & AI Cockpit context and drafted response in Speed Racer!');
           }
@@ -7745,8 +8892,7 @@
       if (!_srState.queue.length) {
         var archDiscNow = document.getElementById('caveSpeedRacerArchiveDrawer');
         if (archDiscNow) archDiscNow.hidden = true;
-        window._srUserCollapsed = true;
-        _setSpeedRacerExpanded(false);
+        _collapseSpeedRacerByUser();
       }
       receipt('Removed draft from Speed Racer queue.');
       fetch('/api/steward/comms', {
@@ -7766,8 +8912,7 @@
             if (!remDisc.length) {
               var archDisc = document.getElementById('caveSpeedRacerArchiveDrawer');
               if (archDisc) archDisc.hidden = true;
-              window._srUserCollapsed = true;
-              _setSpeedRacerExpanded(false);
+              _collapseSpeedRacerByUser();
             }
           }
         });
@@ -7825,8 +8970,7 @@
         archDrawerNow.hidden = true;
       }
       if (!_srState.queue.length) {
-        window._srUserCollapsed = true;
-        _setSpeedRacerExpanded(false);
+        _collapseSpeedRacerByUser();
       }
 
       fetch('/api/steward/comms', {
@@ -7901,8 +9045,7 @@
             archDrawer.hidden = true;
           }
           if (!remQ.length) {
-            window._srUserCollapsed = true;
-            _setSpeedRacerExpanded(false);
+            _collapseSpeedRacerByUser();
           }
           var undoBar = document.getElementById('caveSpeedRacerUndoBar');
           var undoTxt = document.getElementById('caveSpeedRacerUndoText');
@@ -7944,8 +9087,7 @@
           if (d && d.speed_racer) {
             _srState = _mergeSrStateKeepLocal(d.speed_racer, true);
             _srIdx = 0;
-            window._srUserCollapsed = false;
-            _setSpeedRacerExpanded(true);
+            _openSpeedRacerByUser();
             _renderCaveSpeedRacerTile(true, true);
             receipt('\u21a9 Undid send — draft restored to Speed Racer queue.');
           }
@@ -8029,14 +9171,18 @@
         return;
       }
     }
-    if (e.key !== 'Enter' || e.shiftKey) return;
     var t = e.target;
     if (!t || !t.id) return;
     if (t.id === 'caveDlgStewardDirectionsInput') {
-      e.preventDefault();
-      var actBtn = document.getElementById('btnCaveDlgSendStewardAction');
-      if (actBtn && !actBtn.disabled) actBtn.click();
-    } else if (t.id === 'caveSrFeedbackInput') {
+      if ((e.key === 'Enter' || e.keyCode === 13) && (!e.shiftKey || e.ctrlKey || e.metaKey) && !e.isComposing && e.keyCode !== 229 && !t._composing) {
+        e.preventDefault();
+        var actBtn = document.getElementById('btnCaveDlgSendStewardAction');
+        if (actBtn && !actBtn.disabled) actBtn.click();
+      }
+      return;
+    }
+    if (e.key !== 'Enter' || e.shiftKey) return;
+    if (t.id === 'caveSrFeedbackInput') {
       e.preventDefault();
       var srRefBtn = document.getElementById('btnCaveSrApplyFeedback');
       if (srRefBtn && !srRefBtn.disabled) srRefBtn.click();
@@ -8090,10 +9236,16 @@
     var unkBanner = document.getElementById('wlUnknownBanner');
     var unkTxt = document.getElementById('wlUnknownBannerText');
     var hdrCnt = document.getElementById('wlHeaderCounts');
+    var topCnt = document.getElementById('wlTopCountBadge');
+    var topBtn = document.getElementById('btnWlToggleTop');
+    var sec = document.getElementById('caveWorkingListSpine');
     var msg = errMsg || 'The List / Watchlist unreadable (unknown) \u2014 inspect Doctor';
     if (unkBanner) unkBanner.hidden = false;
     if (unkTxt) unkTxt.textContent = msg;
     if (hdrCnt) hdrCnt.textContent = 'Unknown (Store Unreadable)';
+    if (topCnt) topCnt.textContent = '!';
+    if (topBtn) topBtn.classList.add('is-error');
+    if (sec) sec.classList.add('has-unknown-error');
   }
 
   function _wlMutate(op, payload) {
@@ -8535,27 +9687,34 @@
     if (cPer) cPer.textContent = String(activeTiles.filter(function (t) { return t.category === 'Personal'; }).length);
     if (cArc) cArc.textContent = String(archTiles.length);
     if (hdrCnt) hdrCnt.textContent = activeTiles.length + ' Active';
+    var topCntEl = document.getElementById('wlTopCountBadge');
+    if (topCntEl) topCntEl.textContent = String(activeTiles.length);
+    var topToggleBtn = document.getElementById('btnWlToggleTop');
+    var topCheckGlyph = document.getElementById('wlCheckGlyph');
     var secInit = document.getElementById('caveWorkingListSpine');
     var hdrSub = document.getElementById('wlHeaderSubSummary');
     var bodyInit = document.getElementById('wlSpineBody');
-    var colBtnInit = document.getElementById('wlSpineCollapseBtn');
     if (bodyInit) {
       bodyInit.hidden = !_wlSpineIsOpen;
     }
     if (secInit) {
+      secInit.classList.remove('has-unknown-error');
       secInit.classList.toggle('is-collapsed', !_wlSpineIsOpen);
       secInit.classList.toggle('is-open', _wlSpineIsOpen);
       secInit.classList.toggle('open', _wlSpineIsOpen);
       secInit.setAttribute('data-open', _wlSpineIsOpen ? '1' : '0');
     }
+    if (topToggleBtn) {
+      topToggleBtn.classList.remove('is-error');
+      topToggleBtn.setAttribute('aria-expanded', _wlSpineIsOpen ? 'true' : 'false');
+    }
+    if (topCheckGlyph) {
+      topCheckGlyph.innerHTML = _wlSpineIsOpen ? '&#9745;' : '&#9744;';
+    }
     if (hdrSub) {
       hdrSub.textContent = !_wlSpineIsOpen
         ? ('Click to expand ' + activeTiles.length + ' single-line items · ' + archTiles.length + ' Things Done')
         : (activeTiles.length + ' single-line items · ' + archTiles.length + ' Things Done');
-    }
-    if (colBtnInit) {
-      colBtnInit.setAttribute('aria-expanded', _wlSpineIsOpen ? 'true' : 'false');
-      colBtnInit.innerHTML = _wlSpineIsOpen ? '&#9652; Collapse' : ('&#9662; Expand (' + activeTiles.length + ')');
     }
 
     // Keep #theListCompactRow updated in DOM while hidden so collapsing shrinks cleanly to the 1-line header bar
@@ -8597,8 +9756,9 @@
       compactRow.innerHTML = pillsHtml.join('');
     }
 
-    // Keep Chief of Staff synchronized with The List
+    // Keep Chief of Staff synchronized with The List & Top-3 Suggestions
     _syncChiefOfStaffFromTheList();
+    _renderCosSuggestionsPanel(_wlState && _wlState.cos_suggestions);
 
     $$('#wlCatTabs [data-wl-cat]').forEach(function (b) {
       b.classList.toggle('on', b.getAttribute('data-wl-cat') === _wlCatFilter);
@@ -8671,6 +9831,17 @@
         }
         var connRowHtml = chips.length ? ('<div class="wl-substep-conn-row">' + chips.join('') + '</div>') : '';
 
+        var stepAutoEntry = (s.done && s.auto_checked_at && !s.auto_check_confirmed && _wlState && Array.isArray(_wlState.auto_checked))
+          ? _wlState.auto_checked.find(function (ac) {
+              return ac && !ac.confirmed && !ac.undone && String(ac.tile_id || '') === rawTid && String(ac.step_id || '') === String(s.id || '');
+            })
+          : null;
+        var autoReasonLbl = stepAutoEntry && (stepAutoEntry.reason || stepAutoEntry.source)
+          ? ('Steward checked (' + String(stepAutoEntry.reason || stepAutoEntry.source).slice(0, 48) + ')')
+          : 'Steward checked';
+        var autoEntryId = stepAutoEntry ? _escH(stepAutoEntry.id || '') : '';
+        var allDoneAutoNow = !!(stepAutoEntry && stepAutoEntry.all_steps_done);
+
         return (
           '<div class="wl-substep-card' + (s.done ? ' done' : '') + '" data-wl-step-idx="' + sIdx + '">' +
             '<div class="wl-substep-top">' +
@@ -8678,9 +9849,16 @@
                 '<input type="checkbox" data-wl-step-check="' + tid + '" data-wl-step-idx="' + sIdx + '"' + (s.done ? ' checked' : '') + ' style="accent-color:#10b981;cursor:pointer">' +
                 '<span>' + _escH(s.text || '') + '</span>' +
               '</label>' +
-              '<div style="display:inline-flex;align-items:center;gap:4px">' +
+              '<div style="display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap">' +
                 (s.done && s.auto_checked_at && !s.auto_check_confirmed
-                  ? '<button type="button" class="wl-pill emerald" data-wl-confirm-step-autocheck="' + tid + '" data-wl-step-id="' + _escH(s.id || '') + '" data-wl-step-idx="' + sIdx + '" style="font-size:9.5px;padding:1px 6px;cursor:pointer;border:1px solid rgba(16,185,129,0.5)" title="Auto-checked by Steward \u2014 click to confirm &amp; clear badge, or uncheck box on left to reopen">&#10003; Auto-checked &middot; Confirm</button>'
+                  ? ('<span style="font-size:10px;color:#6ee7b7">' + _escH(autoReasonLbl) + '</span>' +
+                     '<button type="button" class="wl-pill emerald" data-wl-confirm-step-autocheck="' + tid + '" data-wl-step-id="' + _escH(s.id || '') + '" data-wl-step-idx="' + sIdx + '" style="font-size:9.5px;padding:1px 6px;cursor:pointer;border:1px solid rgba(16,185,129,0.5)" title="Keep this step marked Done &amp; clear Steward badge">&#10003; Confirm</button>' +
+                     (allDoneAutoNow && autoEntryId
+                       ? '<button type="button" class="wl-pill emerald" data-wl-confirm-archive-autocheck="' + autoEntryId + '" style="font-size:9.5px;padding:1px 6px;cursor:pointer;border:1px solid rgba(16,185,129,0.65);font-weight:800" title="Confirm done and move this completed item to Things Done">&#10003; Done &amp; Archive</button>'
+                       : '') +
+                     (autoEntryId
+                       ? '<button type="button" class="tw-btn" data-wl-undo-autocheck="' + autoEntryId + '" style="font-size:9.5px;padding:1px 6px" title="Undo Steward auto-check">&#8634; Undo</button>'
+                       : ''))
                   : '') +
                 '<button type="button" class="tw-btn" data-wl-step-conn-toggle="' + tid + '" data-wl-step-idx="' + sIdx + '" style="font-size:10px;padding:1px 6px;color:#94a3b8" title="Link AI Cockpit or Initiative">&#128279; Link</button>' +
                 '<button type="button" class="mini" data-wl-step-del="' + tid + '" data-wl-step-idx="' + sIdx + '" title="Remove step" style="padding:0 5px;font-size:11px">&times;</button>' +
@@ -8793,7 +9971,18 @@
       var goalShortPill = gLbl
         ? ('<span class="wl-pill purple" style="white-space:nowrap;flex-shrink:0;max-width:165px;overflow:hidden;text-overflow:ellipsis" title="Assigned Star Chart Goal/Initiative: ' + _escH(gLbl) + '">&#127775; ' + _escH(String(gLbl).slice(0, 22)) + '</span>')
         : '';
-      var stepPillCls = (totalCount > 0 && doneCount === totalCount) ? 'emerald' : 'sky';
+      var unconfAutoSteps = steps.filter(function (s) {
+        return !!(s && s.done && s.auto_checked_at && !s.auto_check_confirmed);
+      });
+      var stepPillCls = unconfAutoSteps.length
+        ? 'emerald wl-step-autochecked'
+        : ((totalCount > 0 && doneCount === totalCount) ? 'emerald' : 'sky');
+      var stepPillLbl = unconfAutoSteps.length
+        ? ('&#10003; ' + doneCount + '/' + totalCount + ' &middot; +' + unconfAutoSteps.length)
+        : ('&#10003; ' + doneCount + '/' + totalCount);
+      var stepPillTip = unconfAutoSteps.length
+        ? _escH('Steward checked off ' + unconfAutoSteps.length + ' step(s) — click to inspect, confirm, or undo')
+        : _escH(doneCount + ' of ' + totalCount + ' steps done — click to view steps');
 
       return (
         '<article class="wl-tile ' + pCls + (isExp ? ' is-expanded' : '') + (t.done ? ' is-done' : '') + '" data-wl-tile-id="' + tid + '" data-wl-priority="' + pNum + '">' +
@@ -8803,7 +9992,7 @@
             '<span class="wl-pill cat" title="Category">' + _escH(t.category || 'Business') + '</span>' +
             ckShortPill +
             goalShortPill +
-            '<span class="wl-pill ' + stepPillCls + '" style="flex-shrink:0;white-space:nowrap">&#10003; ' + doneCount + '/' + totalCount + '</span>' +
+            '<span class="wl-pill ' + stepPillCls + '" data-wl-step-pill="' + tid + '" title="' + stepPillTip + '" style="flex-shrink:0;white-space:nowrap">' + stepPillLbl + '</span>' +
             '<div class="wl-acts" style="display:inline-flex;align-items:center;gap:4px;flex-shrink:0">' +
               '<button type="button" class="wl-icon-btn" data-wl-move="up" data-wl-id="' + tid + '" title="Move item up">&uarr;</button>' +
               '<button type="button" class="wl-icon-btn" data-wl-move="down" data-wl-id="' + tid + '" title="Move item down">&darr;</button>' +
@@ -8820,7 +10009,8 @@
   function _setTheListSpineOpen(wantOpen, skipSave) {
     var sec = document.getElementById('caveWorkingListSpine');
     var body = document.getElementById('wlSpineBody');
-    var colBtn = document.getElementById('wlSpineCollapseBtn');
+    var topToggleBtn = document.getElementById('btnWlToggleTop');
+    var topCheckGlyph = document.getElementById('wlCheckGlyph');
     var compactRow = document.getElementById('theListCompactRow');
     var openState = typeof wantOpen === 'boolean' ? wantOpen : !_wlSpineIsOpen;
     _wlSpineIsOpen = openState;
@@ -8845,12 +10035,14 @@
       if (openState) sec.setAttribute('open', '');
       else sec.removeAttribute('open');
     }
+    if (topToggleBtn) {
+      topToggleBtn.setAttribute('aria-expanded', openState ? 'true' : 'false');
+    }
+    if (topCheckGlyph) {
+      topCheckGlyph.innerHTML = openState ? '&#9745;' : '&#9744;';
+    }
     var actCnt = ((_wlState && Array.isArray(_wlState.tiles)) ? _wlState.tiles.filter(function(x){return !x.archived;}).length : 0);
     var archCnt = ((_wlState && Array.isArray(_wlState.tiles)) ? _wlState.tiles.filter(function(x){return !!x.archived;}).length : 0);
-    if (colBtn) {
-      colBtn.setAttribute('aria-expanded', openState ? 'true' : 'false');
-      colBtn.innerHTML = openState ? '&#9652; Collapse' : ('&#9662; Expand (' + actCnt + ')');
-    }
     var hdrSub = document.getElementById('wlHeaderSubSummary');
     if (hdrSub) {
       hdrSub.textContent = openState
@@ -9007,7 +10199,7 @@
       _renderWorkingListSpine();
       return;
     }
-    var colBtn = e.target.closest && e.target.closest('#wlSpineCollapseBtn, [data-wl-toggle-spine]');
+    var colBtn = e.target.closest && e.target.closest('[data-wl-toggle-spine]');
     if (colBtn && !e.target.closest('[data-wl-populate-cos], [data-wl-open-things-done]')) {
       e.preventDefault();
       _setTheListSpineOpen();
@@ -9421,12 +10613,26 @@
       _wlMutate('list', {});
     }
   };
-  if (_srState && Array.isArray(_srState.queue) && _srState.queue.length > 0) {
-    _setSpeedRacerExpanded(true);
-  }
+  (function _bootSpeedRacerAndCos() {
+    var qBoot = (_srState && Array.isArray(_srState.queue)) ? _srState.queue : [];
+    var readyBoot = qBoot.filter(_isReadySrItem);
+    var unseenBoot = _pruneAndGetUnseenReadySrItems(qBoot);
+    if (!qBoot.length || !readyBoot.length) {
+      _setSpeedRacerExpanded(false);
+    } else if (unseenBoot.length > 0) {
+      _openSpeedRacerByUser();
+    } else if (window._srUserCollapsed) {
+      _setSpeedRacerExpanded(false);
+    } else {
+      _setSpeedRacerExpanded(true);
+      _markReadyDraftsSeen(readyBoot);
+    }
+    _syncCosExpandedUi();
+  })();
   _setTheListSpineOpen(_wlSpineIsOpen, true);
   _renderCaveSpeedRacerTile();
   _renderWorkingListSpine();
+  _syncAllRecipDropdownBadges();
 
   window._syncCaveAlarmHeaderBtn = function (alarmPrefs) {
     if (!alarmPrefs || typeof alarmPrefs !== 'object') return;
@@ -9510,9 +10716,24 @@
   });
 
   // Initialize source filters & hydrate local preloaded email cache immediately (0ms) on startup
+  try {
+    var _bootCommsQs = new URLSearchParams(location.search);
+    if (_bootCommsQs.get('comms_open') === '1' || _bootCommsQs.get('mail_open') === '1') {
+      var _calBootEl = document.getElementById('cal');
+      if (_calBootEl && !_calBootEl.classList.contains('open')) {
+        _calBootEl.classList.add('open');
+        var _togBootEl = document.getElementById('calTog');
+        if (_togBootEl) _togBootEl.textContent = 'Collapse';
+      }
+      if (_bootCommsQs.get('mail_open') === '1') {
+        applyCommsLayout('mail');
+      }
+    }
+  } catch (_bErr) {}
   if (_caveCommsData && _caveCommsData.ok) {
     _hydrateMailCardsFromCommsData(_caveCommsData);
   }
+  _updateScribeQueuePill();
   _applySourceFilterToDOM();
   try {
     var _initQs = new URLSearchParams(location.search);
@@ -9562,6 +10783,7 @@
   }
   setInterval(function () {
     if (document.hidden || _typingInCommsUi() || window._caveEmailActionInFlight > 0) return;
+    var pollSeqAtStart = window._triageMutationSeq || 0;
     fetch('/api/steward/comms?slim=1', {
       method: 'GET',
       headers: headers(),
@@ -9570,6 +10792,12 @@
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (d && d.ok) {
+          if (d.scribe_queue_counts) _updateScribeQueuePill(d.scribe_queue_counts);
+          if ((window._triageMutationSeq || 0) !== pollSeqAtStart) {
+            // A user triage or Send-to-Scribe occurred while this 60s poll was in flight — do not re-hydrate or cycle the reading pane!
+            if (d.speed_racer) _syncSpeedRacerFromServer(d.speed_racer);
+            return;
+          }
           _mergePreloadedEmailBodies(_caveCommsData, d);
           _caveCommsData = d;
           _hydrateMailCardsFromCommsData(d);

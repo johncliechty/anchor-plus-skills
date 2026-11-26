@@ -208,6 +208,11 @@ class HiddenProcess:
 
 def run_command(argv, env, cancel=None, timeout=None, progress=None):
     child = HiddenProcess(argv, env, timeout=timeout)
+    if getattr(getattr(child, "proc", None), "stdin", None):
+        try:
+            child.proc.stdin.close()
+        except (OSError, ValueError):
+            pass
     lines, ended = [], set()
     try:
         while len(ended) < 2:
@@ -348,8 +353,9 @@ def masked_identity(value):
     return local[0] + "***@" + ".".join(part[0] + "***" for part in domain.split(".") if part)
 
 
-def grok_status(connection):
-    code, raw = run_command([executable("grok"), "auth", "status", "--json"], account_env(connection))
+def grok_status(connection, *, timeout=None):
+    kw = {"timeout": timeout} if timeout is not None else {}
+    code, raw = run_command([executable("grok"), "auth", "status", "--json"], account_env(connection), **kw)
     try:
         account = json.loads(raw)
     except (ValueError, RecursionError):
@@ -455,12 +461,12 @@ class NativeProviders:
                        limit="Existing Google Ultra uses the agy CLI. Its passive account/status report is unsupported; the retained native account can use its supported model catalog. Isolated browser enrollment remains incomplete.")
         return out
 
-    def observe(self, connection, *, capability=None):
+    def observe(self, connection, *, capability=None, timeout=None):
         family, env = connection["family"], account_env(connection)
         if not executable(family):
             raise NativeError("unavailable")
         if family == "chatgpt":
-            client = CodexAccount(connection)
+            client = CodexAccount(connection) if timeout is None else CodexAccount(connection, timeout=timeout)
             try:
                 account = client.rpc("account/read", {"refreshToken": False}).get("account")
                 subscription = isinstance(account, dict) and account.get("type") == "chatgpt"
@@ -487,7 +493,8 @@ class NativeProviders:
             finally:
                 client.close()
         if family == "claude":
-            code, raw = run_command([executable(family), "auth", "status"], env)
+            kw = {"timeout": timeout} if timeout is not None else {}
+            code, raw = run_command([executable(family), "auth", "status"], env, **kw)
             try:
                 account = json.loads(raw)
             except (ValueError, RecursionError):
@@ -516,7 +523,7 @@ class NativeProviders:
             cap = capability if capability is not None else self.capabilities(family)
             if not cap.get("status_supported"):
                 raise NativeError("unsupported")
-            account = grok_status(connection)
+            account = grok_status(connection) if timeout is None else grok_status(connection, timeout=timeout)
             subscription = account.get("loggedIn") and account.get("billingMode") == "subscription"
             state = "signed_in" if subscription else "different_billing_mode" if account.get("loggedIn") else "signed_out"
             return {"auth": state, "test": "passed" if subscription else "not_tested",

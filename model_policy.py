@@ -20,9 +20,44 @@ POLICY_VERSION = 1
 DEFAULT_POLICY = {"mode": "latest_supported", "effort": "highest_supported"}
 FAMILIES = frozenset({"chatgpt", "claude", "grok", "gemini"})
 EFFORT_ORDER = ("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")
+CLAUDE_CATALOG_MODELS = (
+    "claude-fable-5-2",
+    "claude-opus-5-5",
+    "best",
+    "opus",
+    "sonnet",
+    "haiku",
+)
+CANONICAL_CLAUDE_FABLE_MODEL = "claude-fable-5-2"
+CLAUDE_VERIFICATION_ROLES = frozenset({
+    "review", "shark", "reviewer", "debate", "refuter", "gate3",
+    "verify", "judge", "attacker", "analysis", "verifier", "adversarial",
+})
+_DATED_CLAUDE_FABLE_RE = re.compile(r"^claude-fable-5-2(?:-\d{8}|-\d{4}-\d{2}-\d{2})?$")
 CAPABILITY_TTL_SECONDS = 300
 _LOCK = threading.RLock()
 _MEMORY = {}
+
+
+def _normalize_role_token(role=None, label=None) -> str:
+    raw = role if isinstance(role, str) and role.strip() else None
+    if not raw and isinstance(label, str) and label.strip():
+        raw = re.split(r"[:#.\s/]", label.strip(), maxsplit=1)[0]
+    return str(raw or "").strip().lower()
+
+
+def is_claude_verification_role(*, role=None, label=None) -> bool:
+    token = _normalize_role_token(role=role, label=label)
+    return bool(token and token in CLAUDE_VERIFICATION_ROLES)
+
+
+def normalize_claude_fable_model(model_id):
+    if not isinstance(model_id, str):
+        return model_id
+    trimmed = model_id.strip()
+    if _DATED_CLAUDE_FABLE_RE.fullmatch(trimmed):
+        return CANONICAL_CLAUDE_FABLE_MODEL
+    return trimmed
 
 
 class PolicyUnavailable(RuntimeError):
@@ -119,14 +154,28 @@ def normalize_catalog(family, raw):
         for index, entry in enumerate(models):
             row(entry["model"], entry["efforts"], ranks[index], None, "provider_catalog_order")
     elif family == "claude":
-        # `best` is the provider's moving frontier alias, not a product-name pin.
-        # Also advertise `opus`, `sonnet`, and `haiku` at lower ranks so Setup
-        # and entitlement-aware fallbacks can select Opus or Sonnet when `best`
-        # (e.g. Fable 5.1) requires extra usage credits on the user's plan.
         efforts = raw.get("efforts", [])
-        for rank_idx, alias in enumerate(("best", "opus", "sonnet", "haiku")):
-            rows.append({"model": alias, "efforts": efforts, "rank": rank_idx,
-                         "upgrade": None, "evidence": "provider_moving_alias"})
+        explicit_models = raw.get("models")
+        if isinstance(explicit_models, (list, tuple)) and explicit_models:
+            for rank_idx, entry in enumerate(explicit_models):
+                if isinstance(entry, dict):
+                    row(
+                        entry.get("model") or entry.get("slug") or entry.get("id"),
+                        entry.get("efforts", efforts),
+                        entry.get("rank", rank_idx),
+                        entry.get("upgrade"),
+                        entry.get("evidence", "provider_moving_alias"),
+                    )
+                else:
+                    row(entry, efforts, rank_idx, None, "provider_moving_alias")
+        else:
+            aliases = (
+                CLAUDE_CATALOG_MODELS
+                if (raw.get("include_frontier") is True or raw.get("canonical") is True)
+                else ("best", "opus", "sonnet", "haiku")
+            )
+            for rank_idx, alias in enumerate(aliases):
+                row(alias, efforts, rank_idx, None, "provider_moving_alias")
     else:
         raise PolicyUnavailable(family, "the installed transport does not expose verified model capabilities")
     if not rows:
@@ -318,7 +367,10 @@ def discover(family, *, env=None, runner=_run):
             match = re.search(r"--effort\s+<[^>]+>[\s\S]{0,180}?\(([^)]+)\)", help_text)
             if not match:
                 raise RuntimeError("Installed Claude CLI does not advertise effort capabilities")
-            raw = {"efforts": [part.strip() for part in match.group(1).split(",")]}
+            raw = {
+                "models": list(CLAUDE_CATALOG_MODELS),
+                "efforts": [part.strip() for part in match.group(1).split(",")],
+            }
         elif family == "gemini":
             # agy (the Antigravity CLI, 2026-10-07: 1.3.x) lists "<id>	<display name>" rows, newest first. It
             # also serves other vendors' models; only gemini-* rows belong to the Gemini family.
@@ -353,7 +405,7 @@ def _cache_identity(family, env):
     return (family, str(profile), env.get("PATH"), str(provider_root), env.get('ANCHOR_PROVIDER_CONNECTION'), tuple(stamps))
 
 
-def resolve(family, *, settings=None, force=False, env=None, discoverer=None):
+def resolve(family, *, settings=None, force=False, env=None, discoverer=None, role=None, label=None, tier=None):
     """Resolve for a new session/seat. This never changes an existing session."""
     discoverer = discoverer or discover
     if settings is not None:
@@ -367,10 +419,23 @@ def resolve(family, *, settings=None, force=False, env=None, discoverer=None):
         if force or not cached or time.time() - cached["discovered_at"] >= CAPABILITY_TTL_SECONDS:
             catalog, command = discoverer(family, env=active_env)
             selected = select_model(family, catalog)
-            cached = {**selected, "command": command, "discovered_at": time.time()}
+            cached = {**selected, "command": command, "discovered_at": time.time(), "_catalog_rows": list(catalog)}
             _MEMORY[_cache_identity(family, active_env)] = cached
         result = dict(cached)
+        catalog_rows = result.pop("_catalog_rows", None) or []
         result["requested_policy"] = dict(DEFAULT_POLICY)
+    if family == "claude":
+        heavy_or_verify = is_claude_verification_role(role=role, label=label) or (
+            str(tier or active_env.get("TRIO_TIER") or "").strip().lower() == "heavy"
+        )
+        if heavy_or_verify:
+            fable_row = next((r for r in catalog_rows if r.get("model") == CANONICAL_CLAUDE_FABLE_MODEL), None)
+            result["model"] = CANONICAL_CLAUDE_FABLE_MODEL
+            if fable_row and fable_row.get("efforts"):
+                result["effort"] = highest_effort(fable_row["efforts"])
+            elif result.get("effort") not in EFFORT_ORDER:
+                result["effort"] = "max"
+            result["selection_evidence"] = "heavy_review_fable_pin"
     result["settings_revision"] = (settings or {}).get("settings_revision", 0)
     return result
 
@@ -387,6 +452,7 @@ def cached_selection(family, *, settings=None, env=None):
         if not cached:
             return None
         result = dict(cached)
+        result.pop("_catalog_rows", None)
     result["requested_policy"] = dict(DEFAULT_POLICY)
     result["settings_revision"] = (settings or {}).get("settings_revision", 0)
     result["stale"] = time.time() - result.get("discovered_at", 0) >= CAPABILITY_TTL_SECONDS
@@ -414,3 +480,44 @@ def launch_args(selection, *, subagents=True):
         # agy names the effort inside the model id (gemini-3.8-flash-high); it has no separate effort flag for it.
         return ["--model", agy_model_id(model, effort)]
     raise PolicyUnavailable(family, "no supported highest-effort launch contract")
+
+
+def attest_claude_fable_receipt(receipt, *, requested_model=None, role=None, label=None):
+    """Positive served-model attestation gate for heavy/adversarial Claude seats."""
+    if not isinstance(receipt, dict):
+        raise PolicyUnavailable("claude", "turn receipt is missing or malformed", code="attestation_mismatch")
+    out = dict(receipt)
+    eff_role = role if role is not None else out.get("role")
+    eff_label = label if label is not None else out.get("label")
+    verification = is_claude_verification_role(role=eff_role, label=eff_label)
+    raw_req = requested_model if (isinstance(requested_model, str) and requested_model.strip()) else out.get("requested_model")
+    if verification:
+        req = CANONICAL_CLAUDE_FABLE_MODEL
+    elif isinstance(raw_req, str) and raw_req.strip():
+        req = normalize_claude_fable_model(raw_req)
+    else:
+        req = CANONICAL_CLAUDE_FABLE_MODEL
+    raw_served = out.get("model_served")
+    norm_served = normalize_claude_fable_model(raw_served) if isinstance(raw_served, str) and raw_served.strip() else None
+    attested = out.get("model_attested") is True
+    allow_fallback = (
+        not verification
+        and normalize_claude_fable_model(out.get("fallback_from_model")) == CANONICAL_CLAUDE_FABLE_MODEL
+    )
+    if req == CANONICAL_CLAUDE_FABLE_MODEL and not allow_fallback:
+        if attested and norm_served == CANONICAL_CLAUDE_FABLE_MODEL:
+            out["model_served"] = CANONICAL_CLAUDE_FABLE_MODEL
+        else:
+            out["ok"] = False
+            out["status"] = "attestation_mismatch"
+            out["model_attested"] = bool(attested and isinstance(raw_served, str) and raw_served)
+            out["error"] = (
+                f"Claude positive attestation failed: requested {CANONICAL_CLAUDE_FABLE_MODEL}, "
+                f"served {raw_served if attested and raw_served else 'unattested'}"
+            )
+            return out
+    elif attested and norm_served == CANONICAL_CLAUDE_FABLE_MODEL:
+        out["model_served"] = CANONICAL_CLAUDE_FABLE_MODEL
+    out.setdefault("ok", True)
+    out.setdefault("status", "success")
+    return out

@@ -91,9 +91,108 @@
     var opener = app.openerOf(window);
     if (opener) Object.defineProperty(window, "opener", { configurable: true, get: function () { return opener; } });
   } catch (e) { /* the page keeps its own opener */ }
+
+  // Live-sync an already-open Anchor.exe shell (even if app.html has not reloaded since an earlier session):
+  // 1) Reset accidental >100% shell ZoomFactor once; 2) upgrade ANCHOR_APP.open & split ratio for docs.
+  try {
+    var topWin = window.top;
+    if (topWin && topWin !== window) {
+      var topHost = topWin.pywebview && topWin.pywebview.api;
+      if (topHost && typeof topHost.zoom === "function" &&
+          topWin.location && topWin.location.hostname !== "anchor.test" &&
+          localStorage.getItem("anchor_shell_zoom_reset_20261122_v2") !== "1") {
+        localStorage.setItem("anchor_shell_zoom_reset_20261122_v2", "1");
+        topHost.zoom(0);
+      }
+      if (!topWin.__anchorDocFit20261122 && topWin.ANCHOR_APP) {
+        topWin.__anchorDocFit20261122 = true;
+        var origOpen = topWin.ANCHOR_APP.open;
+        if (typeof origOpen === "function") {
+          topWin.ANCHOR_APP.open = function (u, target, fromWin, features) {
+            try {
+              var full = new URL(String(u == null ? "" : u), (fromWin && fromWin.location ? fromWin.location.href : topWin.location.href));
+              if (full.origin === topWin.location.origin &&
+                  full.pathname === "/api/steward/deliverable-file" &&
+                  full.searchParams.get("download") !== "1" &&
+                  full.searchParams.get("raw") !== "1" &&
+                  full.searchParams.get("scrollview") !== "0" &&
+                  !full.searchParams.has("scrollview") &&
+                  !full.searchParams.has("pdf_page")) {
+                var qp = (full.searchParams.get("path") || "").toLowerCase();
+                if (qp.endsWith(".pdf") || qp.endsWith(".html") || qp.endsWith(".htm") || (qp.endsWith(".pptx") && full.searchParams.get("view") === "1")) {
+                  full.searchParams.set("scrollview", "1");
+                  u = full.pathname + full.search + full.hash;
+                }
+              }
+            } catch (_eu) {}
+            var stg = topWin.document && topWin.document.getElementById("stage");
+            if (stg && !stg.style.getPropertyValue("--left")) {
+              stg.style.setProperty("--left", "0.44");
+            }
+            return origOpen.call(topWin.ANCHOR_APP, u, target, fromWin, features);
+          };
+        }
+        if (typeof topWin.ANCHOR_APP.openSecondWindow !== "function") {
+          topWin.ANCHOR_APP.openSecondWindow = function (u, _title, fromWin) {
+            return topWin.ANCHOR_APP.open(u, "_blank", fromWin);
+          };
+        }
+      }
+    }
+  } catch (_eTop) {}
+
+  // Provide scoped document zoom (Ctrl +/-/0, Ctrl+wheel) on Office/Markdown/text deliverable frames
+  // that carry no inline scripts of their own (e.g. office_preview.py), without touching cockpit/Cave pages.
+  try {
+    if (typeof window.__anchorPdfZoom !== "function" &&
+        (location.pathname === "/api/steward/deliverable-file" ||
+         location.pathname === "/steward/report" ||
+         location.pathname.indexOf("/report/") === 0 ||
+         location.pathname.indexOf("/summary/") === 0 ||
+         location.pathname.indexOf("/artifact/") === 0)) {
+      var _docPct = 100;
+      window.__anchorPdfZoom = function (step) {
+        if (Number(step) === 0) _docPct = 100;
+        else _docPct = Math.max(60, Math.min(240, _docPct + (Number(step) > 0 ? 15 : -15)));
+        var tgt = document.getElementById("opMain") || document.querySelector("main, .anchor-reader") || document.body;
+        if (tgt) {
+          tgt.style.zoom = (_docPct === 100) ? "" : (_docPct + "%");
+          if (tgt.tagName === "MAIN") tgt.style.maxWidth = (_docPct > 100) ? "none" : "980px";
+        }
+        document.documentElement.style.overflowX = (_docPct > 100) ? "auto" : "hidden";
+        return _docPct;
+      };
+    }
+  } catch (_eDocZ) {}
+
+  // Intercept Ctrl +/-/0 and Ctrl+wheel inside zoomable document frames BEFORE app.zoomKeys(document),
+  // so even an un-reloaded older app.js in window.top never zooms the entire Anchor.exe shell.
+  document.addEventListener("keydown", function (ev) {
+    if (!(ev.ctrlKey || ev.metaKey) || ev.altKey) return;
+    if (typeof window.__anchorPdfZoom !== "function") return;
+    var k = ev.key || "";
+    var step = (k === "+" || k === "=" || ev.code === "NumpadAdd") ? 1
+             : (k === "-" || k === "_" || ev.code === "NumpadSubtract") ? -1
+             : (k === "0" || ev.code === "Numpad0") ? 0 : null;
+    if (step !== null) {
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      try { window.__anchorPdfZoom(step); } catch (_ez) {}
+    }
+  }, true);
+  document.addEventListener("wheel", function (ev) {
+    if (!(ev.ctrlKey || ev.metaKey) || !ev.deltaY) return;
+    if (typeof window.__anchorPdfZoom !== "function") return;
+    ev.preventDefault();
+    ev.stopImmediatePropagation();
+    try { window.__anchorPdfZoom(ev.deltaY < 0 ? 1 : -1, ev.clientX, ev.clientY); } catch (_ew) {}
+  }, { capture: true, passive: false });
+
   try { app.zoomKeys(document); } catch (e) { /* zoom is a convenience */ }
-  // a click anywhere in a pane makes that pane the active one (where the next tile he clicks will show)
+  // a click anywhere in a pane makes that pane the active one; moving the pointer tracks which pane is hovered
   document.addEventListener("pointerdown", function () { try { app.touch(window); } catch (e) { /* no app */ } }, true);
+  document.addEventListener("pointerenter", function () { try { if (app.hover) app.hover(window); } catch (e) {} }, true);
+  document.addEventListener("pointermove", function () { try { if (app.hover) app.hover(window); } catch (e) {} }, { capture: true, passive: true });
 
   if (window.parent === window.top) {
     window.close = function () { try { app.closeWindow(window); } catch (e) { /* nothing to close */ } };

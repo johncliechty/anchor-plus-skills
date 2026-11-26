@@ -83,6 +83,32 @@ def stdin_message(encoded_prompt: bytes) -> bytes:
 
 
 _WRITE_TOOLS = ("write_file", "edit_file", "write_to_file", "replace_file_content", "multi_replace_file_content", "Write", "Edit", "NotebookEdit")
+_PROGRESS_TOOL_NAMES = (
+    "write_file",
+    "edit_file",
+    "multi_replace_file_content",
+    "write_to_file",
+    "replace_file_content",
+    "Write",
+    "Edit",
+    "NotebookEdit",
+    "run_command",
+    "read_file",
+    "view_file",
+    "grep_search",
+    "find_by_name",
+)
+
+
+def _extract_write_file_path(params: dict[str, Any]) -> str:
+    return _bounded_string(
+        params.get("Path")
+        or params.get("TargetFile")
+        or params.get("file_path")
+        or params.get("AbsolutePath")
+        or params.get("path"),
+        500,
+    )
 
 
 class GeminiNormalizer(EventNormalizer):
@@ -92,8 +118,10 @@ class GeminiNormalizer(EventNormalizer):
         super().__init__(model, effort, resume)
         self.expected_id = canonical_conversation_id(resume) if resume else None
         self._tool_steps: set[int] = set()
+        self._emitted_tool_use_steps: set[int] = set()
         self._write_steps: set[int] = set()
         self._completed_write_steps: set[int] = set()
+        self._progress_tool_states: dict[int, tuple[str, str]] = {}
         self._streamed = ""
 
     def _receipt(self):
@@ -102,6 +130,36 @@ class GeminiNormalizer(EventNormalizer):
         # agy echoes the model it was asked to run in its init event; it does not report a served model.
         receipt["model_source"] = None if self.model_served is None else "cli-recorded"
         return receipt
+
+    def made_progress(self, event: dict[str, Any], translated: list[dict[str, Any]]) -> bool:
+        step_prog = False
+        if isinstance(event, dict) and event.get("event") == "step_update":
+            step = event.get("step_update")
+            if isinstance(step, dict):
+                stype = step.get("step_type")
+                if stype in ("thinking", "planning"):
+                    thought = step.get("text_delta") or step.get("thought")
+                    step_prog = bool(isinstance(thought, str) and thought.strip())
+                else:
+                    idx = step.get("step_index")
+                    if stype == "tool" and isinstance(idx, int) and not isinstance(idx, bool):
+                        info = step.get("tool_info") if isinstance(step.get("tool_info"), dict) else {}
+                        name = _bounded_string(step.get("tool_name") or info.get("name"), 120)
+                        if name in _PROGRESS_TOOL_NAMES:
+                            params = info.get("parameters") if isinstance(info.get("parameters"), dict) else {}
+                            fp = _extract_write_file_path(params) if name in _WRITE_TOOLS else ""
+                            sig = (_bounded_string(step.get("state"), 40), fp)
+                            if self._progress_tool_states.get(idx) != sig:
+                                self._progress_tool_states[idx] = sig
+                                step_prog = True
+        if super().made_progress(event, translated):
+            return True
+        for output in translated:
+            if output.get("type") == "user" and any(
+                block.get("type") == "tool_result" for block in (output.get("message") or {}).get("content", [])
+            ):
+                return True
+        return step_prog
 
     def _text_delta(self, text: str):
         if not text:
@@ -117,35 +175,30 @@ class GeminiNormalizer(EventNormalizer):
         if not isinstance(index, int) or isinstance(index, bool):
             return []
         state = step.get("state")
-        if index in self._tool_steps:
-            if index in self._write_steps and index not in self._completed_write_steps and state in ("DONE", "ERROR"):
-                self._completed_write_steps.add(index)
-                return [{"type": "user", "session_id": self.thread_id, "message": {
-                    "role": "user", "content": [{"type": "tool_result", "tool_use_id": f"{self.thread_id}:{index}",
-                        "is_error": state != "DONE"}],
-                }}]
-            return []
-        self._tool_steps.add(index)
         info = step.get("tool_info") if isinstance(step.get("tool_info"), dict) else {}
         name = _bounded_string(step.get("tool_name") or info.get("name"), 120) or "gemini_tool"
         params = info.get("parameters") if isinstance(info.get("parameters"), dict) else {}
-        payload = {"provider_tool": name}
-        if name in _WRITE_TOOLS:
-            fp = _bounded_string(
-                params.get("TargetFile") or params.get("file_path") or params.get("AbsolutePath") or params.get("path"),
-                500,
-            )
+        is_write = name in _WRITE_TOOLS
+        fp = _extract_write_file_path(params) if is_write else ""
+        self._tool_steps.add(index)
+        if is_write:
+            self._write_steps.add(index)
+
+        events: list[dict[str, Any]] = []
+        if index not in self._emitted_tool_use_steps and (not is_write or fp or state in ("DONE", "ERROR")):
+            self._emitted_tool_use_steps.add(index)
+            payload: dict[str, Any] = {"provider_tool": name}
             if fp:
                 payload["file_path"] = fp
-                self._write_steps.add(index)
-        skill = _skill_token(name, *[v for v in params.values() if isinstance(v, str)])
-        if skill:
-            payload["skill"] = skill   # the cockpit marks the skill in use; the folder's name only
-        events = [{"type": "assistant", "session_id": self.thread_id, "message": {
-            "role": "assistant", "content": [{"type": "tool_use", "id": f"{self.thread_id}:{index}",
-                "name": name, "input": payload}],
-        }}]
-        if index in self._write_steps and state in ("DONE", "ERROR"):
+            skill = _skill_token(name, *[v for v in params.values() if isinstance(v, str)])
+            if skill:
+                payload["skill"] = skill   # the cockpit marks the skill in use; the folder's name only
+            events.append({"type": "assistant", "session_id": self.thread_id, "message": {
+                "role": "assistant", "content": [{"type": "tool_use", "id": f"{self.thread_id}:{index}",
+                    "name": name, "input": payload}],
+            }})
+
+        if index in self._write_steps and index not in self._completed_write_steps and state in ("DONE", "ERROR"):
             self._completed_write_steps.add(index)
             events.append({"type": "user", "session_id": self.thread_id, "message": {
                 "role": "user", "content": [{"type": "tool_result", "tool_use_id": f"{self.thread_id}:{index}",

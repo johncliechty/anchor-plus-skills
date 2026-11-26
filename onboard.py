@@ -487,8 +487,44 @@ def main(argv=None) -> int:
     """
     argv = list(sys.argv[1:] if argv is None else argv)
     symlink = "--symlink" in argv
+    accept_lic_flag = "--accept-gwl-license" in argv
+    non_interactive = ("--non-interactive" in argv) or ("PYTEST_CURRENT_TEST" in os.environ)
 
     print("Anchor onboard — installer core (skills + scaffold + token)\n")
+    print("Ghost World Labs License — Version 1, Refinement 2 (GHOST-WORLD-LAB-NON-RESALE-v1)")
+    print("  - Free personal, academic/research, and internal use + voluntary free sharing.")
+    print("  - All rights reserved (not open source): NO software resale, paid bundling,")
+    print("    recurring version-use fees, or paid hosted commercialization without")
+    print("    Separate Written Permission from Ghost World Labs.\n")
+
+    if accept_lic_flag:
+        try:
+            import website_portal as _wp_onb
+            _wp_onb.accept_non_resale_license(
+                "Collaborator",
+                True,
+                intended_use="personal_or_research",
+                store_dir=_resolve_data_dir(None) / ".anchor",
+            )
+            print("  Ghost World Labs License: ACKNOWLEDGED & RECORDED (.anchor/license_acceptances.json)\n")
+        except Exception:
+            pass
+    elif not non_interactive and hasattr(sys.stdin, "isatty") and sys.stdin.isatty():
+        try:
+            ans = input("Do you acknowledge and agree to the Ghost World Labs License above? [Y/n]: ").strip().lower()
+            if ans in ("", "y", "yes"):
+                import website_portal as _wp_onb
+                _wp_onb.accept_non_resale_license(
+                    "Collaborator",
+                    True,
+                    intended_use="personal_or_research",
+                    store_dir=_resolve_data_dir(None) / ".anchor",
+                )
+                print("  Ghost World Labs License: ACKNOWLEDGED & RECORDED\n")
+            else:
+                print("  NOTE: Complete Ghost World Labs License acknowledgement in Setup (/onboard-wizard Step 1).\n")
+        except EOFError:
+            pass
 
     prereqs = detect_prereqs()
     print("Detected OS: %s (%s)" % (prereqs["os"], prereqs["platform"]))

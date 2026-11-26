@@ -34,7 +34,7 @@
       if (early) early(st, question);
       var stamp = String(st.stamp || ''), cached = old && old.identity === key && old.stamp === stamp && Date.now() < old.until;
       var record = cached ? Promise.resolve(old) : target.general ? Promise.resolve({identity:key,stamp:stamp,until:Date.now()+120000,review:false})
-        : Promise.all([get('/api/steward/map' + q, headers), get('/api/steward/deliverables' + q, headers)]).then(function (data) {
+        : Promise.all([get('/api/steward/map' + q + '&plan_history=0', headers), get('/api/steward/deliverables' + q, headers)]).then(function (data) {
           if (!Array.isArray(data[0].steps) || !Array.isArray(data[1].items)) throw new Error('incomplete review record');
           return {identity:key,stamp:stamp,until:String(data[0].stamp || '')===stamp?Date.now()+120000:0,review:review(data[0],data[1])};
         });

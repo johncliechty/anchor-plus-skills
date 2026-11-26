@@ -1875,6 +1875,28 @@ def run_review(job, tree, head, delta_from=""):
     if r.returncode != 0:                     # a record from a review that did not finish is never a pass (283fc40)
         rec.update(ok=False, error=rec.get("error") or
                    "the review process did not complete successfully (exit %s)" % r.returncode)
+    if (
+        rec.get("ok")
+        and str(rec.get("family") or "").strip().lower() == "claude"
+        and rec.get("model") != "delta-noop"
+        and rec.get("served_via") != "agy-dispatch"
+        and (not seam or rec.get("requested_model") == "claude-fable-5-2")
+    ):
+        import model_policy as _mp
+        attested_rev = _mp.attest_claude_fable_receipt(
+            {
+                "ok": True,
+                "requested_model": rec.get("requested_model") or _mp.CANONICAL_CLAUDE_FABLE_MODEL,
+                "model_served": rec.get("model"),
+                "model_attested": bool(rec.get("model_attested")),
+            },
+            role="review",
+            label="review:code-job",
+        )
+        if not attested_rev.get("ok"):
+            rec.update(ok=False, status="attestation_mismatch", error=attested_rev.get("error"))
+        elif attested_rev.get("model_served"):
+            rec["model"] = attested_rev["model_served"]
     rec["at"] = time.strftime("%Y-%m-%d %H:%M:%S")
     rec["delta_from"] = delta_from or None
     _ingest_review_usage(job, rec, delta_from=delta_from, raw_stdout=r.stdout or "")

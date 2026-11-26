@@ -48,9 +48,11 @@ provider_settings.py
 provider_native.py
 provider_secrets.py
 provider_setup.py
+provider_detail_view.py
 usage_capacity.py
 high_seat_core.py
 high_seat_page.py
+cave_processing_feed.py
 poincare_state_map.py
 codex_catalog.py
 model_policy.py
@@ -63,6 +65,7 @@ notebook_runtime.py
 notebook_service.py
 docs/notebook-work-products.md
 docs/notebook-host-setup.md
+docs/GHOST-WORLD-LAB-NON-RESALE-v1.md
 tools/setup_notebooks.ps1
 tools/install_notebook_startup.ps1
 tools/__init__.py
@@ -322,7 +325,13 @@ chamber/rebrief-channel-audit.json
 # per-project .anchor/ + .ecgberht/) — no repo data files.
 steward_cockpit/__init__.py
 steward_cockpit/aegis_session.py
+steward_cockpit/anvil_comprehension_engine.py
+steward_cockpit/anvil_literature_job.py
+steward_cockpit/anvil_py_deps.py
+steward_cockpit/anvil_replication_job.py
+steward_cockpit/anvil_scoping_v6.py
 steward_cockpit/anvil_session.py
+steward_cockpit/anvil_verification_guard.py
 steward_cockpit/boundaries.py
 steward_cockpit/campaign_acts.py
 steward_cockpit/campaign_parts.py
@@ -364,11 +373,22 @@ steward_cockpit/steward_campaign.py
 steward_cockpit/steward_core.py
 steward_cockpit/steward_engine.py
 steward_cockpit/steward_routes.py
+steward_cockpit/wave_map_model.py
+steward_cockpit/deliverable_shelves.py
 steward_cockpit/static/cockpit.html
 steward_cockpit/static/v1.html
 steward_cockpit/static/v3.html
 steward_cockpit/static/report.html
 steward_cockpit/static/anvil.html
+steward_cockpit/static/anvil.js
+steward_cockpit/static/anvil_ide_drawer.js
+steward_cockpit/static/anvil_report.js
+steward_cockpit/static/anvil_schematic.js
+steward_cockpit/static/anvil_scoping.js
+steward_cockpit/static/anvil_v6.css
+steward_cockpit/static/anvil_v6.js
+steward_cockpit/static/anvil_workbench.css
+steward_cockpit/static/anvil_workbench.js
 steward_cockpit/static/aegis.html
 steward_cockpit/static/poincare.html
 steward_cockpit/static/wave17-aegis-cockpit-mockup.html
@@ -380,6 +400,8 @@ steward_cockpit/static/md.js
 steward_cockpit/static/plate.js
 steward_cockpit/static/tidy-idy-run.js
 steward_cockpit/static/skill-icons.js
+steward_cockpit/static/cockpit-wave-map.js
+steward_cockpit/static/cockpit-deliverable-shelves.js
 foundry_page.py
 health_state.py
 home_rows.py
@@ -480,6 +502,7 @@ share_schemas/**
 # "unknown", which is exactly what the 2026-07-30 intake had to guess around).
 # anchor.ico is the desktop-shortcut branding USER-ONBOARD.md promises.
 VERSION
+release-signal.json
 CHANGELOG.md
 anchor.ico
 

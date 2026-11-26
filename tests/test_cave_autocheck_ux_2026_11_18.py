@@ -416,35 +416,37 @@ def test_autocheck_tray_interactive_ux_in_chromium(
             try:
                 page = browser.new_page(viewport={"width": 1440, "height": 960})
                 page.goto(f"http://127.0.0.1:{port}/high-seat", wait_until="domcontentloaded")
-                page.wait_for_selector("#wlAutoCheckedStrip .wl-autocheck-card", timeout=8000)
+                page.wait_for_selector('[data-wl-step-pill="tile-trusts"].wl-step-autochecked', timeout=8000)
 
-                # Verify clear header, count=2, Confirm All button, 1/2 vs All 1/1 badges, and Done & Archive button
-                assert page.locator("#wlAutoCheckedCount").inner_text().strip() == "2"
-                assert page.locator("#btnWlConfirmAllAutochecks").is_visible()
-                assert page.locator('[data-wl-confirm-autocheck="ac-ui-1"]').is_visible()
-                assert page.locator('[data-wl-confirm-archive-autocheck="ac-ui-1"]').count() == 0
-                assert page.locator('[data-wl-confirm-archive-autocheck="ac-ui-2"]').is_visible()
+                # Separate #wlAutoCheckedStrip banner is gone; self-check info lives directly on each row's step pill
+                assert page.locator("#wlAutoCheckedStrip").count() == 0
+                pill_tr = page.locator('[data-wl-step-pill="tile-trusts"]')
+                pill_mm = page.locator('[data-wl-step-pill="tile-memo"]')
+                assert "1/2" in pill_tr.inner_text() and "+1" in pill_tr.inner_text()
+                assert "1/1" in pill_mm.inner_text() and "+1" in pill_mm.inner_text()
 
-                # Click title on ac-ui-1 -> expands `tile-trusts` and shows inline `✓ Auto-checked · Confirm` badge
-                page.locator('#wlAutoCheckedStrip [data-wl-focus-tile="tile-trusts"]').click()
-                page.wait_for_selector('#wlDetails-tile-trusts', timeout=5000)
+                # Clicking the step pill on `tile-trusts` expands its steps inline with `✓ Confirm` + `↺ Undo`
+                pill_tr.click()
+                page.wait_for_selector("#wlDetails-tile-trusts", timeout=5000)
                 assert page.locator('#wlDetails-tile-trusts [data-wl-confirm-step-autocheck="tile-trusts"]').is_visible()
+                assert page.locator('#wlDetails-tile-trusts [data-wl-undo-autocheck="ac-ui-1"]').is_visible()
 
-                # Click `✓ Confirm Done` on ac-ui-1 -> row clears (2 -> 1), step stays checked, inline badge clears!
-                page.locator('[data-wl-confirm-autocheck="ac-ui-1"]').click()
+                # Click `✓ Confirm` on `tile-trusts` -> step stays checked, `.wl-step-autochecked` clears (`✓ 1/2`)
+                page.locator('#wlDetails-tile-trusts [data-wl-confirm-step-autocheck="tile-trusts"]').click()
                 page.wait_for_function(
-                    "() => document.querySelectorAll('#wlAutoCheckedStrip .wl-autocheck-card').length === 1",
+                    "() => { var el = document.querySelector('[data-wl-step-pill=\"tile-trusts\"]'); return !!el && !el.classList.contains('wl-step-autochecked'); }",
                     timeout=5000,
                 )
-                assert page.locator("#wlAutoCheckedCount").inner_text().strip() == "1"
                 step_cb = page.locator('#wlDetails-tile-trusts input[type="checkbox"][data-wl-step-idx="0"]')
                 assert step_cb.is_checked()
                 assert page.locator('#wlDetails-tile-trusts [data-wl-confirm-step-autocheck="tile-trusts"]').count() == 0
 
-                # Click `✓ Done & Archive` on ac-ui-2 -> archives `tile-memo` to Things Done and hides `#wlAutoCheckedStrip`!
-                page.locator('[data-wl-confirm-archive-autocheck="ac-ui-2"]').click()
+                # Expand `tile-memo` (1/1 done) and click `✓ Done & Archive` -> moves `tile-memo` to Things Done!
+                page.locator('[data-wl-step-pill="tile-memo"]').click()
+                page.wait_for_selector('#wlDetails-tile-memo [data-wl-confirm-archive-autocheck="ac-ui-2"]', timeout=5000)
+                page.locator('#wlDetails-tile-memo [data-wl-confirm-archive-autocheck="ac-ui-2"]').click()
                 page.wait_for_function(
-                    "() => { var el = document.getElementById('wlAutoCheckedStrip'); return !!el && el.hidden === true; }",
+                    "() => document.getElementById('wlCntArchived') && document.getElementById('wlCntArchived').textContent.trim() === '1'",
                     timeout=5000,
                 )
                 assert page.locator("#wlCntArchived").inner_text().strip() == "1"

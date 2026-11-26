@@ -2821,6 +2821,30 @@ def _finalize(job_id: str, exit_code, result_envelope=None) -> None:
             result_envelope is not None and
             (not is_chatgpt or success_ok or failure_ok)
         )
+        claude_attestation_ok = True
+        if str(rec.get("backend") or "").strip().lower() == "claude" and trusted_envelope and isinstance(result_envelope, dict):
+            req_policy = ((rec.get("relaunch_spec") or {}).get("model_policy") or {})
+            req_model = req_policy.get("model") or result_envelope.get("requested_model")
+            runner_override = bool(os.environ.get("ANCHOR_RUNNER_CMD"))
+            if req_model == "claude-fable-5-2" and (not runner_override or result_envelope.get("requested_model") == "claude-fable-5-2"):
+                import model_policy as _mp
+                served_mdl = result_envelope.get("model_served") or result_envelope.get("model")
+                if not served_mdl and isinstance(result_envelope.get("modelUsage"), dict) and len(result_envelope["modelUsage"]) == 1:
+                    served_mdl = next(iter(result_envelope["modelUsage"]))
+                att_res = _mp.attest_claude_fable_receipt(
+                    {
+                        "ok": True,
+                        "requested_model": req_model,
+                        "fallback_from_model": result_envelope.get("fallback_from_model") or req_policy.get("fallback_from_model"),
+                        "model_served": served_mdl,
+                        "model_attested": bool(result_envelope.get("model_attested") is True or served_mdl),
+                    },
+                    role=rec.get("lane"),
+                )
+                if not att_res.get("ok"):
+                    claude_attestation_ok = False
+                    rec["failure_reason"] = "attestation_mismatch"
+                    rec["failure_detail"] = att_res.get("error")
         if trusted_envelope:
             cost = _cost_from_envelope(result_envelope)
             rec["cost"] = cost
@@ -2855,7 +2879,7 @@ def _finalize(job_id: str, exit_code, result_envelope=None) -> None:
                     # Never derive even a reason string from the untrusted child.
                     rec["failure_reason"] = "chatgpt-valid-receipt-required"
             final_status = (STATUS_DONE
-                            if exit_code == 0 and success_ok else STATUS_FAILED)
+                            if exit_code == 0 and success_ok and claude_attestation_ok else STATUS_FAILED)
             rec["status"] = final_status
             _journal.emit_safe(
                 rec.get("project_id") or "", _journal.EV_JOB_FINISHED,

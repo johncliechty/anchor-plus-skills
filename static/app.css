@@ -85,7 +85,7 @@ body.hosted #winctl { display: flex; }
 #winctl button.close:hover { background: #c42b1c; color: #fff; }
 
 /* ---- the panes ---- */
-#stage { --left: .5; position: relative; min-height: 0; display: grid;
+#stage { --left: .44; position: relative; min-height: 0; display: grid;
          grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
 body.two #stage { grid-template-columns: minmax(0, calc(var(--left) * 100%)) 6px minmax(0, 1fr);
                   grid-template-rows: 28px minmax(0, 1fr); }

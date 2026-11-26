@@ -573,9 +573,9 @@ def _panel(ctx):
         '<div class="loginbox" id="loginBox" hidden><span class="lb-t">This browser is not logged in to Anchor.</span>'
         '<input id="loginTok" type="password" placeholder="paste the token here" autocomplete="off" spellcheck="false">'
         '<button class="mini" id="loginGo">Log in</button><span class="lb-msg" id="loginMsg"></span></div>'
-        '<section class="composer"><label class="sr" for="say">Tell the steward what to do</label>'
-        '<textarea id="say" rows="2" placeholder="Ask %s, discuss, or tell it what to do &mdash; it runs the %s: move &hellip; to tier 2, add a part to &hellip;, &hellip; by Oct 10"></textarea>'
-        '<div class="comp-row"><span class="hint">Enter sends &middot; Shift+Enter new line &middot; the steward answers above as it writes; when it changes the record the board reloads with the receipt</span><button class="send" id="sendBtn">Send</button></div>'
+        '<section class="composer"><label class="sr" for="exSay">Tell the steward what to do</label>'
+        '<textarea id="exSay" rows="2" placeholder="Ask %s, discuss, or tell it what to do &mdash; it runs the %s: move &hellip; to tier 2, add a part to &hellip;, &hellip; by Oct 10"></textarea>'
+        '<div class="comp-row"><span class="hint">Enter sends &middot; Shift+Enter new line &middot; the steward answers above as it writes; when it changes the record the board reloads with the receipt</span><button type="button" class="mini clear-draft-btn" id="exClearDraft" data-clear-draft title="Clear unsent instruction draft">Clear</button><button class="send" id="exSend">Send</button></div>'
         '<div class="receipt" id="receipt" hidden><span class="r-mark">&#10003;</span><span id="receiptText"></span> <button class="mini" id="undoBtn" hidden>undo</button></div></section>'
         '</aside>'
     ) % (look_ahead(ctx), conversation_view(st["label"], ctx.get("pid") or "", "campaign", "", "the " + mode_name(st)), esc(st["label"]), esc(mode_name(st)))

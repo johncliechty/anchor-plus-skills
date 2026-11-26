@@ -21,6 +21,7 @@ JSON mode:
 Session ids persist to proto-state.json so a server restart resumes the same
 conversation instead of starting cold.
 """
+import hashlib
 import io
 import json
 import paths as _paths
@@ -40,6 +41,9 @@ HERE = Path(__file__).parent
 STATE_FILE = globals().get("STATE_FILE") or (HERE / "proto-state.json")
 _RELOCATED_STATE_FILE = globals().get("_RELOCATED_STATE_FILE")   # the last ledger path relocate_state() set — its own move, as against a test/healthcheck swap
 _REAL_SUBPROCESS_POPEN = getattr(globals().get("_REAL_SUBPROCESS_POPEN"), "__call__", None) and globals().get("_REAL_SUBPROCESS_POPEN") or subprocess.Popen
+_REAL_SUBPROCESS_RUN = getattr(globals().get("_REAL_SUBPROCESS_RUN"), "__call__", None) and globals().get("_REAL_SUBPROCESS_RUN") or subprocess.run
+_REAL_SHUTIL_WHICH = getattr(globals().get("_REAL_SHUTIL_WHICH"), "__call__", None) and globals().get("_REAL_SHUTIL_WHICH") or shutil.which
+_CLAUDE_SYSTEM_PROMPT_FILE_CACHE: dict[str, bool] = {}
 
 _EVICTED_NATIVE_SESSION_RE = re.compile(
     r"(?:"
@@ -566,6 +570,11 @@ CONTRACT = (
     "label completed/approved flagship products 'FINAL: <Clean Human Title>' so they appear in Final Deliverables; and "
     "label all intermediate/building-block items (Gandalf reads, Beta-Reader reports, plans, logs, earlier drafts) "
     "'Supporting - <Title>' so they fold into the Supplemental drawer (never ask John to click 'Mark All Done'); "
+    "(iii-b) ACTIVE INSTRUCTION PRESENTATION, HIERARCHICAL FINAL CURATION & WAVE ITERATIONS (.ecgberht/deliverable-batches.json & .ecgberht/wave-state.json): "
+    "actively think through and curate BOTH what is presented under Most Recent (grouped by John's Last Instruction and Instruction Before Last — only primary human-facing products, never scratch/intermediate files) "
+    "AND the hierarchical summary and category organization of Final Deliverables (`steward_plan.py curate-deliverables --headline \"...\" --summary \"...\" --groups-json '[...]' --supersedes-json '{...}' --recent-paths \"...\"`). "
+    "Use explicit revision suffixes (v1->v2->v3, _r1->_r2, Rev A->Rev B) in the same folder/stem or `--supersedes-json` so older Final versions auto-retire into Earlier Deliverables while multi-format siblings (.pdf/.pptx/.docx) stay paired; "
+    "keep roadmap.json steps[] flat and track per-step round (1..99) + recommended_action ('iterate'|'advance'|null) in wave-state.json; "
     "(iv) ACCURATE BOTTOM STATUS WINDOW: the engine deterministically synthesizes .ecgberht/status-summary.json and "
     ".ecgberht/status_card.json from strip.json, roadmap.json, overview.json, and live jobs."
 )
@@ -640,6 +649,156 @@ TICK = (
 
 _STATE_LOCK = threading.RLock()
 
+CLIENT_MSG_ID_RING_MAX = 500
+CLIENT_MSG_ID_LOCK_TIMEOUT_SEC = 2.0
+_CLIENT_MSG_SCOPE_MUTEXES: dict[str, threading.RLock] = {}
+_CLIENT_MSG_META_LOCK = threading.Lock()
+
+
+def _client_msg_scope_mutex(scope_key: str) -> threading.RLock:
+    with _CLIENT_MSG_META_LOCK:
+        lk = _CLIENT_MSG_SCOPE_MUTEXES.get(scope_key)
+        if lk is None:
+            lk = threading.RLock()
+            _CLIENT_MSG_SCOPE_MUTEXES[scope_key] = lk
+        return lk
+
+
+def _client_msg_store_paths(cdir: str | Path | None = None) -> list[Path]:
+    out: list[Path] = []
+    if cdir:
+        cpath = Path(cdir)
+        try:
+            if cpath.is_dir():
+                out.append(cpath / ".ecgberht" / "client-msg-ids.json")
+        except OSError:
+            pass
+    try:
+        dd = _paths.data_dir()
+        out.append(Path(dd) / ".anchor" / "client-msg-ids.json")
+    except Exception:
+        pass
+    seen: set[str] = set()
+    deduped: list[Path] = []
+    for p in out:
+        nk = os.path.normcase(os.path.abspath(str(p)))
+        if nk not in seen:
+            seen.add(nk)
+            deduped.append(p)
+    return deduped
+
+
+def lookup_client_msg_id_receipt(scope_key: str, client_msg_id: str, *, cdir: str | Path | None = None) -> dict | None:
+    """Return a previously recorded successful receipt for `(scope_key, client_msg_id)` if present."""
+    clean_id = str(client_msg_id or "").strip()
+    clean_scope = str(scope_key or "").strip()
+    if not clean_id or not clean_scope:
+        return None
+    for store_path in _client_msg_store_paths(cdir):
+        lock_path = store_path.with_name(f"{store_path.name}.lock")
+        try:
+            if not store_path.is_file():
+                continue
+            with _paths.cross_process_lock(lock_path, timeout_sec=CLIENT_MSG_ID_LOCK_TIMEOUT_SEC):
+                doc = json.loads(store_path.read_text(encoding="utf-8"))
+            if not isinstance(doc, dict):
+                continue
+            scopes = doc.get("scopes")
+            if not isinstance(scopes, dict):
+                continue
+            ring = scopes.get(clean_scope)
+            if not isinstance(ring, list):
+                continue
+            for item in reversed(ring):
+                if isinstance(item, dict) and str(item.get("client_msg_id") or "") == clean_id:
+                    rec = item.get("receipt")
+                    return dict(rec) if isinstance(rec, dict) else {"ok": True}
+        except Exception:
+            continue
+    return None
+
+
+def record_client_msg_id_receipt(
+    scope_key: str,
+    client_msg_id: str,
+    receipt: dict,
+    *,
+    cdir: str | Path | None = None,
+) -> None:
+    """Atomically record a successful `client_msg_id` receipt (`temp + os.fsync + os.replace` under `cross_process_lock`),
+    bounded to `CLIENT_MSG_ID_RING_MAX = 500` entries per scope."""
+    clean_id = str(client_msg_id or "").strip()
+    clean_scope = str(scope_key or "").strip()
+    if not clean_id or not clean_scope or not isinstance(receipt, dict) or not receipt.get("ok"):
+        return
+    clean_receipt = {
+        k: v
+        for k, v in receipt.items()
+        if isinstance(k, str) and isinstance(v, (str, int, float, bool, type(None), list, dict))
+    }
+    entry = {
+        "client_msg_id": clean_id,
+        "at_ms": int(time.time() * 1000),
+        "receipt": clean_receipt,
+    }
+    for store_path in _client_msg_store_paths(cdir):
+        lock_path = store_path.with_name(f"{store_path.name}.lock")
+        try:
+            store_path.parent.mkdir(parents=True, exist_ok=True)
+            with _paths.cross_process_lock(lock_path, timeout_sec=CLIENT_MSG_ID_LOCK_TIMEOUT_SEC):
+                doc: dict = {"version": 1, "scopes": {}}
+                if store_path.is_file():
+                    try:
+                        loaded = json.loads(store_path.read_text(encoding="utf-8"))
+                        if isinstance(loaded, dict):
+                            doc = loaded
+                    except Exception:
+                        doc = {"version": 1, "scopes": {}}
+                scopes = doc.setdefault("scopes", {})
+                if not isinstance(scopes, dict):
+                    scopes = {}
+                    doc["scopes"] = scopes
+                ring = [
+                    it for it in (scopes.get(clean_scope) or [])
+                    if isinstance(it, dict) and str(it.get("client_msg_id") or "") != clean_id
+                ]
+                ring.append(entry)
+                if len(ring) > CLIENT_MSG_ID_RING_MAX:
+                    ring = ring[-CLIENT_MSG_ID_RING_MAX:]
+                scopes[clean_scope] = ring
+                _paths.atomic_write_text(store_path, json.dumps(doc, indent=2, ensure_ascii=False))
+        except Exception:
+            continue
+
+
+def execute_idempotent_say(
+    scope_key: str,
+    client_msg_id: str | None,
+    run_fn,
+    *,
+    cdir: str | Path | None = None,
+) -> dict:
+    """Serialize by `(scope_key, client_msg_id)` and deduplicate repeat invocations."""
+    clean_id = str(client_msg_id or "").strip()
+    clean_scope = str(scope_key or "").strip() or "default"
+    if not clean_id:
+        return run_fn()
+    with _client_msg_scope_mutex(clean_scope):
+        existing = lookup_client_msg_id_receipt(clean_scope, clean_id, cdir=cdir)
+        if existing is not None:
+            dup = dict(existing)
+            dup["ok"] = True
+            dup["deduplicated"] = True
+            dup["client_msg_id"] = clean_id
+            return dup
+        res = run_fn()
+        if isinstance(res, dict) and res.get("ok"):
+            res = dict(res)
+            res["client_msg_id"] = clean_id
+            res.setdefault("deduplicated", False)
+            record_client_msg_id_receipt(clean_scope, clean_id, res, cdir=cdir)
+        return res
+
 
 _GOAL_MARK = re.compile(r"\(the Campaign initiative ([A-Za-z0-9_.-]+)\)")
 
@@ -688,7 +847,7 @@ _LIST_PRICES = None
 _LIST_PRICES_MTIME_NS = None
 
 _BEST_FAMILY_DEFAULTS = {
-    "claude": "claude-fable-5-1",
+    "claude": "claude-fable-5-2",
     "chatgpt": "gpt-6-astra",
     "gemini": "gemini-4-argon-high",
     "grok": "grok-4.20",
@@ -763,7 +922,7 @@ def estimate_list_price_usd(model, usage, *, price_table=None):
                 ("gemini-3.8", "gemini-3.8-flash"),
                 ("gemini-3.1", "gemini-3.1-pro"),
                 ("gemini-3", "gemini-3-flash"),
-                ("claude-fable", "claude-fable-5-1"),
+                ("claude-fable", "claude-fable-5-2"),
                 ("claude-opus-5", "claude-opus-5-5"),
                 ("claude-sonnet-5", "claude-sonnet-5-5"),
                 ("claude-opus-4", "claude-opus-4-7"),
@@ -1336,12 +1495,66 @@ def reconcile_evicted_cockpit_sessions(state_path: Path | None = None, *, active
 
 
 def _cli_cmd(cli="claude"):
+    if os.name == "nt" and not str(cli).lower().endswith((".exe", ".cmd", ".bat")):
+        exe_native = shutil.which(f"{cli}.exe")
+        if exe_native and str(exe_native).lower().endswith(".exe"):
+            return [exe_native]
     exe = shutil.which(cli)
     if not exe:
+        if os.name == "nt" and cli == "claude" and shutil.which is _REAL_SHUTIL_WHICH:
+            local_bin_exe = Path.home() / ".local" / "bin" / "claude.exe"
+            if local_bin_exe.is_file():
+                return [str(local_bin_exe)]
         return None
     if exe.lower().endswith((".cmd", ".bat")):
+        if os.name == "nt":
+            sibling_exe = Path(exe).with_suffix(".exe")
+            if sibling_exe.is_file():
+                return [str(sibling_exe)]
+            if cli == "claude" and shutil.which is _REAL_SHUTIL_WHICH:
+                local_bin_exe = Path.home() / ".local" / "bin" / "claude.exe"
+                if local_bin_exe.is_file():
+                    return [str(local_bin_exe)]
         return ["cmd", "/c", exe]
     return [exe]
+
+
+def _claude_supports_system_prompt_file(base_cmd) -> bool:
+    """Return True when ``<claude> --help`` advertises ``--append-system-prompt-file`` (cached per executable path).
+
+    Bypassed cleanly in ``STEWARD_COCKPIT_FAKE`` or unit tests mocking ``subprocess.Popen`` without
+    mocking ``subprocess.run`` unless tested explicitly.
+    """
+    if not base_cmd or os.environ.get("STEWARD_COCKPIT_FAKE"):
+        return False
+    cmd_list = [str(x) for x in base_cmd]
+    if len(cmd_list) >= 3 and cmd_list[0].lower() in ("cmd", "cmd.exe") and cmd_list[1].lower() == "/c":
+        exe_key_raw = cmd_list[2]
+    else:
+        exe_key_raw = cmd_list[0]
+    cache_key = os.path.normcase(exe_key_raw) if os.name == "nt" else exe_key_raw
+    if cache_key in _CLAUDE_SYSTEM_PROMPT_FILE_CACHE:
+        return _CLAUDE_SYSTEM_PROMPT_FILE_CACHE[cache_key]
+    if subprocess.Popen is not _REAL_SUBPROCESS_POPEN and subprocess.run is _REAL_SUBPROCESS_RUN:
+        return False
+    try:
+        kw = {
+            "stdin": subprocess.DEVNULL,
+            "capture_output": True,
+            "text": True,
+            "encoding": "utf-8",
+            "errors": "replace",
+            "timeout": 5,
+        }
+        if os.name == "nt":
+            kw["creationflags"] = subprocess.CREATE_NO_WINDOW
+        res = subprocess.run(cmd_list + ["--help"], **kw)
+        combined = f"{getattr(res, 'stdout', '') or ''}\n{getattr(res, 'stderr', '') or ''}"
+        supported = "--append-system-prompt-file" in combined
+    except Exception:
+        supported = False
+    _CLAUDE_SYSTEM_PROMPT_FILE_CACHE[cache_key] = supported
+    return supported
 
 
 STEWARD_CONVERSATION_EFFORT = (os.environ.get("ANCHOR_STEWARD_EFFORT") or "high").strip().lower()
@@ -1686,6 +1899,15 @@ def _plan_state_capsule(cdir, query: str = "") -> str:
             )
         else:
             lines.append(f"- Unaccepted For-Review Deliverables: 0 awaiting review ({len(final_items)} final)")
+        shelves_cap = deliv.get("shelves") if isinstance(deliv, dict) and isinstance(deliv.get("shelves"), dict) else {}
+        hier_cap = deliv.get("deliverable_hierarchy") if isinstance(deliv, dict) and isinstance(deliv.get("deliverable_hierarchy"), dict) else {}
+        rec_b = shelves_cap.get("most_recent_batches") or []
+        if rec_b:
+            lines.append("- Most Recent by Instruction: " + " | ".join(f"{b.get('rank_label')}: \"{str(b.get('instruction_excerpt') or '')[:48]}\" ({b.get('file_count', 0)} files)" for b in rec_b[:2]))
+        cats_cap = hier_cap.get("categories") or []
+        exec_cap = hier_cap.get("executive_summary") or {}
+        if cats_cap:
+            lines.append("- Final Hierarchy (" + ("Steward-curated" if exec_cap.get("steward_authored") else "auto-grouped — refine via `steward_plan.py curate-deliverables` when finals change") + "): " + ", ".join(f"{c.get('title')} ({c.get('unit_count', 0)} units)" for c in cats_cap[:5]))
 
     if pstate.get("ok") and (Path(cdir) / "ECGBERHT.md").is_file():
         try:
@@ -2044,7 +2266,7 @@ class Engine:
         served_or_model = selection.get("model_served") or selection.get("model")
         fallback_model = selection.get("model")
         if not served_or_model and fallback_model == "best" and selection.get("family") == "claude":
-            served_or_model = "claude-fable-5-1"
+            served_or_model = "claude-fable-5-2"
         est_usd = 0.0
         est_turns = 0
         all_ck = tuple(self._usage_checkpoints.values())
@@ -2457,13 +2679,22 @@ class Engine:
         self._journal_routing(action="halt", message="No capable selected cockpit provider remains")
         raise RuntimeError("No capable selected cockpit provider remains; check subscription health")
 
-    _CLAUDE_ENTITLEMENT_LADDER = {"best": "opus", "opus": "sonnet"}
+    _CLAUDE_ENTITLEMENT_LADDER = {
+        "claude-fable-5-2": "claude-opus-5-5",
+        "claude-opus-5-5": "opus",
+        "best": "opus",
+        "opus": "sonnet",
+    }
 
     def _try_claude_credit_gate_fallback(self, err_text, ev=None):
-        """When Claude rejects a turn because '--model best' (Fable 5.1) or Opus requires
-        extra usage credits, automatically step down to the next entitled Claude model
-        ('best' -> 'opus' -> 'sonnet'), persist the preference, and replay the turn."""
+        """When Claude rejects a non-verification steward turn because Fable 5.2 / Opus 5.5 / Opus
+        requires extra usage credits, automatically step down to the next entitled Claude model
+        ('claude-fable-5-2' -> 'claude-opus-5-5' -> 'opus' -> 'sonnet'; 'best' -> 'opus' -> 'sonnet'),
+        persist the conversational preference, and replay the turn. Verification seats never step down."""
         if str(self.cli or "").lower() != "claude":
+            return False
+        import model_policy as _mp
+        if _mp.is_claude_verification_role(role=getattr(self, "role", None)):
             return False
         err_blob = f"{err_text or ''} {(ev or {}).get('api_error_code') or ''} {(ev or {}).get('error') or ''}"
         if not re.search(
@@ -2488,8 +2719,10 @@ class Engine:
             anchor_settings.save_settings(provider_preferences=pprefs, expected_revision=rev)
         except Exception:
             pass
+        prior_origin = (self.model_selection or {}).get("fallback_from_model") or cur_model
         new_sel = dict(self.model_selection or {"family": "claude", "cli": "claude", "effort": effort})
         new_sel["model"] = next_model
+        new_sel["fallback_from_model"] = prior_origin
         new_sel["cli_args"] = ["--model", next_model, "--effort", effort]
         self.model_selection = new_sel
         _update_state(self.skey(), {"model_policy": self.model_selection})
@@ -2726,6 +2959,8 @@ class Engine:
         # Anchor stub seam: the healthcheck / tests set STEWARD_COCKPIT_FAKE=1
         # so the cockpit is exercised through THIS module's stream-json fake
         # (the generic ANCHOR_RUNNER_CMD stub speaks a different protocol).
+        self._stdin_overflow_parts = None
+        self._stdin_overflow_once = None
         if is_fake:
             import sys
             cmd = [sys.executable, str(HERE / "fake_claude.py")]
@@ -2787,24 +3022,64 @@ class Engine:
             elif self.cli == "claude":
                 # W1a (ChatGPT r1): the fence guard runs BEFORE a tool - a fenced steward's shell admits no operator,
                 # redirection or file-writing git option; a code job's coder writes files only in its worktree
+                import paths as _paths
                 guard = fence_settings(shell=fenced, root=(self.dir if self.code_job is not None else ""))
                 self._fence_env = guard[1]
-                cmd = base + [
-                "-p", "--verbose",
-                "--input-format", "stream-json",
-                "--output-format", "stream-json",
-                "--include-partial-messages",
-                ] + (["--setting-sources", "project", "--permission-mode", "default",
-                      "--allowedTools", *FENCE_ALLOWED_TOOLS] if fenced else
-                     ["--permission-mode", self.permission_mode]) + [
-                # W1a: *(SERVED_CODE_DENY if (fenced and in_served) else ()) extended to all in_served launches
-                "--disallowedTools", "AskUserQuestion", *(SERVED_CODE_DENY if in_served else ()),
-                *(("--settings", guard[0]) if guard[0] else ()),
-                "--append-system-prompt", _personalize_prompt_for_user(persona) + self._contract() + "\n" + history_reference,
-                "--name", "steward-proto",
-                ] + model_policy.launch_args(selection)
-                if stored:
-                    cmd += ["--resume", stored]
+                persona_str = _personalize_prompt_for_user(persona)
+                contract_str = self._contract()
+                full_prompt = persona_str + contract_str + "\n" + history_reference
+                prompt_file = (
+                    _paths.data_dir()
+                    / ".anchor"
+                    / "steward-prompts"
+                    / f"{hashlib.sha1(self.skey().encode('utf-8')).hexdigest()}.system.md"
+                )
+                prompt_file_ok = False
+                try:
+                    prompt_file.parent.mkdir(parents=True, exist_ok=True)
+                    _paths.atomic_write_text(prompt_file, full_prompt)
+                    prompt_file_ok = True
+                except OSError:
+                    prompt_file_ok = False
+
+                use_prompt_file = prompt_file_ok and _claude_supports_system_prompt_file(base)
+                def _build_claude_cmd(sys_flag: str, sys_val: str) -> list[str]:
+                    c = base + [
+                        "-p", "--verbose",
+                        "--input-format", "stream-json",
+                        "--output-format", "stream-json",
+                        "--include-partial-messages",
+                    ] + (["--setting-sources", "project", "--permission-mode", "default",
+                          "--allowedTools", *FENCE_ALLOWED_TOOLS] if fenced else
+                         ["--permission-mode", self.permission_mode]) + [
+                        "--disallowedTools", "AskUserQuestion", *(SERVED_CODE_DENY if in_served else ()),
+                        *(("--settings", guard[0]) if guard[0] else ()),
+                        sys_flag, sys_val,
+                        "--name", "steward-proto",
+                    ] + model_policy.launch_args(selection)
+                    if stored:
+                        c += ["--resume", stored]
+                    return c
+
+                if use_prompt_file:
+                    cmd = _build_claude_cmd("--append-system-prompt-file", str(prompt_file))
+                else:
+                    cmd = _build_claude_cmd("--append-system-prompt", full_prompt)
+                    if os.name == "nt" and (len(full_prompt) > 12000 or len(subprocess.list2cmdline(cmd)) > 24000):
+                        core_raw = CODER_CONTRACT if self.code_job else ((EFFORT_DUTY if self.effort_on() else SMALL_DUTY) + CONTRACT)
+                        core_contract = _personalize_prompt_for_user(core_raw)
+                        compact_sys = (persona_str + core_contract)[:11500]
+                        cmd = _build_claude_cmd("--append-system-prompt", compact_sys)
+                        while len(subprocess.list2cmdline(cmd)) > 24000 and len(compact_sys) > 512:
+                            compact_sys = compact_sys[:max(512, int(len(compact_sys) * 0.75))]
+                            cmd = _build_claude_cmd("--append-system-prompt", compact_sys)
+                        base_sys = persona_str + contract_str
+                        contract_overflow = (
+                            base_sys[len(compact_sys):].strip()
+                            if base_sys.startswith(compact_sys)
+                            else contract_str.strip()
+                        )
+                        self._stdin_overflow_parts = (contract_overflow, history_reference.strip())
             else:
                 return False, self.cli + " cockpit transport is not yet verified; no provider was substituted"
         flags = 0
@@ -2820,6 +3095,20 @@ class Engine:
                 env=None if is_fake else self._spawn_env(),
             )
         except Exception as e:
+            try:
+                import paths as _paths
+                cmd_chars = len(subprocess.list2cmdline(cmd))
+                err_dir = _paths.logs_dir()
+                err_dir.mkdir(parents=True, exist_ok=True)
+                ts_now = time.strftime("%Y-%m-%d %H:%M:%S")
+                err_line = (
+                    f"{ts_now} ERROR steward_engine.Popen failed: "
+                    f"cli={self.cli} dir={self.dir} cmd_chars={cmd_chars} argc={len(cmd)} error={e!r}\n"
+                )
+                with open(err_dir / "errors.log", "a", encoding="utf-8") as _efh:
+                    _efh.write(err_line)
+            except Exception:
+                pass
             self._emit({"t": "sys", "text": f"could not start the steward: {e}"})
             return False, str(e)
         self.proc = proc
@@ -2934,6 +3223,24 @@ class Engine:
             else:
                 self._emit({"t": "sys", "text": "steward awake - standing up (reading the campaign record)"})
                 initial_prompt = STAND_UP
+        ov_parts = getattr(self, "_stdin_overflow_parts", None)
+        self._stdin_overflow_parts = None
+        if ov_parts:
+            c_ov, h_ov = ov_parts
+            if initial_prompt is not None:
+                # Avoid duplicating history_reference when initial_prompt already starts with it
+                eff_ov = [c_ov] if (h_ov and initial_prompt.startswith(h_ov[:120])) else [p for p in (c_ov, h_ov) if p]
+                if eff_ov:
+                    ov_blob = "(steward system context overflow - apply as standing instructions)\n" + "\n\n".join(eff_ov)
+                    initial_prompt = ov_blob + "\n\n" + initial_prompt
+            else:
+                eff_ov = [p for p in (c_ov, h_ov) if p]
+                if eff_ov:
+                    ov_blob = "(steward system context overflow - apply as standing instructions)\n" + "\n\n".join(eff_ov)
+                    if self._resume_prefix:
+                        self._resume_prefix = self._resume_prefix + "\n\n" + ov_blob
+                    else:
+                        self._resume_prefix = RESUME_QUIET + "\n\n" + ov_blob
         if initial_prompt is not None:
             initial_prompt = _personalize_prompt_for_user(initial_prompt)
         if send_initial and initial_prompt is not None and not self._send_locked(initial_prompt, origin="control"):
@@ -3464,7 +3771,18 @@ class Engine:
         }
 
     # ---------- talking ----------
-    def say(self, text, human=True, question_id=None, goal=None):
+    def say(self, text, human=True, question_id=None, goal=None, client_msg_id=None):
+        clean_msg_id = str(client_msg_id or "").strip()
+        if clean_msg_id:
+            return execute_idempotent_say(
+                self.skey(),
+                clean_msg_id,
+                lambda: self._say_impl(text, human=human, question_id=question_id, goal=goal),
+                cdir=self.dir,
+            )
+        return self._say_impl(text, human=human, question_id=question_id, goal=goal)
+
+    def _say_impl(self, text, human=True, question_id=None, goal=None):
         text = (text or "").strip()
         his_words = text if human else ""   # 2026-10-08: what the working receipt quotes - carried, never rebuilt
         if not text:
@@ -5220,8 +5538,29 @@ class Engine:
                     if isinstance(usage_models, dict) and len(usage_models) == 1:
                         actual, source = next(iter(usage_models)), "cli-recorded"
                 requested = self.model_selection.get("model")
+                att_ok = True
+                if self.cli == "claude" and not err_text and not self.fake and not os.environ.get("STEWARD_COCKPIT_FAKE"):
+                    import model_policy as _mp
+                    verify_seat = _mp.is_claude_verification_role(role=getattr(self, "role", None))
+                    att_rec = _mp.attest_claude_fable_receipt(
+                        {
+                            "ok": True,
+                            "requested_model": requested,
+                            "fallback_from_model": self.model_selection.get("fallback_from_model"),
+                            "model_served": actual,
+                            "model_attested": bool(actual),
+                        },
+                        role=getattr(self, "role", None),
+                    )
+                    att_ok = bool(att_rec.get("ok"))
+                    if att_ok and att_rec.get("model_served"):
+                        actual = att_rec["model_served"]
+                    elif not att_ok:
+                        self._journal_receipt("claude_attestation_mismatch", att_rec.get("error") or "attestation_mismatch")
+                        if verify_seat:
+                            err_text = att_rec.get("error") or "Claude positive attestation failed"
                 self.model_selection = {**self.model_selection, "model_served": actual,
-                                        "model_attested": bool(actual),
+                                        "model_attested": bool(actual) and att_ok,
                                         "model_source": source if actual else None}
                 _update_state(self.skey(), {"model_policy": self.model_selection})
                 if actual and requested and not _same_model(requested, actual):

@@ -424,7 +424,8 @@ _REARRANGE_RX = re.compile(
     r"^(?:rearrange(?:\s+the\s+priority\s+of)?(?:\s+and)?\s+)?"
     r"(?:put|move|set|make|shift|promote|demote|elevate|rearrange|prioritize|place|seat|send|take|archive)\s+"
     r"(.+?)\s+(?:into|in|to|on|onto|as|at|under|off|from)?\s*"
-    r"(active|top of active|first in active|first|on deck|deck|not active|inactive|off active|off the board|off the deck|bench|home|back|"
+    r"(active|top of active|first in active|first|on deck|deck|not active|inactive|off active|off the board|off the deck|bench|"
+    r"back to (?:its |the )?goals?|(?:its |the )?goals?|home|back|"
     r"tier\s*[123]|today|this week|this month|this quarter|this year)\s*[.!?]?$",
     re.I,
 )
@@ -456,6 +457,8 @@ def _load_rm_fast(folder):
 
 
 def _save_rm_fast(p: Path, rm: dict):
+    if isinstance(rm, dict) and "steps" in rm and "roadmap_projection" in rm:
+        rm["steps"] = list(rm.get("roadmap_projection") or [])
     tmp = p.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(rm, indent=2) + "\n", encoding="utf-8")
     tmp.replace(p)
@@ -1145,9 +1148,110 @@ def _fast_single_clause(folder, raw_text, goal=None, today_dt=None, from_cave=Fa
 
     m_arch = _ARCHIVE_DONE_RX.match(t)
     if m_arch and not _REARRANGE_RX.match(t) and not _MARK_DONE_RX.match(t):
+        verb_head = (t.split(None, 1)[0] if t.split() else "").lower().rstrip(".!?")
         tgt_expr = (m_arch.group(1) or goal or "").strip()
         if tgt_expr.lower() in ("this", "it", "this one", "that", "for now"):
             tgt_expr = goal or ""
+        if verb_head in ("archive", "retire") and tgt_expr:
+            rm_path, rm = _load_rm_fast(folder)
+            proj = rm.setdefault("roadmap_projection", [])
+            hit = _fuzzy_match_item(proj, tgt_expr, prefer_goals=False)
+            try:
+                import rnd_registry as _rnd
+                from urllib.parse import unquote as _unquote
+                from .campaign_parts import parse_ref
+                pid_hit, eff_hit = "", ""
+                if hit is not None and acts._own_group(hit) is None and hit.get("ref"):
+                    pr = parse_ref(str(hit.get("ref") or ""))
+                    if pr and pr.get("kind") in ("project", "effort"):
+                        pid_hit = str(pr.get("pid") or "")
+                        if pr.get("kind") == "effort" and pr.get("sub"):
+                            eff_hit = _unquote(str(pr.get("sub") or "")).strip("/\\")
+                if not pid_hit:
+                    qn = _norm(re.sub(r"\b(the|a|an|cockpit|ai cockpit|project|tile)\b", " ", tgt_expr))
+                    qn = " ".join(qn.split())
+                    if qn:
+                        cand_p = next(
+                            (
+                                e for e in _rnd.list_projects(include_archived=False, include_future=False, include_retired=False)
+                                if _norm(e.get("name") or "") == qn or (len(qn) >= 4 and qn in _norm(e.get("name") or ""))
+                            ),
+                            None,
+                        )
+                        if cand_p and cand_p.get("id"):
+                            pid_hit = str(cand_p["id"])
+                ent_hit = _rnd.get_project(pid_hit) if pid_hit else None
+                if isinstance(ent_hit, dict) and not eff_hit:
+                    camp_res = Path(str(folder)).resolve()
+                    fp_res = Path(str(ent_hit.get("folder_path") or "")).resolve() if ent_hit.get("folder_path") else None
+                    if fp_res != camp_res:
+                        old_state = str(ent_hit.get("state") or "active")
+                        undo_steps = []
+                        if hit is not None and acts._own_group(hit) is None:
+                            hid = str(hit.get("id") or "")
+                            old_seat = hit.get("seat") if hit.get("seat") in ("active", "deck") else None
+                            old_pos = int(hit.get("seat_order") or 0)
+                            old_nav = hit.get("navigation")
+                            undo_steps.append({"id": hid, "seat": old_seat, "pos": old_pos, "navigation": old_nav})
+                            if old_seat:
+                                hit.pop("seat", None)
+                                hit.pop("seat_order", None)
+                                _append_rm_event(rm, "step_set", hid, fields={"seat": None, "seat_order": None})
+                                rem = [x for x in proj if isinstance(x, dict) and x.get("seat") == old_seat]
+                                rem.sort(key=lambda x: int(x.get("seat_order") or 0))
+                                for k_i, x_i in enumerate(rem):
+                                    if x_i.get("seat_order") != k_i:
+                                        x_i["seat_order"] = k_i
+                                        _append_rm_event(rm, "step_set", str(x_i["id"]), fields={"seat_order": k_i})
+                            if old_nav:
+                                hit.pop("navigation", None)
+                                _append_rm_event(rm, "step_set", hid, fields={"navigation": None})
+                            _save_rm_fast(rm_path, rm)
+                        acts._park_idle_engines_for_dir(str(fp_res)) if fp_res else None
+                        if verb_head == "retire":
+                            _rnd.retire_project(pid_hit)
+                            v_lbl = "Retired"
+                        else:
+                            _rnd.archive_project(pid_hit)
+                            v_lbl = "Archived"
+                        disp = (hit.get("name") if isinstance(hit, dict) else None) or ent_hit.get("name") or pid_hit[:8]
+                        msg_lc = f"{v_lbl} \u2018{disp}\u2019 \u2014 moved to Archive (undo restores it)."
+                        return {
+                            "ok": True,
+                            "say": msg_lc,
+                            "receipt": msg_lc,
+                            "undo": {
+                                "act": "restore_cockpit",
+                                "kind": "project",
+                                "project_id": pid_hit,
+                                "old_state": old_state,
+                                "label": disp,
+                                "steps": undo_steps,
+                            },
+                            "act": "retire_cockpit" if verb_head == "retire" else "archive_cockpit",
+                            "campaign_act": True,
+                            "read_only": False,
+                            "model_called": False,
+                        }
+                elif isinstance(ent_hit, dict) and eff_hit:
+                    res_eff = (
+                        acts.retire_cockpit(folder, step=str((hit or {}).get("id") or ""), pid=pid_hit, effort_dir=eff_hit)
+                        if verb_head == "retire"
+                        else acts.archive_cockpit(folder, step=str((hit or {}).get("id") or ""), pid=pid_hit, effort_dir=eff_hit)
+                    )
+                    if res_eff.get("ok"):
+                        return {
+                            "ok": True,
+                            "say": res_eff["receipt"],
+                            "receipt": res_eff["receipt"],
+                            "undo": res_eff.get("undo"),
+                            "act": "retire_cockpit" if verb_head == "retire" else "archive_cockpit",
+                            "campaign_act": True,
+                            "read_only": False,
+                            "model_called": False,
+                        }
+            except Exception:
+                pass
         if tgt_expr:
             t = f"move {tgt_expr} to inactive"
         else:
@@ -1159,7 +1263,7 @@ def _fast_single_clause(folder, raw_text, goal=None, today_dt=None, from_cave=Fa
                 t = f"move {seated_all[0].get('name') or seated_all[0].get('id')} to inactive"
             else:
                 names = ", ".join(f"\u201c{x.get('name') or x.get('id')}\u201d" for x in seated_all[:6]) or "none currently seated"
-                msg = f"Which cockpit would you like to archive/move off the board? Currently on the board: {names}. (Say `archive <Name>` or click `\u2713 Done` on its tile.)"
+                msg = f"Which cockpit would you like to archive/move off the board? Currently on the board: {names}. (Say `archive <Name>`, `retire <Name>`, or use Archive / Retire on its card.)"
                 return {"ok": True, "say": msg, "receipt": msg, "undo": None, "act": "archive_prompt", "campaign_act": True, "read_only": True, "model_called": False}
 
     # 4. Mark next step / item done (and unseat if it is a seated cockpit tile!)
@@ -1246,11 +1350,12 @@ def _fast_single_clause(folder, raw_text, goal=None, today_dt=None, from_cave=Fa
                     moved_msgs.append(f"\u201c{hit.get('name') or hit['id']}\u201d scheduled for {dest.title()} ({due_str})")
                     continue
             target_comp = hit
+            is_back_home = dest in ("not active", "inactive", "off active", "off the board", "off the deck", "bench", "home", "back") or "goal" in dest
             if is_goal:
                 gid = str(hit.get("id"))
                 gname = str(hit.get("name") or gid)
                 children = [c for c in proj if isinstance(c, dict) and c.get("id") != gid and (c.get("navigation") or {}).get("path") == [gid] and c.get("status") not in ("done", "withdrawn")]
-                if dest in ("not active", "inactive", "off active", "off the board", "off the deck", "bench", "home", "back"):
+                if is_back_home:
                     seated_children = [c for c in children if c.get("seat") in ("active", "deck")]
                     for sc in seated_children:
                         old_s = sc.get("seat")
@@ -1258,7 +1363,7 @@ def _fast_single_clause(folder, raw_text, goal=None, today_dt=None, from_cave=Fa
                         sc.pop("seat_order", None)
                         _append_rm_event(rm, "step_set", str(sc["id"]), fields={"seat": None, "seat_order": None})
                         last_undo = {"act": "seat", "step": sc["id"], "seat": old_s or "active"}
-                    moved_msgs.append(f"\u201c{gname}\u201d moved off the board (Inactive)")
+                    moved_msgs.append(f"\u201c{gname}\u201d moved back to its goal")
                     continue
                 target_comp = next((c for c in children if str(c.get("ref") or "").startswith(("project:", "effort:")) or c.get("effort_dir")), children[0] if children else None)
                 if target_comp is None:
@@ -1276,11 +1381,18 @@ def _fast_single_clause(folder, raw_text, goal=None, today_dt=None, from_cave=Fa
             cid = str(target_comp.get("id"))
             cname = str(target_comp.get("name") or cid)
             old_seat = target_comp.get("seat")
-            if dest in ("not active", "inactive", "off active", "off the board", "off the deck", "bench", "home", "back"):
+            if is_back_home:
                 target_comp.pop("seat", None)
                 target_comp.pop("seat_order", None)
                 _append_rm_event(rm, "step_set", cid, fields={"seat": None, "seat_order": None})
-                moved_msgs.append(f"\u201c{cname}\u201d moved off the board (Inactive)")
+                if old_seat in ("active", "deck"):
+                    rem_s = [x for x in proj if isinstance(x, dict) and x.get("seat") == old_seat]
+                    rem_s.sort(key=lambda x: int(x.get("seat_order") or 0))
+                    for k_i, x_i in enumerate(rem_s):
+                        if x_i.get("seat_order") != k_i:
+                            x_i["seat_order"] = k_i
+                            _append_rm_event(rm, "step_set", str(x_i["id"]), fields={"seat_order": k_i})
+                moved_msgs.append(f"\u201c{cname}\u201d moved back to its goal")
                 last_undo = {"act": "seat", "step": cid, "seat": old_seat or "active"}
             else:
                 new_seat = "deck" if "deck" in dest else "active"
@@ -1293,7 +1405,10 @@ def _fast_single_clause(folder, raw_text, goal=None, today_dt=None, from_cave=Fa
                     others.append(target_comp)
                 target_comp["seat"] = new_seat
                 for idx, item in enumerate(others):
+                    prev_ord = item.get("seat_order")
                     item["seat_order"] = idx
+                    if str(item.get("id")) != cid and prev_ord != idx:
+                        _append_rm_event(rm, "step_set", str(item["id"]), fields={"seat_order": idx})
                 _append_rm_event(rm, "step_set", cid, fields={"seat": new_seat, "seat_order": target_comp["seat_order"]})
                 label = "Active (Priority #1)" if (new_seat == "active" and put_first) else ("Active" if new_seat == "active" else "On Deck")
                 moved_msgs.append(f"\u201c{cname}\u201d seated in {label}")

@@ -10,6 +10,15 @@ from pathlib import Path
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _isolate_anchor_mirror_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Prevent any test in this module from mutating the live ~/.anchor/model_prefs.json mirror."""
+    import anchor_settings as _aset
+
+    mirror_file = tmp_path / "_isolated_anchor_mirror" / "model_prefs.json"
+    monkeypatch.setattr(_aset, "mirror_path", lambda: mirror_file)
+
+
 # ==============================================================================
 # 1. _ecgberht_root() multi-candidate resolution across all 5 modules
 # ==============================================================================
@@ -461,11 +470,12 @@ def test_steward_persona_consistency_cave_to_cockpit(tmp_path: Path, monkeypatch
 
 def test_claude_catalog_models_and_credit_gate_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify:
-    1) model_policy.normalize_catalog('claude', ...) exposes best, opus, sonnet, haiku
-       while keeping 'best' as rank 0 default;
+    1) model_policy.CLAUDE_CATALOG_MODELS ranks 'claude-fable-5-2' at rank 0 ahead of 'claude-opus-5-5'
+       and moving aliases, while legacy raw catalogs without explicit models preserve alias ordering;
     2) steward_engine._spawn_env forwards ANTHROPIC_DEFAULT_FABLE_MODEL from CLAUDE_CONFIG_DIR/settings.json;
-    3) steward_engine._try_claude_credit_gate_fallback steps down 'best' -> 'opus' -> 'sonnet'
-       when 'Fable 5.1 requires usage credits' is returned."""
+    3) steward_engine._try_claude_credit_gate_fallback steps down
+       'claude-fable-5-2' -> 'claude-opus-5-5' -> 'opus' -> 'sonnet' (and 'best' -> 'opus' -> 'sonnet')
+       for conversational steward turns while refusing step-down on verification seats."""
     import anchor_settings as aset
     import model_policy
     import paths
@@ -474,10 +484,22 @@ def test_claude_catalog_models_and_credit_gate_fallback(tmp_path: Path, monkeypa
     monkeypatch.setattr(paths, "data_dir", lambda: tmp_path)
     monkeypatch.setattr(aset, "settings_path", lambda: tmp_path / "settings.json")
 
-    cat = model_policy.normalize_catalog("claude", {"efforts": ["low", "medium", "high", "max"]})
-    models = [row["model"] for row in cat]
-    assert models == ["best", "opus", "sonnet", "haiku"]
-    assert model_policy.select_model("claude", cat)["model"] == "best"
+    frontier_cat = model_policy.normalize_catalog(
+        "claude",
+        {"efforts": ["low", "medium", "high", "max"], "include_frontier": True},
+    )
+    assert [row["model"] for row in frontier_cat] == [
+        "claude-fable-5-2",
+        "claude-opus-5-5",
+        "best",
+        "opus",
+        "sonnet",
+        "haiku",
+    ]
+    assert model_policy.select_model("claude", frontier_cat)["model"] == "claude-fable-5-2"
+
+    legacy_cat = model_policy.normalize_catalog("claude", {"efforts": ["low", "medium", "high", "max"]})
+    assert [row["model"] for row in legacy_cat] == ["best", "opus", "sonnet", "haiku"]
 
     # Test ~/.claude/settings.json env forwarding in _spawn_env
     claude_dir = tmp_path / ".claude"
@@ -500,9 +522,26 @@ def test_claude_catalog_models_and_credit_gate_fallback(tmp_path: Path, monkeypa
     spawn_env = eng._spawn_env()
     assert spawn_env.get("ANTHROPIC_DEFAULT_FABLE_MODEL") == "claude-sonnet-5-5"
 
-    # Test automatic credit-gate fallback: best -> opus -> sonnet
-    eng.model_selection = {"family": "claude", "cli": "claude", "model": "best", "effort": "max", "cli_args": ["--model", "best", "--effort", "max"]}
-    assert eng._try_claude_credit_gate_fallback("Fable 5.1 requires usage credits. Please switch to another model.") is True
+    # Verification seats must NEVER step down on credit gate
+    eng.role = "review"
+    eng.model_selection = {
+        "family": "claude",
+        "cli": "claude",
+        "model": "claude-fable-5-2",
+        "effort": "max",
+        "cli_args": ["--model", "claude-fable-5-2", "--effort", "max"],
+    }
+    assert eng._try_claude_credit_gate_fallback("Model claude-fable-5-2 requires extra usage credits.") is False
+    assert eng.model_selection["model"] == "claude-fable-5-2"
+
+    # Conversational steward seat steps down claude-fable-5-2 -> claude-opus-5-5 -> opus -> sonnet
+    eng.role = None
+    assert eng._try_claude_credit_gate_fallback("Model claude-fable-5-2 requires extra usage credits.") is True
+    assert eng.model_selection["model"] == "claude-opus-5-5"
+    assert eng.model_selection["fallback_from_model"] == "claude-fable-5-2"
+    assert aset.read_settings_state()["settings"]["provider_preferences"]["quality"]["claude"]["model"] == "claude-opus-5-5"
+
+    assert eng._try_claude_credit_gate_fallback("Model claude-opus-5-5 requires usage credits.") is True
     assert eng.model_selection["model"] == "opus"
     assert aset.read_settings_state()["settings"]["provider_preferences"]["quality"]["claude"]["model"] == "opus"
 
@@ -801,7 +840,7 @@ def test_live_models_honest_chatgpt_status_credentials_2fa_token_and_drag_progre
     assert "nightly_refresh" in svc_status
     assert "02:00" in svc_status["nightly_refresh"]["schedule"]
     svcs = svc_status["services"]
-    assert svcs["claude"]["orchestrator_model"] in ("claude-fable-5-1", "opus")
+    assert svcs["claude"]["orchestrator_model"] in ("claude-fable-5-2", "opus")
     assert svcs["gemini"]["orchestrator_model"] == "gemini-4-argon"
     assert svcs["grok"]["orchestrator_model"] == "grok-4.7"
     assert svcs["chatgpt"]["orchestrator_model"] in ("gpt-6.1-sol", "gpt-6-luna")

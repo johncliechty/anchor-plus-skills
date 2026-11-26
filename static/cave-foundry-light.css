@@ -1,0 +1,2170 @@
+/* Cave of Wonders Tidy Surfaces + Skill Foundry Light Color Scheme (2026-11-24)
+   Matches Skill Foundry (`foundry-gui/src/foundry-v3.css`) tokens when `html[data-cave-theme="light"]` is active. */
+
+/* ── 1. Masthead Light / Dark Toggle & Top-Row Pill Fit ── */
+.cos-min-bar,
+.cos-min-bar-left,
+.cos-min-bar-right {
+  gap: 5px;
+}
+.cos-check-toggle,
+.cos-running-tile,
+.cos-comms-tile,
+.cos-poincare-pill {
+  padding: 4px 6.5px !important;
+  font-size: 11px !important;
+}
+.mh-theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 10px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1.2;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.mh-theme-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent-t);
+}
+.mh-theme-ico {
+  font-size: 13px;
+  line-height: 1;
+}
+
+/* ── 2. AI Cockpits Summary Tile (Closed by Default) ── */
+.cockpits-hub {
+  border: 1px solid rgba(108, 156, 252, 0.36);
+  border-radius: 9px;
+  background: linear-gradient(180deg, rgba(108, 156, 252, 0.05), transparent 70%), var(--surface);
+  margin-bottom: 14px;
+  scroll-margin-top: 12px;
+}
+.cockpits-hub-h {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  width: 100%;
+  text-align: left;
+  padding: 9px 13px;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  color: inherit;
+}
+.cockpits-hub-h .k {
+  font-size: 10.5px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--accent-t);
+  font-weight: 700;
+}
+.cockpits-counts {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.cockpits-counts .ck-cnt b {
+  color: var(--text);
+  font-weight: 750;
+}
+.cockpits-counts .ck-cnt.active b {
+  color: var(--success);
+}
+.cockpits-counts .ck-cnt.deck b {
+  color: var(--amber-t);
+}
+.cockpits-counts .ck-cnt.reserve b {
+  color: var(--accent-t);
+}
+.cockpits-hub-h .sp {
+  flex: 1;
+}
+.cockpits-hub-h .tog,
+.cands-tile > summary .cands-tog-lbl {
+  font-size: 11px;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 9px;
+}
+.cockpits-hub:hover .cockpits-hub-h .tog,
+.cands-tile > summary:hover .cands-tog-lbl {
+  color: var(--accent-t);
+  border-color: var(--accent);
+}
+.cockpits-hub-body {
+  border-top: 1px solid var(--line);
+  padding: 12px 12px 6px;
+}
+.cockpits-hub-body[hidden] {
+  display: none !important;
+}
+.cockpits-hub-body > .shelf {
+  margin-left: 0;
+  margin-right: 0;
+  margin-bottom: 14px;
+}
+.cockpits-hub-body > .shelf:last-child {
+  margin-bottom: 6px;
+}
+
+/* ── 3. Email & Calendar Expandable Services Status Bar ── */
+.cave-services-bar {
+  margin-bottom: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  overflow: hidden;
+}
+.cave-services-bar.is-emerald {
+  border-color: rgba(16, 185, 129, 0.42);
+}
+.cave-services-bar.is-amber {
+  border-color: rgba(245, 158, 11, 0.5);
+}
+.cave-services-bar.is-red {
+  border-color: rgba(239, 68, 68, 0.55);
+}
+.cave-services-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 10px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 11.5px;
+  user-select: none;
+}
+.cave-services-summary::-webkit-details-marker {
+  display: none;
+}
+.cave-svc-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: #64748b;
+}
+.cave-svc-dot.emerald {
+  background: #10b981;
+  box-shadow: 0 0 5px rgba(16, 185, 129, 0.55);
+}
+.cave-svc-dot.amber {
+  background: #f59e0b;
+  box-shadow: 0 0 5px rgba(245, 158, 11, 0.55);
+}
+.cave-svc-dot.red {
+  background: #ef4444;
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.7);
+}
+.cave-services-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text);
+}
+.cave-services-names {
+  color: var(--text-dim);
+  font-size: 11.5px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cave-services-summary .sp {
+  flex: 1;
+}
+.cave-services-sync-note {
+  font-size: 10.5px;
+  color: var(--text-dim2);
+  white-space: nowrap;
+}
+.cave-services-tog {
+  font-size: 10.5px;
+  color: var(--accent-t);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1px 8px;
+}
+.cave-services-body {
+  border-top: 1px solid var(--line);
+  padding: 8px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cave-services-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cave-svc-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 6px 9px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 11.5px;
+}
+.cave-svc-row.is-red {
+  border-color: rgba(239, 68, 68, 0.5);
+  background: rgba(127, 29, 29, 0.12);
+}
+.cave-svc-row.is-amber {
+  border-color: rgba(245, 158, 11, 0.45);
+}
+.cave-svc-ident {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  flex: 1 1 210px;
+  min-width: 0;
+}
+.cave-svc-ident b {
+  color: var(--text);
+  font-weight: 700;
+}
+.cave-svc-ident span {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.cave-svc-pills,
+.cave-svc-acts {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.cave-services-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding-top: 6px;
+  border-top: 1px dashed var(--line);
+}
+.comms-pill.red {
+  border: 1px solid rgba(239, 68, 68, 0.52);
+  background: rgba(239, 68, 68, 0.16);
+  color: #fca5a5;
+}
+
+/* ── 4. Skill Foundry Light Mode Palette (`html[data-cave-theme="light"]`) ── */
+html[data-cave-theme="light"] {
+  --bg: #f8fafc;
+  --surface: #ffffff;
+  --surface2: #f1f5f9;
+  --surface3: #e2e8f0;
+  --border: #cbd5e1;
+  --line: #e2e8f0;
+  --text: #0f172a;
+  --text-warm: #334155;
+  --text-dim: #475569;
+  --text-dim2: #64748b;
+  --accent: #1d4ed8;
+  --accent-t: #1d4ed8;
+  --success: #047857;
+  --danger: #dc2626;
+  --gwl: #059669;
+  --amber: #d97706;
+  --amber-t: #b45309;
+  --amber-edge: rgba(180, 83, 9, 0.36);
+  --amber-wash: rgba(254, 243, 199, 0.65);
+  --ps-bg: #f8fafc;
+  --ps-panel: #ffffff;
+  --ps-panel-2: #f1f5f9;
+  --ps-line: #cbd5e1;
+  --ps-text: #0f172a;
+  --ps-muted: #64748b;
+  --ps-gold: #b45309;
+  --ps-green: #047857;
+  --ps-amber: #b45309;
+  --ps-red: #dc2626;
+  --ps-sky: #1d4ed8;
+  color-scheme: light;
+}
+
+html[data-cave-theme="light"] body {
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+html[data-cave-theme="light"] .rail {
+  background: #ffffff;
+  border-right-color: #cbd5e1;
+}
+html[data-cave-theme="light"] .gwl-badge,
+html[data-cave-theme="light"] .mh-pill {
+  background: #d1fae5;
+  color: #065f46;
+  border-color: #6ee7b7;
+}
+html[data-cave-theme="light"] #mhVersionPill {
+  background: #fef3c7 !important;
+  border-color: #f59e0b !important;
+  color: #92400e !important;
+}
+html[data-cave-theme="light"] .mh-theme-toggle {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #0f172a;
+}
+html[data-cave-theme="light"] .mh-theme-toggle:hover {
+  background: #dbeafe;
+  border-color: #1d4ed8;
+  color: #1d4ed8;
+}
+html[data-cave-theme="light"] .tool.doctor {
+  background: #d1fae5;
+  border-color: #10b981;
+  color: #047857;
+}
+
+/* Left Rail Subscriptions & Frontier in Light Mode */
+html[data-cave-theme="light"] .cave-usage-banner {
+  background: #fef3c7;
+  border-color: #fcd34d;
+}
+html[data-cave-theme="light"] .cave-usage-banner strong { color: #92400e; }
+html[data-cave-theme="light"] .cave-usage-banner span { color: #334155; }
+html[data-cave-theme="light"] .cave-account-summary {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+html[data-cave-theme="light"] .cave-account-summary:hover {
+  background: #f1f5f9;
+  border-color: #1d4ed8;
+}
+html[data-cave-theme="light"] .cave-account-summary.is-selected {
+  background: #ecfdf5;
+  border-color: #34d399;
+}
+html[data-cave-theme="light"] .cave-account-summary .ec-name,
+html[data-cave-theme="light"] .cave-account-summary.is-ready .ec-name {
+  color: #0f172a;
+}
+html[data-cave-theme="light"] .cave-account-summary .ec-frontier {
+  color: #475569;
+}
+html[data-cave-theme="light"] .cave-account-summary .ec-mode {
+  background: #d1fae5;
+  color: #047857;
+  border-color: #6ee7b7;
+}
+html[data-cave-theme="light"] .cave-account-summary .ec-mode.is-warn {
+  background: #fef3c7;
+  color: #b45309;
+  border-color: #fcd34d;
+}
+html[data-cave-theme="light"] .cave-account-summary .ec-spend {
+  color: #047857;
+}
+html[data-cave-theme="light"] .cave-account-summary .ec-role.is-coding {
+  background: #dbeafe;
+  color: #1d4ed8;
+  border-color: #93c5fd;
+}
+html[data-cave-theme="light"] .cave-account-summary .ec-role.is-review {
+  background: #fef3c7;
+  color: #92400e;
+  border-color: #fcd34d;
+}
+html[data-cave-theme="light"] .cave-account-summary.is-error {
+  background: #fef2f2;
+  border-color: #ef4444;
+}
+html[data-cave-theme="light"] .cave-account-summary.is-error:hover {
+  background: #fee2e2;
+  border-color: #dc2626;
+}
+html[data-cave-theme="light"] .cave-account-summary.is-error .ec-name {
+  color: #b91c1c;
+}
+html[data-cave-theme="light"] .cave-account-summary .ec-mode.is-error {
+  background: #fee2e2;
+  color: #b91c1c;
+  border-color: #fca5a5;
+}
+html[data-cave-theme="light"] .cave-account-summary.is-error .ec-frontier {
+  color: #dc2626;
+}
+html[data-cave-theme="light"] .cave-mini-meter {
+  background: #e2e8f0;
+}
+
+/* Chief of Staff Bar, Processing Drawer & The List in Light Mode */
+html[data-cave-theme="light"] .triage-strip.cos-minimal {
+  background: #ffffff;
+  border-color: #cbd5e1;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+html[data-cave-theme="light"] .cos-check-toggle,
+html[data-cave-theme="light"] .cos-running-tile,
+html[data-cave-theme="light"] .cos-comms-tile {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #0f172a;
+}
+html[data-cave-theme="light"] .cos-check-toggle:hover,
+html[data-cave-theme="light"] .cos-check-toggle[aria-expanded="true"],
+html[data-cave-theme="light"] .cos-comms-tile:hover {
+  background: #dbeafe;
+  border-color: #1d4ed8;
+  color: #1d4ed8;
+}
+html[data-cave-theme="light"] .cos-check-box {
+  color: #1d4ed8;
+}
+html[data-cave-theme="light"] .cos-count-pill {
+  background: #dbeafe;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+html[data-cave-theme="light"] .cos-comms-tile.email.has-unread {
+  background: #fef3c7;
+  border-color: #f59e0b;
+  color: #92400e;
+}
+html[data-cave-theme="light"] .cos-comms-tile.email.has-unread .cos-count-pill {
+  background: #fde68a;
+  border-color: #f59e0b;
+  color: #78350f;
+}
+html[data-cave-theme="light"] .cos-poincare-pill {
+  background: #ede9fe !important;
+  border-color: #c4b5fd !important;
+  color: #6d28d9 !important;
+}
+html[data-cave-theme="light"] .cos-poincare-pill:hover {
+  background: #ddd6fe !important;
+  border-color: #7c3aed !important;
+  color: #4c1d95 !important;
+}
+html[data-cave-theme="light"] #shTriage #caveWorkingListSpine,
+html[data-cave-theme="light"] .cos-suggestions-panel,
+html[data-cave-theme="light"] .cos-processing-panel {
+  border-top-color: #e2e8f0 !important;
+}
+html[data-cave-theme="light"] .cos-min-row,
+html[data-cave-theme="light"] .cos-proc-row,
+html[data-cave-theme="light"] .wl-tile,
+html[data-cave-theme="light"] #caveWorkingListSpine .wl-tile {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] #caveWorkingListSpine .wl-tile:hover,
+html[data-cave-theme="light"] .wl-summary:hover {
+  background: #f8fafc !important;
+  border-color: #93c5fd !important;
+}
+html[data-cave-theme="light"] #caveWorkingListSpine .wl-tile.is-expanded {
+  background: #f8fafc !important;
+  border-color: #1d4ed8 !important;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06) !important;
+}
+html[data-cave-theme="light"] .wl-add-bar {
+  background: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+}
+html[data-cave-theme="light"] .cos-min-title,
+html[data-cave-theme="light"] .cos-proc-title,
+html[data-cave-theme="light"] .cos-proc-head strong,
+html[data-cave-theme="light"] .wl-title,
+html[data-cave-theme="light"] #caveWorkingListSpine .wl-title {
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .wl-prio-badge {
+  background: #fef3c7 !important;
+  border-color: #f59e0b !important;
+  color: #92400e !important;
+}
+html[data-cave-theme="light"] .wl-pill.cat {
+  background: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+  color: #334155 !important;
+}
+html[data-cave-theme="light"] .wl-pill.purple {
+  background: #ede9fe !important;
+  border-color: #c4b5fd !important;
+  color: #6d28d9 !important;
+}
+html[data-cave-theme="light"] .wl-chevron {
+  color: #1d4ed8 !important;
+}
+html[data-cave-theme="light"] [data-cave-dictate-btn],
+html[data-cave-theme="light"] [data-cave-talk-btn],
+html[data-cave-theme="light"] .composer button:not(.send) {
+  background: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .cos-min-sub,
+html[data-cave-theme="light"] .cos-proc-desc,
+html[data-cave-theme="light"] .cos-proc-head {
+  color: #475569 !important;
+}
+html[data-cave-theme="light"] .cos-min-rank,
+html[data-cave-theme="light"] .cos-min-sub em {
+  color: #1d4ed8 !important;
+}
+html[data-cave-theme="light"] .cos-min-btn,
+html[data-cave-theme="light"] .tw-btn,
+html[data-cave-theme="light"] .wl-icon-btn {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #334155 !important;
+}
+html[data-cave-theme="light"] .tw-btn.on,
+html[data-cave-theme="light"] .cos-min-btn.add {
+  background: #dbeafe !important;
+  border-color: #93c5fd !important;
+  color: #1d4ed8 !important;
+}
+html[data-cave-theme="light"] .tw-btn.done,
+html[data-cave-theme="light"] .cos-min-btn.act {
+  background: #d1fae5 !important;
+  border-color: #6ee7b7 !important;
+  color: #047857 !important;
+}
+html[data-cave-theme="light"] .cos-min-detail {
+  background: #f1f5f9;
+  border-top-color: #cbd5e1;
+}
+html[data-cave-theme="light"] .cos-min-why,
+html[data-cave-theme="light"] .cos-min-plan-list {
+  color: #334155;
+}
+html[data-cave-theme="light"] #wlNewTileTitle,
+html[data-cave-theme="light"] #wlNewTileCat,
+html[data-cave-theme="light"] #wlNewTilePrio,
+html[data-cave-theme="light"] .cos-min-dir-in,
+html[data-cave-theme="light"] #candSearch,
+html[data-cave-theme="light"] #candSort {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .wl-pill,
+html[data-cave-theme="light"] .comms-pill,
+html[data-cave-theme="light"] .comms-badge {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #334155;
+}
+html[data-cave-theme="light"] .comms-pill.emerald,
+html[data-cave-theme="light"] .comms-badge.emerald,
+html[data-cave-theme="light"] .wl-pill.emerald {
+  background: #d1fae5 !important;
+  border-color: #6ee7b7 !important;
+  color: #047857 !important;
+}
+html[data-cave-theme="light"] .comms-pill.sky,
+html[data-cave-theme="light"] .comms-badge.sky,
+html[data-cave-theme="light"] .wl-pill.sky {
+  background: #dbeafe !important;
+  border-color: #93c5fd !important;
+  color: #1d4ed8 !important;
+}
+html[data-cave-theme="light"] .comms-pill.amber,
+html[data-cave-theme="light"] .comms-badge.amber {
+  background: #fef3c7 !important;
+  border-color: #fcd34d !important;
+  color: #92400e !important;
+}
+html[data-cave-theme="light"] .comms-pill.red {
+  background: #fee2e2 !important;
+  border-color: #fca5a5 !important;
+  color: #b91c1c !important;
+}
+
+/* Board Tiles, Cockpits, Calendar/Email & Right Steward Panel in Light Mode */
+html[data-cave-theme="light"] .camp,
+html[data-cave-theme="light"] .cockpits-hub,
+html[data-cave-theme="light"] .ptile,
+html[data-cave-theme="light"] .cal,
+html[data-cave-theme="light"] .bench,
+html[data-cave-theme="light"] .tile,
+html[data-cave-theme="light"] .cands-tile {
+  background: #ffffff;
+  border-color: #cbd5e1;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+}
+html[data-cave-theme="light"] .camp-open,
+html[data-cave-theme="light"] .send {
+  color: #ffffff;
+}
+html[data-cave-theme="light"] .grow,
+html[data-cave-theme="light"] .addbox,
+html[data-cave-theme="light"] .rl-marks,
+html[data-cave-theme="light"] .rl-head .beyond,
+html[data-cave-theme="light"] .rl-marks .beyond,
+html[data-cave-theme="light"] .mkcard,
+html[data-cave-theme="light"] .rnd-lane {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+html[data-cave-theme="light"] .comms-col,
+html[data-cave-theme="light"] .cave-outlook-right-pane,
+html[data-cave-theme="light"] .cave-email-body-box,
+html[data-cave-theme="light"] .cave-scribe-bar,
+html[data-cave-theme="light"] .cave-sr-tile,
+html[data-cave-theme="light"] .cave-mail-card {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .comms-col-h,
+html[data-cave-theme="light"] .cave-elegance-toolbar,
+html[data-cave-theme="light"] .cave-dlg-top-row,
+html[data-cave-theme="light"] .cave-dlg-header-1line,
+html[data-cave-theme="light"] .cave-sr-head {
+  background: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .cave-mail-from,
+html[data-cave-theme="light"] .cave-mail-subj,
+html[data-cave-theme="light"] .cave-dlg-subj-1line,
+html[data-cave-theme="light"] .cal-sprimary {
+  color: #0f172a !important;
+}
+
+/* ── 5. Complete Calendar & Email Surfaces, Views & Dialogues in Light Mode ── */
+
+/* 5a. Calendar & Email Two-Line Header (#calHead) & Services / Filter Toolbar */
+html[data-cave-theme="light"] #calHead,
+html[data-cave-theme="light"] .cal-h,
+html[data-cave-theme="light"] .cal-h.cal-two-line {
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%) !important;
+  border-bottom: 1px solid #cbd5e1 !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .cal-sline {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .cal-sline:hover {
+  background: #eff6ff !important;
+  border-color: #93c5fd !important;
+}
+html[data-cave-theme="light"] .cal-stag.sky {
+  color: #1d4ed8 !important;
+}
+html[data-cave-theme="light"] .cal-stag.amber {
+  color: #b45309 !important;
+}
+html[data-cave-theme="light"] .cal-sfull-chip,
+html[data-cave-theme="light"] .cal-tab,
+html[data-cave-theme="light"] #calTog,
+html[data-cave-theme="light"] .cal .mini,
+html[data-cave-theme="light"] .comms-toolbar .mini {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #334155 !important;
+}
+html[data-cave-theme="light"] .cal-sfull-chip:hover,
+html[data-cave-theme="light"] .cal-tab:hover,
+html[data-cave-theme="light"] .cal-tab.on,
+html[data-cave-theme="light"] .comms-layout-switch .mini.on,
+html[data-cave-theme="light"] .cal .mini:hover {
+  background: #dbeafe !important;
+  border-color: #1d4ed8 !important;
+  color: #1d4ed8 !important;
+}
+html[data-cave-theme="light"] #tabMail [data-cave-open-speed-racer] {
+  background: #fef3c7 !important;
+  border-color: #f59e0b !important;
+  color: #92400e !important;
+}
+html[data-cave-theme="light"] .cave-pill-prime {
+  background: #fef3c7 !important;
+  border-color: #f59e0b !important;
+  color: #92400e !important;
+}
+html[data-cave-theme="light"] .cave-pill-irrational {
+  background: #ede9fe !important;
+  border-color: #c4b5fd !important;
+  color: #6d28d9 !important;
+}
+html[data-cave-theme="light"] .cave-svc-row.is-red {
+  background: #fef2f2 !important;
+  border-color: #fca5a5 !important;
+}
+html[data-cave-theme="light"] .cave-svc-row.is-amber {
+  background: #fffbeb !important;
+  border-color: #fcd34d !important;
+}
+html[data-cave-theme="light"] .cave-src-chk {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #334155 !important;
+}
+html[data-cave-theme="light"] .cave-setup-popover {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14) !important;
+}
+html[data-cave-theme="light"] .conn-zero {
+  color: #64748b !important;
+}
+
+/* 5b. Calendar Column, Week / Day / Month / Stream Views & Watchlist */
+html[data-cave-theme="light"] .cave-elegance-col-h {
+  background: transparent !important;
+  border-bottom-color: #e2e8f0 !important;
+}
+html[data-cave-theme="light"] .cave-col-title {
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .cave-cal-nav {
+  color: #475569 !important;
+}
+html[data-cave-theme="light"] #caveCalDateLabel {
+  color: #334155 !important;
+}
+html[data-cave-theme="light"] #caveCalRsvpFilterBar [data-cal-rsvp-filter="responded"] {
+  background: #ecfdf5 !important;
+  border-color: #6ee7b7 !important;
+  color: #047857 !important;
+}
+html[data-cave-theme="light"] #caveCalRsvpFilterBar [data-cal-rsvp-filter="not_responded"] {
+  background: #fffbeb !important;
+  border-color: #fcd34d !important;
+  color: #92400e !important;
+}
+html[data-cave-theme="light"] #caveCalRsvpFilterBar [data-cal-rsvp-filter].on {
+  background: #dbeafe !important;
+  border-color: #1d4ed8 !important;
+  color: #1d4ed8 !important;
+}
+
+/* Week View */
+html[data-cave-theme="light"] .cave-week-col {
+  background: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .cave-week-col.today {
+  background: #eff6ff !important;
+  border-color: #1d4ed8 !important;
+}
+html[data-cave-theme="light"] .cave-week-hdr {
+  color: #0f172a !important;
+  border-bottom-color: #cbd5e1 !important;
+}
+html[data-cave-theme="light"] .cave-week-chip {
+  background: #ffffff !important;
+  border-top: 1px solid #cbd5e1 !important;
+  border-right: 1px solid #cbd5e1 !important;
+  border-bottom: 1px solid #cbd5e1 !important;
+  color: #0f172a !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05) !important;
+}
+html[data-cave-theme="light"] .cave-week-chip > div:first-of-type > div:first-child {
+  color: #1d4ed8 !important;
+}
+html[data-cave-theme="light"] .cave-week-chip > div:first-of-type > div:nth-child(2) {
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .cave-week-chip > div:last-child {
+  color: #475569 !important;
+}
+html[data-cave-theme="light"] .cave-week-chip.amber > div:last-child {
+  color: #92400e !important;
+}
+html[data-cave-theme="light"] .cave-week-chip[data-cal-start="Marker"] {
+  background: #f5f3ff !important;
+  border-color: #a78bfa !important;
+}
+html[data-cave-theme="light"] .cave-week-chip[data-cal-start="Marker"] > div:first-child {
+  color: #6d28d9 !important;
+}
+html[data-cave-theme="light"] .cave-week-chip[data-cal-start="Marker"] > div:nth-child(2) {
+  color: #0f172a !important;
+}
+
+/* Day Time-Block View */
+html[data-cave-theme="light"] .cave-day-timegrid {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+}
+html[data-cave-theme="light"] .cave-day-timegrid > div:not(.cave-cal-card):not(.cave-cal-now-line) {
+  border-top-color: #e2e8f0 !important;
+}
+html[data-cave-theme="light"] .cave-day-timegrid > div:not(.cave-cal-card):not(.cave-cal-now-line) > span {
+  color: #64748b !important;
+}
+html[data-cave-theme="light"] .cave-day-timegrid .cave-cal-card {
+  background: #eff6ff !important;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08) !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .cave-day-timegrid .cave-cal-card[data-cal-source*="Commercial"],
+html[data-cave-theme="light"] .cave-day-timegrid .cave-cal-card[data-cal-source*="Axmra"] {
+  background: #ecfdf5 !important;
+}
+html[data-cave-theme="light"] .cave-day-timegrid .cave-cal-card[data-cal-source*="+"],
+html[data-cave-theme="light"] .cave-day-timegrid .cave-cal-card[data-cal-source*="Google"],
+html[data-cave-theme="light"] .cave-day-timegrid .cave-cal-card[data-cal-source*="Gmail"] {
+  background: #fffbeb !important;
+}
+html[data-cave-theme="light"] .cave-day-timegrid .cave-cal-card > div:first-child > b {
+  color: #1d4ed8 !important;
+}
+html[data-cave-theme="light"] .cave-day-timegrid .cave-cal-card > div:first-child span > span:last-child {
+  color: #92400e !important;
+}
+html[data-cave-theme="light"] .cave-day-timegrid .cave-cal-card > div:nth-child(2) {
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .cave-day-timegrid .cave-cal-card > div:nth-child(3) {
+  color: #475569 !important;
+}
+html[data-cave-theme="light"] .cave-week-chip a,
+html[data-cave-theme="light"] .cave-cal-card a {
+  background: #dbeafe !important;
+  border-color: #60a5fa !important;
+  color: #1d4ed8 !important;
+}
+html[data-cave-theme="light"] .cave-cal-now-lbl,
+html[data-cave-theme="light"] .cave-cal-now-line.in-day-grid .cave-cal-now-lbl {
+  background: #dbeafe !important;
+  color: #1d4ed8 !important;
+  border: 1px solid #93c5fd !important;
+}
+
+/* Month View, Stream View & Watchlist */
+html[data-cave-theme="light"] .cave-month-cell {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .cave-month-cell.today {
+  background: #eff6ff !important;
+  border-color: #1d4ed8 !important;
+}
+html[data-cave-theme="light"] .cave-month-num {
+  color: #334155 !important;
+}
+html[data-cave-theme="light"] .cave-month-num span {
+  color: #1d4ed8 !important;
+}
+html[data-cave-theme="light"] .cave-month-dot {
+  background: #dbeafe !important;
+  color: #1e40af !important;
+}
+html[data-cave-theme="light"] .cave-month-dot.emerald {
+  background: #d1fae5 !important;
+  color: #065f46 !important;
+}
+html[data-cave-theme="light"] .cave-month-dot.amber {
+  background: #fef3c7 !important;
+  color: #92400e !important;
+}
+html[data-cave-theme="light"] .comms-item,
+html[data-cave-theme="light"] .comms-item.cave-cal-card,
+html[data-cave-theme="light"] .cave-cal-slot-row {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .comms-item.cave-cal-card[data-cal-start="Marker"] {
+  background: #f5f3ff !important;
+  border-color: #a78bfa !important;
+}
+html[data-cave-theme="light"] .comms-item-top .comms-badge:not(.emerald):not(.sky):not(.amber):not(.red) {
+  background: #ede9fe !important;
+  border-color: #a78bfa !important;
+  color: #5b21b6 !important;
+}
+html[data-cave-theme="light"] #caveMailFolderBar > span,
+html[data-cave-theme="light"] #caveMailFolderBar .comms-pill {
+  background: #d1fae5 !important;
+  border-color: #34d399 !important;
+  color: #065f46 !important;
+}
+html[data-cave-theme="light"] .comms-item-title,
+html[data-cave-theme="light"] .cave-cal-slot-title {
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .comms-item-sub,
+html[data-cave-theme="light"] .tw-proj {
+  color: #475569 !important;
+}
+html[data-cave-theme="light"] .cave-cal-slot-time {
+  color: #1d4ed8 !important;
+}
+html[data-cave-theme="light"] .cave-watchlist-card {
+  background: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+}
+html[data-cave-theme="light"] .cave-watchlist-head {
+  color: #92400e !important;
+}
+html[data-cave-theme="light"] .cave-watchlist-sub,
+html[data-cave-theme="light"] .cave-wl-who {
+  color: #475569 !important;
+}
+html[data-cave-theme="light"] .cave-wl-slot {
+  border-top-color: #e2e8f0 !important;
+}
+html[data-cave-theme="light"] .cave-wl-time {
+  color: #1d4ed8 !important;
+}
+html[data-cave-theme="light"] .cave-wl-main {
+  color: #0f172a !important;
+}
+
+/* 5c. Calendar Event Dialogue Tile (#caveCommsDialogueTile & #caveCalDialoguePane) */
+html[data-cave-theme="light"] #caveCommsDialogueTile {
+  background: #ffffff !important;
+  border-color: #1d4ed8 !important;
+  color: #0f172a !important;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12) !important;
+}
+html[data-cave-theme="light"] #caveCalDialoguePane > div:first-child {
+  border-bottom-color: #cbd5e1 !important;
+}
+html[data-cave-theme="light"] #caveDlgCalHeaderTitle {
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] #caveCalDialoguePane [data-cave-dlg-close] {
+  background: #fef2f2 !important;
+  border-color: #fca5a5 !important;
+  color: #b91c1c !important;
+}
+html[data-cave-theme="light"] #caveCalDialoguePane .cave-dlg-split > div {
+  background: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] #caveCalDialoguePane label {
+  color: #334155 !important;
+}
+html[data-cave-theme="light"] #caveCalDialoguePane input[type="text"],
+html[data-cave-theme="light"] #caveCalDialoguePane input[type="date"],
+html[data-cave-theme="light"] #caveCalDialoguePane input[type="time"],
+html[data-cave-theme="light"] #caveCalDialoguePane textarea,
+html[data-cave-theme="light"] #caveCalDialoguePane select {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] #caveCalEvLinksBar {
+  background: #eff6ff !important;
+  border-color: #93c5fd !important;
+  color: #1d4ed8 !important;
+}
+html[data-cave-theme="light"] #caveCalEvRsvpBar,
+html[data-cave-theme="light"] #caveCalEvRsvpBar + div {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] #caveCalEvRsvpBar > span,
+html[data-cave-theme="light"] #caveCalEvRsvpBar + div > div:first-child {
+  color: #334155 !important;
+}
+html[data-cave-theme="light"] #caveCalEvRsvpBar [data-cave-cal-rsvp-set="not_responded"] {
+  background: #fffbeb !important;
+  border-color: #fcd34d !important;
+  color: #92400e !important;
+}
+html[data-cave-theme="light"] #caveCalEvRsvpBar [data-cave-cal-rsvp-set="declined"] {
+  background: #fef2f2 !important;
+  border-color: #fca5a5 !important;
+  color: #b91c1c !important;
+}
+html[data-cave-theme="light"] #caveCalEvRsvpBar + div label:nth-child(1) {
+  color: #1d4ed8 !important;
+}
+html[data-cave-theme="light"] #caveCalEvRsvpBar + div label:nth-child(2) {
+  color: #047857 !important;
+}
+html[data-cave-theme="light"] #caveCalEvRsvpBar + div label:nth-child(3) {
+  color: #b45309 !important;
+}
+html[data-cave-theme="light"] #btnCaveSaveCalEvent {
+  background: #d1fae5 !important;
+  border-color: #10b981 !important;
+  color: #065f46 !important;
+}
+html[data-cave-theme="light"] #caveCalSaveStatus {
+  color: #475569 !important;
+}
+html[data-cave-theme="light"] #caveCalDialoguePane .cave-dlg-split > div:last-child > div:first-child {
+  color: #92400e !important;
+}
+html[data-cave-theme="light"] #caveCalDialogueEmails > div {
+  color: #475569 !important;
+}
+html[data-cave-theme="light"] #caveCalDialogueEmails > div[data-cave-mail-open] {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] #caveCalDialogueEmails > div[data-cave-mail-open] > div:nth-child(1) {
+  color: #64748b !important;
+}
+html[data-cave-theme="light"] #caveCalDialogueEmails > div[data-cave-mail-open] > div:nth-child(2) {
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] #caveCalDialogueEmails > div[data-cave-mail-open] > div:nth-child(3) {
+  color: #475569 !important;
+}
+
+/* 5d. Calendar Alarm Banner & Alarm Settings / Alert Modals */
+html[data-cave-theme="light"] #anchorCaveTopAlarmBanner.cave-cal-alarm-banner {
+  background: #fef3c7 !important;
+  border-color: #f59e0b !important;
+  color: #78350f !important;
+}
+html[data-cave-theme="light"] #anchorCaveTopAlarmBanner span,
+html[data-cave-theme="light"] #anchorCaveTopAlarmBanner b {
+  color: #78350f !important;
+}
+html[data-cave-theme="light"] #anchorCalAlarmModal .ca-modal-card,
+html[data-cave-theme="light"] #anchorCalAlarmPrefsModal .ca-prefs-card {
+  background: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+  box-shadow: 0 20px 44px rgba(15, 23, 42, 0.2) !important;
+}
+html[data-cave-theme="light"] #anchorCalAlarmModal .ca-modal-card {
+  border-color: #f59e0b !important;
+}
+html[data-cave-theme="light"] #anchorCalAlarmModal .ca-modal-card div,
+html[data-cave-theme="light"] #anchorCalAlarmPrefsModal .ca-prefs-card label {
+  color: #0f172a !important;
+  border-color: #e2e8f0 !important;
+}
+html[data-cave-theme="light"] #anchorCalAlarmPrefsModal .ca-prefs-card b,
+html[data-cave-theme="light"] #anchorCalAlarmModal .ca-modal-card span:first-child {
+  color: #92400e !important;
+}
+html[data-cave-theme="light"] #caPrefLead {
+  background: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .ca-act-btn.exit {
+  background: #fef2f2 !important;
+  border-color: #fca5a5 !important;
+  color: #b91c1c !important;
+}
+html[data-cave-theme="light"] .ca-act-btn.join {
+  background: #dbeafe !important;
+  border-color: #60a5fa !important;
+  color: #1d4ed8 !important;
+}
+
+/* 5e. Email Folder Tabs, Inbox Split List & Oval Scrollbars */
+html[data-cave-theme="light"] .cave-btab {
+  background: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+  color: #475569 !important;
+}
+html[data-cave-theme="light"] .cave-btab:hover {
+  background: #f1f5f9 !important;
+  border-color: #93c5fd !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .cave-btab.on {
+  background: #dbeafe !important;
+  border-color: #1d4ed8 !important;
+  color: #1e40af !important;
+}
+html[data-cave-theme="light"] .cave-btab-prime.on {
+  background: #fef3c7 !important;
+  border-color: #f59e0b !important;
+  color: #92400e !important;
+}
+html[data-cave-theme="light"] .cave-btab-irrational.on {
+  background: #ede9fe !important;
+  border-color: #8b5cf6 !important;
+  color: #5b21b6 !important;
+}
+html[data-cave-theme="light"] .cave-btab-sr {
+  background: #fffbeb !important;
+  border-color: #fcd34d !important;
+  color: #92400e !important;
+}
+html[data-cave-theme="light"] .cave-btab-sr.on {
+  background: #fde68a !important;
+  border-color: #d97706 !important;
+  color: #78350f !important;
+}
+html[data-cave-theme="light"] #btnCaveMailBarCloseDlg {
+  background: #fef2f2 !important;
+  border-color: #fca5a5 !important;
+  color: #b91c1c !important;
+}
+html[data-cave-theme="light"] .cave-mail-bucket-hdr.prime { color: #b45309 !important; }
+html[data-cave-theme="light"] .cave-mail-bucket-hdr.irrational { color: #6d28d9 !important; }
+html[data-cave-theme="light"] .cave-mail-bucket-hdr.acted { color: #1d4ed8 !important; }
+html[data-cave-theme="light"] .cave-mail-bucket-hdr.sent { color: #047857 !important; }
+html[data-cave-theme="light"] #caveMailActedCol,
+html[data-cave-theme="light"] #caveMailSentCol,
+html[data-cave-theme="light"] #caveMailOtherCol {
+  border-top-color: #cbd5e1 !important;
+}
+html[data-cave-theme="light"] #caveOutlookMailSplit .cave-mail-card,
+html[data-cave-theme="light"] #caveOutlookMailSplit .cave-mail-card.cave-mail-2line-row {
+  background: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+  border-left: 3px solid #f59e0b !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] #caveOutlookMailSplit .cave-mail-card.cave-mail-2line-row.is-irrational {
+  border-left-color: #8b5cf6 !important;
+}
+html[data-cave-theme="light"] #caveOutlookMailSplit .cave-mail-card.cave-mail-2line-row:hover {
+  background: #f8fafc !important;
+  border-color: #93c5fd !important;
+}
+html[data-cave-theme="light"] #caveOutlookMailSplit .cave-mail-card.cave-mail-2line-row.is-selected,
+html[data-cave-theme="light"] .cave-mail-card.is-selected {
+  background: #eff6ff !important;
+  border-color: #1d4ed8 !important;
+  border-left: 3px solid #1d4ed8 !important;
+  box-shadow: 0 1px 4px rgba(29, 78, 216, 0.12) !important;
+}
+html[data-cave-theme="light"] .cave-mail-acct-pill.prime {
+  background: #dbeafe !important;
+  border-color: #93c5fd !important;
+  color: #1d4ed8 !important;
+}
+html[data-cave-theme="light"] .cave-mail-acct-pill.irrational {
+  background: #ede9fe !important;
+  border-color: #c4b5fd !important;
+  color: #6d28d9 !important;
+}
+html[data-cave-theme="light"] #caveOutlookMailSplit .cave-mail-2line-row .cave-mail-from,
+html[data-cave-theme="light"] #caveOutlookMailSplit .cave-mail-from {
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] #caveOutlookMailSplit .cave-mail-2line-row .cave-mail-row-sub,
+html[data-cave-theme="light"] #caveOutlookMailSplit .cave-mail-subj {
+  color: #334155 !important;
+}
+html[data-cave-theme="light"] #caveOutlookMailSplit .cave-mail-2line-row .cave-mail-date,
+html[data-cave-theme="light"] .cave-mail-date {
+  color: #64748b !important;
+}
+html[data-cave-theme="light"] .cave-mail-att-ico {
+  color: #b45309 !important;
+}
+html[data-cave-theme="light"] .cave-mail-act-pill.sr-pill {
+  background: #fef3c7 !important;
+  border-color: #f59e0b !important;
+  color: #92400e !important;
+}
+html[data-cave-theme="light"] .cave-mail-act-pill.spam-pill {
+  background: #fee2e2 !important;
+  border-color: #fca5a5 !important;
+  color: #b91c1c !important;
+}
+html[data-cave-theme="light"] .cave-oval-scrollbar {
+  background: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+}
+html[data-cave-theme="light"] .cave-oval-thumb {
+  background: linear-gradient(180deg, #94a3b8 0%, #64748b 100%) !important;
+  border-color: #ffffff !important;
+  box-shadow: none !important;
+}
+html[data-cave-theme="light"] .cave-oval-scrollbar:hover .cave-oval-thumb,
+html[data-cave-theme="light"] .cave-oval-thumb.is-dragging {
+  background: linear-gradient(180deg, #3b82f6 0%, #1d4ed8 100%) !important;
+  box-shadow: none !important;
+}
+html[data-cave-theme="light"] *::-webkit-scrollbar-track {
+  background: #f1f5f9 !important;
+}
+html[data-cave-theme="light"] *::-webkit-scrollbar-thumb {
+  background: #94a3b8 !important;
+  border-color: #f8fafc !important;
+}
+html[data-cave-theme="light"] #caveDialogueThreadScrollBox,
+html[data-cave-theme="light"] #caveCalViewport,
+html[data-cave-theme="light"] .exwrap .scroll,
+html[data-cave-theme="light"] .db-list {
+  scrollbar-color: #94a3b8 #f1f5f9;
+}
+
+/* 5f. Email Reading & Response Dialogue (#caveEmailDialoguePane, Docked & Floating) */
+html[data-cave-theme="light"] #caveEmailDialoguePane,
+html[data-cave-theme="light"] #caveOutlookMailSplit .cave-outlook-right-pane,
+html[data-cave-theme="light"] #caveOutlookMailSplit:not(.is-docked):not(.email-dlg-closed) .cave-outlook-right-pane {
+  background: #ffffff !important;
+  border-color: #93c5fd !important;
+  color: #0f172a !important;
+  box-shadow: -6px 12px 32px rgba(15, 23, 42, 0.13), 0 0 0 1px rgba(29, 78, 216, 0.16) !important;
+}
+html[data-cave-theme="light"] #caveEmailDialoguePane .cave-dlg-top-row,
+html[data-cave-theme="light"] #caveEmailDialoguePane .cave-dlg-header-1line {
+  background: transparent !important;
+  border-bottom-color: #e2e8f0 !important;
+}
+html[data-cave-theme="light"] .cave-act-btn {
+  background: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+  color: #334155 !important;
+}
+html[data-cave-theme="light"] .cave-act-btn:hover,
+html[data-cave-theme="light"] .cave-act-btn.on {
+  background: #dbeafe !important;
+  border-color: #1d4ed8 !important;
+  color: #1d4ed8 !important;
+}
+html[data-cave-theme="light"] .cave-act-btn.mull {
+  background: #eff6ff !important;
+  border-color: #93c5fd !important;
+  color: #1d4ed8 !important;
+}
+html[data-cave-theme="light"] .cave-act-btn.imp {
+  background: #ecfdf5 !important;
+  border-color: #6ee7b7 !important;
+  color: #047857 !important;
+}
+html[data-cave-theme="light"] .cave-act-btn.ign {
+  background: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+  color: #475569 !important;
+}
+html[data-cave-theme="light"] .cave-act-btn.done {
+  background: #d1fae5 !important;
+  border-color: #34d399 !important;
+  color: #065f46 !important;
+}
+html[data-cave-theme="light"] .cave-act-btn.ans {
+  background: #eef2ff !important;
+  border-color: #a5b4fc !important;
+  color: #4338ca !important;
+}
+html[data-cave-theme="light"] .cave-act-btn.spam,
+html[data-cave-theme="light"] .cave-act-btn.close {
+  background: #fef2f2 !important;
+  border-color: #fca5a5 !important;
+  color: #b91c1c !important;
+}
+html[data-cave-theme="light"] .cave-act-btn.unspam {
+  background: #fef3c7 !important;
+  border-color: #fcd34d !important;
+  color: #92400e !important;
+}
+html[data-cave-theme="light"] #caveEmailDialoguePane .cave-dlg-subj-1line {
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] #caveEmailDialoguePane .cave-dlg-meta-1line {
+  color: #475569 !important;
+}
+html[data-cave-theme="light"] #caveDlgStewardDirectionsBar,
+html[data-cave-theme="light"] .cave-scribe-bar {
+  background: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .cave-scribe-bar-lbl,
+html[data-cave-theme="light"] .cave-scribe-bar-lbl span {
+  color: #475569 !important;
+}
+html[data-cave-theme="light"] .cave-scribe-bar-lbl b {
+  color: #1d4ed8 !important;
+}
+html[data-cave-theme="light"] #caveDlgStewardDirectionsInput,
+html[data-cave-theme="light"] .cave-autogrow-ta {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .cave-btn-sr {
+  background: #fef3c7 !important;
+  border-color: #f59e0b !important;
+  color: #92400e !important;
+}
+html[data-cave-theme="light"] .cave-btn-steward {
+  background: #d1fae5 !important;
+  border-color: #10b981 !important;
+  color: #065f46 !important;
+}
+html[data-cave-theme="light"] #caveDlgAttachmentsBar,
+html[data-cave-theme="light"] #caveDlgLinksBar {
+  background: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+  color: #334155 !important;
+}
+html[data-cave-theme="light"] #caveDlgAttachmentsBar > span {
+  color: #92400e !important;
+}
+html[data-cave-theme="light"] #caveDlgLinksBar > span {
+  color: #1d4ed8 !important;
+}
+html[data-cave-theme="light"] .cave-email-link-pill,
+html[data-cave-theme="light"] .cave-email-inline-link {
+  background: #dbeafe !important;
+  border-color: #93c5fd !important;
+  color: #1d4ed8 !important;
+}
+html[data-cave-theme="light"] .cave-email-link-pill:hover,
+html[data-cave-theme="light"] .cave-email-inline-link:hover {
+  background: #bfdbfe !important;
+  border-color: #1d4ed8 !important;
+  color: #1e3a8a !important;
+}
+html[data-cave-theme="light"] #caveDlgAttachmentPreviewHost,
+html[data-cave-theme="light"] #caveSrAttachmentPreviewHost,
+html[data-cave-theme="light"] #caveSrCardAttachmentPreviewHost,
+html[data-cave-theme="light"] #caveSrArchiveAttachmentPreviewHost {
+  background: #f8fafc !important;
+  border-color: #93c5fd !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] #caveDlgAttachmentPreviewHost div,
+html[data-cave-theme="light"] #caveDlgAttachmentPreviewHost pre,
+html[data-cave-theme="light"] #caveSrAttachmentPreviewHost div,
+html[data-cave-theme="light"] #caveSrAttachmentPreviewHost pre,
+html[data-cave-theme="light"] #caveSrCardAttachmentPreviewHost div,
+html[data-cave-theme="light"] #caveSrCardAttachmentPreviewHost pre,
+html[data-cave-theme="light"] #caveSrArchiveAttachmentPreviewHost div,
+html[data-cave-theme="light"] #caveSrArchiveAttachmentPreviewHost pre {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+  box-shadow: none !important;
+}
+html[data-cave-theme="light"] #caveDlgAttachmentPreviewHost b,
+html[data-cave-theme="light"] #caveSrAttachmentPreviewHost b,
+html[data-cave-theme="light"] #caveSrCardAttachmentPreviewHost b,
+html[data-cave-theme="light"] #caveSrArchiveAttachmentPreviewHost b {
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] #caveDialogueThreadScrollBox.cave-email-body-box {
+  background: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .cave-single-msg-card,
+html[data-cave-theme="light"] .cave-thread-msg-card {
+  background: #ffffff !important;
+  border-top-color: #cbd5e1 !important;
+  border-right-color: #cbd5e1 !important;
+  border-bottom-color: #cbd5e1 !important;
+  color: #0f172a !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+}
+html[data-cave-theme="light"] .cave-thread-msg-card > div:first-child {
+  color: #475569 !important;
+  border-bottom-color: #e2e8f0 !important;
+}
+html[data-cave-theme="light"] .cave-thread-msg-card > div:first-child b {
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .cave-thread-msg-card > div:first-child span > span {
+  background: #dbeafe !important;
+  border-color: #93c5fd !important;
+  color: #1d4ed8 !important;
+}
+html[data-cave-theme="light"] .cave-single-msg-card > div,
+html[data-cave-theme="light"] .cave-thread-msg-card > div:not(:first-child),
+html[data-cave-theme="light"] #caveSrIncomingBodyBox > div:not(.cave-thread-msg-card):not(.cave-single-msg-card) {
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .cave-single-msg-card details,
+html[data-cave-theme="light"] .cave-thread-msg-card details,
+html[data-cave-theme="light"] #caveSrIncomingBodyBox details {
+  border-top-color: #cbd5e1 !important;
+  color: #475569 !important;
+}
+html[data-cave-theme="light"] .cave-single-msg-card details > summary,
+html[data-cave-theme="light"] .cave-thread-msg-card details > summary,
+html[data-cave-theme="light"] #caveSrIncomingBodyBox details > summary {
+  color: #1d4ed8 !important;
+}
+html[data-cave-theme="light"] .cave-single-msg-card details > div,
+html[data-cave-theme="light"] .cave-thread-msg-card details > div,
+html[data-cave-theme="light"] #caveSrIncomingBodyBox details > div {
+  background: #f1f5f9 !important;
+  border: 1px solid #e2e8f0 !important;
+  color: #334155 !important;
+}
+
+/* Direct Reply Drawer, Recipient Inspector Popover & Contact Autocomplete */
+html[data-cave-theme="light"] #caveDlgDirectReplyDrawer,
+html[data-cave-theme="light"] .cave-reply-drawer {
+  background: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .cave-reply-summary {
+  color: #1d4ed8 !important;
+}
+html[data-cave-theme="light"] #caveDlgStewardNote,
+html[data-cave-theme="light"] #caveReplyStatusMsg,
+html[data-cave-theme="light"] .cave-recip-lbl {
+  color: #475569 !important;
+}
+html[data-cave-theme="light"] #caveDlgReplyModeBar .tw-btn.active {
+  background: #dbeafe !important;
+  border-color: #1d4ed8 !important;
+  color: #1d4ed8 !important;
+}
+html[data-cave-theme="light"] .cave-recip-in,
+html[data-cave-theme="light"] #caveDlgDirectReplyDrawer #caveReplyBody {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .sr-recip-dd-btn {
+  background: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+  color: #334155 !important;
+}
+html[data-cave-theme="light"] .sr-recip-dd-btn:hover,
+html[data-cave-theme="light"] .sr-recip-dd-btn.has-multi {
+  background: #dbeafe !important;
+  border-color: #1d4ed8 !important;
+  color: #1d4ed8 !important;
+}
+html[data-cave-theme="light"] #caveRecipInspectorPopover {
+  background: #ffffff !important;
+  border-color: #1d4ed8 !important;
+  color: #0f172a !important;
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.18) !important;
+}
+html[data-cave-theme="light"] #caveRecipInspectorPopover > div:first-child {
+  border-bottom-color: #e2e8f0 !important;
+}
+html[data-cave-theme="light"] #caveRecipInspectorPopover > div:first-child b {
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .cave-recip-pop-row {
+  background: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .cave-recip-pop-row b {
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .cave-recip-pop-row span {
+  color: #475569 !important;
+}
+html[data-cave-theme="light"] .cave-recip-pop-row [data-recip-remove-idx] {
+  background: #fef2f2 !important;
+  border-color: #fca5a5 !important;
+  color: #b91c1c !important;
+}
+html[data-cave-theme="light"] #caveRecipAddSearch {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .cave-recip-pop-add {
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .cave-recip-pop-add span {
+  color: #1d4ed8 !important;
+}
+html[data-cave-theme="light"] .cave-recip-pop-add > span:last-child {
+  color: #047857 !important;
+}
+html[data-cave-theme="light"] .cave-recip-pop-add:hover {
+  background: #eff6ff !important;
+  color: #1d4ed8 !important;
+}
+html[data-cave-theme="light"] .comms-contact-ac-menu {
+  background: #ffffff !important;
+  border-color: #93c5fd !important;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.16) !important;
+}
+html[data-cave-theme="light"] .comms-contact-ac-item {
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .comms-contact-ac-item:hover,
+html[data-cave-theme="light"] .comms-contact-ac-item.is-active {
+  background: #dbeafe !important;
+  color: #1d4ed8 !important;
+}
+
+/* 5g. Speed Racer Dialogue (#caveSpeedRacerTile, Docked & Floating) */
+html[data-cave-theme="light"] #caveSpeedRacerTile,
+html[data-cave-theme="light"] #caveSpeedRacerTile.open,
+html[data-cave-theme="light"] #caveSpeedRacerTile.open:not(.is-docked) {
+  background: #ffffff !important;
+  border-color: #f59e0b !important;
+  color: #0f172a !important;
+  box-shadow: -6px 14px 36px rgba(15, 23, 42, 0.14), 0 0 0 1px rgba(245, 158, 11, 0.35) !important;
+}
+html[data-cave-theme="light"] #caveSpeedRacerHead {
+  background: #fffbeb !important;
+  border-bottom: 1px solid #fcd34d !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] #caveSpeedRacerHead b {
+  color: #92400e !important;
+}
+html[data-cave-theme="light"] #caveSrToggleHint {
+  color: #64748b !important;
+}
+html[data-cave-theme="light"] #btnCaveSrCloseHead {
+  background: #fef2f2 !important;
+  border-color: #fca5a5 !important;
+  color: #b91c1c !important;
+}
+html[data-cave-theme="light"] #caveSpeedRacerBody {
+  background: #ffffff !important;
+  border-top-color: #fde68a !important;
+}
+html[data-cave-theme="light"] #caveSrStewardPromptBar {
+  background: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+  color: #334155 !important;
+}
+html[data-cave-theme="light"] #caveSrStewardPromptBar > span {
+  color: #334155 !important;
+}
+html[data-cave-theme="light"] #caveSrStewardPromptInput {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] #btnCaveSrStewardDraft {
+  background: #fef3c7 !important;
+  border-color: #f59e0b !important;
+  color: #92400e !important;
+}
+html[data-cave-theme="light"] #caveSpeedRacerUndoBar {
+  background: #ecfdf5 !important;
+  border-color: #10b981 !important;
+  color: #065f46 !important;
+}
+html[data-cave-theme="light"] #btnCaveSrUndoSend,
+html[data-cave-theme="light"] #btnCaveSrUnspam,
+html[data-cave-theme="light"] #btnCaveUndoSpam {
+  background: #fef3c7 !important;
+  border-color: #f59e0b !important;
+  color: #92400e !important;
+}
+html[data-cave-theme="light"] #caveSrSpamUndoBar,
+html[data-cave-theme="light"] #caveMailSpamUndoBar {
+  background: #fef2f2 !important;
+  border-color: #fca5a5 !important;
+  color: #991b1b !important;
+}
+html[data-cave-theme="light"] #caveSpeedRacerArchiveDrawer {
+  background: #f8fafc !important;
+  border-color: #6ee7b7 !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] #caveSpeedRacerArchiveDrawer > div:first-child > b {
+  color: #047857 !important;
+}
+html[data-cave-theme="light"] #caveSpeedRacerArchiveDrawer > div:not(:first-child):not([data-sr-attachment-preview-host]) {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] #caveSpeedRacerArchiveDrawer b {
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] #caveSpeedRacerArchiveDrawer span {
+  color: #334155 !important;
+}
+html[data-cave-theme="light"] #caveSpeedRacerArchiveDrawer details > summary {
+  color: #1d4ed8 !important;
+}
+html[data-cave-theme="light"] #caveSpeedRacerArchiveDrawer details > div {
+  background: #f1f5f9 !important;
+  border: 1px solid #e2e8f0 !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .sr-card {
+  background: #ffffff !important;
+  border-color: #fcd34d !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .sr-card > div:first-child {
+  border-bottom-color: #e2e8f0 !important;
+}
+html[data-cave-theme="light"] .sr-card [data-sr-pick-idx].on {
+  background: #fef3c7 !important;
+  border-color: #f59e0b !important;
+  color: #92400e !important;
+}
+html[data-cave-theme="light"] .sr-diff-grid > div {
+  background: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .sr-diff-grid > div:first-child > div:first-child > div:nth-child(1) {
+  color: #1d4ed8 !important;
+}
+html[data-cave-theme="light"] .sr-diff-grid > div:first-child > div:first-child > div:nth-child(2) {
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] #caveSrIncomingBodyBox {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .sr-diff-grid > div:first-child > div:last-child {
+  background: #eff6ff !important;
+  border-color: #93c5fd !important;
+  color: #1e40af !important;
+}
+html[data-cave-theme="light"] .sr-diff-grid > div:nth-child(2) > div:first-child span {
+  color: #475569 !important;
+}
+html[data-cave-theme="light"] .sr-diff-grid [data-sr-reply-mode].active {
+  background: #dbeafe !important;
+  border-color: #1d4ed8 !important;
+  color: #1d4ed8 !important;
+}
+html[data-cave-theme="light"] .sr-diff-grid label {
+  color: #475569 !important;
+}
+html[data-cave-theme="light"] #caveSrToInput,
+html[data-cave-theme="light"] #caveSrCcInput,
+html[data-cave-theme="light"] #caveSrBccInput,
+html[data-cave-theme="light"] #caveSrSubjInput,
+html[data-cave-theme="light"] #caveSrBodyInput,
+html[data-cave-theme="light"] #caveSrFeedbackInput {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .sr-diff-grid > div:nth-child(2) > div:nth-child(3) {
+  background: #ecfdf5 !important;
+  border-color: #6ee7b7 !important;
+}
+html[data-cave-theme="light"] .sr-diff-grid > div:nth-child(2) > div:nth-child(3) label {
+  color: #065f46 !important;
+}
+html[data-cave-theme="light"] .sr-diff-grid > div:nth-child(2) > div:nth-child(3) span {
+  color: #047857 !important;
+}
+html[data-cave-theme="light"] [data-sr-tone="warmer"] {
+  background: #fef3c7 !important;
+  border-color: #f59e0b !important;
+  color: #92400e !important;
+}
+html[data-cave-theme="light"] [data-sr-tone="formal"] {
+  background: #dbeafe !important;
+  border-color: #60a5fa !important;
+  color: #1e40af !important;
+}
+html[data-cave-theme="light"] [data-sr-tone="simpler"],
+html[data-cave-theme="light"] [data-sr-tone="redraft"] {
+  background: #d1fae5 !important;
+  border-color: #34d399 !important;
+  color: #065f46 !important;
+}
+html[data-cave-theme="light"] [data-sr-tone="more_detail"] {
+  background: #ede9fe !important;
+  border-color: #a78bfa !important;
+  color: #5b21b6 !important;
+}
+html[data-cave-theme="light"] [data-sr-tone="async_email"] {
+  background: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+  color: #334155 !important;
+}
+html[data-cave-theme="light"] #btnCaveSrApplyFeedback {
+  background: #ede9fe !important;
+  border-color: #8b5cf6 !important;
+  color: #5b21b6 !important;
+}
+html[data-cave-theme="light"] #btnCaveSrSendFeedbackSteward {
+  background: #dbeafe !important;
+  border-color: #60a5fa !important;
+  color: #1d4ed8 !important;
+}
+html[data-cave-theme="light"] .sr-card > div:last-child {
+  border-top-color: #e2e8f0 !important;
+}
+html[data-cave-theme="light"] .sr-card > div:last-child > div:first-child > span:first-child {
+  color: #92400e !important;
+}
+html[data-cave-theme="light"] #caveSrSaveStatus {
+  color: #047857 !important;
+}
+html[data-cave-theme="light"] #btnCaveSrSpam,
+html[data-cave-theme="light"] #btnCaveSrDiscard {
+  background: #fef2f2 !important;
+  border-color: #fca5a5 !important;
+  color: #b91c1c !important;
+}
+html[data-cave-theme="light"] #btnCaveSrApproveSend {
+  background: #d1fae5 !important;
+  border-color: #10b981 !important;
+  color: #065f46 !important;
+}
+
+/* 5h. Quick-Connect, Two-Way Draft Composer, Device Flow & Collab Modals + Expanded List & Toast */
+html[data-cave-theme="light"] #caveCommsConnectModal,
+html[data-cave-theme="light"] #caveCommsDraftModal,
+html[data-cave-theme="light"] #caveCommsDeviceFlowBox,
+html[data-cave-theme="light"] #caveCollabModal {
+  background: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] #caveCommsConnectModal b {
+  color: #047857 !important;
+}
+html[data-cave-theme="light"] #caveCommsConnectModal label,
+html[data-cave-theme="light"] #caveCommsConnectStatus,
+html[data-cave-theme="light"] #commsDraftStatus,
+html[data-cave-theme="light"] #collabModalStatus {
+  color: #475569 !important;
+}
+html[data-cave-theme="light"] #caveCommsConnectModal input,
+html[data-cave-theme="light"] #caveCommsConnectModal select,
+html[data-cave-theme="light"] #caveCommsDraftModal input,
+html[data-cave-theme="light"] #caveCommsDraftModal textarea,
+html[data-cave-theme="light"] #caveCollabModal input,
+html[data-cave-theme="light"] #caveCollabModal select,
+html[data-cave-theme="light"] #caveCollabModal textarea {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] #caveCommsDeviceFlowBox code {
+  background: #ede9fe !important;
+  border-color: #8b5cf6 !important;
+  color: #4c1d95 !important;
+}
+html[data-cave-theme="light"] [data-cave-comms-preset="gmail"] {
+  background: #eff6ff !important;
+  border-color: #60a5fa !important;
+  color: #1d4ed8 !important;
+}
+html[data-cave-theme="light"] [data-cave-comms-preset="outlook"] {
+  background: #f5f3ff !important;
+  border-color: #a78bfa !important;
+  color: #6d28d9 !important;
+}
+html[data-cave-theme="light"] [data-cave-comms-preset="ics_only"] {
+  background: #fffbeb !important;
+  border-color: #f59e0b !important;
+  color: #92400e !important;
+}
+html[data-cave-theme="light"] #btnCaveCommsSaveAccount {
+  background: #d1fae5 !important;
+  border-color: #10b981 !important;
+  color: #065f46 !important;
+}
+html[data-cave-theme="light"] #btnCaveCommsMsDeviceAuth {
+  background: #ede9fe !important;
+  border-color: #8b5cf6 !important;
+  color: #5b21b6 !important;
+}
+html[data-cave-theme="light"] .wl-details,
+html[data-cave-theme="light"] .wl-assign-bar,
+html[data-cave-theme="light"] .wl-connector-drawer {
+  background: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .wl-substeps-box,
+html[data-cave-theme="light"] .wl-brainstorm-box,
+html[data-cave-theme="light"] .wl-substep-card,
+html[data-cave-theme="light"] .wl-proposal-card,
+html[data-cave-theme="light"] .wl-autocheck-card {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] #caveWorkingListSpine input,
+html[data-cave-theme="light"] #caveWorkingListSpine select,
+html[data-cave-theme="light"] #caveWorkingListSpine textarea {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .exrow.you .ext {
+  color: #0f172a !important;
+}
+html[data-cave-theme="light"] .exw.you {
+  color: #b45309 !important;
+}
+html[data-cave-theme="light"] .exw.st {
+  color: #1d4ed8 !important;
+}
+html[data-cave-theme="light"] .cave-toast {
+  background: #ffffff !important;
+  border-color: #10b981 !important;
+  color: #0f172a !important;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16) !important;
+}
+html[data-cave-theme="light"] .cave-toast.bad {
+  border-color: #ef4444 !important;
+  color: #991b1b !important;
+}
+html[data-cave-theme="light"] .exwrap,
+html[data-cave-theme="light"] .exwrap .cview-frame,
+html[data-cave-theme="light"] .panel > .delivbar,
+html[data-cave-theme="light"] .delivbar,
+html[data-cave-theme="light"] .composer {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+}
+html[data-cave-theme="light"] .exhead,
+html[data-cave-theme="light"] .db-list li {
+  border-color: #e2e8f0 !important;
+}
+html[data-cave-theme="light"] .termdock,
+html[data-cave-theme="light"] .termtabs {
+  border-color: #cbd5e1;
+}
+
+/* ── 5. Cave Projects Tile (#ptile) Folders, Toolbar & Guided Folder/Project Wizard ── */
+.cave-ptile-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 4px 0 8px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: var(--surface2, #171c28);
+  border: 1px solid var(--border, #2b3344);
+}
+.rnd-newfolder-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  background: rgba(96, 165, 250, 0.14);
+  border: 1px solid rgba(96, 165, 250, 0.44);
+  color: #bae6fd;
+  cursor: pointer;
+}
+.rnd-newfolder-btn:hover {
+  background: rgba(96, 165, 250, 0.24);
+  border-color: #60a5fa;
+}
+.rnd-newfolder-btn.cave-newproj-btn {
+  background: rgba(16, 185, 129, 0.14);
+  border-color: rgba(16, 185, 129, 0.44);
+  color: #a7f3d0;
+}
+.rnd-newfolder-btn.cave-newproj-btn:hover {
+  background: rgba(16, 185, 129, 0.24);
+  border-color: #34d399;
+}
+.rnd-folder-hint {
+  font-size: 11px;
+  color: var(--text-dim, #94a3b8);
+}
+.rnd-grip {
+  font-size: 12px;
+  color: var(--text-dim2, #64748b);
+  cursor: grab;
+  user-select: none;
+  padding: 0 2px;
+}
+.rnd-row.rnd-dragging { opacity: 0.5; }
+.rnd-folder.rnd-droptarget > .rnd-folder-head {
+  outline: 2px solid #60a5fa;
+  outline-offset: -2px;
+  background: rgba(96, 165, 250, 0.16);
+}
+.rnd-fdrop-hint {
+  font-size: 10.5px;
+  color: var(--text-dim2, #64748b);
+  font-style: italic;
+}
+.cave-empty-folder-note {
+  padding: 8px 10px;
+  font-size: 11.5px;
+  color: var(--text-dim, #94a3b8);
+  border: 1px dashed var(--border, #2e3648);
+  border-radius: 6px;
+}
+
+/* Guided Folder & Project Walkthrough Modal */
+.cave-fw-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(6, 9, 16, 0.72);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+}
+.cave-fw-backdrop[hidden] { display: none !important; }
+.cave-fw-dialog {
+  width: min(680px, 100%);
+  max-height: min(88vh, 820px);
+  overflow-y: auto;
+  background: #121724;
+  border: 1px solid #2b3854;
+  border-radius: 12px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+  color: #f1f5f9;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.cave-fw-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.cave-fw-eyebrow {
+  font: 700 10px ui-monospace, Consolas, monospace;
+  letter-spacing: 0.1em;
+  color: #60a5fa;
+  margin-bottom: 3px;
+}
+.cave-fw-head h3 {
+  font-size: 17px;
+  font-weight: 700;
+  color: #f8fafc;
+}
+.cave-fw-close {
+  background: transparent;
+  border: 1px solid #2d3a54;
+  color: #94a3b8;
+  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.cave-fw-tabs {
+  display: flex;
+  gap: 6px;
+  border-bottom: 1px solid #232f47;
+  padding-bottom: 10px;
+}
+.cave-fw-tabs[hidden] { display: none !important; }
+.cave-fw-tab {
+  flex: 1;
+  padding: 7px 12px;
+  border-radius: 7px;
+  border: 1px solid #28354f;
+  background: #0d121d;
+  color: #94a3b8;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.cave-fw-tab.on {
+  background: rgba(96, 165, 250, 0.16);
+  border-color: #60a5fa;
+  color: #eff6ff;
+}
+.cave-fw-pane { display: flex; flex-direction: column; gap: 12px; }
+.cave-fw-pane[hidden] { display: none !important; }
+.cave-fw-step {
+  background: #0d121d;
+  border: 1px solid #222e46;
+  border-radius: 8px;
+  padding: 11px 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cave-fw-two-col {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 640px) { .cave-fw-two-col { grid-template-columns: 1fr; } }
+.cave-fw-step-lbl {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+.cave-fw-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  background: #1d4ed8;
+  color: #ffffff;
+  font: 700 10.5px ui-monospace, Consolas, monospace;
+  flex: none;
+}
+.cave-fw-opt { font-weight: 400; font-size: 11px; color: #94a3b8; }
+.cave-fw-input, .cave-fw-select {
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 6px;
+  border: 1px solid #2b3956;
+  background: #090d16;
+  color: #f8fafc;
+  font-size: 12.5px;
+}
+.cave-fw-input:focus, .cave-fw-select:focus {
+  outline: none;
+  border-color: #60a5fa;
+}
+.cave-fw-chips { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.cave-fw-chip-hint { font-size: 11px; color: #94a3b8; }
+.cave-fw-chip {
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid #2d3b58;
+  background: #151d2e;
+  color: #cbd5e1;
+  font-size: 11px;
+  cursor: pointer;
+}
+.cave-fw-chip:hover { border-color: #60a5fa; color: #ffffff; }
+.cave-fw-checklist {
+  max-height: 165px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-right: 4px;
+}
+.cave-fw-proj-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid #1e293d;
+  background: #111827;
+  font-size: 12px;
+  cursor: pointer;
+}
+.cave-fw-proj-nm { flex: 1; font-weight: 600; color: #f1f5f9; }
+.cave-fw-proj-grp { font-size: 10.5px; color: #94a3b8; padding: 1px 7px; border-radius: 999px; background: #1e293b; }
+.cave-fw-radio, .cave-fw-check {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  color: #cbd5e1;
+  cursor: pointer;
+}
+.cave-fw-mode-row, .cave-fw-inline { display: flex; gap: 8px; align-items: center; }
+.cave-fw-mode {
+  flex: 1;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid #2b3956;
+  background: #111827;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.cave-fw-mode.on {
+  border-color: #34d399;
+  background: rgba(16, 185, 129, 0.14);
+  color: #d1fae5;
+}
+.cave-fw-subbox { display: flex; flex-direction: column; gap: 6px; }
+.cave-fw-subbox[hidden], .cave-fw-browser[hidden] { display: none !important; }
+.cave-fw-field-lbl { font-size: 11px; color: #94a3b8; font-weight: 600; }
+.cave-fw-preview { font-size: 11.5px; color: #94a3b8; }
+.cave-fw-preview code { color: #93c5fd; font-family: ui-monospace, Consolas, monospace; }
+.cave-fw-browser {
+  border: 1px solid #26344f;
+  border-radius: 7px;
+  background: #090d16;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cave-fw-browser-bar { display: flex; gap: 5px; flex-wrap: wrap; }
+.cave-fw-browser-cur { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; color: #94a3b8; }
+.cave-fw-browser-list { max-height: 150px; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; }
+.cave-fw-dir-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 3px 6px; border-radius: 5px; background: #111827; }
+.cave-fw-dir-open { background: none; border: 0; color: #e2e8f0; font-size: 12px; text-align: left; cursor: pointer; flex: 1; }
+.cave-fw-dir-open:hover { color: #60a5fa; }
+.cave-fw-status { padding: 6px 10px; border-radius: 6px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.45); color: #fecaca; font-size: 12px; }
+.cave-fw-foot { display: flex; justify-content: flex-end; gap: 8px; padding-top: 4px; }
+.cave-fw-btn {
+  padding: 7px 14px;
+  border-radius: 7px;
+  border: 1px solid #2d3b58;
+  background: #172033;
+  color: #e2e8f0;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.cave-fw-btn.primary {
+  background: #1d4ed8;
+  border-color: #3b82f6;
+  color: #ffffff;
+}
+.cave-fw-btn.primary:hover { background: #2563eb; }
+.cave-fw-muted { font-size: 11.5px; color: #94a3b8; }
+
+/* Light Mode Parity for Cave Folders & Guided Wizard */
+html[data-cave-theme="light"] .cave-ptile-toolbar,
+html[data-cave-theme="light"] .rnd-folder-head,
+html[data-cave-theme="light"] .rnd-row {
+  background: #ffffff;
+  border-color: #cbd5e1;
+  color: #0f172a;
+}
+html[data-cave-theme="light"] .rnd-folder-list { border-color: #cbd5e1; background: #f8fafc; }
+html[data-cave-theme="light"] .rnd-newfolder-btn { background: #dbeafe; border-color: #93c5fd; color: #1d4ed8; }
+html[data-cave-theme="light"] .rnd-newfolder-btn.cave-newproj-btn { background: #d1fae5; border-color: #6ee7b7; color: #047857; }
+html[data-cave-theme="light"] .cave-fw-dialog { background: #ffffff; border-color: #cbd5e1; color: #0f172a; box-shadow: 0 20px 50px rgba(15, 23, 42, 0.18); }
+html[data-cave-theme="light"] .cave-fw-head h3,
+html[data-cave-theme="light"] .cave-fw-step-lbl,
+html[data-cave-theme="light"] .cave-fw-proj-nm,
+html[data-cave-theme="light"] .cave-fw-dir-open { color: #0f172a; }
+html[data-cave-theme="light"] .cave-fw-step,
+html[data-cave-theme="light"] .cave-fw-browser { background: #f8fafc; border-color: #cbd5e1; }
+html[data-cave-theme="light"] .cave-fw-input,
+html[data-cave-theme="light"] .cave-fw-select,
+html[data-cave-theme="light"] .cave-fw-proj-item,
+html[data-cave-theme="light"] .cave-fw-dir-row,
+html[data-cave-theme="light"] .cave-fw-tab,
+html[data-cave-theme="light"] .cave-fw-mode,
+html[data-cave-theme="light"] .cave-fw-chip,
+html[data-cave-theme="light"] .cave-fw-btn { background: #ffffff; border-color: #cbd5e1; color: #0f172a; }
+html[data-cave-theme="light"] .cave-fw-tab.on { background: #dbeafe; border-color: #1d4ed8; color: #1d4ed8; }
+html[data-cave-theme="light"] .cave-fw-mode.on { background: #d1fae5; border-color: #059669; color: #065f46; }
+html[data-cave-theme="light"] .cave-fw-btn.primary { background: #1d4ed8; border-color: #1d4ed8; color: #ffffff; }
+html[data-cave-theme="light"] .cave-fw-radio,
+html[data-cave-theme="light"] .cave-fw-check { color: #334155; }
+html[data-cave-theme="light"] .cave-fw-proj-grp { background: #e2e8f0; color: #334155; }

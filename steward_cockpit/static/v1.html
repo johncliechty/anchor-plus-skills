@@ -4,7 +4,8 @@
 <title>Aladdin — AI Cockpit</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" href="/anchor.ico" type="image/x-icon">
-<link rel="stylesheet" href="/static/shared.css?v=400dc07cdf37">
+<script>try{if(location.search.indexOf("embed=1")!==-1&&localStorage.getItem("anchor_cave_theme")==="light")document.documentElement.setAttribute("data-cave-theme","light");window.addEventListener("message",function(e){if(e&&e.origin===location.origin&&e.data&&e.data.type==="anchor-cave-theme"&&location.search.indexOf("embed=1")!==-1){if(e.data.theme==="light")document.documentElement.setAttribute("data-cave-theme","light");else document.documentElement.removeAttribute("data-cave-theme");}});}catch(_){}</script>
+<link rel="stylesheet" href="/static/shared.css?v=20261124c4">
 </head>
 <body>
 <div class="app appx app3">
@@ -55,11 +56,20 @@
     <iframe class="anvil-takeover-live-frame" data-anvil-frame src="about:blank"></iframe>
   </div>
 
-  <div class="goalbar" data-goalbar title="click to expand or close the goal">
+  <div class="goalbar" data-goalbar title="Click to expand or collapse the full Goal &amp; Kickoff">
     <div class="gline">
       <span class="glabel" data-goallabel>GOAL</span>
       <span class="gbrief" data-goalbrief>…</span>
+      <button type="button" class="cockpit-folder-pill" data-cockpit-folder-pill hidden title="Project folder location on disk — click to copy path">
+        <span class="cfp-ico">📁</span>
+        <code class="cfp-path" data-cockpit-folder-path></code>
+        <span class="cfp-copy" data-cockpit-folder-copy>Copy</span>
+      </button>
       <span class="gcaret">Expand Goal ▸</span>
+    </div>
+    <div class="grecent-line" data-recent-done-row>
+      <span class="grecent-label">RECENTLY DONE</span>
+      <span class="grecent-text" data-recent-done-line>Loading most recent completed work…</span>
     </div>
     <div class="gfull">
       <div class="gkick" data-kickoff></div>
@@ -69,9 +79,6 @@
     </div>
   </div>
 
-  <!-- Row 3: Full-Width Top Approval / Next-Step Line (Matches wave18-cockpit-redesign-mockup.html) -->
-  <section class="top-approval-bar" data-top-approval-bar></section>
-
   <div class="leftcol">
     <div class="plan-grip" data-plangrip role="separator" aria-label="Resize plan" aria-orientation="vertical" tabindex="0"></div>
     <div class="rail">
@@ -80,22 +87,23 @@
         <span class="wpsum" data-wpsum>no map yet</span>
       </button>
       <div class="railhead">
-        <h2 data-plan-head>THE PLAN</h2>
+        <h2 data-plan-head>PLAN</h2>
         <span class="rail-wave-count" data-plan-count></span>
         <button data-railtoggle title="collapse the plan">« Close</button>
       </div>
       <div class="progress" data-progress hidden></div>
       <div class="plan-progress-bar" data-progress-bar><i data-progress-fill style="width:0%"></i></div>
       <div class="plan-error-banner" data-plan-error role="alert" hidden></div>
-      <section class="plan-focus-card" data-plan-focus aria-label="Current Focus and Next Move" hidden></section>
       <section class="plan-proposal-banner" data-plan-proposal aria-label="Steward Proposed Plan Update" hidden></section>
-      <form class="plan-add-bar" data-plan-add autocomplete="off">
-        <input type="text" class="plan-add-input" data-plan-add-title placeholder="+ Add Step…" aria-label="New step title">
-        <input type="text" class="plan-add-goal-input" data-plan-add-goal placeholder="Done when / goal (optional)" aria-label="Step goal or done-when">
-        <button type="submit" class="plan-add-btn" data-plan-add-submit title="Add step to The Plan">+ Add Step</button>
+      <div class="wave-map-root" data-wave-map aria-label="Simplified Wave Map"></div>
+      <section class="plan-focus-card" data-plan-focus aria-label="Current Focus and Next Move" hidden></section>
+      <form class="plan-add-bar" data-plan-add autocomplete="off" hidden>
+        <input type="text" class="plan-add-input" data-plan-add-title placeholder="+ Add Wave…" aria-label="New wave title">
+        <input type="text" class="plan-add-goal-input" data-plan-add-goal placeholder="Done when / goal (optional)" aria-label="Wave goal">
+        <button type="submit" class="plan-add-btn" data-plan-add-submit title="Add wave">+ Wave</button>
       </form>
-      <ul class="steps" data-steps></ul>
-      <div class="fresh" data-fresh></div>
+      <ul class="steps" data-steps hidden></ul>
+      <div class="fresh" data-fresh hidden></div>
       <div class="gaps" data-gaps></div>
       <div class="tool-scout-box" data-tool-scout hidden></div>
     </div>
@@ -114,6 +122,7 @@
           <div class="row">
             <span class="hint">Enter to send · Shift+Enter for newline · Steward checks unreviewed items &amp; plan impact automatically</span>
             <button data-interrupt hidden style="display:none" title="end the running turn - partial work is kept, your queued words stay">Stop turn</button>
+            <button type="button" class="clear-draft-btn" data-clear-draft title="Clear unsent instruction draft">Clear</button>
             <button class="send" data-send>Send</button>
           </div>
         </div>
@@ -148,7 +157,6 @@
           <span data-statetext hidden>…</span>
         </span>
         <div style="display:flex;align-items:center;gap:6px;">
-          <button type="button" data-poincare-toggle2 style="font-size:11px;padding:2px 8px;border-radius:6px;border:1px solid rgba(56,189,248,0.45);background:rgba(56,189,248,0.12);color:#7dd3fc;cursor:pointer" title="Explore this AI Cockpit's interactive Poincaré History & Context Map">🧭 History Map</button>
           <span class="sc-timer-pill" data-statusstamp>Live · 10m cadence</span>
           <button data-statustoggle2 title="collapse">Close »</button>
         </div>
@@ -159,7 +167,7 @@
       <div class="right-scroll-area">
         <div class="pdeliv" data-delivmount></div>
         <div class="pstatus" data-pstatus>
-          <h2 class="pstatushead" hidden>Status <span class="pcount" data-statusstamp></span></h2>
+          <h2 class="pstatushead">⏱ 10-Min Status Summary <span class="pcount" data-statusstamp>Live · 10m cadence</span></h2>
           <div class="platest" data-latest></div>
           <div class="pscroll"></div>
           <details class="prev-status-log earlier-updates-box" data-prev-status-log>
@@ -205,13 +213,15 @@
 <script src="/static/md.js"></script>
 <script src="/static/plate.js"></script>
 <script src="/static/skill-icons.js"></script>
-<script src="/static/shared.js?v=f7fac0ad1590"></script>
+<script src="/static/cockpit-wave-map.js?v=20261124c3"></script>
+<script src="/static/cockpit-deliverable-shelves.js?v=20261124c3"></script>
+<script src="/static/shared.js?v=20261124c3"></script>
 <script>
 const app = document.querySelector(".app");
 const _v1Params = new URLSearchParams(location.search || "");
 const isEmbeddedTile = window.STEWARD_EMBED === true ||
-  _v1Params.get("embed") === "1" ||
-  /^(?:tile|talk)$/i.test(_v1Params.get("view") || "") ||
+  _v1Params.get("embed") === "dialogue" ||
+  /^(?:tile|talk|dialogue)$/i.test(_v1Params.get("view") || "") ||
   app.classList.contains("tileview") ||
   app.classList.contains("talkview");
 if (isEmbeddedTile) {
@@ -245,16 +255,28 @@ const t2 = document.querySelector("[data-railtoggle2]");
 if (t2) t2.onclick = () => { if (isEmbeddedTile) return; app.classList.toggle("railhide"); };
 try { Proto.init({ statusPane: true }); } catch (e) { console.error("Proto.init error:", e); }
 const planGrip=document.querySelector('[data-plangrip]');
-const setPlanWidth=w=>{const other=app.classList.contains('statusopen')?document.querySelector('.rightcol').offsetWidth:0;
-  const width=Math.min(620,Math.max(340,window.innerWidth-other-320),Math.max(340,w));document.documentElement.style.setProperty('--planw',width+'px');
-  try{localStorage.setItem('steward_plan_width',String(width));}catch(e){};planGrip.setAttribute('aria-valuenow',String(width));};
+let _userPlanW = 0;
+let _userStatusW = 0;
+try { const _spw = Number(localStorage.getItem('steward_plan_width')); if (_spw >= 240 && _spw <= 620) _userPlanW = _spw; } catch (e) {}
+const setPlanWidth=(w, persist)=>{
+  const minCenter = Math.min(460, Math.round(window.innerWidth * 0.36));
+  const other = app.classList.contains('statusopen') ? (document.querySelector('.rightcol').offsetWidth || 0) : 0;
+  const maxAllowed = Math.max(250, Math.min(620, window.innerWidth - other - minCenter));
+  const width = Math.max(250, Math.min(maxAllowed, w));
+  document.documentElement.style.setProperty('--planw', width + 'px');
+  if (persist) {
+    _userPlanW = width;
+    try { localStorage.setItem('steward_plan_width', String(width)); } catch (e) {}
+  }
+  if (planGrip) planGrip.setAttribute('aria-valuenow', String(width));
+};
 if(planGrip){
-  try{const saved=Number(localStorage.getItem('steward_plan_width'));if(saved)setPlanWidth(Math.max(340,saved));}catch(e){}
+  if(_userPlanW) setPlanWidth(_userPlanW, false);
   planGrip.addEventListener('pointerdown',e=>{e.preventDefault();planGrip.setPointerCapture(e.pointerId);
-    const move=ev=>setPlanWidth(ev.clientX-document.querySelector('.leftcol').getBoundingClientRect().left);
+    const move=ev=>setPlanWidth(ev.clientX-document.querySelector('.leftcol').getBoundingClientRect().left, true);
     const end=()=>{planGrip.removeEventListener('pointermove',move);planGrip.removeEventListener('pointerup',end);planGrip.removeEventListener('pointercancel',end);};
     planGrip.addEventListener('pointermove',move);planGrip.addEventListener('pointerup',end);planGrip.addEventListener('pointercancel',end);});
-  planGrip.addEventListener('keydown',e=>{if(['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();setPlanWidth(document.querySelector('.leftcol').offsetWidth+(e.key==='ArrowRight'?20:-20));}});
+  planGrip.addEventListener('keydown',e=>{if(['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();setPlanWidth(document.querySelector('.leftcol').offsetWidth+(e.key==='ArrowRight'?20:-20), true);}});
 }
 // slide the open status pane wider/narrower by its left grip
 const grip = document.querySelector("[data-pgrip]");
@@ -262,8 +284,10 @@ if (grip) grip.addEventListener("pointerdown", (e) => {
   e.preventDefault();
   grip.setPointerCapture(e.pointerId);
   const move = (ev) => {
+    const minCenter = Math.min(460, Math.round(window.innerWidth * 0.36));
     const other=app.classList.contains('railhide')?0:document.querySelector('.leftcol').offsetWidth;
-    const w = Math.min(760,Math.max(280,window.innerWidth-other-320),Math.max(280, window.innerWidth - ev.clientX));
+    const w = Math.min(760,Math.max(265,window.innerWidth-other-minCenter),Math.max(265, window.innerWidth - ev.clientX));
+    _userStatusW = w;
     document.documentElement.style.setProperty("--statusw", w + "px");
   };
   const up = () => { grip.removeEventListener("pointermove", move);
@@ -286,9 +310,9 @@ function toScrollableDeliverableHref(rawHref) {
   if (!rawHref || typeof rawHref !== "string") return rawHref;
   try {
     const u = new URL(rawHref, location.href);
-    if (u.pathname === "/api/steward/deliverable-file" && u.searchParams.get("download") !== "1") {
+    if (u.pathname === "/api/steward/deliverable-file" && u.searchParams.get("download") !== "1" && u.searchParams.get("raw") !== "1") {
       const p = (u.searchParams.get("path") || "").toLowerCase();
-      if ((p.endsWith(".pdf") || (p.endsWith(".pptx") && u.searchParams.get("view") === "1")) && !u.searchParams.has("scrollview")) {
+      if ((p.endsWith(".pdf") || p.endsWith(".html") || p.endsWith(".htm") || (p.endsWith(".pptx") && u.searchParams.get("view") === "1")) && !u.searchParams.has("scrollview")) {
         u.searchParams.set("scrollview", "1");
       }
       if (!u.searchParams.has("token")) {
@@ -432,11 +456,28 @@ function fitConversation(){
     if(app.dataset.narrow){delete app.dataset.narrow;
       app.classList.toggle('railhide',app.dataset.wideRail==='hide');
       app.classList.toggle('statusopen',app.dataset.wideStatus!=='shut');}
-    const left=app.classList.contains('railhide')?0:document.querySelector('.leftcol').offsetWidth;
-    const maximum=Math.max(280,innerWidth-left-320);
-    const right=Math.min(document.querySelector('.rightcol').offsetWidth||380,maximum);
-    document.documentElement.style.setProperty('--statusw',right+'px');
-    if(planGrip)setPlanWidth(document.querySelector('.leftcol').offsetWidth||300);
+    const minCenter = Math.min(480, Math.round(innerWidth * 0.38));
+    const railOpen = !app.classList.contains('railhide');
+    const statusOpen = app.classList.contains('statusopen');
+    let targetPlan = _userPlanW || Math.round(Math.min(365, Math.max(255, innerWidth * 0.235)));
+    let targetStatus = _userStatusW || Math.round(Math.min(445, Math.max(280, innerWidth * 0.285)));
+    if (railOpen && statusOpen) {
+      const budget = Math.max(535, innerWidth - minCenter);
+      if (targetPlan + targetStatus > budget) {
+        const scale = budget / (targetPlan + targetStatus);
+        targetPlan = Math.max(250, Math.round(targetPlan * scale));
+        targetStatus = Math.max(270, budget - targetPlan);
+      }
+    } else if (railOpen) {
+      targetPlan = Math.min(targetPlan, Math.max(250, innerWidth - minCenter));
+    } else if (statusOpen) {
+      targetStatus = Math.min(targetStatus, Math.max(270, innerWidth - minCenter));
+    }
+    if (statusOpen) document.documentElement.style.setProperty('--statusw', targetStatus + 'px');
+    if (railOpen) {
+      document.documentElement.style.setProperty('--planw', targetPlan + 'px');
+      if (planGrip) planGrip.setAttribute('aria-valuenow', String(targetPlan));
+    }
   }
 }
 window.addEventListener('resize',fitConversation);
@@ -572,7 +613,7 @@ function setPoincareTakeover(open) {
   }
 }
 
-document.querySelectorAll("[data-poincare-toggle],[data-poincare-toggle2]").forEach(btn => {
+document.querySelectorAll("[data-poincare-toggle]").forEach(btn => {
   btn.addEventListener("click", () => setPoincareTakeover(true));
 });
 document.querySelectorAll("[data-poincare-return],[data-poincare-return2]").forEach(btn => {

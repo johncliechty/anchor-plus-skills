@@ -1,0 +1,13 @@
+{
+  "schema": "anchor.release.signal.v1",
+  "channel": "stable",
+  "version": "1.5.5",
+  "min_auto_update_version": "1.5.0",
+  "published_at": "2026-11-26T14:53:01Z",
+  "repo_url": "https://github.com/johncliechty/ghostworldlabs-anchor.git",
+  "exe_zip_url": "https://github.com/johncliechty/ghostworldlabs-anchor/releases/download/v1.5.5/Anchor.zip",
+  "core_sha256": "2e:27:6e:af:f1:bd:6d:5d:28:82:a4:68:81:b6:55:2f:56:da:73:a0:70:65:cf:09:31:28:52:7f:bd:81:0d:d3",
+  "notes": "Anchor v1.5.5: Ghost World Labs License setup acknowledgement, Ed25519-signed website-watched automatic updates (no Tailscale needed), Free-Tier AI Provider preset, Older Laptop Low-Memory Mode, and Cave/Cockpit oscillator performance fix.",
+  "key_id": "gwl-homebase-2026-v1",
+  "signature": "d5:6b:0f:c0:e8:ef:e4:7a:36:f0:e4:bd:10:48:ef:bc:59:49:82:17:09:f0:5d:b4:e3:fc:63:f0:70:04:2d:73:ce:34:45:20:97:11:57:18:84:cc:ab:ad:15:fe:37:1b:6e:84:21:25:7e:f0:c1:cb:a7:63:2a:62:cd:23:1b:01"
+}

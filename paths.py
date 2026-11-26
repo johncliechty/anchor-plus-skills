@@ -25,11 +25,15 @@ import contextlib
 import json
 import math
 import os
+import socketserver
 import time
 import threading
 import urllib.parse
 import urllib.request
 from pathlib import Path, PurePosixPath, PureWindowsPath
+
+if getattr(socketserver.TCPServer, "request_queue_size", 5) < 64:
+    socketserver.TCPServer.request_queue_size = 64
 
 if os.name == "nt":
     import msvcrt
@@ -1349,6 +1353,141 @@ def safe_urlopen(url_or_req, timeout: float = 15.0, *args, **kwargs):
         raise ValueError("Upstream URL fetch exceeded 15s timeout")
 
     return urllib.request.urlopen(url_or_req, *args, timeout=t, **kwargs)
+
+
+def _win32_session_and_desktop() -> tuple[int | None, str, str]:
+    """Return ``(session_id, window_station, desktop)`` on Windows, or ``(None, '', '')``."""
+    if os.name != "nt":
+        return None, "", ""
+    import ctypes
+
+    sid_val: int | None = None
+    winsta = ""
+    desktop = ""
+    try:
+        k32 = ctypes.windll.kernel32
+        sid = ctypes.c_ulong()
+        if k32.ProcessIdToSessionId(os.getpid(), ctypes.byref(sid)):
+            sid_val = int(sid.value)
+    except Exception:
+        sid_val = None
+    try:
+        u32 = ctypes.windll.user32
+        k32 = ctypes.windll.kernel32
+        buf = ctypes.create_unicode_buffer(256)
+        n = ctypes.c_ulong()
+        h_ws = u32.GetProcessWindowStation()
+        if h_ws and u32.GetUserObjectInformationW(h_ws, 2, buf, 512, ctypes.byref(n)):
+            winsta = str(buf.value or "")
+        h_dk = u32.GetThreadDesktop(k32.GetCurrentThreadId())
+        if h_dk and u32.GetUserObjectInformationW(h_dk, 2, buf, 512, ctypes.byref(n)):
+            desktop = str(buf.value or "")
+    except Exception:
+        pass
+    return sid_val, winsta, desktop
+
+
+def is_windows_service_or_session0(*, _probe_fn=None) -> bool:
+    """Return True when running inside non-interactive Windows Session 0 or a service WindowStation (`Service-0x0-*`).
+
+    Launching `webbrowser.open` or `os.startfile` from a Session-0 Windows Service (such as NSSM `anchor`)
+    spawns an invisible High-Integrity `chrome.exe` in Session 0 that locks the user's default Chrome
+    `User Data\\lockfile` and blocks Chrome from opening on the interactive desktop!
+    """
+    if os.name != "nt" and _probe_fn is None:
+        return False
+    sid_val, winsta, _desktop = _probe_fn() if _probe_fn is not None else _win32_session_and_desktop()
+    if sid_val == 0:
+        return True
+    if winsta and winsta.strip().lower() != "winsta0":
+        return True
+    return False
+
+
+def is_interactive_desktop_session(*, _probe_fn=None) -> bool:
+    """Return True only when attached to an interactive user desktop (`WinSta0\\Default` in Session != 0 on Windows)."""
+    if _probe_fn is not None:
+        sid_val, winsta, desktop = _probe_fn()
+        if sid_val == 0:
+            return False
+        if winsta and winsta.strip().lower() != "winsta0":
+            return False
+        if desktop and desktop.strip().lower() != "default":
+            return False
+        return True
+    if os.name == "nt":
+        if is_windows_service_or_session0():
+            return False
+        _sid, _ws, desktop = _win32_session_and_desktop()
+        if desktop and desktop.strip().lower() != "default":
+            return False
+        return True
+    if sys.platform == "darwin":
+        return True
+    return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+
+
+def detect_host_hardware_profile() -> dict:
+    """Detect CPU logical core count and physical RAM (GB) using stdlib only.
+
+    Recommends ``low_spec_mode`` on older laptops/hosts (< 12 GB RAM, <= 4 logical cores,
+    or < 3.0 GB available startup RAM) so Anchor caps background WebView2 iframes and Cave pre-warming.
+    """
+    cpu_fn = getattr(os, "process_cpu_count", None) or os.cpu_count
+    cpu_cores = int(cpu_fn() or 2)
+    total_ram_gb = 0.0
+    avail_ram_gb = 0.0
+    memory_load_pct = 0
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            class _MEMORYSTATUSEX(ctypes.Structure):
+                _fields_ = [
+                    ("dwLength", ctypes.c_ulong),
+                    ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong),
+                    ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong),
+                    ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong),
+                    ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+                ]
+
+            stat = _MEMORYSTATUSEX()
+            stat.dwLength = ctypes.sizeof(_MEMORYSTATUSEX)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat)):
+                total_ram_gb = round(float(stat.ullTotalPhys) / float(1024 ** 3), 1)
+                avail_ram_gb = round(float(stat.ullAvailPhys) / float(1024 ** 3), 1)
+                memory_load_pct = int(stat.dwMemoryLoad)
+        except Exception:
+            total_ram_gb = 0.0
+    else:
+        try:
+            if hasattr(os, "sysconf") and "SC_PAGE_SIZE" in os.sysconf_names and "SC_PHYS_PAGES" in os.sysconf_names:
+                total_bytes = int(os.sysconf("SC_PAGE_SIZE")) * int(os.sysconf("SC_PHYS_PAGES"))
+                if total_bytes > 0:
+                    total_ram_gb = round(float(total_bytes) / float(1024 ** 3), 1)
+        except Exception:
+            total_ram_gb = 0.0
+
+    ram_detect_ok = total_ram_gb > 0.0
+    low_spec_rec = bool(
+        (0.0 < total_ram_gb < 12.0)
+        or cpu_cores <= 4
+        or (0.0 < avail_ram_gb < 3.0 and memory_load_pct >= 85)
+    )
+    return {
+        "cpu_cores": cpu_cores,
+        "total_ram_gb": total_ram_gb,
+        "avail_ram_gb": avail_ram_gb,
+        "memory_load_pct": memory_load_pct,
+        "ram_detect_ok": ram_detect_ok,
+        "low_spec_recommended": low_spec_rec,
+    }
+
+
 
 
 

@@ -238,12 +238,12 @@ def compute_allowance_monitor(usage_summary: Optional[Dict[str, Any]] = None) ->
         tokens_5h = int(fam_5h.get("total_tokens") or 0)
         usd_7d = float(fam_7d.get("hypothetical_usd") or 0.0)
         connected = bool(installed or tokens_7d > 0)
-        if fam == "chatgpt" and tokens_7d == 0 and not isinstance(chatgpt_persisted, dict):
+        if fam in ("chatgpt", "grok") and tokens_7d == 0 and (fam != "chatgpt" or not isinstance(chatgpt_persisted, dict)):
             try:
                 wiz_p = _paths.data_dir() / ".anchor" / "onboard_wizard_state.json"
                 wiz_svcs = (json.loads(wiz_p.read_text(encoding="utf-8")).get("services") or {}) if wiz_p.is_file() else {}
-                cg_svc = wiz_svcs.get("chatgpt") if isinstance(wiz_svcs.get("chatgpt"), dict) else {}
-                if not (cg_svc.get("enabled") and cg_svc.get("verified")):
+                f_svc = wiz_svcs.get(fam) if isinstance(wiz_svcs.get(fam), dict) else {}
+                if not (f_svc.get("enabled") and f_svc.get("verified")):
                     connected = False
             except Exception:
                 connected = False

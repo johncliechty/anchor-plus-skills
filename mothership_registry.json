@@ -1,9 +1,8 @@
 {
   "schema": "anchor.mothership.registry.v1",
-  "latest_version": "1.5.3",
+  "latest_version": "1.5.5",
   "canonical_github_repo": "https://github.com/johncliechty/ghostworldlabs-anchor.git",
-  "fallback_github_repo": "https://github.com/johncliechty/anchor-plus-skills.git",
-  "updated_at": "2026-11-20T18:30:00Z",
+  "updated_at": "2026-11-26T14:25:00Z",
   "motherships": [
     {
       "id": "gwl-server-lead",
@@ -15,9 +14,9 @@
       "github_repo": "https://github.com/johncliechty/ghostworldlabs-anchor.git",
       "platform": "windows",
       "install_dir": "C:/dev/Anchor",
-      "installed_version": "1.5.3",
-      "last_seen_at": "2026-11-20T18:30:00Z",
-      "last_push_at": "2026-11-20T18:30:00Z",
+      "installed_version": "1.5.5",
+      "last_seen_at": "2026-11-26T14:25:00Z",
+      "last_push_at": "2026-11-26T14:25:00Z",
       "pending_update": null
     },
     {
@@ -25,20 +24,21 @@
       "owner": "Merrill",
       "pseudonym": "Aladdin",
       "role": "collaborator",
-      "hostname": "merrill-mothership",
-      "tailscale_url": "https://merrill-mothership.ts.net",
+      "hostname": "oakley",
+      "tailscale_url": "https://oakley.tail30264f.ts.net",
       "github_repo": "https://github.com/johncliechty/ghostworldlabs-anchor.git",
       "platform": "windows",
       "install_dir": "C:/dev/Anchor",
       "installed_version": "1.5.1",
-      "last_seen_at": "2026-11-15T06:05:00Z",
-      "last_push_at": "2026-11-20T18:30:00Z",
+      "last_seen_at": "2026-11-20T18:37:17Z",
+      "last_push_at": "2026-11-23T02:35:37Z",
       "pending_update": {
-        "target_version": "1.5.3",
-        "pushed_by": "gwl-server-lead",
-        "pushed_at": "2026-11-20T18:30:00Z",
-        "notes": "v1.5.3: Fast deliverable streaming (HTTP Range + ETag/304 + gzip), cached /api/skills (<10ms), standard Setup Homebase Registration for push updates, and automatic sanitized journal/error sync to Anchor Homebase."
-      }
+        "target_version": "1.5.4",
+        "pushed_by": "puter",
+        "pushed_at": "2026-11-23T02:35:37Z",
+        "notes": "Anchor v1.5.4: Fixes Windows [WinError 206] steward spawn overflow, zero-inbound Homebase auto-update heartbeats, self-bootstrapping updater, and Anchor.exe overlay version guard."
+      },
+      "version_installed": "1.5.1"
     }
   ]
 }

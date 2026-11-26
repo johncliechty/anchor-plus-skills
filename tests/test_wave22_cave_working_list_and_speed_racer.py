@@ -286,7 +286,8 @@ def test_the_list_priority_numbers_things_done_and_chief_of_staff_coupling(tmp_p
     assert "The List" in wl_html
     assert "Things Done" in wl_html
     assert 'id="theListCompactRow"' in wl_html
-    assert 'data-wl-populate-cos="1"' in wl_html
+    assert 'id="wlSpineCollapseBtn"' not in wl_html
+    assert 'data-wl-populate-cos="1"' not in wl_html
 
 
 

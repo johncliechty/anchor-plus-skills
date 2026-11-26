@@ -31,13 +31,13 @@ import importlib
 from pathlib import Path
 
 _HOT_MOD_MTIMES = globals().get("_HOT_MOD_MTIMES") if isinstance(globals().get("_HOT_MOD_MTIMES"), dict) else {}
-for _hot_mod in ("paths", "office_preview", "anchor_settings", "model_policy", "provider_setup", "gwl_admin_gui", "onboard_wizard", "usage_allowance_monitor", "usage_nightly_sync", "deliverables_register", "steward_cockpit.steward_core", "tools.steward_plan", "steward_cockpit.spellcheck_engine", "steward_cockpit.dictation_engine", "steward_cockpit.steward_campaign", "steward_cockpit.campaign_acts", "steward_cockpit.campaign_say", "steward_cockpit.anvil_session", "high_seat_page", "report_viewer", "scribe_engine", "comms_connector"):
+for _hot_mod in ("paths", "office_preview", "anchor_settings", "model_policy", "provider_setup", "gwl_admin_gui", "onboard_wizard", "usage_allowance_monitor", "usage_nightly_sync", "deliverables_register", "steward_cockpit.steward_core", "tools.steward_plan", "steward_cockpit.wave_map_model", "steward_cockpit.deliverable_shelves", "steward_cockpit.spellcheck_engine", "steward_cockpit.dictation_engine", "steward_cockpit.steward_campaign", "steward_cockpit.campaign_acts", "steward_cockpit.campaign_say", "steward_cockpit.anvil_session", "steward_cockpit.anvil_scoping_v6", "steward_cockpit.anvil_py_deps", "steward_cockpit.anvil_replication_job", "steward_cockpit.anvil_verification_guard", "steward_cockpit.anvil_comprehension_engine", "steward_cockpit.anvil_literature_job", "high_seat_page", "report_viewer", "scribe_engine", "comms_connector"):
     if _hot_mod in sys.modules:
         try:
             _m_obj = sys.modules[_hot_mod]
             _m_file = getattr(_m_obj, "__file__", None)
             _m_mt = os.stat(_m_file).st_mtime_ns if _m_file else None
-            if _m_mt is not None and _HOT_MOD_MTIMES.get(_hot_mod) != _m_mt and not (os.environ.get("PYTEST_CURRENT_TEST") and _hot_mod in ("model_policy", "provider_setup")):
+            if _m_mt is not None and _HOT_MOD_MTIMES.get(_hot_mod) != _m_mt and not (os.environ.get("PYTEST_CURRENT_TEST") and _hot_mod in ("model_policy", "provider_setup", "steward_cockpit.dictation_engine", "comms_connector")):
                 importlib.reload(_m_obj)
                 _HOT_MOD_MTIMES[_hot_mod] = _m_mt
         except Exception:
@@ -402,6 +402,19 @@ def serve_static(name):
     ctype = ("text/html; charset=utf-8" if name.endswith(".html")
              else "text/css; charset=utf-8" if name.endswith(".css")
              else "application/javascript; charset=utf-8")
+    if name == "anvil.html":
+        html_txt = f.read_text(encoding="utf-8")
+        def _stamp_static_html(m):
+            attr_and_url = m.group(1)
+            asset_rel = m.group(2)
+            ver = _static_asset_version(asset_rel)
+            return f'{attr_and_url}?v={ver}"'
+        html_txt = re.sub(
+            r'((?:href|src)="(?:/steward-static/|/static/)([^"?]+\.(?:js|css)))(?:\?v=[^"]*)?"',
+            _stamp_static_html,
+            html_txt,
+        )
+        return html_txt.encode("utf-8"), ctype
     return f.read_bytes(), ctype
 
 
@@ -418,8 +431,8 @@ window.STEWARD_MODE = %s;
   try{
     var _sp0=new URLSearchParams(location.search);
     TOK=_sp0.get('token')||'';
-    if(!_PAGE_PID)_PAGE_PID=_sp0.get('pid')||'';
-    if(!_PAGE_DIR)_PAGE_DIR=_sp0.get('dir')||'';
+    if(!_PAGE_PID)_PAGE_PID=_sp0.get('pid')||_sp0.get('project')||'';
+    if(!_PAGE_DIR)_PAGE_DIR=_sp0.get('dir')||_sp0.get('effort')||'';
   }catch(_){}
   try{if(TOK){localStorage.setItem('anchor_token',TOK);}else{TOK=localStorage.getItem('anchor_token')||'';}}catch(_){}
   window.STEWARD_TOKEN=TOK;
@@ -476,10 +489,15 @@ window.STEWARD_MODE = %s;
   // W4 (2026-10-08, ChatGPT r4): a cockpit view embedded as a Cave card (view=tile) never reloads itself while open
   // in the Cave, except inside the Anchor App shell (window.parent.ANCHOR_APP) or when parked/idle across a new build.
   var _tile=false;try{_tile=new URLSearchParams(location.search).get('view')==='tile'&&window.parent!==window&&!window.parent.ANCHOR_APP;}catch(_){}
+  var _bootId='';
   function _checkVersion(){
     try{var hw=window;for(var hk=0;hk<6;hk++){if(hw.__anchorHidden)return;if(hw===hw.parent)break;hw=hw.parent;}}catch(_){}
     _f('/api/version', {cache:'no-store'}).then(function(r){return r.json();})
       .then(function(j){
+        if (j && j.boot) {
+          if (!_bootId) _bootId = String(j.boot);
+          else if (String(j.boot) === _bootId) { if (j.version) window.STEWARD_BUILD = String(j.version); return; }
+        }
         var v = j && j.version;
         if (!v || v === window.STEWARD_BUILD || _busy()) return;
         if (_tile) { try { if (window.parent && window.parent.document && window.parent.document.querySelector('.tile.open')) return; } catch (_) {} }
@@ -490,6 +508,7 @@ window.STEWARD_MODE = %s;
       }).catch(function(){});
   }
   if (window.STEWARD_BUILD) {
+    _f('/api/version', {cache:'no-store'}).then(function(r){return r.json();}).then(function(j){if(j&&j.boot)_bootId=String(j.boot);}).catch(function(){});
     setInterval(_checkVersion, 30000);
     window.addEventListener('anchor-app-visibility', function(ev){
       if (ev && ev.detail && !ev.detail.hidden) setTimeout(_checkVersion, 150);
@@ -791,8 +810,18 @@ def serve_page_doc(page="v1", pid="", effort_dir="", embed=False, view="", *, mo
         pass
     is_embed = bool(embed) or str(view or "").strip().lower() == "tile"
     eff_str = str(effort_dir or "")
-    extra_boot = "<script>window.STEWARD_EFFORT_DIR=%s;window.STEWARD_EMBED=%s;</script>" % (
+    proj_dir_str = ""
+    if pid:
+        try:
+            import rnd_registry as _rnd_sr
+            _p_ent = _rnd_sr.get_project(str(pid))
+            if isinstance(_p_ent, dict) and _p_ent.get("folder_path"):
+                proj_dir_str = str(_p_ent["folder_path"]).replace("\\", "/").rstrip("/")
+        except Exception:
+            proj_dir_str = ""
+    extra_boot = "<script>window.STEWARD_EFFORT_DIR=%s;window.STEWARD_PROJECT_DIR=%s;window.STEWARD_EMBED=%s;</script>" % (
         json.dumps(eff_str),
+        json.dumps(proj_dir_str),
         "true" if is_embed else "false",
     )
     shim = extra_boot + (_CLIENT_SHIM % (json.dumps(pid),
@@ -834,7 +863,619 @@ _PROJECT_VERBS = {"efforts", "grass", "boneyard", "skills", "gandalf",
 # was full (2026-08-28).
 _PROJECT_FILE_VERBS = {"files", "filetext", "upload", "open", "notebook-open",
                        "notebook-register", "notebook-status", "deliverable-file", "anvil",
-                       "anvil/walkthrough", "anvil/source", "anvil/v4_state", "spellcheck", "dictate", "fleet-brief", "fleet-relay"}
+                       "anvil/walkthrough", "anvil/source", "anvil/v4_state", "anvil/analyses", "anvil/discover",
+                       "anvil/scoping", "anvil/replication",
+                       "spellcheck", "dictate", "drafts", "fleet-brief", "fleet-relay"}
+
+
+# ── Wave 3: Crash-Durable Unified Composer Drafts (/api/steward/drafts) ──────
+COMPOSER_DRAFT_MAX_BYTES = 256 * 1024
+COMPOSER_DRAFTS_MAX_KEYS = 500
+COMPOSER_DRAFT_LOCK_TIMEOUT_SEC = 2.0
+_DRAFT_STORAGE_AVAILABLE = None
+_DRAFT_STORAGE_RESOLVER = None
+
+COMPOSER_DRAFTS_FAILURE_STATE_TABLE = {
+    "dependency-missing": {
+        "ok": False,
+        "status_code": 503,
+        "status_kind": "dependency-missing",
+        "failure_state": "dependency-missing",
+        "badge": "DEPENDENCY_MISSING",
+        "unknown_state": False,
+        "draft": None,
+        "error_code": "DEPENDENCY_MISSING",
+        "message": "Composer draft storage engine is unavailable — unsent text stays in your browser.",
+    },
+    "dependency-slow-or-killed": {
+        "ok": False,
+        "status_code": 504,
+        "status_kind": "dependency-slow-or-killed",
+        "failure_state": "dependency-slow-or-killed",
+        "badge": "TIMEOUT",
+        "unknown_state": False,
+        "draft": None,
+        "error_code": "LOCK_TIMEOUT",
+        "message": "Composer draft store lock timed out — existing draft preserved; retry safely.",
+    },
+    "dependency-returns-garbage": {
+        "ok": False,
+        "status_code": 400,
+        "status_kind": "dependency-returns-garbage",
+        "failure_state": "dependency-returns-garbage",
+        "badge": "REJECTED_GARBAGE",
+        "unknown_state": False,
+        "draft": None,
+        "error_code": "INVALID_DRAFT_PAYLOAD",
+        "message": "Invalid composer draft request payload or schema.",
+    },
+    "backing-store-unreadable": {
+        "ok": False,
+        "status_code": 500,
+        "status_kind": "backing-store-unreadable",
+        "failure_state": "backing-store-unreadable",
+        "badge": "UNKNOWN",
+        "unknown_state": True,
+        "draft": None,
+        "error_code": "BACKING_STORE_UNREADABLE",
+        "message": "Composer draft backing store is unreadable (unknown state) — existing file preserved.",
+    },
+    "empty-but-valid": {
+        "ok": True,
+        "status_code": 200,
+        "status_kind": "empty-but-valid",
+        "failure_state": "empty-but-valid",
+        "badge": "EMPTY",
+        "unknown_state": False,
+        "draft": "",
+        "error_code": "",
+        "message": "No unsent composer draft stored for this scope.",
+    },
+}
+
+
+class DraftDependencyMissingError(RuntimeError):
+    """Raised when the composer draft storage root or target cockpit directory is unavailable."""
+
+
+class DraftContainmentError(ValueError):
+    """Raised on path traversal, NUL byte, out-of-workspace path, or symlink escape."""
+
+
+class DraftBoundExceededError(ValueError):
+    """Raised when a draft payload exceeds COMPOSER_DRAFT_MAX_BYTES (256 KB)."""
+
+
+class DraftStoreUnreadableError(OSError):
+    """Raised when an on-disk composer-drafts.json file is corrupt or unreadable (`UNKNOWN` != `EMPTY`)."""
+
+
+def set_draft_storage_available(available=None):
+    """Configure or reset (`None`) composer draft storage availability for testing."""
+    global _DRAFT_STORAGE_AVAILABLE
+    _DRAFT_STORAGE_AVAILABLE = available
+
+
+def set_draft_storage_resolver(resolver=None):
+    """Configure or reset (`None`) custom data_dir resolver for composer drafts."""
+    global _DRAFT_STORAGE_RESOLVER
+    _DRAFT_STORAGE_RESOLVER = resolver
+
+
+def set_draft_lock_timeout(timeout_sec: float = 2.0):
+    """Configure lock acquisition timeout (`COMPOSER_DRAFT_LOCK_TIMEOUT_SEC`)."""
+    global COMPOSER_DRAFT_LOCK_TIMEOUT_SEC
+    COMPOSER_DRAFT_LOCK_TIMEOUT_SEC = max(0.01, float(timeout_sec))
+
+
+def _draft_failure_response(row_key: str, *, status_code: int | None = None, detail: str = "", **extra):
+    base = dict(COMPOSER_DRAFTS_FAILURE_STATE_TABLE[row_key])
+    code = int(status_code if status_code is not None else base["status_code"])
+    base["status_code"] = code
+    if detail:
+        base["detail"] = str(detail)
+        base["error"] = str(detail)
+    else:
+        base["error"] = base["message"]
+    base.update(extra)
+    return base, code
+
+
+def _draft_containment_refusal(detail: str = "Blocked unsafe path traversal, absolute path, or symlink escape"):
+    return {
+        "ok": False,
+        "refused": True,
+        "status_code": 403,
+        "status_kind": "dependency-returns-garbage",
+        "failure_state": "dependency-returns-garbage",
+        "badge": "REJECTED_GARBAGE",
+        "unknown_state": False,
+        "draft": None,
+        "error_code": "PATH_CONTAINMENT_REFUSAL",
+        "error": detail,
+        "message": detail,
+    }, 403
+
+
+def _draft_bound_exceeded_refusal(actual_bytes: int = 0):
+    msg = f"Composer draft payload ({actual_bytes} bytes) exceeds 256 KB limit ({COMPOSER_DRAFT_MAX_BYTES} bytes)."
+    return {
+        "ok": False,
+        "refused": True,
+        "status_code": 413,
+        "status_kind": "bound-exceeded",
+        "failure_state": "bound-exceeded",
+        "badge": "BOUND_EXCEEDED",
+        "unknown_state": False,
+        "draft": None,
+        "max_bytes": COMPOSER_DRAFT_MAX_BYTES,
+        "actual_bytes": int(actual_bytes),
+        "error_code": "BOUND_EXCEEDED_REFUSAL",
+        "error": msg,
+        "message": msg,
+    }, 413
+
+
+def _check_no_traversal_or_nul(raw_val: str, *, allow_slashes: bool = False) -> str:
+    import urllib.parse as _up
+    from pathlib import PurePosixPath, PureWindowsPath
+    if raw_val is None:
+        return ""
+    if not isinstance(raw_val, str):
+        raise ValueError("String parameter required")
+    s = raw_val.strip()
+    if not s:
+        return ""
+    forms = [raw_val, s, _up.unquote(raw_val), _up.unquote(_up.unquote(raw_val))]
+    for f in forms:
+        if "\x00" in f:
+            raise DraftContainmentError("NUL byte rejected")
+        norm = f.replace("\\", "/")
+        parts = [p for p in PurePosixPath(norm).parts if p]
+        if ".." in parts:
+            raise DraftContainmentError("Relative '..' traversal rejected")
+        if not allow_slashes:
+            if "/" in f or "\\" in f or ":" in f or bool(PureWindowsPath(f).drive):
+                raise DraftContainmentError("Path separator or drive prefix rejected in identifier")
+    return s
+
+
+def _verify_contained_effort_dir(proot_path: Path, rel_effort: str) -> Path:
+    from provider_native import private_account_path
+    proot_real = proot_path.resolve()
+    if private_account_path(str(proot_real)):
+        raise DraftContainmentError("Private account path refused")
+    if not rel_effort:
+        if proot_path.is_symlink():
+            raise DraftContainmentError("Symlink root escape refused")
+        return proot_real
+    try:
+        resolved = paths.resolve_contained_path(proot_real, rel_effort, allow_missing=True)
+    except paths.UnsafePathError as exc:
+        raise DraftContainmentError(str(exc)) from exc
+    if private_account_path(str(resolved)):
+        raise DraftContainmentError("Private account path refused")
+    # Walk every segment under proot_real to reject symlinks/junctions pointing outside proot_real
+    import urllib.parse as _up
+    clean_rel = _up.unquote(rel_effort).replace("\\", "/").strip("/")
+    cur = proot_real
+    for seg in [p for p in clean_rel.split("/") if p and p != "."]:
+        if seg == ".." or ":" in seg:
+            raise DraftContainmentError("Unsafe effort segment")
+        cur = cur / seg
+        try:
+            if cur.is_symlink():
+                link_target = cur.resolve()
+                if not link_target.is_relative_to(proot_real):
+                    raise DraftContainmentError("Symlink escapes project root")
+        except DraftContainmentError:
+            raise
+        except OSError as exc:
+            raise DraftContainmentError("Unresolvable symlink in effort path") from exc
+        if cur.exists():
+            real_cur = cur.resolve()
+            if not real_cur.is_relative_to(proot_real):
+                raise DraftContainmentError("Junction/reparse point escapes project root")
+    return resolved
+
+
+def _allowed_workspace_roots(data_root: Path) -> list[Path]:
+    roots: list[Path] = [data_root.resolve()]
+    try:
+        import rnd_registry as _rnd
+        for proj in _rnd.list_projects(include_archived=True, include_future=True, include_retired=True):
+            fp = str(proj.get("folder_path") or "").strip()
+            if fp:
+                p = Path(fp)
+                if p.exists():
+                    roots.append(p.resolve())
+    except Exception:
+        pass
+    if os.path.isdir(_DEFAULT_CAMPAIGN_DIR):
+        roots.append(Path(_DEFAULT_CAMPAIGN_DIR).resolve())
+    return roots
+
+
+def _resolve_draft_data_root() -> Path:
+    if _DRAFT_STORAGE_AVAILABLE is False:
+        raise DraftDependencyMissingError("Composer draft storage engine disabled/unavailable")
+    if callable(_DRAFT_STORAGE_RESOLVER):
+        dd = _DRAFT_STORAGE_RESOLVER()
+        if dd is None:
+            raise DraftDependencyMissingError("Composer draft storage root unavailable")
+        root = Path(dd)
+    else:
+        raw_env = (os.environ.get(paths.DATA_DIR_ENV) or "").strip()
+        root = Path(raw_env).expanduser() if raw_env else paths.data_dir()
+    if root.exists() and not root.is_dir():
+        raise DraftDependencyMissingError(f"ANCHOR_DATA_DIR is not a directory: {root}")
+    return root.resolve()
+
+
+def _resolve_draft_scope(params: dict, *, proot: str | Path | None = None) -> tuple[str, Path | None, Path]:
+    """Validate containment and return `(canonical_scope_key, optional_cockpit_dir, anchor_drafts_file)`."""
+    from provider_native import private_account_path
+    data_root = _resolve_draft_data_root()
+    anchor_store = data_root / ".anchor" / "composer-drafts.json"
+
+    raw_surface = params.get("surface", "")
+    raw_uid = params.get("uid", params.get("email_id", ""))
+    raw_pid = params.get("pid", params.get("project", params.get("project_id", "")))
+    raw_eff = params.get("dir", params.get("effort", params.get("effort_dir", "")))
+    raw_target_dir = params.get("target_dir", "")
+    raw_goal = params.get("goal", "")
+    raw_term = params.get("term", "")
+    raw_gen = params.get("general", False)
+
+    for k_name, v_val in (
+        ("surface", raw_surface),
+        ("uid", raw_uid),
+        ("pid", raw_pid),
+        ("effort", raw_eff),
+        ("target_dir", raw_target_dir),
+        ("goal", raw_goal),
+        ("term", raw_term),
+    ):
+        if v_val is not None and not isinstance(v_val, (str, int, bool)):
+            raise ValueError(f"Invalid type for {k_name}")
+
+    surface = _check_no_traversal_or_nul(str(raw_surface or ""), allow_slashes=False).lower()
+    uid = _check_no_traversal_or_nul(str(raw_uid or ""), allow_slashes=False)
+    pid_clean = _check_no_traversal_or_nul(str(raw_pid or ""), allow_slashes=False)
+    eff_clean = _check_no_traversal_or_nul(str(raw_eff or ""), allow_slashes=True)
+    goal_clean = _check_no_traversal_or_nul(str(raw_goal or ""), allow_slashes=False)
+    term_clean = _check_no_traversal_or_nul(str(raw_term or ""), allow_slashes=False)
+    is_general = str(raw_gen).strip().lower() in ("1", "true", "yes") if not isinstance(raw_gen, bool) else raw_gen
+
+    if eff_clean:
+        from pathlib import PureWindowsPath
+        if eff_clean.startswith(("/", "\\")) or os.path.isabs(eff_clean) or bool(PureWindowsPath(eff_clean).drive):
+            raise DraftContainmentError("Effort path must be relative to project root")
+
+    target_dir_str = str(raw_target_dir or "").strip()
+    if target_dir_str:
+        _check_no_traversal_or_nul(target_dir_str, allow_slashes=True)
+        td_path = Path(target_dir_str)
+        if not td_path.is_absolute():
+            raise DraftContainmentError("target_dir must be a contained workspace root, not relative escape")
+        if td_path.is_symlink():
+            raise DraftContainmentError("Symlink target_dir refused")
+        td_real = td_path.resolve()
+        if private_account_path(str(td_real)):
+            raise DraftContainmentError("Private account path refused")
+        allowed_roots = _allowed_workspace_roots(data_root)
+        if not any(td_real == r or td_real.is_relative_to(r) for r in allowed_roots):
+            raise DraftContainmentError("Out-of-workspace absolute target_dir refused")
+        if not td_real.is_dir():
+            raise DraftDependencyMissingError("Target cockpit directory unavailable")
+        resolved_eff = _verify_contained_effort_dir(td_real, eff_clean)
+        if not resolved_eff.is_dir():
+            raise DraftDependencyMissingError("Target effort directory unavailable")
+        scope_key = f"cockpit::{os.path.normcase(str(resolved_eff))}"
+        if is_general:
+            scope_key += f"::general::{term_clean or '1'}"
+        if goal_clean:
+            scope_key += f"::goal::{goal_clean}"
+        return scope_key, resolved_eff, anchor_store
+
+    # Email Scribe / Steward directions surface (#caveDlgStewardDirectionsInput)
+    if surface in ("email", "cave_email", "scribe_directions") or (uid and not pid_clean and not proot):
+        if not uid:
+            uid = "none"
+        return f"email::{uid}", None, anchor_store
+
+    # Global Cave (#say) and Star Chart (#exSay) steward composers
+    if surface in ("cave_say", "star_chart", "exsay", "ex_say"):
+        canonical_surf = "exSay" if surface in ("star_chart", "exsay", "ex_say") else "cave_say"
+        scope_key = f"surface::{canonical_surf}"
+        if goal_clean:
+            scope_key += f"::goal::{goal_clean}"
+        opt_cdir: Path | None = None
+        if proot and os.path.isdir(str(proot)):
+            try:
+                cand = _verify_contained_effort_dir(Path(proot), eff_clean)
+                if cand.is_dir():
+                    opt_cdir = cand
+            except Exception:
+                opt_cdir = None
+        return scope_key, opt_cdir, anchor_store
+
+    # Project / Effort AI Cockpit (/steward/v1 and /steward/v1?view=tile share the EXACT SAME canonical scope!)
+    resolved_proot: Path | None = None
+    if proot is not None and str(proot).strip():
+        p_cand = Path(str(proot))
+        if p_cand.is_symlink():
+            raise DraftContainmentError("Symlink project root refused")
+        if p_cand.is_dir():
+            resolved_proot = p_cand.resolve()
+    if resolved_proot is None and pid_clean:
+        try:
+            import rnd_registry as _rnd
+            proj = _rnd.get_project(pid_clean) or {}
+            fp = str(proj.get("folder_path") or "").strip()
+            if fp and os.path.isdir(fp):
+                resolved_proot = Path(fp).resolve()
+        except Exception:
+            pass
+        if resolved_proot is None:
+            named = _resolve_named_cockpit_dir(pid_clean)
+            if named and os.path.isdir(named):
+                resolved_proot = Path(named).resolve()
+        if resolved_proot is None:
+            # Also check data_root / pid_clean for hermetic test fixtures under ANCHOR_DATA_DIR
+            cand_dd = (data_root / pid_clean)
+            if cand_dd.is_dir() and not cand_dd.is_symlink():
+                resolved_proot = cand_dd.resolve()
+
+    if resolved_proot is None:
+        if pid_clean or eff_clean:
+            raise DraftDependencyMissingError(f"Cockpit project directory unavailable for '{pid_clean or eff_clean}'")
+        raise ValueError("Draft scope requires project/pid, surface, or email uid")
+
+    resolved_target = _verify_contained_effort_dir(resolved_proot, eff_clean)
+    if not resolved_target.exists() or not resolved_target.is_dir():
+        raise DraftDependencyMissingError(f"Effort directory unavailable: {resolved_target}")
+
+    # Canonical scope key ignores `view=tile` / `embed=1` so tile and full cockpit are 100% unified!
+    scope_key = f"cockpit::{os.path.normcase(str(resolved_target))}"
+    if is_general:
+        scope_key += f"::general::{term_clean or '1'}"
+    if goal_clean:
+        scope_key += f"::goal::{goal_clean}"
+    return scope_key, resolved_target, anchor_store
+
+
+def _read_draft_store_file_strict(store_path: Path) -> dict:
+    """Read `composer-drafts.json` strictly:
+    - Missing file -> empty dict `{}` (`EMPTY` state).
+    - Corrupt JSON / non-dict / OSError -> raises `DraftStoreUnreadableError` (`500 UNKNOWN`, never collapsed to `{}`)!"""
+    if not store_path.exists():
+        return {"version": 1, "drafts": {}}
+    try:
+        if store_path.is_dir():
+            raise DraftStoreUnreadableError(f"Expected JSON file, found directory: {store_path}")
+        raw_text = store_path.read_text(encoding="utf-8")
+        doc = json.loads(raw_text)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise DraftStoreUnreadableError(f"Unreadable composer draft store {store_path}: {exc}") from exc
+    if not isinstance(doc, dict) or not isinstance(doc.get("drafts", {}), dict):
+        raise DraftStoreUnreadableError(f"Invalid composer draft store schema in {store_path}")
+    return doc
+
+
+def _write_single_draft_store_atomic(store_path: Path, scope_key: str, entry: dict | None) -> None:
+    """Mutate `scope_key` inside `store_path` under exclusive `cross_process_lock` via `temp + os.fsync + os.replace`."""
+    lock_path = store_path.with_name(f"{store_path.name}.lock")
+    store_path.parent.mkdir(parents=True, exist_ok=True)
+    with paths.cross_process_lock(lock_path, timeout_sec=COMPOSER_DRAFT_LOCK_TIMEOUT_SEC):
+        doc = _read_draft_store_file_strict(store_path)
+        drafts = dict(doc.get("drafts") or {})
+        if entry is None:
+            drafts.pop(scope_key, None)
+        else:
+            drafts[scope_key] = entry
+            if len(drafts) > COMPOSER_DRAFTS_MAX_KEYS:
+                ordered = sorted(
+                    drafts.items(),
+                    key=lambda kv: int((kv[1].get("updated_at_ms") if isinstance(kv[1], dict) else 0) or 0),
+                )
+                for evict_k, _ in ordered[: len(drafts) - COMPOSER_DRAFTS_MAX_KEYS]:
+                    if evict_k != scope_key:
+                        drafts.pop(evict_k, None)
+        out_doc = {
+            "version": 1,
+            "updated_at_ms": int(time.time() * 1000),
+            "drafts": drafts,
+        }
+        paths.atomic_write_text(store_path, json.dumps(out_doc, indent=2, ensure_ascii=False))
+
+
+def handle_drafts_request(
+    method: str,
+    *,
+    qs: dict | None = None,
+    body: object = None,
+    proot: str | Path | None = None,
+    raw_parse_error: bool = False,
+    raw_body_too_large: bool = False,
+    raw_body_len: int = 0,
+) -> tuple[dict, int]:
+    """Unified `GET` / `POST` / `DELETE` handler for `/api/steward/drafts`."""
+    verb_method = str(method or "GET").upper()
+    if raw_body_too_large:
+        return _draft_bound_exceeded_refusal(raw_body_len or (COMPOSER_DRAFT_MAX_BYTES + 1))
+    if raw_parse_error:
+        return _draft_failure_response("dependency-returns-garbage", detail="Malformed JSON body in /api/steward/drafts request")
+
+    flat_qs: dict = {}
+    for k, v in (qs or {}).items():
+        flat_qs[k] = v[0] if isinstance(v, list) and v else ("" if isinstance(v, list) else v)
+
+    merged_params = dict(flat_qs)
+    if verb_method in ("POST", "DELETE") and body is not None:
+        if not isinstance(body, dict):
+            return _draft_failure_response("dependency-returns-garbage", detail="JSON object body required")
+        for bk, bv in body.items():
+            if bv is not None and (bk not in merged_params or merged_params[bk] == "" or verb_method == "POST"):
+                merged_params[bk] = bv
+
+    # Pre-check payload bound on POST BEFORE touching disk
+    draft_text = ""
+    is_clear_op = (verb_method == "DELETE")
+    if verb_method == "POST":
+        if not isinstance(body, dict):
+            return _draft_failure_response("dependency-returns-garbage", detail="JSON object body required")
+        act = str(body.get("action") or "").strip().lower()
+        if act in ("clear", "delete"):
+            is_clear_op = True
+            raw_draft = body.get("draft", body.get("text", ""))
+            if raw_draft is not None and not isinstance(raw_draft, str):
+                return _draft_failure_response("dependency-returns-garbage", detail="draft field must be a string")
+        else:
+            if "draft" in body:
+                raw_draft = body["draft"]
+            elif "text" in body:
+                raw_draft = body["text"]
+            else:
+                return _draft_failure_response("dependency-returns-garbage", detail="Missing required 'draft' string field")
+            if not isinstance(raw_draft, str):
+                return _draft_failure_response("dependency-returns-garbage", detail="'draft' field must be a string")
+            draft_text = raw_draft
+            encoded_len = len(draft_text.encode("utf-8"))
+            if encoded_len > COMPOSER_DRAFT_MAX_BYTES:
+                return _draft_bound_exceeded_refusal(encoded_len)
+            if draft_text == "":
+                is_clear_op = True
+
+    try:
+        scope_key, cockpit_dir, anchor_store = _resolve_draft_scope(merged_params, proot=proot)
+    except DraftContainmentError as exc:
+        return _draft_containment_refusal(str(exc))
+    except DraftDependencyMissingError as exc:
+        return _draft_failure_response("dependency-missing", detail=str(exc))
+    except ValueError as exc:
+        return _draft_failure_response("dependency-returns-garbage", detail=str(exc))
+
+    ecg_store = (cockpit_dir / ".ecgberht" / "composer-drafts.json") if cockpit_dir is not None else None
+    stores_in_order = [s for s in (ecg_store, anchor_store) if s is not None]
+    # Deduplicate if paths happen to coincide
+    uniq_stores: list[Path] = []
+    seen_st: set[str] = set()
+    for sp in stores_in_order:
+        nk = os.path.normcase(os.path.abspath(str(sp)))
+        if nk not in seen_st:
+            seen_st.add(nk)
+            uniq_stores.append(sp)
+
+    try:
+        if verb_method == "GET":
+            candidates: list[dict] = []
+            for sp in uniq_stores:
+                lock_p = sp.with_name(f"{sp.name}.lock")
+                if sp.exists():
+                    with paths.cross_process_lock(lock_p, timeout_sec=COMPOSER_DRAFT_LOCK_TIMEOUT_SEC):
+                        doc = _read_draft_store_file_strict(sp)
+                    rec = (doc.get("drafts") or {}).get(scope_key)
+                    if isinstance(rec, dict) and isinstance(rec.get("draft"), str) and rec.get("draft") != "":
+                        candidates.append(rec)
+                    elif isinstance(rec, str) and rec != "":
+                        candidates.append({"draft": rec, "updated_at_ms": int(doc.get("updated_at_ms") or 0)})
+            if not candidates:
+                return _draft_failure_response("empty-but-valid", scope_key=scope_key)
+            best = max(candidates, key=lambda r: int(r.get("updated_at_ms") or 0))
+            return {
+                "ok": True,
+                "status_code": 200,
+                "status_kind": "ok",
+                "failure_state": "ok",
+                "badge": "SAVED",
+                "unknown_state": False,
+                "scope_key": scope_key,
+                "draft": str(best.get("draft") or ""),
+                "updated_at_ms": int(best.get("updated_at_ms") or 0),
+                "message": "Restored unsent composer draft.",
+            }, 200
+
+        if is_clear_op:
+            first_clear_err: Exception | None = None
+            for sp in uniq_stores:
+                if sp.exists():
+                    try:
+                        _write_single_draft_store_atomic(sp, scope_key, None)
+                    except Exception as clr_exc:
+                        if first_clear_err is None:
+                            first_clear_err = clr_exc
+            if first_clear_err is not None:
+                raise first_clear_err
+            res_clear, code_clear = _draft_failure_response("empty-but-valid", scope_key=scope_key, cleared=True)
+            return res_clear, code_clear
+
+        now_ms = int(time.time() * 1000)
+        entry_obj = {
+            "draft": draft_text,
+            "byte_length": len(draft_text.encode("utf-8")),
+            "updated_at_ms": now_ms,
+            "scope_key": scope_key,
+        }
+        for sp in uniq_stores:
+            _write_single_draft_store_atomic(sp, scope_key, entry_obj)
+        return {
+            "ok": True,
+            "status_code": 200,
+            "status_kind": "ok",
+            "failure_state": "ok",
+            "badge": "SAVED",
+            "unknown_state": False,
+            "scope_key": scope_key,
+            "draft": draft_text,
+            "byte_length": entry_obj["byte_length"],
+            "updated_at_ms": now_ms,
+            "stores_written": len(uniq_stores),
+            "message": "Saved unsent composer draft atomically.",
+        }, 200
+    except TimeoutError as exc:
+        return _draft_failure_response("dependency-slow-or-killed", detail=str(exc))
+    except DraftStoreUnreadableError as exc:
+        return _draft_failure_response("backing-store-unreadable", detail=str(exc))
+    except OSError as exc:
+        return _draft_failure_response("backing-store-unreadable", detail=str(exc))
+
+
+def handle_drafts_http(
+    handler,
+    full_path: str,
+    method: str,
+    body: object = None,
+    *,
+    raw_parse_error: bool = False,
+    raw_body_too_large: bool = False,
+    raw_body_len: int = 0,
+) -> None:
+    """HTTP adapter invoked by `anchor_gui` strangler dispatch for `GET` / `POST` / `DELETE` `/api/steward/drafts`."""
+    import urllib.parse as _up
+    if hasattr(handler, "_steward_same_origin") and not handler._steward_same_origin():
+        handler._send_json({"ok": False, "error": "cross-origin refused"}, code=403)
+        return
+    parsed = _up.urlparse(str(full_path or getattr(handler, "path", "") or ""))
+    qs = _up.parse_qs(parsed.query, keep_blank_values=True)
+    # Only auto-resolve proot via handler._steward_pid_dir when pid/project looks safe (let containment gate catch escapes!)
+    raw_pid = ((qs.get("pid") or qs.get("project") or [""])[0] or "").strip()
+    if not raw_pid and isinstance(body, dict):
+        raw_pid = str(body.get("pid") or body.get("project") or "").strip()
+    proot = None
+    if raw_pid and not any(ch in raw_pid for ch in ("/", "\\", ":", "\x00")) and ".." not in raw_pid:
+        if hasattr(handler, "_steward_pid_dir"):
+            proot = handler._steward_pid_dir(raw_pid)
+    res, code = handle_drafts_request(
+        method,
+        qs=qs,
+        body=body,
+        proot=proot,
+        raw_parse_error=raw_parse_error,
+        raw_body_too_large=raw_body_too_large,
+        raw_body_len=raw_body_len,
+    )
+    handler._send_json(res, code=code)
 
 
 _PROJECT_TERMINAL_VERBS = {"term_new", "term_archive", "term_restore"}
@@ -911,6 +1552,110 @@ def _resolve_plan_cdir(proot, rel):
     return None
 
 
+def _resolve_anvil_route_cdir(proot, rel):
+    """Resolve and containment-check `dir` for Anvil routes, or discover child effort when `dir` is omitted."""
+    from steward_cockpit import anvil_session as _as_dir
+
+    base = Path(str(proot or "")).resolve()
+    raw_rel = str(rel or "").strip()
+    if not raw_rel:
+        if hasattr(_as_dir, "resolve_cockpit_or_child_effort"):
+            return str(_as_dir.resolve_cockpit_or_child_effort(base)), None
+        return str(base), None
+
+    if (
+        "\x00" in raw_rel
+        or ".." in raw_rel.replace("\\", "/").split("/")
+        or ".." in Path(raw_rel).parts
+        or raw_rel.startswith(("/", "\\"))
+        or ":" in raw_rel
+        or Path(raw_rel).is_absolute()
+    ):
+        msg = "Malformed Anvil request or invalid engine output"
+        return None, (
+            {
+                "ok": False,
+                "error_code": "PATH_ESCAPE_REFUSED",
+                "status_kind": "dependency-returns-garbage",
+                "failure_state": "dependency-returns-garbage",
+                "http_status": 403,
+                "state": "REJECTED_GARBAGE",
+                "badge": "REJECTED_GARBAGE",
+                "unknown_state": False,
+                "error": msg,
+                "message": msg,
+            },
+            403,
+        )
+
+    walk = base
+    for part in [p for p in re.split(r"[\\/]+", raw_rel) if p and p != "."]:
+        low = part.lower()
+        if low in _as_dir.FORBIDDEN_DOT_PARTS or low in _as_dir.FORBIDDEN_SECRET_NAMES or part.startswith("."):
+            msg = "Malformed Anvil request or invalid engine output"
+            return None, (
+                {
+                    "ok": False,
+                    "error_code": "PATH_ESCAPE_REFUSED",
+                    "status_kind": "dependency-returns-garbage",
+                    "failure_state": "dependency-returns-garbage",
+                    "http_status": 403,
+                    "state": "REJECTED_GARBAGE",
+                    "badge": "REJECTED_GARBAGE",
+                    "unknown_state": False,
+                    "error": msg,
+                    "message": msg,
+                },
+                403,
+            )
+        walk = walk / part
+        if _as_dir._is_symlink_or_junction(walk):
+            msg = "Malformed Anvil request or invalid engine output"
+            return None, (
+                {
+                    "ok": False,
+                    "error_code": "PATH_ESCAPE_REFUSED",
+                    "status_kind": "dependency-returns-garbage",
+                    "failure_state": "dependency-returns-garbage",
+                    "http_status": 403,
+                    "state": "REJECTED_GARBAGE",
+                    "badge": "REJECTED_GARBAGE",
+                    "unknown_state": False,
+                    "error": msg,
+                    "message": msg,
+                },
+                403,
+            )
+
+    cand_resolved = walk.resolve()
+    if cand_resolved != base and base not in cand_resolved.parents:
+        msg = "Malformed Anvil request or invalid engine output"
+        return None, (
+            {
+                "ok": False,
+                "error_code": "PATH_ESCAPE_REFUSED",
+                "status_kind": "dependency-returns-garbage",
+                "failure_state": "dependency-returns-garbage",
+                "http_status": 403,
+                "state": "REJECTED_GARBAGE",
+                "badge": "REJECTED_GARBAGE",
+                "unknown_state": False,
+                "error": msg,
+                "message": msg,
+            },
+            403,
+        )
+
+    eff = _effort_dir(proot, raw_rel)
+    if eff and os.path.isdir(eff):
+        return str(Path(eff).resolve()), None
+    if cand_resolved.is_dir():
+        return str(cand_resolved), None
+    if base.name.lower() == raw_rel.lower():
+        return str(base), None
+    return None, ({"ok": False, "error_code": "UNKNOWN_EFFORT", "error": "unknown effort", "message": "Unknown effort"}, 404)
+
+
 def _registered_project_terminal(proot, raw_tid):
     tid = str(raw_tid or "")
     if not re.fullmatch(r"\d{1,6}", tid):
@@ -926,6 +1671,8 @@ def api_get(proot, verb, qs):
         return global_usage_summary(qs)
     if verb == "usage-allowance":
         return usage_allowance_get(qs)
+    if verb == "drafts":
+        return handle_drafts_request("GET", qs=qs, proot=proot)
     if verb == "plan":
         if qs.get("general") == "1" and not (qs.get("dir") or "").strip():
             if not proot or not os.path.isdir(str(proot)):
@@ -961,7 +1708,13 @@ def api_get(proot, verb, qs):
         if cdir is None:
             return {"error": "unknown effort"}, 404
         return events(cdir, qs)
-    if verb in ("spellcheck", "dictate", "fleet-brief", "fleet-relay", "anvil", "anvil/walkthrough", "anvil/source", "anvil/v4_state", "mothership-files"):
+    if verb == "anvil" or verb.startswith("anvil/"):
+        rel_av = (qs.get("dir") or "").strip()
+        cdir_av, err_av = _resolve_anvil_route_cdir(proot, rel_av)
+        if err_av is not None:
+            return err_av
+        return handle_get(cdir_av, verb, qs)
+    if verb in ("spellcheck", "dictate", "fleet-brief", "fleet-relay", "mothership-files"):
         rel = (qs.get("dir") or "").strip()
         cdir = _effort_dir(proot, rel) or (_resolve_named_cockpit_dir(rel) if rel else None) or proot
         return handle_get(cdir, verb, qs)
@@ -1000,6 +1753,17 @@ def api_get(proot, verb, qs):
                 return {"error": "unknown effort"}, 404
             return handle_get(cdir, verb, qs)
         return handle_get(proot, verb, qs)
+    if verb in ("wave-state", "wave-map", "deliverable-batches"):
+        rel_w = (qs.get("dir") or "").strip()
+        if rel_w:
+            try:
+                paths.resolve_contained_path(proot, rel_w, allow_missing=True)
+            except paths.UnsafePathError:
+                return {"ok": False, "error": "path traversal refused"}, 403
+        cdir_w = _effort_dir(proot, rel_w)
+        if cdir_w is None:
+            return {"ok": False, "error": "unknown effort"}, 404
+        return handle_get(cdir_w, verb, qs)
     cdir = _effort_dir(proot, qs.get("dir", ""))
     if cdir is None:
         return {"error": "unknown effort"}, 404
@@ -1082,6 +1846,10 @@ def _running_record_ids_locked(jr):
 def api_post(proot, verb, body):
     _req_q = str(getattr(_ROUTE_TLS, "req_query", "") or "")
     _ROUTE_TLS.req_query = ""
+    if verb == "drafts":
+        import urllib.parse as _up
+        _qs_d = _up.parse_qs(_req_q, keep_blank_values=True) if _req_q else {}
+        return handle_drafts_request("POST", qs=_qs_d, body=body, proot=proot)
     if verb == "plan":
         if not isinstance(body, dict):
             return _plan_garbage_response()
@@ -1128,6 +1896,15 @@ def api_post(proot, verb, body):
         else:
             cdir_a = str(proot or "")
         return handle_post(cdir_a, verb, body)
+    if verb == "anvil" or verb.startswith("anvil/"):
+        if not isinstance(body, dict):
+            msg_g = "Malformed Anvil request or invalid engine output"
+            return {"ok": False, "error_code": "MALFORMED_DATA_REFUSED", "status_kind": "dependency-returns-garbage", "failure_state": "dependency-returns-garbage", "error": msg_g, "message": msg_g}, 400
+        rel_av = (body.get("dir") or "").strip()
+        cdir_av, err_av = _resolve_anvil_route_cdir(proot, rel_av)
+        if err_av is not None:
+            return err_av
+        return handle_post(cdir_av, verb, body)
     rel = (body.get("dir") or "").strip()
     if not rel and verb in _PROJECT_TERMINAL_VERBS:
         return handle_post(proot, verb, body)
@@ -1137,11 +1914,24 @@ def api_post(proot, verb, body):
         if body.get("refinement_context"):
             return {"ok": False, "error": "refinement belongs to its campaign"}, 400
         return handle_post(proot, verb, body)
-    if verb in ("spellcheck", "dictate", "fleet-brief", "fleet-relay", "anvil", "anvil/walkthrough", "mothership-files"):
+    if verb in ("spellcheck", "dictate", "fleet-brief", "fleet-relay", "mothership-files"):
         cdir = _effort_dir(proot, rel) or (_resolve_named_cockpit_dir(rel) if rel else None) or proot
         return handle_post(cdir, verb, body)
     if verb in _PROJECT_FILE_VERBS and not rel:
         return handle_post(proot, verb, body)
+    if verb in ("wave-state", "wave-map", "deliverable-batches"):
+        if not isinstance(body, dict):
+            return {"ok": False, "error": "JSON object required"}, 400
+        rel_w = str(body.get("dir") or "").strip()
+        if rel_w:
+            try:
+                paths.resolve_contained_path(proot, rel_w, allow_missing=True)
+            except paths.UnsafePathError:
+                return {"ok": False, "error": "path traversal refused"}, 403
+        cdir_w = _effort_dir(proot, rel_w)
+        if cdir_w is None:
+            return {"ok": False, "error": "unknown effort"}, 404
+        return handle_post(cdir_w, verb, body)
     cdir = _effort_dir(proot, body.get("dir", ""))
     if cdir is None:
         return {"ok": False, "error": "unknown effort"}, 404
@@ -1276,6 +2066,8 @@ def _efforts(cdir):
                     # prompt prefills it — user edits or replaces)
                     "suggested_name": campaign.suggest_effort_name(
                         m["goal_brief"]),
+                    "has_anvil": (Path(edir) / ".anvil" / "session.json").is_file()
+                                 or (Path(edir) / ".anvil" / "analyses" / "index.json").is_file(),
                     "light": eff_light,
                     "goal_brief": m["goal_brief"], "steps_done": m["steps_done"],
                     "steps_total": m["steps_total"],
@@ -3325,6 +4117,10 @@ def _resolve_clean_download_filename(cdir, rel, real, ext, qs):
 
 def handle_get(cdir, verb, qs):
     qs = qs or {}
+    if verb in ("wave-state", "wave-map"):
+        from steward_cockpit import wave_map_model as _wmm
+        w_res = _wmm.build_wave_map_payload(cdir)
+        return w_res, (500 if w_res.get("failure_state") == "backing-store-unreadable" else 200)
     if verb == "plan":
         if not cdir or not os.path.isdir(str(cdir)):
             return _plan_missing_response()
@@ -3394,6 +4190,17 @@ def handle_get(cdir, verb, qs):
                     for c in a.get("companions") or []:
                         if isinstance(c.get("item"), dict):
                             _attach_rt(c["item"])
+                shelves_obj = data.get("shelves") if isinstance(data.get("shelves"), dict) else {}
+                for sb in shelves_obj.get("most_recent_batches") or []:
+                    for sit in (sb.get("items") if isinstance(sb, dict) else None) or []:
+                        _attach_rt(sit)
+                        for fp in (sit.get("format_pills") if isinstance(sit, dict) else None) or []:
+                            _attach_rt(fp)
+                for scol in (shelves_obj.get("final") or [], shelves_obj.get("earlier") or []):
+                    for sit in scol:
+                        _attach_rt(sit)
+                        for fp in (sit.get("format_pills") if isinstance(sit, dict) else None) or []:
+                            _attach_rt(fp)
             except Exception:
                 pass   # the tile still builds its own link from the path
         res_deliv = _deliverables_cached(cdir, qs, lambda: campaign.read_deliverables(cdir), _build)
@@ -3439,6 +4246,7 @@ def handle_get(cdir, verb, qs):
             # 1. Resolve bare or relative filenames (e.g. `CHAPTER-04-05-DRAFT-v2.docx` written in backticks in Steward dialogue)
             # against DELIVERABLES.md rows or effort subdirectories before checking code-job worktrees.
             target_name = Path(rel).name.lower()
+            _skip_deliv_dirs = frozenset({".git", ".anchor", "node_modules", "__pycache__", "venv", ".venv", "dist", "build"})
             if not os.path.isfile(real) and target_name:
                 try:
                     deliv_data = campaign.read_deliverables(cdir)
@@ -3446,16 +4254,23 @@ def handle_get(cdir, verb, qs):
                     for it in all_deliv_rows:
                         if not isinstance(it, dict):
                             continue
-                        ip = str(it.get("open_path") or it.get("path") or "").strip()
-                        if ip and Path(ip).name.lower() == target_name:
-                            try:
-                                cand_cdir_p = paths.resolve_contained_path(creal_path, ip, allow_missing=True)
-                                if cand_cdir_p.is_file() and not private_account_path(str(cand_cdir_p)):
-                                    real = str(cand_cdir_p)
-                                    rel = ip
-                                    break
-                            except paths.UnsafePathError:
-                                continue
+                        row_cands = [str(it.get("open_path") or it.get("path") or "").strip()] + [
+                            str(cp or "").strip() for cp in (it.get("companion_paths") or [])
+                        ]
+                        found_row_match = False
+                        for ip in row_cands:
+                            if ip and Path(ip).name.lower() == target_name:
+                                try:
+                                    cand_cdir_p = paths.resolve_contained_path(creal_path, ip, allow_missing=True)
+                                    if cand_cdir_p.is_file() and not private_account_path(str(cand_cdir_p)):
+                                        real = str(cand_cdir_p)
+                                        rel = ip
+                                        found_row_match = True
+                                        break
+                                except paths.UnsafePathError:
+                                    continue
+                        if found_row_match:
+                            break
                     # Version-agnostic stem fallback (e.g. clicking an older `(v4).pdf` receipt superseded by `(v5).pdf`)
                     if not os.path.isfile(real):
                         req_suffix = Path(target_name).suffix.lower()
@@ -3469,16 +4284,23 @@ def handle_get(cdir, verb, qs):
                             for it in all_deliv_rows:
                                 if not isinstance(it, dict):
                                     continue
-                                ip = str(it.get("open_path") or it.get("path") or "").strip()
-                                if ip and Path(ip).suffix.lower() == req_suffix and _ver_agnostic_stem(Path(ip).name) == target_vstem:
-                                    try:
-                                        cand_cdir_p = paths.resolve_contained_path(creal_path, ip, allow_missing=True)
-                                        if cand_cdir_p.is_file() and not private_account_path(str(cand_cdir_p)):
-                                            real = str(cand_cdir_p)
-                                            rel = ip
-                                            break
-                                    except paths.UnsafePathError:
-                                        continue
+                                row_cands = [str(it.get("open_path") or it.get("path") or "").strip()] + [
+                                    str(cp or "").strip() for cp in (it.get("companion_paths") or [])
+                                ]
+                                found_vstem = False
+                                for ip in row_cands:
+                                    if ip and Path(ip).suffix.lower() == req_suffix and _ver_agnostic_stem(Path(ip).name) == target_vstem:
+                                        try:
+                                            cand_cdir_p = paths.resolve_contained_path(creal_path, ip, allow_missing=True)
+                                            if cand_cdir_p.is_file() and not private_account_path(str(cand_cdir_p)):
+                                                real = str(cand_cdir_p)
+                                                rel = ip
+                                                found_vstem = True
+                                                break
+                                        except paths.UnsafePathError:
+                                            continue
+                                if found_vstem:
+                                    break
                 except Exception:
                     pass
             if not os.path.isfile(real) and target_name:
@@ -3500,6 +4322,30 @@ def handle_get(cdir, verb, qs):
                                     continue
                         if os.path.isfile(real):
                             break
+                    # Bounded effort-wide filename search across all non-hidden subdirectories of cdir
+                    if not os.path.isfile(real):
+                        visited_files = 0
+                        for walk_root, walk_dirs, walk_files in os.walk(cdir_root_p):
+                            walk_dirs[:] = [
+                                d for d in walk_dirs
+                                if not d.startswith(".") and d.lower() not in _skip_deliv_dirs
+                            ]
+                            for fn in walk_files:
+                                visited_files += 1
+                                if visited_files > 6000:
+                                    break
+                                if fn.lower() == target_name:
+                                    match_p = Path(walk_root) / fn
+                                    try:
+                                        rel_sub = match_p.relative_to(cdir_root_p)
+                                        cand_sub_p = paths.resolve_contained_path(creal_path, str(rel_sub), allow_missing=False)
+                                        if cand_sub_p.is_file() and not private_account_path(str(cand_sub_p)):
+                                            real = str(cand_sub_p)
+                                            break
+                                    except (ValueError, OSError, paths.UnsafePathError):
+                                        continue
+                            if os.path.isfile(real) or visited_files > 6000:
+                                break
                 except Exception:
                     pass
             # 2026-10-14 (John: "why are we still having problems with deliverables not landing"):
@@ -3572,6 +4418,29 @@ def handle_get(cdir, verb, qs):
                                         continue
                             if md_source is not None:
                                 break
+                        if md_source is None:
+                            visited_md = 0
+                            for walk_root, walk_dirs, walk_files in os.walk(cdir_root_p):
+                                walk_dirs[:] = [
+                                    d for d in walk_dirs
+                                    if not d.startswith(".") and d.lower() not in _skip_deliv_dirs
+                                ]
+                                for fn in walk_files:
+                                    visited_md += 1
+                                    if visited_md > 6000:
+                                        break
+                                    if fn.lower().endswith(".md") and Path(fn).stem.lower() == stem_lower:
+                                        match_p = Path(walk_root) / fn
+                                        try:
+                                            rel_md = match_p.relative_to(cdir_root_p)
+                                            cand_md_p = paths.resolve_contained_path(creal_path, str(rel_md), allow_missing=False)
+                                            if cand_md_p.is_file() and not private_account_path(str(cand_md_p)):
+                                                md_source = cand_md_p
+                                                break
+                                        except (ValueError, OSError, paths.UnsafePathError):
+                                            continue
+                                if md_source is not None or visited_md > 6000:
+                                    break
                     if md_source is not None and md_source.is_file():
                         from tools import reading_copy as _rc
                         target_out = paths.resolve_contained_path(
@@ -3669,6 +4538,7 @@ def handle_get(cdir, verb, qs):
         want_view = str(qs.get("view", "")).strip() in ("1", "true")
         want_download = str(qs.get("download", "")).strip() in ("1", "true")
         want_scrollview = str(qs.get("scrollview", "")).strip() in ("1", "true")
+        want_raw = str(qs.get("raw", "")).strip() in ("1", "true")
         raw_pdf_page = qs.get("pdf_page")
         want_pdf_page = None
         if raw_pdf_page is not None and str(raw_pdf_page).strip() != "":
@@ -3678,11 +4548,13 @@ def handle_get(cdir, verb, qs):
                 want_pdf_page = None
         ctype, disposition = deliverable_content_type(ext)
         clean_dl_filename = _resolve_clean_download_filename(cdir, rel, real, ext, qs)
-        if ext == ".pdf" and not want_download:
+        if ext == ".pdf" and not want_download and not want_raw:
             if want_pdf_page is not None:
                 return _serve_pdf_page_png(real, want_pdf_page)
             if want_scrollview:
                 return _serve_pdf_scrollview(real, qs, rel, cdir)
+        if ext in (".html", ".htm") and not want_download and not want_raw and want_scrollview:
+            return _serve_html_scrollview(real, qs, rel, cdir)
         if want_view and not want_download and ext == ".pptx":
             # Only a ledger-bound PDF of these exact deck bytes is a slide preview.
             digest = _cached_file_sha256(real)
@@ -3702,7 +4574,7 @@ def handle_get(cdir, verb, qs):
                 if want_scrollview:
                     return _serve_pdf_scrollview(str(target), qs, rel, cdir)
                 pdf_fn = _core.sanitize_download_filename(Path(clean_dl_filename).stem, fallback_ext=".pdf")
-                pdf_cd = f'inline; filename="{pdf_fn}"'
+                pdf_cd = _format_content_disposition("inline", pdf_fn)
                 _ROUTE_TLS.pending_cd = pdf_cd
                 return {"__file__": str(target), "__ctype__": "application/pdf", "__disposition__": "inline",
                         "__filename__": pdf_fn, "__content_disposition__": pdf_cd,
@@ -3721,6 +4593,13 @@ def handle_get(cdir, verb, qs):
             # 2026-10-07 (execution minimum item 2): the canonical reading URL of a markdown product - formatted
             # (tables, links, math), never raw bytes; plain text keeps its lines in a code block
             import report_viewer
+            try:
+                _rv_mt = os.stat(report_viewer.__file__).st_mtime_ns
+                if getattr(report_viewer, "_ANCHOR_MT", None) != _rv_mt:
+                    report_viewer = importlib.reload(report_viewer)
+                    report_viewer._ANCHOR_MT = _rv_mt
+            except Exception:
+                pass
             text = Path(real).read_text(encoding="utf-8", errors="replace")
             if ext not in (".md", ".markdown"):          # plain text and program source keep their lines
                 text = "```\n" + text.replace("```", "'''") + "\n```"
@@ -3737,7 +4616,7 @@ def handle_get(cdir, verb, qs):
             return {"__html__": html_page}, 200
         if want_download:
             disposition = "attachment"
-        cd_header = f'{disposition}; filename="{clean_dl_filename}"'
+        cd_header = _format_content_disposition(disposition, clean_dl_filename)
         _ROUTE_TLS.pending_cd = cd_header
         return {"__file__": real, "__ctype__": ctype, "__disposition__": disposition,
                 "__filename__": clean_dl_filename, "__content_disposition__": cd_header,
@@ -3750,7 +4629,9 @@ def handle_get(cdir, verb, qs):
         _map_lock = globals().setdefault("_MAP_ROUTE_LOCK", threading.Lock())
         _map_key_locks = globals().setdefault("_MAP_ROUTE_KEY_LOCKS", {})
         _norm_cdir = os.path.normcase(os.path.abspath(str(cdir)))
-        _mkey = (_norm_cdir, str(qs.get("pid", "")), str(qs.get("dir", "")))
+        _raw_ph = str(qs.get("plan_history", qs.get("include_plan_history", "1"))).strip().lower()
+        _want_plan_hist = _raw_ph not in ("0", "false", "no")
+        _mkey = (_norm_cdir, str(qs.get("pid", "")), str(qs.get("dir", "")), _want_plan_hist)
         if not _in_pytest:
             _cur_stamp = campaign.map_stamp(cdir)
             _now_mono = time.monotonic()
@@ -3762,6 +4643,77 @@ def handle_get(cdir, verb, qs):
         else:
             _klock = None
 
+        def _derive_recent_done_sentence(cdir_in, m_in) -> str:
+            def _clean_one_sentence(raw_txt: str, suffix: str = "") -> str:
+                s = str(raw_txt or "").replace("**", "").replace("`", "").strip()
+                s = re.sub(r"^[\-\*\u2022\d\.\)\s]+", "", s)
+                s = re.sub(r"\s+", " ", s).strip()
+                if not s:
+                    return ""
+                parts = re.split(r"(?<=[.!?])\s+", s)
+                head = parts[0].strip() if parts else s
+                if len(head) < 16 and len(parts) > 1:
+                    head = f"{head} {parts[1].strip()}".strip()
+                if len(head) > 185:
+                    head = head[:182].rstrip(" ,;:-") + "…"
+                if suffix:
+                    head = head.rstrip(".") + f" ({suffix})."
+                elif head and head[-1] not in ".!?…":
+                    head += "."
+                return head
+
+            wm = m_in.get("wave_map")
+            if isinstance(wm, dict):
+                rh = wm.get("recent_history")
+                if isinstance(rh, list) and rh:
+                    h0 = rh[0] if isinstance(rh[0], dict) else {}
+                    htxt = str(h0.get("text") or "").strip()
+                    hago = str(h0.get("ago") or "").strip()
+                    sfx = hago if (hago and hago.lower() not in ("done", "completed")) else ""
+                    sent = _clean_one_sentence(htxt, sfx)
+                    if sent:
+                        return sent
+
+            steps_list = m_in.get("steps")
+            if isinstance(steps_list, list):
+                for st_done in reversed(steps_list):
+                    if isinstance(st_done, dict) and (st_done.get("status") == "done" or st_done.get("done") is True):
+                        nm = str(st_done.get("name") or st_done.get("title") or "").strip()
+                        gl = str(st_done.get("goal") or "").strip()
+                        if nm:
+                            combo = f"Completed {nm}" + (f" — {gl}" if gl else "")
+                            sent = _clean_one_sentence(combo)
+                            if sent:
+                                return sent
+
+            try:
+                clog = Path(cdir_in) / ".ecgberht" / "conversation-log.json"
+                if clog.is_file():
+                    turns = (json.loads(clog.read_text(encoding="utf-8")) or {}).get("turns") or []
+                    for trn in reversed(turns):
+                        if not isinstance(trn, dict) or trn.get("role") != "steward":
+                            continue
+                        tid = str(trn.get("turn_id") or "")
+                        ttxt = str(trn.get("text") or "").strip()
+                        if not ttxt:
+                            continue
+                        if tid.startswith("receipt:"):
+                            m_lnk = re.search(r"\[([^\]]+)\]\(", ttxt)
+                            if m_lnk:
+                                return _clean_one_sentence(f"Delivered {m_lnk.group(1)}")
+                        else:
+                            sent = _clean_one_sentence(ttxt)
+                            if sent:
+                                return sent
+            except Exception:
+                pass
+
+            hb = m_in.get("heartbeat") if isinstance(m_in.get("heartbeat"), dict) else {}
+            ae = str(hb.get("active_effort") or "").strip()
+            if ae:
+                return _clean_one_sentence(ae)
+            return "No completed waves recorded yet — use the dialogue or left plan to kick off the first wave."
+
         def _build_map_resp():
             if not _in_pytest:
                 try:
@@ -3772,7 +4724,7 @@ def handle_get(cdir, verb, qs):
                         campaign.sync_steward_projections(cdir)
                 except Exception:
                     pass
-            m = dict(campaign.read_map(cdir, include_plan_history=True))
+            m = dict(campaign.read_map(cdir, include_plan_history=_want_plan_hist))
             # W0b (High Seat, 2026-09-26): a part that points at another record is resolved at read,
             # once per distinct target per request; a broken reference is named on the page, never blank.
             try:
@@ -3836,6 +4788,13 @@ def handle_get(cdir, verb, qs):
                 _err_body, _ = _plan_http_error(_pexc)
                 m["plan_state"] = _err_body
             m["full_cockpit_url"] = full_cockpit_url(str(qs.get("pid", "")), str(qs.get("dir", "")))
+            m["folder_path"] = str(Path(cdir).resolve())
+            try:
+                from steward_cockpit import wave_map_model as _wmm
+                m["wave_map"] = _wmm.build_wave_map_payload(cdir)
+            except Exception:
+                m["wave_map"] = None
+            m["recent_done_sentence"] = _derive_recent_done_sentence(cdir, m)
             m["stamp"] = campaign.map_stamp(cdir)
             m["steward"] = _persona_name()
             return m
@@ -3911,38 +4870,161 @@ def handle_get(cdir, verb, qs):
         return {"terms": _terms_view(cdir)}, 200
     if verb == "gandalf":
         return {"runs": _gandalf_runs(cdir)}, 200
-    if verb in ("anvil", "anvil/walkthrough", "anvil/source", "anvil/v4_state", "/api/steward/anvil", "/api/steward/anvil/walkthrough", "/api/steward/anvil/source", "/api/steward/anvil/v4_state"):
-        import importlib
+    if verb in (
+        "anvil",
+        "anvil/walkthrough",
+        "anvil/source",
+        "anvil/v4_state",
+        "anvil/analyses",
+        "anvil/discover",
+        "/api/steward/anvil",
+        "/api/steward/anvil/walkthrough",
+        "/api/steward/anvil/source",
+        "/api/steward/anvil/v4_state",
+        "/api/steward/anvil/analyses",
+        "/api/steward/anvil/discover",
+        "anvil/scoping",
+        "/api/steward/anvil/scoping",
+        "anvil/replication",
+        "/api/steward/anvil/replication",
+        "anvil/comprehension",
+        "/api/steward/anvil/comprehension",
+        "anvil/literature",
+        "/api/steward/anvil/literature",
+    ):
         from steward_cockpit import anvil_session as _as
-        try:
-            _as_mtime = Path(_as.__file__).stat().st_mtime_ns
-            if getattr(_as, "_LOADED_MTIME_NS", None) != _as_mtime:
-                _as = importlib.reload(_as)
-                _as._LOADED_MTIME_NS = _as_mtime
-        except Exception:
-            pass
-        norm_verb = verb[len("/api/steward/"):] if verb.startswith("/api/steward/") else verb
-        act_get = str(qs.get("action") or "").strip().lower()
-        if norm_verb == "anvil/v4_state" or act_get == "v4_state":
-            return _as.get_v4_cockpit_state(cdir)
-        if norm_verb == "anvil/source" or act_get == "source":
-            rel_file = str(qs.get("file") or qs.get("path") or "").strip()
+        from steward_cockpit import anvil_scoping_v6 as _as6
+        from steward_cockpit import anvil_py_deps as _apd
+        from steward_cockpit import anvil_replication_job as _arj
+        from steward_cockpit import anvil_verification_guard as _avg
+        from steward_cockpit import anvil_comprehension_engine as _ace
+        from steward_cockpit import anvil_literature_job as _alj
+        for _m_ref in (_as, _as6, _apd, _arj, _avg, _ace, _alj):
             try:
-                return _as.get_cockpit_file_source(cdir, rel_file), 200
-            except ValueError as exc:
-                msg = str(exc)
-                err_code = 403 if any(
-                    tok in msg.lower()
-                    for tok in ("traversal", "permitted", "outside", "restricted", "symlink", "escape")
-                ) else 400
-                return {"ok": False, "error": msg}, err_code
-        if norm_verb == "anvil/walkthrough" or act_get == "walkthrough":
-            return _run_with_cockpit_usage_attribution(
-                "anvil", "walkthrough", cdir, qs,
-                lambda: _as.walkthrough_in_session(cdir, str(qs.get("block_id") or qs.get("block") or "")),
-            ), 200
-        summary_only = str(qs.get("summary") or "").strip().lower() in ("1", "true", "yes")
-        return _as.get_session_status(cdir, summary_only=summary_only), 200
+                _mt = Path(_m_ref.__file__).stat().st_mtime_ns
+                if getattr(_m_ref, "_LOADED_MTIME_NS", None) != _mt:
+                    importlib.reload(_m_ref)
+                    _m_ref._LOADED_MTIME_NS = _mt
+            except Exception:
+                pass
+        norm_verb = verb[len("/api/steward/"):] if verb.startswith("/api/steward/") else verb
+        raw_act_q = qs.get("action")
+        if isinstance(raw_act_q, list):
+            raw_act_q = raw_act_q[0] if raw_act_q else ""
+        act_get = str(raw_act_q or "").strip().lower()
+        raw_aid_q = qs.get("analysis_id")
+        if isinstance(raw_aid_q, list):
+            raw_aid_q = raw_aid_q[0] if raw_aid_q else None
+        aid_get = raw_aid_q if raw_aid_q is not None else None
+        raw_disc_q = qs.get("discover")
+        if isinstance(raw_disc_q, list):
+            raw_disc_q = raw_disc_q[0] if raw_disc_q else ""
+        raw_an_q = qs.get("analyses")
+        if isinstance(raw_an_q, list):
+            raw_an_q = raw_an_q[0] if raw_an_q else ""
+
+        try:
+            if norm_verb == "anvil/discover" or act_get in ("discover", "discover_candidates") or str(raw_disc_q or "").strip().lower() in ("1", "true", "yes"):
+                return _as.discover_cockpit_candidates_http(cdir)
+            if norm_verb == "anvil/scoping" or act_get in ("scoping", "scoping_state", "scoping_v2"):
+                raw_sw_q = qs.get("software_spec") if qs.get("software_spec") is not None else qs.get("software_target")
+                if isinstance(raw_sw_q, list):
+                    raw_sw_q = raw_sw_q[0] if raw_sw_q else None
+                raw_pp_q = qs.get("paper_spec") if qs.get("paper_spec") is not None else qs.get("paper_target")
+                if isinstance(raw_pp_q, list):
+                    raw_pp_q = raw_pp_q[0] if raw_pp_q else None
+                raw_mids_q = qs.get("module_ids")
+                if isinstance(raw_mids_q, list):
+                    raw_mids_q = raw_mids_q[0] if raw_mids_q else None
+                parsed_mids = None
+                if raw_mids_q is not None and str(raw_mids_q).strip():
+                    s_mids = str(raw_mids_q).strip()
+                    if s_mids.startswith("["):
+                        try:
+                            parsed_mids = json.loads(s_mids)
+                        except Exception:
+                            return {
+                                "ok": False,
+                                "error_code": "MALFORMED_DATA_REFUSED",
+                                "status_kind": "dependency-returns-garbage",
+                                "failure_state": "dependency-returns-garbage",
+                                "message": "Malformed Anvil request or invalid engine output",
+                                "error": "Malformed Anvil request or invalid engine output",
+                            }, 400
+                    else:
+                        parsed_mids = [x.strip() for x in s_mids.split(",") if x.strip()]
+                return _as.get_scoping_v2_state(
+                    cdir,
+                    selected_module_ids=parsed_mids,
+                    software_spec=str(raw_sw_q) if raw_sw_q is not None else None,
+                    paper_spec=str(raw_pp_q) if raw_pp_q is not None else None,
+                    analysis_id=aid_get,
+                )
+            if norm_verb == "anvil/replication" or act_get in ("replication", "replication_state"):
+                from steward_cockpit import anvil_replication_job as _arj
+                raw_jid = qs.get("job_id")
+                if isinstance(raw_jid, list):
+                    raw_jid = raw_jid[0] if raw_jid else None
+                return _arj.get_replication_state(cdir, analysis_id=aid_get, job_id=str(raw_jid) if raw_jid else None)
+            if norm_verb == "anvil/comprehension" or act_get in ("comprehension", "semantic_state"):
+                from steward_cockpit import anvil_comprehension_engine as _ace
+                raw_ss = qs.get("scope_sha256")
+                if isinstance(raw_ss, list):
+                    raw_ss = raw_ss[0] if raw_ss else None
+                return _ace.get_comprehension_state(cdir, scope_sha256=str(raw_ss) if raw_ss else None, analysis_id=aid_get)
+            if norm_verb == "anvil/literature" or act_get in ("literature", "literature_state"):
+                from steward_cockpit import anvil_literature_job as _alj
+                return _alj.get_literature_state(cdir, analysis_id=aid_get)
+            if norm_verb == "anvil/analyses" or act_get in ("analyses", "list_analyses") or str(raw_an_q or "").strip().lower() in ("1", "true", "yes"):
+                inc_arch = qs.get("include_archived")
+                if isinstance(inc_arch, list):
+                    inc_arch = inc_arch[0] if inc_arch else ""
+                return _as.list_cockpit_analyses(
+                    cdir,
+                    include_archived=str(inc_arch or "").strip().lower() in ("1", "true", "yes"),
+                )
+            if norm_verb == "anvil/v4_state" or act_get == "v4_state":
+                return _as.get_v4_cockpit_state(cdir, analysis_id=aid_get)
+            if norm_verb == "anvil/source" or act_get == "source":
+                raw_file_q = qs.get("file") if qs.get("file") is not None else qs.get("path")
+                if isinstance(raw_file_q, list):
+                    raw_file_q = raw_file_q[0] if raw_file_q else ""
+                rel_file = str(raw_file_q or "").strip()
+                src_out = _as.get_cockpit_file_source(cdir, rel_file, analysis_id=aid_get)
+                if isinstance(src_out, tuple) and len(src_out) == 2:
+                    return src_out
+                return src_out, 200
+            if norm_verb == "anvil/walkthrough" or act_get == "walkthrough":
+                raw_blk = qs.get("block_id") if qs.get("block_id") is not None else qs.get("block")
+                if isinstance(raw_blk, list):
+                    raw_blk = raw_blk[0] if raw_blk else ""
+                return _run_with_cockpit_usage_attribution(
+                    "anvil", "walkthrough", cdir, qs,
+                    lambda: _as.walkthrough_in_session(cdir, str(raw_blk or ""), analysis_id=aid_get),
+                ), 200
+            raw_sum_q = qs.get("summary")
+            if isinstance(raw_sum_q, list):
+                raw_sum_q = raw_sum_q[0] if raw_sum_q else ""
+            summary_only = str(raw_sum_q or "").strip().lower() in ("1", "true", "yes")
+            return _as.get_session_status(cdir, summary_only=summary_only, analysis_id=aid_get), 200
+        except ValueError as exc:
+            if hasattr(exc, "payload") and hasattr(exc, "http_status"):
+                return exc.payload, int(exc.http_status)
+            msg = str(exc)
+            msg_low = msg.lower()
+            if "bound_exceeded_refusal" in msg_low or "exceeds 2 mb" in msg_low:
+                return {"ok": False, "error_code": "BOUND_EXCEEDED_REFUSAL", "error": msg, "message": msg}, 413
+            is_escape = any(
+                tok in msg_low
+                for tok in ("traversal", "permitted", "outside", "restricted", "symlink", "escape")
+            )
+            err_code = 403 if is_escape else 400
+            return {
+                "ok": False,
+                "error_code": "PATH_ESCAPE_REFUSED" if is_escape else "MALFORMED_DATA_REFUSED",
+                "error": msg,
+                "message": msg,
+            }, err_code
     if verb == "aegis":
         def _do_aegis_get(_aeg):
             target_q = str(qs.get("target") or "").strip()
@@ -3992,6 +5074,8 @@ def handle_get(cdir, verb, qs):
         except (TypeError, ValueError):
             since = 0
         return _de.poll_session(since), 200
+    if verb == "drafts":
+        return handle_drafts_request("GET", qs=qs, proot=cdir)
     if verb in ("plan-history", "plan/history", "plan-proposal", "plan/proposal"):
         return {
             "ok": True,
@@ -4267,6 +5351,29 @@ def sandbox_csp_for(ctype):
     return None
 
 
+def _format_content_disposition(disposition: str, filename: str) -> str:
+    """Build an RFC-9110 / RFC-5987 Content-Disposition header guaranteed to encode
+    cleanly in HTTP latin-1 while preserving full UTF-8 human titles via filename*."""
+    import unicodedata as _ud
+    disp = (str(disposition or "inline").strip() or "inline").replace("\r", "").replace("\n", "")
+    raw_fn = str(filename or "download").replace("\r", "").replace("\n", "").replace('"', "'").strip() or "download"
+    ascii_map = str.maketrans({
+        "\u2014": "-", "\u2013": "-", "\u2212": "-", "\u2010": "-", "\u2011": "-",
+        "\u2018": "'", "\u2019": "'", "\u201c": "'", "\u201d": "'",
+        "\u2026": "...", "\u00a0": " ", "\u00b7": "-", "\u2022": "-",
+    })
+    norm = _ud.normalize("NFKD", raw_fn.translate(ascii_map))
+    ascii_fn = "".join(ch for ch in norm if 32 <= ord(ch) <= 126 and ch not in ('"', "\\")).strip()
+    if not ascii_fn or ascii_fn.startswith("."):
+        ext = Path(raw_fn).suffix
+        ascii_ext = "".join(ch for ch in ext if 32 <= ord(ch) <= 126 and ch not in ('"', "\\", "/", " "))
+        ascii_fn = "document" + (ascii_ext or "")
+    hdr = f'{disp}; filename="{ascii_fn}"'
+    if any(ord(ch) > 126 or ord(ch) < 32 for ch in raw_fn) or ascii_fn != raw_fn:
+        hdr += "; filename*=UTF-8''" + _q(raw_fn)
+    return hdr
+
+
 def _serve_pdf_page_png(real_path: str, page_idx: int):
     """Render a single PDF page to PNG via PyMuPDF (fitz) for scrollable split-view."""
     try:
@@ -4274,7 +5381,7 @@ def _serve_pdf_page_png(real_path: str, page_idx: int):
         st = os.stat(real_path)
         cache_dir = Path(tempfile.gettempdir()) / "anchor-pdf-pages"
         cache_dir.mkdir(parents=True, exist_ok=True)
-        hkey = hashlib.sha256(f"{real_path}:{st.st_mtime_ns}:{st.st_size}:{page_idx}".encode("utf-8")).hexdigest()[:24]
+        hkey = hashlib.sha256(f"{real_path}:{st.st_mtime_ns}:{st.st_size}:{page_idx}:s24".encode("utf-8")).hexdigest()[:24]
         cache_png = cache_dir / f"{hkey}-p{page_idx}.png"
         if not cache_png.is_file():
             doc = fitz.open(real_path)
@@ -4282,7 +5389,7 @@ def _serve_pdf_page_png(real_path: str, page_idx: int):
                 doc.close()
                 return {"error": "pdf page out of range"}, 404
             page = doc[page_idx]
-            pix = page.get_pixmap(matrix=fitz.Matrix(1.6, 1.6), alpha=False)
+            pix = page.get_pixmap(matrix=fitz.Matrix(2.4, 2.4), alpha=False)
             png_bytes = pix.tobytes("png")
             doc.close()
             tmp_png = cache_png.with_suffix(".tmp")
@@ -4294,9 +5401,9 @@ def _serve_pdf_page_png(real_path: str, page_idx: int):
 
 
 def _serve_pdf_scrollview(real_path: str, qs: dict, rel: str, cdir: str):
-    """Serve a PDF deliverable as a scrollable same-origin HTML page of high-DPI page images
-    so wheel scrolling, PageUp/PageDown, and non-focus-stealing scroll buttons work seamlessly
-    while dictating with Win+H or 🎤 Dictate."""
+    """Serve a PDF deliverable as a scrollable, independently zoomable same-origin HTML page
+    of high-DPI page images so Ctrl+ / Ctrl- / Ctrl+0 / Ctrl+wheel, drag-panning, PageUp/PageDown,
+    and non-focus-stealing scroll buttons work cleanly inside split panes without rescaling Anchor."""
     try:
         fitz = importlib.import_module("fitz")
         import html as _html
@@ -4306,8 +5413,9 @@ def _serve_pdf_scrollview(real_path: str, qs: dict, rel: str, cdir: str):
         if page_count <= 0:
             raise ValueError("empty pdf")
     except Exception:
+        cd_fb = _format_content_disposition("inline", os.path.basename(real_path))
         return {"__file__": real_path, "__ctype__": "application/pdf", "__disposition__": "inline",
-                "__csp__": sandbox_csp_for("application/pdf")}, 200
+                "__content_disposition__": cd_fb, "__csp__": sandbox_csp_for("application/pdf")}, 200
 
     import html as _html
     pid_q = _q(str(qs.get("pid", "")))
@@ -4321,7 +5429,7 @@ def _serve_pdf_scrollview(real_path: str, qs: dict, rel: str, cdir: str):
     fn_q = "&filename=" + _q(clean_scroll_fn)
     base_url = f"/api/steward/deliverable-file?pid={pid_q}&dir={dir_q}&path={rel_q}{hash_q}{view_q}{tok_q}"
     dl_url = f"/api/steward/deliverable-file?pid={pid_q}&dir={dir_q}&path={rel_q}{hash_q}&download=1{fn_q}{tok_q}"
-    native_url = base_url
+    native_url = f"{base_url}&raw=1"
     fname = _html.escape(clean_scroll_fn or os.path.basename(real_path))
     ext_badge = "PPTX → PDF SLIDES" if str(rel or "").lower().endswith(".pptx") else "PDF DOCUMENT"
 
@@ -4341,65 +5449,344 @@ def _serve_pdf_scrollview(real_path: str, qs: dict, rel: str, cdir: str):
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
         f"<title>{fname}</title>"
         "<style>"
-        "html,body{margin:0;padding:0;background:#0d1117;color:#e6edf3;font:14px/1.5 -apple-system,'Segoe UI',system-ui,sans-serif;scroll-behavior:smooth}"
-        ".pdf-bar{position:sticky;top:0;z-index:20;background:rgba(22,27,34,0.96);backdrop-filter:blur(8px);"
-        "border-bottom:1px solid #30363d;padding:8px 14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}"
-        ".pdf-badge{font-size:11px;font-weight:700;padding:2px 7px;border-radius:5px;background:rgba(248,81,73,0.18);color:#ff7b72;border:1px solid rgba(248,81,73,0.4);letter-spacing:.04em}"
-        ".pdf-title{font-weight:600;font-size:13px;color:#f0f6fc;max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"
-        ".pdf-meta{font-size:12px;color:#8b949e}"
-        ".pdf-spacer{flex:1 1 auto}"
-        ".pdf-btn{background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:4px;user-select:none}"
-        ".pdf-btn:hover{background:#30363d;color:#fff;border-color:#58a6ff}"
-        ".pdf-main{max-width:980px;margin:0 auto;padding:16px 14px 64px;display:flex;flex-direction:column;gap:18px}"
-        ".pdf-page-card{background:#161b22;border:1px solid #30363d;border-radius:10px;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,0.35)}"
-        ".pdf-page-hdr{padding:6px 12px;background:#0d1117;border-bottom:1px solid #21262d;font-size:11px;font-weight:600;color:#8b949e;display:flex;justify-content:space-between}"
+        "html,body{height:100%;margin:0;padding:0;overflow:hidden;display:flex;flex-direction:column;"
+        "background:#0d1117;color:#e6edf3;font:13.5px/1.45 -apple-system,'Segoe UI',system-ui,sans-serif}"
+        ".pdf-bar{flex:0 0 auto;width:100%;box-sizing:border-box;z-index:20;background:rgba(22,27,34,0.96);"
+        "backdrop-filter:blur(8px);border-bottom:1px solid #30363d;padding:5px 10px;display:flex;align-items:center;gap:5px;flex-wrap:wrap}"
+        ".pdf-badge{font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;background:rgba(248,81,73,0.18);color:#ff7b72;border:1px solid rgba(248,81,73,0.4);letter-spacing:.04em;flex:none}"
+        ".pdf-title{font-weight:600;font-size:12.5px;color:#f0f6fc;flex:1 1 80px;min-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"
+        ".pdf-meta{font-size:11px;color:#8b949e;white-space:nowrap;flex:none}"
+        "@media(max-width:740px){.pdf-meta{display:none}}"
+        ".pdf-btn{background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:5px;padding:3px 7px;font-size:11.5px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:3px;user-select:none;white-space:nowrap;flex:none}"
+        ".pdf-btn:hover,.pdf-btn.active{background:#30363d;color:#fff;border-color:#58a6ff}"
+        ".pdf-zoom-readout{min-width:46px;justify-content:center;font-variant-numeric:tabular-nums;color:#f0f6fc}"
+        ".pdf-stage{flex:1 1 auto;min-height:0;width:100%;overflow:auto;box-sizing:border-box;background:#0d1117;outline:none}"
+        ".pdf-stage.is-zoomed{cursor:grab}"
+        ".pdf-stage.is-dragging{cursor:grabbing;user-select:none}"
+        ".pdf-main{width:100%;max-width:1040px;margin:0 auto;padding:8px 8px 40px;box-sizing:border-box;display:flex;flex-direction:column;gap:14px}"
+        ".pdf-page-card{background:#161b22;border:1px solid #30363d;border-radius:8px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.35)}"
+        ".pdf-page-hdr{padding:4px 10px;background:#0d1117;border-bottom:1px solid #21262d;font-size:10.5px;font-weight:600;color:#8b949e;display:flex;justify-content:space-between}"
         ".pdf-page-img{display:block;width:100%;height:auto;background:#fff;user-select:none;-webkit-user-drag:none}"
         "</style></head><body>"
         "<div class='pdf-bar' onmousedown='event.preventDefault()'>"
         f"<span class='pdf-badge'>{ext_badge}</span>"
         f"<span class='pdf-title' title='{fname}'>{fname}</span>"
-        f"<span class='pdf-meta'>{page_count} page{'s' if page_count != 1 else ''} · Win+H scroll-ready</span>"
-        "<span class='pdf-spacer'></span>"
-        "<button type='button' class='pdf-btn' onmousedown='event.preventDefault()' onclick='scrollStep(-1);restoreParentSayFocus();' title='Scroll Up (keeps Win+H dictation active)'>⬆ Page Up</button>"
-        "<button type='button' class='pdf-btn' onmousedown='event.preventDefault()' onclick='scrollStep(1);restoreParentSayFocus();' title='Scroll Down (keeps Win+H dictation active)'>⬇ Page Down</button>"
-        "<button type='button' class='pdf-btn' onmousedown='event.preventDefault()' onclick='adjustZoom(-15);restoreParentSayFocus();' title='Zoom Out'>🔍−</button>"
-        "<button type='button' class='pdf-btn' onmousedown='event.preventDefault()' onclick='adjustZoom(15);restoreParentSayFocus();' title='Zoom In'>🔍+</button>"
-        f"<a class='pdf-btn' href='{_html.escape(native_url, quote=True)}' target='_blank' rel='noopener' title='Open raw PDF in new tab'>📄 Native PDF</a>"
-        f"<a class='pdf-btn' href='{_html.escape(dl_url, quote=True)}' title='Download file'>⬇ Download</a>"
+        f"<span class='pdf-meta'>{page_count}p</span>"
+        "<button type='button' class='pdf-btn' onmousedown='event.preventDefault()' onclick='scrollStep(-1);restoreParentSayFocus(true);' title='Scroll Up'>⬆</button>"
+        "<button type='button' class='pdf-btn' onmousedown='event.preventDefault()' onclick='scrollStep(1);restoreParentSayFocus(true);' title='Scroll Down'>⬇</button>"
+        "<button type='button' class='pdf-btn' id='pdfZoomOut' onmousedown='event.preventDefault()' onclick='adjustZoom(-20);restoreParentSayFocus(true);' title='Zoom Out PDF (Ctrl −)'>−</button>"
+        "<button type='button' class='pdf-btn pdf-zoom-readout' id='pdfZoomReadout' onmousedown='event.preventDefault()' onclick='setZoom(100);restoreParentSayFocus(true);' title='Fit Width / 100% (Ctrl 0)'>100%</button>"
+        "<button type='button' class='pdf-btn' id='pdfZoomIn' onmousedown='event.preventDefault()' onclick='adjustZoom(20);restoreParentSayFocus(true);' title='Zoom In PDF (Ctrl +)'>+</button>"
+        "<button type='button' class='pdf-btn' id='pdfFitToggle' onmousedown='event.preventDefault()' onclick='toggleFitPage();restoreParentSayFocus(true);' title='Toggle Fit Full Page vs Fit Width'>Fit Page</button>"
+        f"<a class='pdf-btn' href='{_html.escape(native_url, quote=True)}' target='_blank' rel='noopener' title='Open raw PDF'>Native</a>"
+        f"<a class='pdf-btn' href='{_html.escape(dl_url, quote=True)}' title='Download file'>⬇ Save</a>"
         "</div>"
-        f"<main class='pdf-main' id='pdfMain'>{''.join(pages_html)}</main>"
+        f"<div class='pdf-stage' id='pdfStage' tabindex='-1'><main class='pdf-main' id='pdfMain'>{''.join(pages_html)}</main></div>"
         "<script>"
-        "var curZoom = 100; function scrollStep(dir){window.scrollBy({top:dir*Math.max(360,window.innerHeight*0.78),behavior:'smooth'});}"
-        "function adjustZoom(delta){"
-        "  curZoom = Math.max(60, Math.min(180, curZoom + delta));"
-        "  var m = document.getElementById('pdfMain');"
-        "  if(m) m.style.maxWidth = Math.round(980 * (curZoom / 100)) + 'px';"
+        "var curZoom = 100, fitPageOn = false;"
+        "var MIN_ZOOM = 35, MAX_ZOOM = 300;"
+        "window.__anchorPdfViewer = true;"
+        "function getStage(){ return document.getElementById('pdfStage'); }"
+        "function scrollStep(dir){"
+        "  var st = getStage();"
+        "  var h = st ? st.clientHeight : window.innerHeight;"
+        "  var dy = dir * Math.max(300, h * 0.78);"
+        "  if(st) st.scrollBy({top: dy, behavior: 'smooth'});"
+        "  else window.scrollBy({top: dy, behavior: 'smooth'});"
         "}"
-        "function restoreParentSayFocus(){"
+        "function computeFitPageZoom(){"
+        "  var st = getStage(), img = document.querySelector('.pdf-page-img');"
+        "  if(!st) return 100;"
+        "  var availW = Math.max(200, Math.min(1040, st.clientWidth) - 16);"
+        "  var availH = Math.max(180, st.clientHeight - 48);"
+        "  var ratio = (img && img.naturalWidth > 0 && img.naturalHeight > 0) ? (img.naturalHeight / img.naturalWidth) : (792 / 612);"
+        "  var fitPageW = availH / ratio;"
+        "  return Math.max(MIN_ZOOM, Math.min(100, Math.round((fitPageW / availW) * 100)));"
+        "}"
+        "function toggleFitPage(){"
+        "  var btn = document.getElementById('pdfFitToggle');"
+        "  if(!fitPageOn){"
+        "    fitPageOn = true;"
+        "    if(btn){ btn.classList.add('active'); btn.textContent = 'Fit Width'; }"
+        "    applyZoom(computeFitPageZoom(), null, null, true);"
+        "  } else {"
+        "    fitPageOn = false;"
+        "    if(btn){ btn.classList.remove('active'); btn.textContent = 'Fit Page'; }"
+        "    applyZoom(100, null, null, true);"
+        "  }"
+        "}"
+        "function applyZoom(nextZoom, clientX, clientY, keepFitFlag){"
+        "  var st = getStage(), m = document.getElementById('pdfMain');"
+        "  if(!st || !m) return curZoom;"
+        "  if(!keepFitFlag){"
+        "    fitPageOn = false;"
+        "    var fb = document.getElementById('pdfFitToggle');"
+        "    if(fb){ fb.classList.remove('active'); fb.textContent = 'Fit Page'; }"
+        "  }"
+        "  var clamped = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.round(nextZoom)));"
+        "  var prevRect = m.getBoundingClientRect();"
+        "  var stageRect = st.getBoundingClientRect();"
+        "  var fx = (typeof clientX === 'number') ? (clientX - stageRect.left) : (st.clientWidth / 2);"
+        "  var fy = (typeof clientY === 'number') ? (clientY - stageRect.top) : (st.clientHeight / 2);"
+        "  var prevW = Math.max(1, m.offsetWidth);"
+        "  var prevH = Math.max(1, m.offsetHeight);"
+        "  var docX = (st.scrollLeft + fx - Math.max(0, prevRect.left - stageRect.left + st.scrollLeft)) / prevW;"
+        "  var docY = (st.scrollTop + fy) / prevH;"
+        "  curZoom = clamped;"
+        "  var availW = Math.max(200, st.clientWidth);"
+        "  var baseW = Math.min(1040, availW);"
+        "  if(curZoom === 100){"
+        "    m.style.width = '100%';"
+        "    m.style.maxWidth = '1040px';"
+        "    m.style.margin = '0 auto';"
+        "  } else {"
+        "    var px = Math.max(180, Math.round(baseW * (curZoom / 100)));"
+        "    m.style.width = px + 'px';"
+        "    m.style.maxWidth = 'none';"
+        "    m.style.margin = (px < availW) ? '0 auto' : '0';"
+        "  }"
+        "  var rd = document.getElementById('pdfZoomReadout');"
+        "  if(rd) rd.textContent = curZoom + '%';"
+        "  st.classList.toggle('is-zoomed', m.offsetWidth > st.clientWidth + 2);"
+        "  var newW = Math.max(1, m.offsetWidth);"
+        "  var newH = Math.max(1, m.offsetHeight);"
+        "  if(curZoom <= 100){"
+        "    st.scrollLeft = 0;"
+        "  } else {"
+        "    st.scrollLeft = Math.max(0, Math.round(docX * newW - fx));"
+        "  }"
+        "  st.scrollTop = Math.max(0, Math.round(docY * newH - fy));"
+        "  return curZoom;"
+        "}"
+        "function setZoom(z, cx, cy){ return applyZoom(z, cx, cy); }"
+        "function adjustZoom(delta, cx, cy){ return applyZoom(curZoom + delta, cx, cy); }"
+        "window.__anchorPdfZoom = function(step, cx, cy){"
+        "  var s = Number(step);"
+        "  if(s === 0) return setZoom(100, cx, cy);"
+        "  return adjustZoom(s > 0 ? 20 : -20, cx, cy);"
+        "};"
+        "window.__anchorGetPdfZoom = function(){ return curZoom; };"
+        "function restoreParentSayFocus(force){"
         "  try {"
         "    if(window.parent && window.parent !== window && typeof window.parent.__restoreSayFocusIfActive === 'function'){"
-        "      window.parent.__restoreSayFocusIfActive();"
+        "      if(force || window.parent.__dictationActive){"
+        "        window.parent.__restoreSayFocusIfActive();"
+        "      }"
         "    }"
         "  } catch(_e){}"
         "}"
+        "document.addEventListener('keydown', function(ev){"
+        "  if((ev.ctrlKey || ev.metaKey) && !ev.altKey){"
+        "    var k = ev.key || '';"
+        "    var step = (k === '+' || k === '=' || ev.code === 'NumpadAdd') ? 1"
+        "      : (k === '-' || k === '_' || ev.code === 'NumpadSubtract') ? -1"
+        "      : (k === '0' || ev.code === 'Numpad0') ? 0 : null;"
+        "    if(step !== null){"
+        "      ev.preventDefault();"
+        "      ev.stopImmediatePropagation();"
+        "      window.__anchorPdfZoom(step);"
+        "      return;"
+        "    }"
+        "  }"
+        "  if(!ev.ctrlKey && !ev.metaKey && !ev.altKey){"
+        "    var st = getStage();"
+        "    if(!st) return;"
+        "    if(ev.key === 'PageDown'){ ev.preventDefault(); scrollStep(1); }"
+        "    else if(ev.key === 'PageUp'){ ev.preventDefault(); scrollStep(-1); }"
+        "    else if(ev.key === 'ArrowDown'){ ev.preventDefault(); st.scrollBy({top: 64}); }"
+        "    else if(ev.key === 'ArrowUp'){ ev.preventDefault(); st.scrollBy({top: -64}); }"
+        "    else if(ev.key === 'ArrowRight'){ ev.preventDefault(); st.scrollBy({left: 64}); }"
+        "    else if(ev.key === 'ArrowLeft'){ ev.preventDefault(); st.scrollBy({left: -64}); }"
+        "  }"
+        "}, true);"
+        "window.addEventListener('wheel', function(ev){"
+        "  if(ev.ctrlKey || ev.metaKey){"
+        "    if(ev.deltaY){"
+        "      ev.preventDefault();"
+        "      ev.stopImmediatePropagation();"
+        "      adjustZoom(ev.deltaY < 0 ? 15 : -15, ev.clientX, ev.clientY);"
+        "    }"
+        "    return;"
+        "  }"
+        "  restoreParentSayFocus(false);"
+        "}, {capture: true, passive: false});"
+        "(function(){"
+        "  var st = getStage(), dragging = false, sx = 0, sy = 0, sl = 0, stp = 0;"
+        "  if(!st) return;"
+        "  st.addEventListener('mousedown', function(ev){"
+        "    if(ev.button !== 0) return;"
+        "    try { st.focus({preventScroll: true}); } catch(_e){}"
+        "    if(st.scrollWidth <= st.clientWidth + 2) return;"
+        "    dragging = true; sx = ev.clientX; sy = ev.clientY; sl = st.scrollLeft; stp = st.scrollTop;"
+        "    st.classList.add('is-dragging');"
+        "    ev.preventDefault();"
+        "  });"
+        "  window.addEventListener('mousemove', function(ev){"
+        "    if(!dragging) return;"
+        "    st.scrollLeft = Math.max(0, sl - (ev.clientX - sx));"
+        "    st.scrollTop = Math.max(0, stp - (ev.clientY - sy));"
+        "  });"
+        "  window.addEventListener('mouseup', function(){"
+        "    if(dragging){ dragging = false; st.classList.remove('is-dragging'); }"
+        "  });"
+        "  window.addEventListener('resize', function(){"
+        "    if(fitPageOn) applyZoom(computeFitPageZoom(), null, null, true);"
+        "    else if(curZoom !== 100) applyZoom(curZoom);"
+        "  });"
+        "})();"
         "window.addEventListener('message', function(ev){"
         "  if(!ev || !ev.data) return;"
         "  if(ev.data.type === 'anchor-scroll-deliverable'){"
-        "    window.scrollBy({top: Number(ev.data.deltaY) || 420, behavior: 'smooth'});"
+        "    var st = getStage();"
+        "    var dy = Number(ev.data.deltaY) || 420;"
+        "    if(st) st.scrollBy({top: dy, behavior: 'smooth'});"
+        "    else window.scrollBy({top: dy, behavior: 'smooth'});"
+        "  } else if(ev.data.type === 'anchor-pdf-zoom'){"
+        "    window.__anchorPdfZoom(ev.data.step);"
         "  }"
         "});"
         "document.addEventListener('mouseup', function(){"
         "  try {"
         "    var sel = window.getSelection ? String(window.getSelection()) : '';"
-        "    if(!sel) restoreParentSayFocus();"
+        "    if(!sel) restoreParentSayFocus(false);"
         "  } catch(_e){}"
         "});"
-        "window.addEventListener('wheel', function(){"
-        "  restoreParentSayFocus();"
-        "}, {passive: true});"
         "</script></body></html>"
     )
     return {"__html__": html_doc}, 200
+
+
+def _serve_html_scrollview(real_path: str, qs: dict, rel: str, cdir: str):
+    """Wrap an HTML deliverable in Anchor's dark split-pane document frame while keeping
+    the inner document strictly sandboxed (opaque origin, no allow-same-origin) and auto-fitting
+    wide print/briefing sheets (e.g. 820px Letter HTML reports) cleanly to the pane width."""
+    import html as _html
+    try:
+        raw_html = Path(real_path).read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        cd_fb = _format_content_disposition("inline", os.path.basename(real_path))
+        return {"__file__": real_path, "__ctype__": "text/html; charset=utf-8", "__disposition__": "inline",
+                "__content_disposition__": cd_fb, "__csp__": sandbox_csp_for("text/html; charset=utf-8")}, 200
+
+    pid_q = _q(str(qs.get("pid", "")))
+    dir_q = _q(str(qs.get("dir", "")))
+    rel_q = _q(str(rel or ""))
+    tok_q = ("&token=" + _q(str(qs.get("token")))) if qs.get("token") else ""
+    hash_q = ("&hash=" + _q(str(qs.get("hash")))) if qs.get("hash") else ""
+    dl_ext = Path(str(rel or real_path)).suffix.lower() or ".html"
+    clean_fn = _resolve_clean_download_filename(cdir, rel, real_path, dl_ext, qs)
+    fn_q = "&filename=" + _q(clean_fn)
+    raw_url = f"/api/steward/deliverable-file?pid={pid_q}&dir={dir_q}&path={rel_q}{hash_q}&raw=1{tok_q}"
+    dl_url = f"/api/steward/deliverable-file?pid={pid_q}&dir={dir_q}&path={rel_q}{hash_q}&download=1{fn_q}{tok_q}"
+    fname = _html.escape(clean_fn or os.path.basename(real_path))
+
+    fit_snippet = (
+        "<style id='anchor-html-fit-style'>"
+        "img,svg,video,canvas{max-width:100%;height:auto}"
+        "</style>"
+        "<script id='anchor-html-fit-script'>"
+        "(function(){"
+        "  var userPct = 100, baseW = 0;"
+        "  function measureNaturalW(){"
+        "    var de = document.documentElement, b = document.body;"
+        "    if(!de) return window.innerWidth || 800;"
+        "    var prevZ = de.style.zoom || '';"
+        "    de.style.zoom = '1';"
+        "    var w = Math.max(de.scrollWidth || 0, b ? b.scrollWidth : 0);"
+        "    de.style.zoom = prevZ;"
+        "    return w;"
+        "  }"
+        "  function applyFit(){"
+        "    var de = document.documentElement;"
+        "    if(!de || !window.innerWidth) return;"
+        "    if(!baseW || baseW < 200) baseW = measureNaturalW();"
+        "    var fitRatio = (baseW > window.innerWidth + 4) ? ((window.innerWidth - 8) / baseW) : 1;"
+        "    var z = Math.max(0.35, Math.min(3.0, fitRatio * (userPct / 100)));"
+        "    de.style.zoom = String(Math.round(z * 1000) / 1000);"
+        "    try { parent.postMessage({type:'anchor-html-zoom-state', pct: userPct, eff: Math.round(z * 100)}, '*'); } catch(_e){}"
+        "  }"
+        "  window.addEventListener('load', function(){ baseW = 0; applyFit(); });"
+        "  window.addEventListener('resize', applyFit);"
+        "  setTimeout(applyFit, 60); setTimeout(applyFit, 300);"
+        "  window.addEventListener('message', function(ev){"
+        "    if(!ev || !ev.data) return;"
+        "    if(ev.data.type === 'anchor-doc-zoom'){"
+        "      if(ev.data.step === 0) userPct = 100;"
+        "      else userPct = Math.max(50, Math.min(260, userPct + (ev.data.step > 0 ? 15 : -15)));"
+        "      applyFit();"
+        "    } else if(ev.data.type === 'anchor-scroll-deliverable'){"
+        "      window.scrollBy({top: Number(ev.data.deltaY) || 400, behavior: 'smooth'});"
+        "    }"
+        "  });"
+        "  document.addEventListener('keydown', function(ev){"
+        "    if(!(ev.ctrlKey || ev.metaKey) || ev.altKey) return;"
+        "    var k = ev.key || '';"
+        "    var s = (k==='+'||k==='='||ev.code==='NumpadAdd')?1:(k==='-'||k==='_'||ev.code==='NumpadSubtract')?-1:(k==='0'||ev.code==='Numpad0')?0:null;"
+        "    if(s !== null){ ev.preventDefault(); ev.stopImmediatePropagation(); if(s===0) userPct=100; else userPct=Math.max(50,Math.min(260,userPct+(s>0?15:-15))); applyFit(); }"
+        "  }, true);"
+        "  window.addEventListener('wheel', function(ev){"
+        "    if((ev.ctrlKey || ev.metaKey) && ev.deltaY){ ev.preventDefault(); ev.stopImmediatePropagation(); userPct=Math.max(50,Math.min(260,userPct+(ev.deltaY<0?15:-15))); applyFit(); }"
+        "  }, {capture:true, passive:false});"
+        "})();"
+        "</script>"
+    )
+    lower_raw = raw_html.lower()
+    body_close = lower_raw.rfind("</body>")
+    if body_close >= 0:
+        augmented_html = raw_html[:body_close] + fit_snippet + raw_html[body_close:]
+    else:
+        augmented_html = raw_html + fit_snippet
+    escaped_srcdoc = _html.escape(augmented_html, quote=True)
+
+    wrapper = (
+        "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        f"<title>{fname}</title>"
+        "<style>"
+        "html,body{height:100%;margin:0;padding:0;overflow:hidden;display:flex;flex-direction:column;"
+        "background:#0d1117;color:#e6edf3;font:13.5px/1.45 -apple-system,'Segoe UI',system-ui,sans-serif}"
+        ".pdf-bar{flex:0 0 auto;width:100%;box-sizing:border-box;background:rgba(22,27,34,0.96);"
+        "border-bottom:1px solid #30363d;padding:5px 10px;display:flex;align-items:center;gap:5px;flex-wrap:wrap}"
+        ".pdf-badge{font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;background:rgba(56,189,248,0.16);color:#7dd3fc;border:1px solid rgba(56,189,248,0.4);letter-spacing:.04em;flex:none}"
+        ".pdf-title{font-weight:600;font-size:12.5px;color:#f0f6fc;flex:1 1 80px;min-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"
+        ".pdf-btn{background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:5px;padding:3px 7px;font-size:11.5px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:3px;user-select:none;white-space:nowrap;flex:none}"
+        ".pdf-btn:hover{background:#30363d;color:#fff;border-color:#58a6ff}"
+        ".pdf-zoom-readout{min-width:46px;justify-content:center;font-variant-numeric:tabular-nums;color:#f0f6fc}"
+        "#htmlDocFrame{flex:1 1 auto;width:100%;height:100%;min-height:0;border:0;background:#fff}"
+        "</style></head><body>"
+        "<div class='pdf-bar' onmousedown='event.preventDefault()'>"
+        "<span class='pdf-badge'>HTML</span>"
+        f"<span class='pdf-title' title='{fname}'>{fname}</span>"
+        "<button type='button' class='pdf-btn' onmousedown='event.preventDefault()' onclick='sendScroll(-1)' title='Scroll Up'>⬆</button>"
+        "<button type='button' class='pdf-btn' onmousedown='event.preventDefault()' onclick='sendScroll(1)' title='Scroll Down'>⬇</button>"
+        "<button type='button' class='pdf-btn' onmousedown='event.preventDefault()' onclick='window.__anchorPdfZoom(-1)' title='Zoom Out (Ctrl −)'>−</button>"
+        "<button type='button' class='pdf-btn pdf-zoom-readout' id='htmlZoomReadout' onmousedown='event.preventDefault()' onclick='window.__anchorPdfZoom(0)' title='Auto-Fit to Pane (Ctrl 0)'>Fit</button>"
+        "<button type='button' class='pdf-btn' onmousedown='event.preventDefault()' onclick='window.__anchorPdfZoom(1)' title='Zoom In (Ctrl +)'>+</button>"
+        f"<a class='pdf-btn' href='{_html.escape(raw_url, quote=True)}' target='_blank' rel='noopener' title='Open unscaled raw HTML'>Raw</a>"
+        f"<a class='pdf-btn' href='{_html.escape(dl_url, quote=True)}' title='Download file'>⬇ Save</a>"
+        "</div>"
+        f"<iframe id='htmlDocFrame' sandbox='allow-scripts allow-popups allow-forms allow-modals allow-downloads' srcdoc=\"{escaped_srcdoc}\"></iframe>"
+        "<script>"
+        "window.__anchorPdfViewer = true;"
+        "var f = document.getElementById('htmlDocFrame');"
+        "window.__anchorPdfZoom = function(step){"
+        "  try { if(f && f.contentWindow) f.contentWindow.postMessage({type:'anchor-doc-zoom', step: Number(step)}, '*'); } catch(_e){}"
+        "};"
+        "function sendScroll(dir){"
+        "  try { if(f && f.contentWindow) f.contentWindow.postMessage({type:'anchor-scroll-deliverable', deltaY: dir * Math.max(300, window.innerHeight * 0.75)}, '*'); } catch(_e){}"
+        "}"
+        "window.addEventListener('message', function(ev){"
+        "  if(!ev || !ev.data) return;"
+        "  if(ev.data.type === 'anchor-html-zoom-state'){"
+        "    var rd = document.getElementById('htmlZoomReadout');"
+        "    if(rd) rd.textContent = (ev.data.pct === 100) ? ('Fit' + (ev.data.eff < 99 ? ' ' + ev.data.eff + '%' : '')) : (ev.data.pct + '%');"
+        "  } else if(ev.data.type === 'anchor-scroll-deliverable'){"
+        "    try { if(f && f.contentWindow) f.contentWindow.postMessage(ev.data, '*'); } catch(_e){}"
+        "  }"
+        "});"
+        "</script></body></html>"
+    )
+    return {"__html__": wrapper}, 200
 
 
 def deliverable_content_type(ext):
@@ -4806,6 +6193,19 @@ def handle_post(cdir, verb, body):
             pass
         _DELIV_CACHE.clear()
         return {"ok": True, "cleared": cleared}, 200
+    if verb in ("wave-state", "wave-map"):
+        from steward_cockpit import wave_map_model as _wmm
+        try:
+            res_w = _wmm.mutate_wave_state(cdir, body)
+        except _wmm.WaveStateValidationError as exc:
+            return {"ok": False, "error": str(exc)}, 400
+        _DELIV_CACHE.clear()
+        return res_w, 200
+    if verb == "deliverable-batches":
+        from steward_cockpit import deliverable_shelves as _ds
+        res_b = _ds.update_curation(cdir, body if isinstance(body, dict) else {})
+        _DELIV_CACHE.clear()
+        return res_b, 200
     if verb == "plan":
         if not cdir or not os.path.isdir(str(cdir)):
             return _plan_missing_response()
@@ -4939,30 +6339,186 @@ def handle_post(cdir, verb, body):
                 pass
         _DELIV_CACHE.clear()
         return {"ok": True, "step_id": done_id or req_id, "step_name": done_name or req_id, "next_step_id": next_id, "next_step_name": next_name}, 200
-    if verb in ("anvil", "anvil/walkthrough"):
-        import importlib
+    if verb in ("anvil", "anvil/walkthrough", "anvil/analyses", "anvil/discover", "anvil/scoping", "anvil/replication", "anvil/comprehension", "anvil/literature"):
         from steward_cockpit import anvil_session as _as
-        try:
-            _as_mtime = Path(_as.__file__).stat().st_mtime_ns
-            if getattr(_as, "_LOADED_MTIME_NS", None) != _as_mtime:
-                _as = importlib.reload(_as)
-                _as._LOADED_MTIME_NS = _as_mtime
-        except Exception:
-            pass
+        from steward_cockpit import anvil_scoping_v6 as _as6
+        from steward_cockpit import anvil_py_deps as _apd
+        from steward_cockpit import anvil_replication_job as _arj
+        from steward_cockpit import anvil_verification_guard as _avg
+        from steward_cockpit import anvil_comprehension_engine as _ace
+        from steward_cockpit import anvil_literature_job as _alj
+        for _m_ref in (_as, _as6, _apd, _arj, _avg, _ace, _alj):
+            try:
+                _mt = Path(_m_ref.__file__).stat().st_mtime_ns
+                if getattr(_m_ref, "_LOADED_MTIME_NS", None) != _mt:
+                    importlib.reload(_m_ref)
+                    _m_ref._LOADED_MTIME_NS = _mt
+            except Exception:
+                pass
         if not isinstance(body, dict):
-            return {"ok": False, "error_code": "MALFORMED_DATA_REFUSED", "error": "JSON object body required"}, 400
-        act = "walkthrough" if verb == "anvil/walkthrough" else str(body.get("action") or "start_code").strip()
+            msg_g = "Malformed Anvil request or invalid engine output"
+            return {"ok": False, "error_code": "MALFORMED_DATA_REFUSED", "status_kind": "dependency-returns-garbage", "failure_state": "dependency-returns-garbage", "error": msg_g, "message": msg_g}, 400
+        act = (
+            "walkthrough"
+            if verb == "anvil/walkthrough"
+            else (
+                "discover_candidates"
+                if verb == "anvil/discover"
+                else str(body.get("action") or ("list_analyses" if verb == "anvil/analyses" else "start_code")).strip()
+            )
+        )
+        aid_post = body.get("analysis_id") if "analysis_id" in body else None
         try:
+            if act in ("discover", "discover_candidates"):
+                return _as.discover_cockpit_candidates_http(cdir)
+            if act == "scoping_preview":
+                return _as.get_scoping_v2_state(
+                    cdir,
+                    selected_module_ids=body["module_ids"] if "module_ids" in body else body.get("selected_module_ids"),
+                    software_spec=body.get("software_spec") if "software_spec" in body else body.get("software_target"),
+                    paper_spec=body.get("paper_spec") if "paper_spec" in body else body.get("paper_target"),
+                    analysis_id=aid_post,
+                    require_v6=True,
+                )
+            if act in ("scoping", "scoping_state"):
+                return _as.get_scoping_v2_state(
+                    cdir,
+                    selected_module_ids=body["module_ids"] if "module_ids" in body else body.get("selected_module_ids"),
+                    software_spec=body.get("software_spec") if "software_spec" in body else body.get("software_target"),
+                    paper_spec=body.get("paper_spec") if "paper_spec" in body else body.get("paper_target"),
+                    analysis_id=aid_post,
+                    require_v6=False,
+                )
+            if act in ("replication_state", "replication_status"):
+                from steward_cockpit import anvil_replication_job as _arj
+                return _arj.get_replication_state(cdir, analysis_id=aid_post, job_id=body.get("job_id"))
+            if act in ("replication_consent", "issue_replication_consent"):
+                from steward_cockpit import anvil_replication_job as _arj
+                return _arj.issue_replication_consent(cdir, body)
+            if act in ("replication_start", "replication_phase_b", "run_replication"):
+                from steward_cockpit import anvil_replication_job as _arj
+                eff_body = dict(body)
+                if act == "replication_phase_b" and "phase" not in eff_body:
+                    eff_body["phase"] = "B"
+                out = _run_with_cockpit_usage_attribution(
+                    "anvil", act, cdir, eff_body, lambda: _arj.start_replication_job(cdir, eff_body)
+                )
+                return out if (isinstance(out, tuple) and len(out) == 2) else (out, 200)
+            if act in ("replication_install_deps", "approve_replication_deps"):
+                from steward_cockpit import anvil_replication_job as _arj
+                out = _run_with_cockpit_usage_attribution(
+                    "anvil", act, cdir, body, lambda: _arj.approve_install_and_run_replication(cdir, body)
+                )
+                return out if (isinstance(out, tuple) and len(out) == 2) else (out, 200)
+            if act in ("replication_cancel", "cancel_replication"):
+                from steward_cockpit import anvil_replication_job as _arj
+                return _arj.cancel_replication_job(cdir, body)
+            if act in ("replication_queue_refactor", "queue_refactoring"):
+                from steward_cockpit import anvil_replication_job as _arj
+                return _arj.queue_vetted_refactoring(cdir, body)
+            if act in ("replication_export_deliverables", "export_replication_deliverables"):
+                from steward_cockpit import anvil_replication_job as _arj
+                return _arj.export_replication_deliverables(cdir, body)
+            if act in ("scoping_turn", "scoping_chat"):
+                out = _run_with_cockpit_usage_attribution(
+                    "anvil", act, cdir, body, lambda: _as.run_scoping_v2_turn(cdir, body)
+                )
+                return out if (isinstance(out, tuple) and len(out) == 2) else (out, 200)
+            if act in ("lock_scope", "scoping_lock"):
+                out = _run_with_cockpit_usage_attribution(
+                    "anvil", act, cdir, body, lambda: _as.lock_scope_v2(cdir, body)
+                )
+                return out if (isinstance(out, tuple) and len(out) == 2) else (out, 200)
+            if act == "quick_literature_sketch":
+                out = _run_with_cockpit_usage_attribution(
+                    "anvil", act, cdir, body, lambda: _as.run_quick_literature_sketch(cdir, body)
+                )
+                return out if (isinstance(out, tuple) and len(out) == 2) else (out, 200)
+            if act in ("semantic_state", "comprehension_state"):
+                return _ace.get_comprehension_state(cdir, scope_sha256=body.get("scope_sha256"), analysis_id=aid_post)
+            if act in ("semantic_consent", "issue_comprehension_consent"):
+                return _ace.issue_comprehension_consent(cdir, body)
+            if act in ("semantic_run", "run_comprehension", "run_pass2"):
+                out = _run_with_cockpit_usage_attribution(
+                    "anvil", act, cdir, body, lambda: _ace.run_semantic_comprehension(cdir, body)
+                )
+                return out if (isinstance(out, tuple) and len(out) == 2) else (out, 200)
+            if act in ("literature_state", "get_literature"):
+                return _alj.get_literature_state(cdir, analysis_id=aid_post)
+            if act in ("literature_consent", "issue_literature_consent"):
+                return _alj.issue_literature_consent(cdir, body)
+            if act in ("literature_start", "run_literature"):
+                out = _run_with_cockpit_usage_attribution(
+                    "anvil", act, cdir, body, lambda: _alj.start_literature_job(cdir, body)
+                )
+                return out if (isinstance(out, tuple) and len(out) == 2) else (out, 200)
+            if act in ("literature_cancel", "cancel_literature"):
+                return _alj.cancel_literature_job(cdir, body)
+            if act in ("analyses", "list_analyses"):
+                return _as.list_cockpit_analyses(cdir, include_archived=bool(body.get("include_archived")))
+            if act in ("register_legacy", "register_legacy_analysis"):
+                return _as.register_legacy_analysis(
+                    cdir,
+                    analysis_id=aid_post,
+                    title=str(body.get("title") or ""),
+                )
+            if act in ("create_analysis", "new_analysis"):
+                out = _run_with_cockpit_usage_attribution(
+                    "anvil", act, cdir, body,
+                    lambda: _as.create_cockpit_analysis(
+                        cdir,
+                        analysis_id=aid_post,
+                        title=str(body.get("title") or ""),
+                        mode=str(body.get("mode") or "code"),
+                        software_spec=str(body.get("software_target") or body.get("software_spec") or "."),
+                        compare_spec=str(body.get("compare_target") or ""),
+                        paper_spec=str(body.get("paper_target") or body.get("paper_spec") or ""),
+                        direction=body.get("direction", ""),
+                        active_pipeline=str(body.get("active_pipeline") or ""),
+                        selected_pipelines=body.get("selected_pipelines"),
+                        materialize_replication_package=body.get("materialize_replication_package", True),
+                        max_concurrency=body.get("max_concurrency", 2),
+                        set_active=bool(body.get("set_active", True)),
+                    ),
+                )
+                return out if (isinstance(out, tuple) and len(out) == 2) else (out, 200)
+            if act in ("switch_analysis", "switch"):
+                return _as.switch_cockpit_analysis(cdir, aid_post)
+            if act in ("export_replication_package", "materialize_replication_package"):
+                raw_cf = body.get("closure_files")
+                cf_list = [str(x) for x in raw_cf] if isinstance(raw_cf, list) else None
+                raw_ap = str(body.get("active_pipeline") or "").strip() or None
+                return _as.export_replication_package(
+                    cdir,
+                    analysis_id=aid_post,
+                    closure_files=cf_list,
+                    active_pipeline=raw_ap,
+                )
             if act == "v4_session":
-                return _as.save_v4_cockpit_ui_session(cdir, body)
+                return _as.save_v4_cockpit_ui_session(cdir, body, analysis_id=aid_post)
+            if act == "v4_chat":
+                out = _run_with_cockpit_usage_attribution(
+                    "anvil", act, cdir, body, lambda: _as.run_v4_cockpit_chat(cdir, body, analysis_id=aid_post)
+                )
+                return out if (isinstance(out, tuple) and len(out) == 2) else (out, 200)
+            if act in ("v4_xval", "xval_audit"):
+                out = _run_with_cockpit_usage_attribution(
+                    "anvil", act, cdir, body, lambda: _as.run_v4_cockpit_xval(cdir, body, analysis_id=aid_post)
+                )
+                return out if (isinstance(out, tuple) and len(out) == 2) else (out, 200)
+            if act in ("trace_install_deps", "approve_trace_deps"):
+                out = _run_with_cockpit_usage_attribution(
+                    "anvil", act, cdir, body, lambda: _as.approve_install_and_run_trace(cdir, body, analysis_id=aid_post)
+                )
+                return out if (isinstance(out, tuple) and len(out) == 2) else (out, 200)
             if act == "v4_trace":
                 out = _run_with_cockpit_usage_attribution(
-                    "anvil", act, cdir, body, lambda: _as.run_v4_cockpit_trace(cdir, body)
+                    "anvil", act, cdir, body, lambda: _as.run_v4_cockpit_trace(cdir, body, analysis_id=aid_post)
                 )
                 return out if (isinstance(out, tuple) and len(out) == 2) else (out, 200)
             if act == "v4_profile_lit":
                 out = _run_with_cockpit_usage_attribution(
-                    "anvil", act, cdir, body, lambda: _as.run_v4_cockpit_profile_lit(cdir, body)
+                    "anvil", act, cdir, body, lambda: _as.run_v4_cockpit_profile_lit(cdir, body, analysis_id=aid_post)
                 )
                 return out if (isinstance(out, tuple) and len(out) == 2) else (out, 200)
             if act == "walkthrough":
@@ -4971,6 +6527,7 @@ def handle_post(cdir, verb, body):
                     lambda: _as.walkthrough_in_session(
                         cdir,
                         str(body.get("block_id") or body.get("block") or ""),
+                        analysis_id=aid_post,
                     ),
                 ), 200
             if act in ("start_code", "start_paper"):
@@ -4983,6 +6540,14 @@ def handle_post(cdir, verb, body):
                         compare_spec=str(body.get("compare_target") or ""),
                         paper_spec=str(body.get("paper_target") or ""),
                         signed_off_drops=body.get("signed_off_drops") if isinstance(body.get("signed_off_drops"), list) else None,
+                        analysis_id=aid_post,
+                        title=str(body.get("title") or ""),
+                        direction=body.get("direction", ""),
+                        active_pipeline=str(body.get("active_pipeline") or ""),
+                        selected_pipelines=body.get("selected_pipelines"),
+                        materialize_replication_package=body.get("materialize_replication_package", True),
+                        max_concurrency=body.get("max_concurrency", 2),
+                        create_new=bool(body.get("create_new", False)),
                     ),
                 )
                 try:
@@ -4996,21 +6561,36 @@ def handle_post(cdir, verb, body):
                     pass
                 return res, 200
             if act == "probe_block":
-                return _run_with_cockpit_usage_attribution(
+                raw_tcmd = body.get("test_cmd")
+                if raw_tcmd is not None and raw_tcmd != "" and raw_tcmd != []:
+                    if isinstance(raw_tcmd, (str, bytes)) or not isinstance(raw_tcmd, list) or body.get("operator_consent_confirmed") is not True:
+                        return {
+                            "ok": False,
+                            "error_code": "EXECUTION_POLICY_REFUSED",
+                            "cwe": "CWE-78",
+                            "http_status": 403,
+                            "error": "Raw probe_block.test_cmd strings are retired; pass an explicit argv list with operator_consent_confirmed: true.",
+                            "message": "Raw probe_block.test_cmd strings are retired; pass an explicit argv list with operator_consent_confirmed: true.",
+                        }, 403
+                out_pb = _run_with_cockpit_usage_attribution(
                     "anvil", act, cdir, body,
                     lambda: _as.probe_block_in_session(
                         cdir,
                         str(body.get("block_id") or ""),
                         str(body.get("lock_description") or ""),
-                        str(body.get("test_cmd") or ""),
+                        raw_tcmd if isinstance(raw_tcmd, list) else "",
+                        analysis_id=aid_post,
+                        operator_consent_confirmed=bool(body.get("operator_consent_confirmed")),
                     ),
-                ), 200
+                )
+                return out_pb if (isinstance(out_pb, tuple) and len(out_pb) == 2) else (out_pb, 200)
             if act == "sign_off_drop":
                 return _run_with_cockpit_usage_attribution(
                     "anvil", act, cdir, body,
                     lambda: _as.sign_off_null_space_in_session(
                         cdir,
                         str(body.get("function_name") or ""),
+                        analysis_id=aid_post,
                     ),
                 ), 200
             if act == "attach_paper":
@@ -5019,6 +6599,7 @@ def handle_post(cdir, verb, body):
                     lambda: _as.attach_paper_to_session(
                         cdir,
                         str(body.get("paper_target") or ""),
+                        analysis_id=aid_post,
                     ),
                 ), 200
             if act == "chat":
@@ -5030,6 +6611,7 @@ def handle_post(cdir, verb, body):
                         q_str,
                         str(body.get("mode") or "map"),
                         str(body.get("target") or ""),
+                        analysis_id=aid_post,
                     ),
                 )
                 try:
@@ -5055,11 +6637,29 @@ def handle_post(cdir, verb, body):
             if act == "reset":
                 return _run_with_cockpit_usage_attribution(
                     "anvil", act, cdir, body,
-                    lambda: _as.reset_cockpit_session(cdir),
+                    lambda: _as.reset_cockpit_session(cdir, analysis_id=aid_post),
                 ), 200
-            return {"ok": False, "error": f"unknown anvil action: {act}"}, 400
+            msg_u = f"Malformed Anvil request or invalid engine output (unknown action: {act})"
+            return {
+                "ok": False,
+                "error_code": "MALFORMED_DATA_REFUSED",
+                "status_kind": "dependency-returns-garbage",
+                "failure_state": "dependency-returns-garbage",
+                "error": f"unknown anvil action: {act}",
+                "message": msg_u,
+            }, 400
         except ValueError as exc:
-            return {"ok": False, "error": str(exc)}, 400
+            if hasattr(exc, "payload") and hasattr(exc, "http_status"):
+                return exc.payload, int(exc.http_status)
+            msg = str(exc)
+            msg_low = msg.lower()
+            is_escape = any(
+                tok in msg_low
+                for tok in ("traversal", "permitted", "outside", "restricted", "symlink", "escape")
+            )
+            if is_escape:
+                return {"ok": False, "error_code": "PATH_ESCAPE_REFUSED", "error": msg, "message": msg}, 403
+            return {"ok": False, "error_code": "MALFORMED_DATA_REFUSED", "error": msg, "message": msg}, 400
     if verb == "aegis":
         if not isinstance(body, dict):
             return {
@@ -5202,6 +6802,13 @@ def handle_post(cdir, verb, body):
     if verb == "refinement-update":
         from steward_cockpit.refinement_client import update
         result = update(cdir, body)
+        if result.get("ok"):
+            try:
+                from steward_cockpit import deliverable_shelves as _ds
+                _ds.sync_refinement_batches(cdir, refinement_state=result.get("state"), operation=body if isinstance(body, dict) else None)
+            except Exception:
+                pass
+            _DELIV_CACHE.clear()
         return result, 200 if result.get("ok") else 409
     if verb == "refinement-open":
         # An explicit authenticated cockpit click, not a GET/prefetch receipt.
@@ -5257,10 +6864,20 @@ def handle_post(cdir, verb, body):
         from steward_cockpit import dictation_engine as _de
         act = str(body.get("action") or "poll").strip().lower()
         if act == "transcribe":
-            return _de.transcribe_audio(str(body.get("audio_b64") or "")), 200
+            _ep_raw = body.get("dictation_epoch")
+            _ep_val = int(_ep_raw) if isinstance(_ep_raw, int) and not isinstance(_ep_raw, bool) else None
+            _tr_res = _de.transcribe_audio(
+                str(body.get("audio_b64") or ""),
+                client_msg_id=str(body.get("client_msg_id") or ""),
+                dictation_epoch=_ep_val,
+                scope=str(body.get("scope") or cdir or ""),
+            )
+            return _tr_res, int(_tr_res.get("status_code") or 200)
         if act == "tts":
             return _de.synthesize_speech_wav(str(body.get("text") or ""), int(body.get("rate") or 1)), 200
         if act == "start":
+            if getattr(_de, "_DICTATION_BACKEND_AVAILABLE", None) is False:
+                return _draft_failure_response("dependency-missing", detail="Local dictation engine backend unavailable.")
             return _de.start_session(), 200
         if act == "stop":
             return _de.stop_session(), 200
@@ -5269,6 +6886,8 @@ def handle_post(cdir, verb, body):
         except (TypeError, ValueError):
             since = 0
         return _de.poll_session(since), 200
+    if verb == "drafts":
+        return handle_drafts_request("POST", body=body, proot=cdir)
     if verb == "fleet-relay":
         from steward_cockpit.campaign_say import relay_to_cockpit_steward, is_cave_folder
         camp_dir = str(Path(cdir).parent) if is_cave_folder(cdir) and (Path(cdir).parent / "roadmap.json").is_file() else cdir
@@ -5296,92 +6915,136 @@ def handle_post(cdir, verb, body):
             return {"ok": False, "error": "no live engine"}, 404
         return eng.record_status_ack(str(body.get("at") or "")), 200
     if verb == "say":
-        # W5 (High Seat, 2026-09-26): a Campaign verb spoken on the Campaign record (move ... to tier n, add a part
-        # to ..., make ... an initiative, park ... until ..., unpark ..., what needs me) is compiled by the engine's
-        # act table and applied by the Campaign's own writer; the answer is its receipt with undo. Only the engine's
-        # word that it is NOT a Campaign verb hands the text to the steward: a failed compile or a writer error
-        # answers a refusal here, never a model turn.
-        if not body.get("question_id") and not isinstance(body.get("refinement_context"), dict):
-            from steward_cockpit.campaign_say import is_campaign_folder, is_cave_folder, say_campaign, fast_steward_command
-            _is_cave = is_cave_folder(cdir)
-            if is_campaign_folder(cdir) or _is_cave:
-                _camp_dir = str(Path(cdir).parent) if _is_cave and (Path(cdir).parent / "roadmap.json").is_file() else cdir
-                _goal = str(body.get("goal") or "").strip() or None
-                _txt = str(body.get("text") or "")
-                spoken = fast_steward_command(_camp_dir, _txt, goal=_goal, from_cave=_is_cave)
-                if spoken is None:
-                    spoken = say_campaign(_camp_dir, _txt, goal=_goal, run_fast_fallback=False)
-                    if spoken and not spoken.get("ok") and "a goal has no seat" in str(spoken.get("say") or ""):
-                        spoken_goal = fast_steward_command(_camp_dir, _txt, goal=_goal, from_cave=_is_cave, force_goal_seat=True)
-                        if spoken_goal is not None:
-                            spoken = spoken_goal
-                if spoken is not None:
-                    if spoken.get("ok"):
-                        _reply_txt = str(spoken.get("say") or spoken.get("receipt") or "")
-                        note_goal_receipt(cdir, _goal, _txt, _reply_txt)
-                        if _camp_dir != cdir and _goal:
-                            note_goal_receipt(_camp_dir, _goal, _txt, _reply_txt)
-                        try:
-                            _live_eng = get_engine(cdir, create=False)
-                            if _live_eng is not None:
-                                _live_eng._emit({"t": "john", "text": _txt})
-                                _live_eng._emit({"t": "delta", "text": _reply_txt})
-                                _live_eng._emit({"t": "turn_end", "tokens": 0})
-                        except Exception:
-                            pass
-                    return spoken, (200 if spoken.get("ok") else 400)
-        context = body.get("refinement_context")
-        _refined_turn = False
-        if isinstance(context, dict):
-            from steward_cockpit.refinement_client import update
-            import uuid
-            current = campaign.read_refinement(cdir)
-            if not current or not current.get("ok"):
-                return {"ok": False, "error": "refinement-state-unavailable"}, 409
-            feedback_id = str(uuid.uuid4())
-            result = update(cdir, {"operation_id": feedback_id, "expected_seq": current["sequence"],
-                "action": "feedback", "step_id": context.get("step_id"), "feedback_id": feedback_id,
-                "source_message": str(body.get("text", "")), "base_presentation_id": context.get("presentation_id"),
-                "changes": [{"id": "change-" + feedback_id, "scope": context.get("product_id") or "slice", "directive": "require", "text": str(body.get("text", ""))}],
-                "elegance": {"mode": "RC6", "source": "User selected Refine this slice", "reason": "Apply the user's requested changes within this slice; assess new elements before adding scope."}})
-            if not result.get("ok"):
-                return result, 409
-            from steward_cockpit import horizon as _horizon
-            _horizon.refresh(cdir, "refined")       # W3 (2026-09-28): the line moves when the feedback is recorded
-            _refined_turn = True
-        if (Path(cdir) / ".anvil" / "session.json").is_file():
+        from steward_cockpit.steward_engine import execute_idempotent_say
+        _client_msg_id = str(body.get("client_msg_id") or body.get("client_req_id") or "").strip()
+        _say_scope = (
+            f"{os.path.normcase(os.path.abspath(str(cdir or '')))}||general||{body.get('term') or '1'}"
+            if body.get("general")
+            else os.path.normcase(os.path.abspath(str(cdir or "")))
+        )
+        if body.get("goal"):
+            _say_scope += f"||goal||{str(body.get('goal') or '').strip()}"
+
+        def _execute_say_once():
+            # W5 (High Seat, 2026-09-26): a Campaign verb spoken on the Campaign record (move ... to tier n, add a part
+            # to ..., make ... an initiative, park ... until ..., unpark ..., what needs me) is compiled by the engine's
+            # act table and applied by the Campaign's own writer; the answer is its receipt with undo. Only the engine's
+            # word that it is NOT a Campaign verb hands the text to the steward: a failed compile or a writer error
+            # answers a refusal here, never a model turn.
+            if not body.get("question_id") and not isinstance(body.get("refinement_context"), dict):
+                from steward_cockpit.campaign_say import is_campaign_folder, is_cave_folder, say_campaign, fast_steward_command
+                _is_cave = is_cave_folder(cdir)
+                if is_campaign_folder(cdir) or _is_cave:
+                    _camp_dir = str(Path(cdir).parent) if _is_cave and (Path(cdir).parent / "roadmap.json").is_file() else cdir
+                    _goal = str(body.get("goal") or "").strip() or None
+                    _txt = str(body.get("text") or "")
+                    spoken = fast_steward_command(_camp_dir, _txt, goal=_goal, from_cave=_is_cave)
+                    if spoken is None:
+                        spoken = say_campaign(_camp_dir, _txt, goal=_goal, run_fast_fallback=False)
+                        if spoken and not spoken.get("ok") and "a goal has no seat" in str(spoken.get("say") or ""):
+                            spoken_goal = fast_steward_command(_camp_dir, _txt, goal=_goal, from_cave=_is_cave, force_goal_seat=True)
+                            if spoken_goal is not None:
+                                spoken = spoken_goal
+                    if spoken is not None:
+                        if spoken.get("ok"):
+                            _reply_txt = str(spoken.get("say") or spoken.get("receipt") or "")
+                            note_goal_receipt(cdir, _goal, _txt, _reply_txt)
+                            if _camp_dir != cdir and _goal:
+                                note_goal_receipt(_camp_dir, _goal, _txt, _reply_txt)
+                            try:
+                                _live_eng = get_engine(cdir, create=False)
+                                if _live_eng is not None:
+                                    _live_eng._emit({"t": "john", "text": _txt})
+                                    _live_eng._emit({"t": "delta", "text": _reply_txt})
+                                    _live_eng._emit({"t": "turn_end", "tokens": 0})
+                            except Exception:
+                                pass
+                        out_sp = dict(spoken)
+                        out_sp["_http_code"] = 200 if spoken.get("ok") else 400
+                        return out_sp
+            context = body.get("refinement_context")
+            _refined_turn = False
+            if isinstance(context, dict):
+                from steward_cockpit.refinement_client import update
+                import uuid
+                current = campaign.read_refinement(cdir)
+                if not current or not current.get("ok"):
+                    return {"ok": False, "error": "refinement-state-unavailable", "_http_code": 409}
+                feedback_id = str(uuid.uuid4())
+                result = update(cdir, {"operation_id": feedback_id, "expected_seq": current["sequence"],
+                    "action": "feedback", "step_id": context.get("step_id"), "feedback_id": feedback_id,
+                    "source_message": str(body.get("text", "")), "base_presentation_id": context.get("presentation_id"),
+                    "changes": [{"id": "change-" + feedback_id, "scope": context.get("product_id") or "slice", "directive": "require", "text": str(body.get("text", ""))}],
+                    "elegance": {"mode": "RC6", "source": "User selected Refine this slice", "reason": "Apply the user's requested changes within this slice; assess new elements before adding scope."}})
+                if not result.get("ok"):
+                    out_ref = dict(result)
+                    out_ref["_http_code"] = 409
+                    return out_ref
+                from steward_cockpit import horizon as _horizon
+                _horizon.refresh(cdir, "refined")       # W3 (2026-09-28): the line moves when the feedback is recorded
+                _refined_turn = True
+            if (Path(cdir) / ".anvil" / "session.json").is_file():
+                try:
+                    from steward_cockpit import anvil_session as _as_say
+                    _as_say.apply_conversational_anvil_side_effects(cdir, str(body.get("text", "")))
+                except Exception:
+                    pass
+            _reconciled_review = False
+            if not body.get("general") and str(body.get("text") or "").strip():
+                try:
+                    _rec_res = campaign.reconcile_review_on_feedback(cdir, str(body.get("text") or ""))
+                    _reconciled_review = bool((_rec_res or {}).get("reconciled", 0) > 0)
+                    _DELIV_CACHE.clear()
+                except Exception:
+                    pass
+            eng = get_engine(cdir, bool(body.get("general")),
+                             str(body.get("term") or "") or None)
+            if eng is None:
+                return {"ok": False, "error": "no such session / cap hit", "_http_code": 404}
+            if _reconciled_review and not body.get("question_id"):
+                try:
+                    eng.open_question = None
+                    eng.question_context = None
+                    eng.pending_questions = []
+                except Exception:
+                    pass
+            import inspect as _inspect
+            _say_kwargs = (
+                {"question_id": body["question_id"]}
+                if body.get("question_id")
+                else {"goal": (str(body.get("goal") or "").strip() or None)}
+            )
             try:
-                from steward_cockpit import anvil_session as _as_say
-                _as_say.apply_conversational_anvil_side_effects(cdir, str(body.get("text", "")))
+                if "client_msg_id" in _inspect.signature(eng.say).parameters:
+                    _say_kwargs["client_msg_id"] = _client_msg_id or None
+            except (TypeError, ValueError):
+                pass
+            result = eng.say(body.get("text", ""), **_say_kwargs)
+            if _refined_turn:
+                # W3 (Grok's hold): the turn's reply may have written the line — derive it again so the turn's own
+                # sentence never stands over the stamped derivation
+                from steward_cockpit import horizon as _horizon2
+                _horizon2.refresh(cdir, "refined")
+            out_res = dict(result) if isinstance(result, dict) else {"ok": False}
+            out_res["_http_code"] = 200 if out_res.get("ok") else 409
+            return out_res
+
+        say_out = execute_idempotent_say(_say_scope, _client_msg_id, _execute_say_once, cdir=cdir)
+        http_code = int(say_out.pop("_http_code", 200 if say_out.get("ok") else 409))
+        if say_out.get("ok") and body.get("clear_draft") is not False and cdir and os.path.isdir(str(cdir)):
+            try:
+                handle_drafts_request(
+                    "DELETE",
+                    qs={
+                        "general": "1" if body.get("general") else "",
+                        "term": str(body.get("term") or ""),
+                        "goal": str(body.get("goal") or ""),
+                    },
+                    proot=cdir,
+                )
             except Exception:
                 pass
-        _reconciled_review = False
-        if not body.get("general") and str(body.get("text") or "").strip():
-            try:
-                _rec_res = campaign.reconcile_review_on_feedback(cdir, str(body.get("text") or ""))
-                _reconciled_review = bool((_rec_res or {}).get("reconciled", 0) > 0)
-                _DELIV_CACHE.clear()
-            except Exception:
-                pass
-        eng = get_engine(cdir, bool(body.get("general")),
-                         str(body.get("term") or "") or None)
-        if eng is None:
-            return {"ok": False, "error": "no such session / cap hit"}, 404
-        if _reconciled_review and not body.get("question_id"):
-            try:
-                eng.open_question = None
-                eng.question_context = None
-                eng.pending_questions = []
-            except Exception:
-                pass
-        result = (eng.say(body.get("text", ""), question_id=body["question_id"]) if body.get("question_id")
-                  else eng.say(body.get("text", ""), goal=(str(body.get("goal") or "").strip() or None)))
-        if _refined_turn:
-            # W3 (Grok's hold): the turn's reply may have written the line — derive it again so the turn's own
-            # sentence never stands over the stamped derivation
-            from steward_cockpit import horizon as _horizon2
-            _horizon2.refresh(cdir, "refined")
-        return result, 200 if result.get("ok") else 409
+        return say_out, http_code
     if verb == "code_job":
         # R3 (steward responsiveness, 2026-10-04): the steward hands real work to a code job and stays free to talk
         from steward_cockpit import code_jobs as _cj
@@ -5496,6 +7159,12 @@ def handle_post(cdir, verb, body):
             return {"ok": False, "error": "that file type is not openable here"}, 400
         if not os.path.isfile(target):
             return {"ok": False, "error": "file not found"}, 404
+        import paths as _paths_open
+        if _paths_open.is_windows_service_or_session0():
+            return {
+                "ok": False,
+                "error": "Anchor service is running in background Session 0; open this deliverable via its browser preview link instead.",
+            }, 409
         try:
             os.startfile(target); return {"ok": True}, 200
         except Exception as e:

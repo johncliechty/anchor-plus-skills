@@ -82,6 +82,7 @@ E(z) = \frac{1}{N}\sum_{i=1}^{N} z_i^2
 
 def _allow_tmp_workspace(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     anvil_session._LOADED_MTIME_NS = Path(anvil_session.__file__).stat().st_mtime_ns
+    monkeypatch.setattr(anvil_session, "_ANCHOR_ROOT", (tmp_path / "_v4_isolated_anchor").resolve())
     monkeypatch.setattr(
         anvil_session,
         "ALLOWED_LOCAL_ROOTS",

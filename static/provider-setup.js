@@ -41,7 +41,7 @@
         liveWork:true,liveWorkDetail:'1 active Steward session · AnchorServerDaemon :8777',
         desc:'Mother Ship HTTP server, High Seat, Cave of Wonders & Provider Setup',
         cockpits:[
-          {id:'cp-anchor-1',name:'Steward Ecgberht (High Seat)',engine:'claude-fable-5-1 · max',status:'Running'},
+          {id:'cp-anchor-1',name:'Steward Ecgberht (High Seat)',engine:'claude-fable-5-2 · max',status:'Running'},
           {id:'cp-anchor-2',name:'Setup & Provider Verification',engine:'gemini-4-argon · high',status:'Ready'}
         ]
       },
@@ -51,7 +51,7 @@
         liveWork:false,liveWorkDetail:'',
         desc:'Portfolio of 18+ specialized agent skills (Gandalf, Ramanujan, Legal Beagle, Figure Designer)',
         cockpits:[
-          {id:'cp-sf-1',name:'Foundry Sleep-Cycle Auditor',engine:'claude-fable-5-1 · max',status:'Ready'}
+          {id:'cp-sf-1',name:'Foundry Sleep-Cycle Auditor',engine:'claude-fable-5-2 · max',status:'Ready'}
         ]
       },
       {
@@ -155,12 +155,14 @@
 
   function text(tag,value,className){const node=document.createElement(tag);node.textContent=value;if(className)node.className=className;return node;}
   function button(title,action){const b=text('button',title);b.type='button';b.onclick=()=>Promise.resolve(action()).catch(error=>{$('setup-message').textContent=error.message;$('setup-message').className='error';});return b;}
-  function section(name){
-    ['host','providers','chart','comms'].forEach(s=>{const el=$('setup-section-'+s);if(el)el.hidden=s!==name;});
-    document.querySelectorAll('.setup-steps [data-section]').forEach(b=>{if(b.dataset.section===name)b.setAttribute('aria-current','step');else b.removeAttribute('aria-current');});
-    document.querySelectorAll('.cave-rail-stage').forEach(b=>b.classList.toggle('is-active',b.getAttribute('data-rail-section')===name));
-    if(name==='chart' && !w3Synced){syncWave3FromServer();}
-    if(name==='comms'){syncWave9CommsFromServer();}
+  function section(name,fromDetail){
+    const navSec=name==='provider-detail'?'providers':name;
+    ['host','providers','provider-detail','chart','comms'].forEach(s=>{const el=$('setup-section-'+s);if(el)el.hidden=s!==name;});
+    document.querySelectorAll('.setup-steps [data-section]').forEach(b=>{if(b.dataset.section===navSec)b.setAttribute('aria-current','step');else b.removeAttribute('aria-current');});
+    document.querySelectorAll('.cave-rail-stage').forEach(b=>b.classList.toggle('is-active',b.getAttribute('data-rail-section')===navSec));
+    if(name==='provider-detail' && !fromDetail && window.AnchorProviderDetail)window.AnchorProviderDetail.open(family,section);
+    if(name==='chart' && !w3Synced)syncWave3FromServer();
+    if(name==='comms')syncWave9CommsFromServer();
   }
   function leave(){
     if(window.parent!==window){
@@ -212,7 +214,7 @@
     if($('wave2-spend-summary-line') && w7 && w30){
       $('wave2-spend-summary-line').textContent='Portfolio API Equivalent Value: 7d ~'+api.fmtUsd(w7.hypothetical_usd)+' ('+api.fmtTokens(w7.total_tokens)+' tok) · 30d ~'+api.fmtUsd(w30.hypothetical_usd)+' ('+api.fmtTokens(w30.total_tokens)+' tok).';
     }
-    const defaultFrontiers={claude:'claude-fable-5-1 · max',chatgpt:'gpt-6.1-sol · ultra',gemini:'gemini-4-argon · high',grok:'grok-4.7 · xhigh'};
+    const defaultFrontiers={claude:'claude-fable-5-2 · max',chatgpt:'gpt-6.1-sol · ultra',gemini:'gemini-4-argon · high',grok:'grok-4.7 · xhigh'};
     Object.entries(api.labels).forEach(([key,label])=>{
       const list=data.connections.filter(c=>c.family===key);
       const selectedId=(data.preferences && data.preferences.accounts && data.preferences.accounts[key]) || '';
@@ -228,7 +230,7 @@
       const sel=primary && primary.catalog && primary.catalog.selection;
       const selModel=sel && sel.model;
       const selEffort=sel && sel.effort;
-      const frontierLabel=selModel ? (selModel==='best'?'claude-fable-5-1 · max (best)':(selEffort ? selModel+' · '+selEffort : selModel)) : (mon.frontier_model || defaultFrontiers[key] || 'Frontier');
+      const frontierLabel=selModel ? (selEffort ? selModel+' · '+selEffort : selModel) : (mon.frontier_model || defaultFrontiers[key] || 'Frontier');
       const meta=document.createElement('div');
       meta.className='wave2-matrix-meta';
       meta.append(text('span','⚡ Frontier: '+frontierLabel));
@@ -257,7 +259,8 @@
         meter.append(fill);
         card.append(meter);
       }
-      card.onclick=()=>{family=key;connectionId=null;drawAccounts();drawDetail();};
+      card.dataset.providerFamily=key;
+      card.onclick=()=>{family=key;connectionId=null;if(window.AnchorProviderDetail)window.AnchorProviderDetail.open(key,section);else{drawAccounts();drawDetail();}};
       matrix.append(card);
     });
   }
@@ -386,14 +389,14 @@
       revBox.className='lis-role-box'+(rev.fallback_active?' is-fallback':'');
       revBox.append(
         text('span','🛡 Adversarial Reviewer ('+String(revFam).toUpperCase()+')','lis-role-kicker'),
-        text('div','Configured: '+(rev.configured_model_display || 'claude-fable-5-1 (Fable 5.1)')+' · '+(rev.configured_effort || 'max'),'lis-role-main')
+        text('div','Configured: '+(rev.configured_model_display || 'latest_supported')+' · '+(rev.configured_effort || 'highest_supported'),'lis-role-main')
       );
       if(rev.fallback_active){
         revBox.append(
           text('div','Currently Serving: '+(rev.effective_model_display || 'Claude Opus 5.5')+' · '+(rev.effective_effort || 'high')+' (via Antigravity agy fallback)','lis-role-sub is-warn'),
-          text('div',rev.fallback_reason || 'Standalone Claude CLI OAuth session expired — Antigravity agy ceiling is Claude Opus 5.5 (High). Sign in standalone Claude CLI once to run Fable 5.1 (claude-fable-5-1 · max) natively!','muted small')
+          text('div',rev.fallback_reason || 'Standalone Claude CLI OAuth session expired — Antigravity agy ceiling is Claude Opus 5.5 (High).','muted small')
         );
-        const signBtn=button('🔐 Sign in Claude CLI → Activate Fable 5.1 (claude-fable-5-1)',async()=>{
+        const signBtn=button('🔐 Sign in Claude CLI → Restore Frontier Review Seat',async()=>{
           family='claude';
           const claudeConn=conns.find(x=>x.family==='claude');
           if(claudeConn)connectionId=claudeConn.id;
@@ -406,7 +409,7 @@
         revBox.append(signBtn);
       }else{
         revBox.append(
-          text('div','Currently Serving: '+(rev.effective_model_display || rev.configured_model_display || 'claude-fable-5-1 (Fable 5.1)')+' · '+(rev.effective_effort || rev.configured_effort || 'max')+(rev.status_note?(' — '+rev.status_note):''),'lis-role-sub is-ok')
+          text('div','Currently Serving: '+(rev.effective_model_display || rev.configured_model_display || 'unavailable')+' · '+(rev.effective_effort || rev.configured_effort || 'highest_supported')+(rev.status_note?(' — '+rev.status_note):''),'lis-role-sub is-ok')
         );
       }
       roleGrid.append(revBox);
@@ -480,6 +483,28 @@
     if(!value.host.project_roots.length)$('setup-project-roots').append(text('li','No configured project folders were reported. Choose the first storage location with Aladdin in Star Chart.'));
     if(value.host.star_chart_url)$('setup-star-chart').href=value.host.star_chart_url;
     renderLoggedInServicesCard(value);
+    const frontierPill=$('setup-frontier-model-pill');
+    if(frontierPill){
+      const rev=(value.active_routing && value.active_routing.adversarial_reviewer) || {};
+      const revFam=rev.family || value.review_family || '';
+      const revConn=(value.connections||[]).find(c=>c.family===revFam);
+      const revCatState=revConn && revConn.catalog && revConn.catalog.state;
+      const effectiveModel=(revCatState==='unavailable' || revCatState==='error' || value.unknown_state)
+        ? null
+        : (rev.effective_model_id || (revConn && revConn.catalog && revConn.catalog.selection && revConn.catalog.selection.model) || null);
+      const effectiveEffort=rev.effective_effort || (revConn && revConn.catalog && revConn.catalog.selection && revConn.catalog.selection.effort) || '';
+      if(effectiveModel){
+        frontierPill.hidden=false;
+        frontierPill.className='w3-badge '+(rev.fallback_active?'w3-badge-amber':'w3-badge-emerald');
+        frontierPill.setAttribute('data-provider-model', effectiveModel);
+        frontierPill.textContent='🛡 Review Frontier: '+effectiveModel+(effectiveEffort?' · '+effectiveEffort:'');
+      }else{
+        frontierPill.hidden=false;
+        frontierPill.className='w3-badge w3-badge-amber';
+        frontierPill.removeAttribute('data-provider-model');
+        frontierPill.textContent=value.badge==='EMPTY' ? '○ Review Frontier: empty' : '⚠ Review Frontier: unavailable';
+      }
+    }
     drawAccounts();drawDetail();controller=api.controls({...data,preferences},'setup-',()=>{});$('setup-threshold').value=String(preferences.warning_threshold);$('setup-warning').value=preferences.warning_policy;
     if(data.settings_error)$('setup-message').textContent=data.settings_error;
   }
@@ -802,7 +827,7 @@
       const cpName=document.createElement('input');
       cpName.type='text';cpName.placeholder='Cockpit title (e.g. Crucible Plan Shark)';
       const cpEng=document.createElement('select');
-      ['claude-fable-5-1 · max','gemini-4-argon · high','gpt-6.1-sol · ultra','grok-4.7 · xhigh'].forEach(eng=>{const o=text('option',eng);o.value=eng;cpEng.append(o);});
+      ['claude-fable-5-2 · max','gemini-4-argon · high','gpt-6.1-sol · ultra','grok-4.7 · xhigh'].forEach(eng=>{const o=text('option',eng);o.value=eng;cpEng.append(o);});
       const cpSave=text('button','Save Cockpit','primary btn-mini');
       cpSave.type='button';
       cpSave.onclick=()=>{
@@ -1259,8 +1284,8 @@
     const reqSecMsg=String(event.data.section||'').trim();
     api.request('/api/provider-setup').then(value=>{
       render(value);
-      if(reqSecMsg && ['host','providers','chart','comms'].includes(reqSecMsg))section(reqSecMsg);
-      else if(reqFam)section('providers');
+      if(reqSecMsg && ['host','providers','provider-detail','chart','comms'].includes(reqSecMsg))section(reqSecMsg);
+      else if(reqFam)section('provider-detail');
     }).catch(error=>$('setup-message').textContent=error.message);
   });
   function invokeSetupWindowControl(act){
@@ -1314,143 +1339,88 @@
       ['rail-link-gwl-admin','rail-link-sandbox-walkthrough','open-onboard-sandbox-btn'].forEach(id=>{if($(id))$(id).hidden=true;});
     }
   }).catch(()=>{});
-  if($('host-sec-dual-enabled')){
-    $('host-sec-dual-enabled').onchange=()=>{if($('host-sec-2fa-box'))$('host-sec-2fa-box').hidden=!$('host-sec-dual-enabled').checked;};
-  }
-  if($('btn-host-sec-toggle-token')){
-    $('btn-host-sec-toggle-token').onclick=()=>{const el=$('host-sec-anchor-token');if(el)el.type=(el.type==='password'?'text':'password');};
-  }
-  if($('btn-host-sec-copy-token')){
-    $('btn-host-sec-copy-token').onclick=async()=>{
-      const el=$('host-sec-anchor-token');
-      if(el && el.value){
-        try{await navigator.clipboard.writeText(el.value);if($('host-sec-feedback'))$('host-sec-feedback').textContent='✓ Copied ANCHOR_TOKEN to clipboard.';}
-        catch(e){el.type='text';el.select();if($('host-sec-feedback'))$('host-sec-feedback').textContent='Token revealed — press Ctrl+C to copy.';}
-      }
-    };
-  }
-  if($('btn-host-sec-regen-token')){
-    $('btn-host-sec-regen-token').onclick=async()=>{
-      const res=await api.request('/api/onboard-wizard/action',{action:'regenerate_anchor_token'});
-      if($('host-sec-anchor-token'))$('host-sec-anchor-token').value=res.anchor_token || '';
-      if($('host-sec-feedback'))$('host-sec-feedback').textContent='✓ Rotated Mother Ship ANCHOR_TOKEN ('+(res.anchor_token_masked||'updated')+').';
-    };
-  }
-  if($('btn-host-sec-save')){
-    $('btn-host-sec-save').onclick=async()=>{
-      const res=await api.request('/api/onboard-wizard/action',{
-        action:'save_security_credentials',
-        username:$('host-sec-username')?$('host-sec-username').value:'',
-        contact_email:$('host-sec-contact-email')?$('host-sec-contact-email').value:'',
-        password:$('host-sec-password')?$('host-sec-password').value:'',
-        dual_auth_enabled:Boolean($('host-sec-dual-enabled') && $('host-sec-dual-enabled').checked),
-        dual_auth_method:$('host-sec-dual-method')?$('host-sec-dual-method').value:'totp_authenticator',
-        anchor_token:$('host-sec-anchor-token')?$('host-sec-anchor-token').value:''
-      });
-      if($('host-sec-password'))$('host-sec-password').value='';
-      if(res && res.profile)hydrateHostSecurityCard(res.profile);
-      if($('host-sec-feedback'))$('host-sec-feedback').textContent='✓ Saved Mother Ship username, contact email, password hash (OS Vault), 2FA & ANCHOR_TOKEN.';
-    };
-  }
+  if($('host-sec-dual-enabled'))$('host-sec-dual-enabled').onchange=()=>{if($('host-sec-2fa-box'))$('host-sec-2fa-box').hidden=!$('host-sec-dual-enabled').checked;};
+  if($('btn-host-sec-toggle-token'))$('btn-host-sec-toggle-token').onclick=()=>{const el=$('host-sec-anchor-token');if(el)el.type=(el.type==='password'?'text':'password');};
+  if($('btn-host-sec-copy-token'))$('btn-host-sec-copy-token').onclick=async()=>{
+    const el=$('host-sec-anchor-token'); if(!el||!el.value)return;
+    try{await navigator.clipboard.writeText(el.value);if($('host-sec-feedback'))$('host-sec-feedback').textContent='✓ Copied ANCHOR_TOKEN to clipboard.';}
+    catch(e){el.type='text';el.select();if($('host-sec-feedback'))$('host-sec-feedback').textContent='Token revealed — press Ctrl+C to copy.';}
+  };
+  if($('btn-host-sec-regen-token'))$('btn-host-sec-regen-token').onclick=async()=>{
+    const res=await api.request('/api/onboard-wizard/action',{action:'regenerate_anchor_token'});
+    if($('host-sec-anchor-token'))$('host-sec-anchor-token').value=res.anchor_token||'';
+    if($('host-sec-feedback'))$('host-sec-feedback').textContent='✓ Rotated Mother Ship ANCHOR_TOKEN ('+(res.anchor_token_masked||'updated')+').';
+  };
+  if($('btn-host-sec-save'))$('btn-host-sec-save').onclick=async()=>{
+    const res=await api.request('/api/onboard-wizard/action',{action:'save_security_credentials',username:$('host-sec-username')?$('host-sec-username').value:'',contact_email:$('host-sec-contact-email')?$('host-sec-contact-email').value:'',password:$('host-sec-password')?$('host-sec-password').value:'',dual_auth_enabled:Boolean($('host-sec-dual-enabled')&&$('host-sec-dual-enabled').checked),dual_auth_method:$('host-sec-dual-method')?$('host-sec-dual-method').value:'totp_authenticator',anchor_token:$('host-sec-anchor-token')?$('host-sec-anchor-token').value:''});
+    if($('host-sec-password'))$('host-sec-password').value='';
+    if(res&&res.profile)hydrateHostSecurityCard(res.profile);
+    if($('host-sec-feedback'))$('host-sec-feedback').textContent='✓ Saved Mother Ship username, contact email, password hash (OS Vault), 2FA & ANCHOR_TOKEN.';
+  };
   function renderMothershipRegistryList(motherships){
-    const el=$('ms-registry-list');
-    if(!el)return;
-    if(!Array.isArray(motherships) || !motherships.length){
-      el.textContent='No Mother Ships registered yet.';
-      return;
-    }
-    el.innerHTML=motherships.map(m=>{
-      const id=String(m.id||'');
-      const owner=String(m.owner||'Collaborator');
-      const pseudo=String(m.pseudonym||'Steward');
-      const plat=String(m.platform||'windows');
-      const url=String(m.tailscale_url||m.local_url||'');
-      const ver=String(m.version_installed||'unknown');
-      return '<div style="padding:6px 10px;border:1px solid rgba(255,255,255,0.08);border-radius:8px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">'
-        +'<div><strong>'+owner+' ('+pseudo+')</strong> · <code>'+id+'</code> · <span class="muted">'+plat+'</span> · <code>'+url+'</code></div>'
-        +'<span class="w3-badge">v'+ver.replace(/^v/,'')+'</span>'
-        +'</div>';
-    }).join('');
+    const el=$('ms-registry-list'); if(!el)return;
+    if(!Array.isArray(motherships)||!motherships.length){el.textContent='No Mother Ships registered yet.';return;}
+    el.innerHTML=motherships.map(m=>'<div style="padding:6px 10px;border:1px solid rgba(255,255,255,0.08);border-radius:8px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;"><div><strong>'+String(m.owner||'Collaborator')+' ('+String(m.pseudonym||'Steward')+')</strong> · <code>'+String(m.id||'')+'</code> · <span class="muted">'+String(m.platform||'windows')+'</span> · <code>'+String(m.tailscale_url||m.local_url||'')+'</code></div><span class="w3-badge">v'+String(m.version_installed||'unknown').replace(/^v/,'')+'</span></div>').join('');
   }
   function loadMothershipUpdateAndRegistry(){
     fetch('/api/system/version',{credentials:'same-origin'}).then(r=>r.ok?r.json():null).then(v=>{
-      if(v && v.display_version){
+      if(!v)return;
+      if(v.display_version){
         if($('setup-version-pill'))$('setup-version-pill').textContent=v.display_version;
         if($('ms-current-version-label'))$('ms-current-version-label').textContent=v.display_version;
         if($('ms-update-status-msg'))$('ms-update-status-msg').textContent='Installed version: '+v.display_version+' ('+(v.platform||'host')+')';
       }
+      if($('chk-ms-auto-pull-updates')&&typeof v.auto_pull_updates==='boolean')$('chk-ms-auto-pull-updates').checked=v.auto_pull_updates;
+      if($('chk-ms-low-spec-mode')&&typeof v.low_spec_mode==='boolean')$('chk-ms-low-spec-mode').checked=v.low_spec_mode;
+      if($('ms-hw-summary')&&v.hardware_profile){const hw=v.hardware_profile;$('ms-hw-summary').textContent=(hw.total_ram_gb?hw.total_ram_gb+' GB RAM · ':'')+(hw.cpu_cores||2)+' CPU cores'+(hw.low_spec_recommended?' · recommended for this laptop':'');}
+      if(v.license_status){
+        const acc=!!v.license_status.accepted,badge=$('setup-gwl-license-badge');
+        if(badge){badge.textContent=acc?'✓ Accepted ('+(v.license_status.license_id||'GWL-v1')+')':'Acknowledgement Required';badge.className='w3-badge '+(acc?'w3-badge-emerald':'w3-badge-amber');}
+        if($('chk-setup-gwl-license'))$('chk-setup-gwl-license').checked=acc;
+        if($('setup-gwl-license-msg')&&acc&&v.license_status.accepted_at)$('setup-gwl-license-msg').textContent='Recorded '+v.license_status.accepted_at+' ('+(v.license_status.token_id||'signed receipt')+')';
+      }
     }).catch(()=>{});
-    fetch('/api/mothership/registry',{credentials:'same-origin'}).then(r=>r.ok?r.json():null).then(reg=>{
-      if(reg && Array.isArray(reg.motherships))renderMothershipRegistryList(reg.motherships);
-    }).catch(()=>{});
+    fetch('/api/mothership/registry',{credentials:'same-origin'}).then(r=>r.ok?r.json():null).then(reg=>{if(reg&&Array.isArray(reg.motherships))renderMothershipRegistryList(reg.motherships);}).catch(()=>{});
   }
   loadMothershipUpdateAndRegistry();
-  if($('btn-ms-check-update')){
-    $('btn-ms-check-update').onclick=async()=>{
-      const msg=$('ms-update-status-msg');
-      if(msg)msg.textContent='Checking GitHub & Mother Ship registry for updates…';
-      try{
-        const res=await fetch('/api/system/check_update',{credentials:'same-origin'}).then(r=>r.json());
-        if(res.update_available){
-          if(msg)msg.textContent='⬆ Update available: '+(res.remote_version||res.remote_head||'latest')+' (installed: '+(res.display_version||'v1.5.2')+'). Click Pull & Update to install.';
-        }else{
-          if(msg)msg.textContent='✓ Up to date ('+(res.display_version||'v1.5.2')+').';
-        }
-      }catch(e){if(msg)msg.textContent='Check failed: '+e.message;}
-    };
+  async function saveUpdateAndHardwarePrefs(){
+    const msg=$('ms-update-status-msg');
+    try{
+      const res=await api.request('/api/system/update_preferences',{auto_pull_updates:$('chk-ms-auto-pull-updates')?$('chk-ms-auto-pull-updates').checked:true,low_spec_mode:$('chk-ms-low-spec-mode')?$('chk-ms-low-spec-mode').checked:false});
+      if(res&&res.ok&&msg)msg.textContent='✓ Saved preferences: Auto-Update '+(res.link.auto_pull_updates?'ON':'OFF')+' · Low-Memory Mode '+(res.link.low_spec_mode?'ON':'OFF')+'.';
+    }catch(e){if(msg)msg.textContent='Could not save preference: '+e.message;}
   }
-  if($('btn-ms-pull-update')){
-    $('btn-ms-pull-update').onclick=async()=>{
-      const msg=$('ms-update-status-msg');
-      if(msg)msg.textContent='Pulling latest Anchor update & syncing 20 bundled Foundry skills…';
-      try{
-        const res=await api.request('/api/system/pull_update',{restart_service:false});
-        if(res && res.display_version){
-          if($('setup-version-pill'))$('setup-version-pill').textContent=res.display_version;
-          if($('ms-current-version-label'))$('ms-current-version-label').textContent=res.display_version;
-        }
-        if(msg)msg.textContent=(res && res.ok ? '✓ Updated to '+(res.display_version||'latest')+' ('+(res.method||'git')+') · Skills synced: '+((res.skills_synced||[]).length) : '⚠ Update status: '+((res&&res.errors||[]).join('; ')||'check logs'));
-      }catch(e){if(msg)msg.textContent='Update failed: '+e.message;}
-    };
-  }
-  if($('btn-ms-register')){
-    $('btn-ms-register').onclick=async()=>{
-      const msg=$('ms-update-status-msg');
-      try{
-        const res=await api.request('/api/mothership/register',{
-          owner:$('ms-reg-owner')?$('ms-reg-owner').value:'',
-          pseudonym:$('ms-reg-pseudonym')?$('ms-reg-pseudonym').value:'',
-          tailscale_url:$('ms-reg-tailscale-url')?$('ms-reg-tailscale-url').value:'',
-          platform:$('ms-reg-platform')?$('ms-reg-platform').value:'windows',
-          github_repo:$('ms-reg-github-repo')?$('ms-reg-github-repo').value:'GWL-John/Anchor'
-        });
-        if(res && res.registry && Array.isArray(res.registry.motherships))renderMothershipRegistryList(res.registry.motherships);
-        if(msg)msg.textContent='✓ Registered Mother Ship ('+((res.entry&&res.entry.id)||'saved')+') in mothership_registry.json.';
-      }catch(e){if(msg)msg.textContent='Registration failed: '+e.message;}
-    };
-  }
-  if($('btn-ms-push-update')){
-    $('btn-ms-push-update').onclick=async()=>{
-      const msg=$('ms-update-status-msg');
-      if(msg)msg.textContent='Pushing latest Anchor release to registered Mother Ships…';
-      try{
-        const res=await api.request('/api/mothership/push_update',{push_git_first:true});
-        const count=Array.isArray(res.notified)?res.notified.length:0;
-        if(msg)msg.textContent='✓ Push completed (v'+(res.version||'1.5.2')+') · Processed '+count+' registered Mother Ship(s).';
-        loadMothershipUpdateAndRegistry();
-      }catch(e){if(msg)msg.textContent='Push failed: '+e.message;}
-    };
-  }
+  if($('chk-ms-auto-pull-updates'))$('chk-ms-auto-pull-updates').onchange=saveUpdateAndHardwarePrefs;
+  if($('chk-ms-low-spec-mode'))$('chk-ms-low-spec-mode').onchange=saveUpdateAndHardwarePrefs;
+  if($('btn-setup-accept-license'))$('btn-setup-accept-license').onclick=async()=>{
+    const chk=$('chk-setup-gwl-license'),lmsg=$('setup-gwl-license-msg');
+    if(!chk||!chk.checked){if(lmsg)lmsg.textContent='⚠ Please check the Ghost World Labs License box first.';return;}
+    const handle=($('ms-reg-pseudonym')&&$('ms-reg-pseudonym').value.trim())||($('host-sec-username')&&$('host-sec-username').value.trim())||'Collaborator';
+    try{const res=await api.request('/api/website/license/accept',{pseudonym_or_handle:handle,accepted_non_resale:true,intended_use:'personal_or_research'});if(res&&res.ok){if(lmsg)lmsg.textContent='✓ Ghost World Labs License acknowledged ('+res.token_id+')!';loadMothershipUpdateAndRegistry();}}catch(e){if(lmsg)lmsg.textContent='License save failed: '+e.message;}
+  };
+  if($('btn-ms-check-update'))$('btn-ms-check-update').onclick=async()=>{
+    const msg=$('ms-update-status-msg');if(msg)msg.textContent='Checking GitHub & Mother Ship registry for updates…';
+    try{const res=await fetch('/api/system/check_update',{credentials:'same-origin'}).then(r=>r.json());if(msg)msg.textContent=res.update_available?'⬆ Update available: '+(res.remote_version||res.remote_head||'latest')+' (installed: '+(res.display_version||'v1.5.5')+'). Click Pull & Update to install.':'✓ Up to date ('+(res.display_version||'v1.5.5')+').';}catch(e){if(msg)msg.textContent='Check failed: '+e.message;}
+  };
+  if($('btn-ms-pull-update'))$('btn-ms-pull-update').onclick=async()=>{
+    const msg=$('ms-update-status-msg');if(msg)msg.textContent='Pulling latest Anchor update & syncing 20 bundled Foundry skills…';
+    try{const res=await api.request('/api/system/pull_update',{restart_service:false});if(res&&res.display_version){if($('setup-version-pill'))$('setup-version-pill').textContent=res.display_version;if($('ms-current-version-label'))$('ms-current-version-label').textContent=res.display_version;}if(msg)msg.textContent=(res&&res.ok?'✓ Updated to '+(res.display_version||'latest')+' ('+(res.method||'git')+') · Skills synced: '+((res.skills_synced||[]).length):'⚠ Update status: '+((res&&res.errors||[]).join('; ')||'check logs'));}catch(e){if(msg)msg.textContent='Update failed: '+e.message;}
+  };
+  if($('btn-ms-register'))$('btn-ms-register').onclick=async()=>{
+    const msg=$('ms-update-status-msg');
+    try{const res=await api.request('/api/mothership/register',{owner:$('ms-reg-owner')?$('ms-reg-owner').value:'',pseudonym:$('ms-reg-pseudonym')?$('ms-reg-pseudonym').value:'',tailscale_url:$('ms-reg-tailscale-url')?$('ms-reg-tailscale-url').value:'',platform:$('ms-reg-platform')?$('ms-reg-platform').value:'windows',github_repo:$('ms-reg-github-repo')?$('ms-reg-github-repo').value:'GWL-John/Anchor'});if(res&&res.registry&&Array.isArray(res.registry.motherships))renderMothershipRegistryList(res.registry.motherships);if(msg)msg.textContent='✓ Registered Mother Ship ('+((res.entry&&res.entry.id)||'saved')+') in mothership_registry.json.';}catch(e){if(msg)msg.textContent='Registration failed: '+e.message;}
+  };
+  if($('btn-ms-push-update'))$('btn-ms-push-update').onclick=async()=>{
+    const msg=$('ms-update-status-msg');if(msg)msg.textContent='Pushing latest Anchor release to registered Mother Ships…';
+    try{const res=await api.request('/api/mothership/push_update',{push_git_first:true});const count=Array.isArray(res.notified)?res.notified.length:0;if(msg)msg.textContent='✓ Push completed (v'+(res.version||'1.5.5')+') · Processed '+count+' registered Mother Ship(s).';loadMothershipUpdateAndRegistry();}catch(e){if(msg)msg.textContent='Push failed: '+e.message;}
+  };
   renderWave3All();
   const reqSec=new URLSearchParams(location.search).get('section') || (location.hash?location.hash.replace('#',''):'');
   api.request('/api/provider-setup').then(value=>{
     render(value);
     if(!userPickedSection){
-      if(reqSec && ['host','providers','chart','comms'].includes(reqSec)){
-        section(reqSec);
-      }else{
-        section(value.host.configured?'providers':'host');
-      }
+      if(reqSec && ['host','providers','provider-detail','chart','comms'].includes(reqSec))section(reqSec);
+      else section(value.host.configured?'providers':'host');
     }
     const conns=Array.isArray(value && value.connections)?value.connections:[];
     if(!coldAutoRefreshDone && conns.length>0 && conns.every(c=>!c.observed_at && c.auth==='unknown')){
@@ -1461,5 +1431,15 @@
         if($('refresh-message'))$('refresh-message').textContent='✓ Synced live sign-in status across installed CLIs.';
       }).catch(()=>{});
     }
-  }).catch(error=>$('setup-message').textContent=error.message);
+  }).catch(error=>{
+    $('setup-message').textContent=error.message;
+    $('setup-message').className='error';
+    const frontierPill=$('setup-frontier-model-pill');
+    if(frontierPill){
+      frontierPill.hidden=false;
+      frontierPill.className='w3-badge w3-badge-amber';
+      frontierPill.removeAttribute('data-provider-model');
+      frontierPill.textContent='⚠ Provider State: '+(error.badge || (error.unknown_state ? 'UNKNOWN' : 'UNAVAILABLE'));
+    }
+  });
 })();

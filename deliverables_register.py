@@ -197,7 +197,8 @@ def _insert_row_top(text: str, row: str) -> str:
 
 
 def register(effort_dir, what, where, *, date=None, step=None,
-             project_folder=None, notify=True) -> dict:
+             project_folder=None, notify=True, instruction=None,
+             batch_id=None) -> dict:
     """Append ONE row to ``<effort_dir>/DELIVERABLES.md`` — idempotent, locked,
     atomic, never raises.
 
@@ -239,10 +240,10 @@ def register(effort_dir, what, where, *, date=None, step=None,
                     return {"written": False, "reason": "dup"}
             else:
                 text = HEADER + "\n" + HEADER_SEP + "\n"
+            date_cell = _norm_cell(date) or time.strftime("%Y-%m-%d")
+            step_cell = active_step(effort_dir, hint=step)
             row = "| %s | %s | %s | %s |\n" % (
-                what_n, where_n,
-                _norm_cell(date) or time.strftime("%Y-%m-%d"),
-                active_step(effort_dir, hint=step))
+                what_n, where_n, date_cell, step_cell)
             new_text = _insert_row_top(text, row)
             fd, tmp = tempfile.mkstemp(prefix=".deliverables-", suffix=".tmp",
                                        dir=str(d))
@@ -258,6 +259,14 @@ def register(effort_dir, what, where, *, date=None, step=None,
                 except OSError:
                     pass
                 raise
+        try:
+            from steward_cockpit import deliverable_shelves as _ds
+            _ds.record_registered_deliverable(
+                effort_dir, what=what_n, where=where_n, step=step_cell,
+                date=date_cell, notify=notify, instruction=instruction, batch_id=batch_id,
+            )
+        except Exception:
+            pass
         if notify:                   # a caller that announces several rows in ONE line passes notify=False (W2)
             notify_receipt(effort_dir)
             if re.match(r"^(?:[\u2605\u2b50]\s*)?(?:START\s+HERE|FOR\s+REVIEW|AWAITING\s+REVIEW|NEEDS\s+REVIEW|CURRENT)\b", what_n, re.I):

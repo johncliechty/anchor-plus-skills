@@ -8,6 +8,14 @@
    page with the receipt kept; a send from a tab older than the server renews the page with the draft kept. */
 (function () {
   'use strict';
+  var _dlgMsgSeq = 0;
+  function mintClientMsgId(prefix) {
+    _dlgMsgSeq += 1;
+    var r = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+      ? crypto.randomUUID()
+      : (Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10) + '-' + _dlgMsgSeq);
+    return (prefix || 'cmsg') + '-' + r;
+  }
   function init(o) {
     var $ = function (s, r) { return (r || document).querySelector(s); };
     var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
@@ -238,13 +246,29 @@
       })();
     }
     function send(text, goal, list, btn, box, DK) {
-      if (box && typeof box._stopDictation === 'function') { try { box._stopDictation(); } catch (e) {} }
+      if (box && typeof box._bumpDictationEpoch === 'function') { try { box._bumpDictationEpoch(); } catch (e) {} }
+      if (box && typeof box._stopDictation === 'function') { try { box._stopDictation({ discardPending: true }); } catch (e) {} }
       if (box) box._composing = false;
+      var clientMsgId = (box && box._pendingClientMsgId) ? box._pendingClientMsgId : mintClientMsgId('say');
+      if (box) box._pendingClientMsgId = '';
       btn.disabled = true; btn.textContent = 'Thinking…';
+      var postSayOnce = function () {
+        return fetch('/api/steward/say', {
+          method: 'POST',
+          headers: headers(),
+          body: JSON.stringify({ pid: PID, dir: DIR, text: text, goal: goal || undefined, client_msg_id: clientMsgId })
+        });
+      };
       (live.polling ? Promise.resolve() : primeSeq()).then(function () {
-        return fetch('/api/steward/say', { method: 'POST', headers: headers(), body: JSON.stringify({ pid: PID, dir: DIR, text: text, goal: goal || undefined }) });
+        return postSayOnce().catch(function () { return postSayOnce(); });
       })
-        .then(asJson)
+        .then(function (r) {
+          var httpOk = !!r.ok;
+          return asJson(r).then(function (j) {
+            if (j && typeof j === 'object' && !httpOk && j.ok === undefined) j.ok = false;
+            return j;
+          });
+        })
         .then(function (j) {
           btn.disabled = false; btn.textContent = 'Send';
           // W4 (2026-10-08): a page that places the record in itself (o.onRecord) and waits to reload for a new build
@@ -255,15 +279,16 @@
             keep(stale, true, null);
             location.reload(); return;
           }
-          if (!j || j.ok === false) {
+          if (!j || !j.ok) {
             var why = (j && (j.say || j.receipt || j.error || j.message)) || 'No answer came back — nothing was done.';
             if (j && j.undo) {   // a verb that landed in part: the refusal and its undo are his
               if (o.onRecord) { o.onRecord(why, j.undo, true); return; }
               keep(why, true, j.undo); location.reload(); return;
             }
-            receipt(why, true); live.target = list; live.goal = goal || null; appendLine('sys', 'Not sent — ' + why, 'dim'); live.target = null; live.goal = null; return;
+            receipt(/^not sent\b/i.test(why) ? why : ('Not sent — ' + why), true); live.target = list; live.goal = goal || null; appendLine('sys', 'Not sent — ' + why, 'dim'); live.target = null; live.goal = null; return;
           }
           try { if (DK) localStorage.removeItem(DK); } catch (e) {}
+          if (box && typeof box._clearServerDraft === 'function') { try { box._clearServerDraft(); } catch (e) {} }
           if (j.campaign_act) {   // a Campaign verb or fast Steward answer: shown immediately in the dialogue
             live.target = list; live.goal = goal || null; live.skipJohn = text;
             appendLine('you', text); var stPair = appendLine('st', j.say || j.receipt || 'Done.'); each(stPair, md);
@@ -508,6 +533,13 @@
     var tok = '';
     try { tok = localStorage.getItem('anchor_token') || ''; } catch (e) {}
     var fullUrl = url;
+    if (fullUrl.indexOf('/api/steward/deliverable-file') === 0 &&
+        fullUrl.indexOf('download=1') < 0 &&
+        fullUrl.indexOf('raw=1') < 0 &&
+        fullUrl.indexOf('scrollview=') < 0 &&
+        /path=[^&]*\.(?:pdf|html?)(?:[&#]|$)/i.test(fullUrl)) {
+      fullUrl += (fullUrl.indexOf('?') >= 0 ? '&' : '?') + 'scrollview=1';
+    }
     if (tok && fullUrl.indexOf('token=') < 0 && fullUrl.indexOf('/api/') === 0) {
       fullUrl += (fullUrl.indexOf('?') >= 0 ? '&' : '?') + 'token=' + encodeURIComponent(tok);
     }
@@ -788,14 +820,157 @@
     });
   }
 
-  function wireCaveComposerButtons() {
-    ensureCaveEnhanceStyles();
-    var exSay = document.getElementById('exSay') || document.getElementById('say');
-    var exSend = document.getElementById('exSend') || document.getElementById('sendBtn');
-    if (!exSay) return;
+  function wireSingleCaveComposer(exSay, exSend) {
+    if (!exSay || exSay._w3ComposerWired) return;
+    exSay._w3ComposerWired = true;
     wireSpellcheckOnTextarea(exSay);
+    var state = exSay._composerState || { dictation_epoch: 0 };
+    exSay._composerState = state;
+    exSay.dataset.dictationEpoch = String(state.dictation_epoch);
+    exSay.dataset.draftBadge = exSay.dataset.draftBadge || 'EMPTY';
+    function bumpEpoch() {
+      state.dictation_epoch += 1;
+      exSay.dataset.dictationEpoch = String(state.dictation_epoch);
+      return state.dictation_epoch;
+    }
+    exSay._bumpDictationEpoch = bumpEpoch;
+
+    var isStarChart = (exSay.id === 'exSay') || (typeof location !== 'undefined' && /^\/campaign\b/.test(location.pathname || ''));
+    var surfaceName = isStarChart ? 'star_chart' : 'cave_say';
+    var localKey = isStarChart
+      ? ('anchor:draft:campaign:' + ((window.ANCHOR_BOOT && window.ANCHOR_BOOT.campaign_pid) || ''))
+      : 'anchor:draft:highseat';
+    exSay._localDraftKey = localKey;
+
+    var userEdited = false, draftDirty = false, lastSaved = null, draftTimer = null, clearingNow = false;
+    function flushServerDraft(opts) {
+      opts = opts || {};
+      if (clearingNow) return Promise.resolve();
+      var val = String(exSay.value || '');
+      if (opts.unload && !draftDirty) return Promise.resolve();
+      if (!opts.force && !draftDirty && val === lastSaved) return Promise.resolve();
+      draftDirty = false;
+      lastSaved = val;
+      var bodyStr = JSON.stringify({ surface: surfaceName, draft: val });
+      var hdrs = Object.assign({ 'Content-Type': 'application/json' }, authHeaders());
+      return fetch('/api/steward/drafts?surface=' + encodeURIComponent(surfaceName), {
+        method: 'POST',
+        headers: hdrs,
+        credentials: 'same-origin',
+        keepalive: !!opts.keepalive,
+        body: bodyStr
+      }).then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (j) {
+          if (j && j.unknown_state) exSay.dataset.draftBadge = 'UNKNOWN';
+          else if (r.ok) exSay.dataset.draftBadge = val ? 'SAVED' : 'EMPTY';
+          return j;
+        });
+      }).catch(function () {
+        if (opts.keepalive && typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+          try { navigator.sendBeacon('/api/steward/drafts?surface=' + encodeURIComponent(surfaceName), new Blob([bodyStr], { type: 'application/json' })); } catch (e) {}
+        }
+      });
+    }
+    function clearServerDraft() {
+      clearTimeout(draftTimer);
+      draftDirty = false;
+      lastSaved = '';
+      try { if (localKey) localStorage.removeItem(localKey); } catch (e) {}
+      return fetch('/api/steward/drafts?surface=' + encodeURIComponent(surfaceName), {
+        method: 'DELETE',
+        headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+        credentials: 'same-origin',
+        keepalive: true
+      }).then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (j) {
+          if ((j && j.unknown_state) || r.status >= 500 || !r.ok) {
+            exSay.dataset.draftBadge = 'UNKNOWN';
+            exSay.dataset.draftStatusKind = (j && j.status_kind) || 'backing-store-unreadable';
+            return j;
+          }
+          exSay.dataset.draftBadge = 'EMPTY';
+          exSay.dataset.draftStatusKind = (j && j.status_kind) || 'empty-but-valid';
+          return j;
+        });
+      }).catch(function () {});
+    }
+    exSay._clearServerDraft = clearServerDraft;
+
+    exSay.addEventListener('input', function () {
+      if (clearingNow) return;
+      userEdited = true;
+      draftDirty = true;
+      clearTimeout(draftTimer);
+      draftTimer = setTimeout(function () { flushServerDraft({ keepalive: false }); }, 220);
+    });
+    exSay.addEventListener('blur', function () { if (draftDirty) flushServerDraft({ keepalive: true }); });
+    var onUnload = function () {
+      clearTimeout(draftTimer);
+      if (draftDirty) flushServerDraft({ keepalive: true, unload: true });
+    };
+    window.addEventListener('beforeunload', onUnload);
+    window.addEventListener('pagehide', onUnload);
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'hidden') onUnload();
+    });
+    fetch('/api/steward/drafts?surface=' + encodeURIComponent(surfaceName), {
+      headers: authHeaders(),
+      credentials: 'same-origin',
+      cache: 'no-store'
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        if (j && j.unknown_state) { exSay.dataset.draftBadge = 'UNKNOWN'; return; }
+        if (!r.ok) return;
+        var d = (j && typeof j.draft === 'string') ? j.draft : '';
+        if (!userEdited) {
+          if (d && !String(exSay.value || '').trim()) {
+            exSay.value = d;
+            lastSaved = d;
+            exSay.dataset.draftBadge = 'SAVED';
+            try { if (localKey) localStorage.setItem(localKey, d); } catch (e) {}
+            fitComposer(exSay);
+          } else if (!d && !String(exSay.value || '').trim()) {
+            exSay.dataset.draftBadge = 'EMPTY';
+          }
+        }
+      });
+    }).catch(function () {});
+
     var host = exSend ? exSend.parentElement : exSay.parentElement;
-    if (!host || !exSend || host.querySelector('[data-cave-dictate-btn]')) return;
+    if (!host || !exSend) return;
+
+    var clearBtn = host.querySelector('[data-clear-draft]');
+    if (!clearBtn) {
+      clearBtn = document.createElement('button');
+      clearBtn.type = 'button';
+      clearBtn.className = 'cave-voice-btn clear-draft-btn';
+      clearBtn.setAttribute('data-clear-draft', '1');
+      clearBtn.textContent = 'Clear';
+      clearBtn.title = 'Clear unsent instruction draft';
+      host.insertBefore(clearBtn, exSend);
+    }
+    if (!clearBtn._w3ClearWired) {
+      clearBtn._w3ClearWired = true;
+      clearBtn.addEventListener('click', function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        userEdited = true;
+        bumpEpoch();
+        if (typeof exSay._stopDictation === 'function') {
+          try { exSay._stopDictation({ discardPending: true }); } catch (e) {}
+        }
+        exSay._composing = false;
+        clearingNow = true;
+        exSay.value = '';
+        fitComposer(exSay);
+        try { exSay.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
+        clearingNow = false;
+        clearServerDraft();
+        exSay.focus();
+      });
+    }
+
+    if (host.querySelector('[data-cave-dictate-btn]')) return;
 
     var dictBtn = document.createElement('button');
     dictBtn.type = 'button';
@@ -838,7 +1013,8 @@
       }
       return btoa(binary);
     }
-    function appendChunk(txt) {
+    function appendChunk(txt, reqEpoch) {
+      if (reqEpoch !== undefined && reqEpoch !== state.dictation_epoch) return;
       var norm = String(txt || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ');
       if (!norm) return;
       var now = Date.now();
@@ -860,51 +1036,69 @@
       pcmFrames = []; speechDetected = false; speechStartTs = 0;
       var b64 = encodeCaveWav16kBase64(frames, rate);
       if (!b64) return Promise.resolve();
+      var reqEpoch = state.dictation_epoch;
+      var reqMsgId = mintClientMsgId('dict');
       if (active) dictBtn.textContent = '⏳ Transcribing…';
       return fetch('/api/steward/dictate', {
         method: 'POST',
         headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
-        body: JSON.stringify({ action: 'transcribe', audio_b64: b64 })
+        body: JSON.stringify({ action: 'transcribe', audio_b64: b64, dictation_epoch: reqEpoch, client_msg_id: reqMsgId })
       }).then(function (r) { return r.json(); }).then(function (j) {
-        if (j && j.text) appendChunk(j.text);
+        if (reqEpoch !== state.dictation_epoch) return;
+        if (j && j.text) appendChunk(j.text, reqEpoch);
       }).catch(function () {}).finally(function () {
-        if (active) dictBtn.textContent = '⏹ Listening…';
+        if (active && reqEpoch === state.dictation_epoch) dictBtn.textContent = '⏹ Listening…';
       });
     }
+    exSay._dispatchFencedTranscribe = function (audioB64) {
+      var reqEpoch = state.dictation_epoch;
+      var reqMsgId = mintClientMsgId('dict');
+      return fetch('/api/steward/dictate', {
+        method: 'POST',
+        headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+        body: JSON.stringify({ action: 'transcribe', audio_b64: audioB64, dictation_epoch: reqEpoch, client_msg_id: reqMsgId })
+      }).then(function (r) { return r.json(); }).then(function (j) {
+        if (reqEpoch !== state.dictation_epoch) return { fenced: true, reqEpoch: reqEpoch, currentEpoch: state.dictation_epoch };
+        if (j && j.text) appendChunk(j.text, reqEpoch);
+        return { fenced: false, text: (j && j.text) || '' };
+      });
+    };
     function teardownCaveAudio() {
       if (audioProcessor) { try { audioProcessor.onaudioprocess = null; audioProcessor.disconnect(); } catch (e) {} audioProcessor = null; }
       if (audioSource) { try { audioSource.disconnect(); } catch (e) {} audioSource = null; }
       if (audioStream) { try { audioStream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {} audioStream = null; }
       if (audioCtx) { try { audioCtx.close(); } catch (e) {} audioCtx = null; }
     }
-    function stopRec() {
+    function stopRec(opts) {
+      opts = opts || {};
+      var wasActive = !!(active || pollT || recog || audioCtx);
       active = false;
       if (restartT) { clearTimeout(restartT); restartT = null; }
       if (pollT) { clearInterval(pollT); pollT = null; }
-      flushCaveAudio();
+      if (opts.discardPending) {
+        pcmFrames = []; preRollFrames = []; speechDetected = false; speechStartTs = 0;
+      } else if (wasActive) {
+        flushCaveAudio();
+      }
       teardownCaveAudio();
       dictBtn.classList.remove('recording');
       dictBtn.textContent = '🎤 Dictate';
       if (recog) { try { recog.onend = null; recog.onerror = null; recog.onresult = null; recog.stop(); } catch (e) {} recog = null; }
       exSay._composing = false;
-      fetch('/api/steward/dictate', {
-        method: 'POST',
-        headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
-        body: JSON.stringify({ action: 'stop' })
-      }).catch(function () {});
+      if (wasActive) {
+        fetch('/api/steward/dictate', {
+          method: 'POST',
+          headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+          body: JSON.stringify({ action: 'stop', dictation_epoch: state.dictation_epoch })
+        }).catch(function () {});
+      }
     }
     exSay._stopDictation = stopRec;
-    exSay.addEventListener('keydown', function (ev) {
-      if ((ev.key === 'Enter' || ev.keyCode === 13) && !ev.shiftKey && !ev.isComposing && ev.keyCode !== 229) {
-        if (active) stopRec();
-        exSay._composing = false;
-      }
-    }, true);
-    function startCaveMic() {
+    function startCaveMic(captureEpoch) {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return Promise.resolve(false);
       return navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
         .then(function (stream) {
-          if (!active) { stream.getTracks().forEach(function (t) { t.stop(); }); return false; }
+          if (!active || captureEpoch !== state.dictation_epoch) { stream.getTracks().forEach(function (t) { t.stop(); }); return false; }
           audioStream = stream;
           var Ctx = window.AudioContext || window.webkitAudioContext;
           audioCtx = new Ctx();
@@ -917,7 +1111,7 @@
           silent.connect(audioCtx.destination);
           pcmFrames = []; preRollFrames = []; speechDetected = false; speechStartTs = 0; lastVoiceTs = 0;
           audioProcessor.onaudioprocess = function (ev) {
-            if (!active) return;
+            if (!active || captureEpoch !== state.dictation_epoch) return;
             var input = ev.inputBuffer.getChannelData(0);
             var copy = new Float32Array(input.length);
             copy.set(input);
@@ -954,39 +1148,43 @@
       ev.preventDefault();
       ev.stopPropagation();
       if (active) { stopRec(); return; }
+      var startEpoch = state.dictation_epoch;
       active = true;
       dictBtn.classList.add('recording');
       dictBtn.textContent = '⏹ Listening…';
       exSay.focus();
-      startCaveMic().then(function (micOk) {
-        if (micOk || !active) return;
+      startCaveMic(startEpoch).then(function (micOk) {
+        if (micOk || !active || startEpoch !== state.dictation_epoch) return;
         fetch('/api/steward/dictate', {
           method: 'POST',
           headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
-          body: JSON.stringify({ action: 'start' })
+          body: JSON.stringify({ action: 'start', dictation_epoch: startEpoch })
         }).then(function (r) { return r.json(); }).then(function (j) {
+          if (startEpoch !== state.dictation_epoch) return;
           if (j && typeof j.last_seq === 'number') dictSeq = j.last_seq;
         }).catch(function () {});
         if (pollT) clearInterval(pollT);
         pollT = setInterval(function () {
           if (!active) return;
+          var reqEpoch = state.dictation_epoch;
           fetch('/api/steward/dictate', {
             method: 'POST',
             headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
-            body: JSON.stringify({ action: 'poll', since: dictSeq })
+            body: JSON.stringify({ action: 'poll', since: dictSeq, dictation_epoch: reqEpoch })
           }).then(function (r) { return r.json(); }).then(function (j) {
-            if (!active || !j) return;
+            if (!active || reqEpoch !== state.dictation_epoch || !j) return;
             if (Array.isArray(j.chunks)) {
               j.chunks.forEach(function (c) {
                 if (c && typeof c.seq === 'number' && c.seq > dictSeq) dictSeq = c.seq;
-                if (c && c.text) appendChunk(c.text);
+                if (c && c.text) appendChunk(c.text, reqEpoch);
               });
             }
           }).catch(function () {});
         }, 500);
       });
     };
-    host.insertBefore(dictBtn, exSend);
+    var insertBeforeRef = clearBtn || exSend;
+    host.insertBefore(dictBtn, insertBeforeRef);
 
     var talkBtn = document.createElement('button');
     talkBtn.type = 'button';
@@ -1013,7 +1211,15 @@
           });
       }
     };
-    host.insertBefore(talkBtn, exSend);
+    host.insertBefore(talkBtn, insertBeforeRef);
+  }
+
+  function wireCaveComposerButtons() {
+    ensureCaveEnhanceStyles();
+    var exSayEl = document.getElementById('exSay');
+    if (exSayEl) wireSingleCaveComposer(exSayEl, document.getElementById('exSend') || document.getElementById('sendBtn'));
+    var sayEl = document.getElementById('say');
+    if (sayEl) wireSingleCaveComposer(sayEl, document.getElementById('sendBtn') || document.getElementById('exSend'));
   }
 
   window.StewardDialogue = { init: init, authHeaders: authHeaders, loginBox: loginBox, fitComposer: fitComposer, wireSpellcheckOnTextarea: wireSpellcheckOnTextarea, openCaveDeliverableDrawer: openCaveDeliverableDrawer, speakConciseSummary: speakConciseSummary };

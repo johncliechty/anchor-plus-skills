@@ -426,6 +426,45 @@ def _save_acceptance_record(receipt: dict, store_dir=None) -> Path:
     return path
 
 
+def _license_clauses_sha256() -> str:
+    canonical = json.dumps(OPERATIVE_CLAUSES, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    return ":".join(f"{b:02x}" for b in hashlib.sha256(canonical).digest())
+
+
+def get_local_license_status(store_dir=None) -> dict:
+    """Return local Ghost World Labs Non-Resale License acceptance status (receipt & version checked)."""
+    doc = _load_acceptance_store(store_dir)
+    valid_receipts = []
+    for item in doc.get("acceptances", []):
+        if not isinstance(item, dict):
+            continue
+        if (
+            item.get("license_id") != LICENSE_ID
+            or item.get("version") != LICENSE_VERSION
+            or item.get("accepted_non_resale") is not True
+        ):
+            continue
+        expected_mac = _compute_receipt_hmac(item)
+        provided_mac = str(item.get("hmac_sha256") or "")
+        if provided_mac and hmac.compare_digest(expected_mac, provided_mac):
+            valid_receipts.append(item)
+    valid_receipts.sort(key=lambda r: str(r.get("accepted_at") or ""))
+    latest = valid_receipts[-1] if valid_receipts else None
+    return {
+        "accepted": latest is not None,
+        "license_id": LICENSE_ID,
+        "version": (latest or {}).get("version") or LICENSE_VERSION,
+        "title": "Ghost World Labs License — Version 1, Refinement 2",
+        "not_open_source": True,
+        "rights_reserved_notice": RIGHTS_RESERVED_NOTICE,
+        "accepted_at": (latest or {}).get("accepted_at") or "",
+        "pseudonym": (latest or {}).get("pseudonym") or "",
+        "intended_use": (latest or {}).get("intended_use") or "personal_or_research",
+        "token_id": (latest or {}).get("token_id") or "",
+        "license_doc_path": "docs/GHOST-WORLD-LAB-NON-RESALE-v1.md",
+    }
+
+
 def accept_non_resale_license(
     pseudonym_or_handle: str,
     accepted_non_resale: bool,
@@ -469,6 +508,7 @@ def accept_non_resale_license(
         "intended_use": use_val,
         "accepted_non_resale": True,
         "accepted_at": now_iso,
+        "license_text_sha256": _license_clauses_sha256(),
     }
     receipt["hmac_sha256"] = _compute_receipt_hmac(receipt)
     store_path = _save_acceptance_record(receipt, store_dir=store_dir)

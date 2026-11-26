@@ -416,6 +416,7 @@ const usageLine = (u) => {
 async function refresh() {
   try {
     const j = await (await fetch("/api/efforts")).json();
+    window._cockpitEfforts = Array.isArray(j.efforts) ? j.efforts : [];
     const q = new URLSearchParams(location.search);
     const singleRoot = Array.isArray(j.efforts) && j.efforts.length === 1 && !j.efforts[0].rel && !q.has("dir") && q.get("chooser") !== "1";
     if (j.project === "Campaign" || singleRoot) {
@@ -1054,6 +1055,13 @@ setInterval(loadShelves, 20000);
             const p = new URLSearchParams(location.search || "");
             p.set("v", "12");
             if (!p.get("pid") && window.STEWARD_PID) p.set("pid", window.STEWARD_PID);
+            if (!p.get("dir")) {
+              const openRel = (fsframe && fsframe.dataset && fsframe.dataset.rel) || "";
+              const effList = Array.isArray(window._cockpitEfforts) ? window._cockpitEfforts : [];
+              const anvilEff = effList.find(e => e && e.rel && e.has_anvil) || effList.find(e => e && e.rel);
+              const resolvedDir = openRel || (anvilEff ? anvilEff.rel : "");
+              if (resolvedDir) p.set("dir", resolvedDir);
+            }
             if (!p.get("token") && window.STEWARD_TOKEN) p.set("token", window.STEWARD_TOKEN);
             window.location.href = "/steward-static/anvil.html?" + p.toString();
             return;

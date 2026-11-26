@@ -706,11 +706,12 @@ def test_retired_cos_mockups_and_open_by_default_living_list_ui(isolated_data, m
     assert 'id="wlHzMonth">1<' in html
     assert 'id="wlHzStarChart">1<' in html
 
-    # 3) Parable-of-the-Oranges skill pre-staging + Open/Create AI Cockpit controls
-    for sk in comms.ORANGES_SKILLS:
-        assert f'data-wl-prestage-skill="{sk}"' in html
-    assert "Open AI Cockpit" in html
-    assert "+ Create AI Cockpit" in html
+    # 3) Parable-of-the-Oranges runs silently in the background (catalog preserved in data, zero noisy prestage/proposal banners on The List)
+    assert list(comms.ORANGES_SKILLS) == comms.load_working_list_spine()["oranges_skills_catalog"]
+    assert "wlOrangesPrestageBar" not in html
+    assert "wlAutoCheckedStrip" not in html
+    assert "wlProposalTray" not in html
+    assert 'data-wl-step-pill=' in html
 
     # 4) Single-open client-ephemeral accordion (_wlExpandedIds clears siblings; balanced <details> tags)
     assert "_wlExpandedIds" in js_src
@@ -1082,7 +1083,7 @@ def test_mba_rsvp_prime_irrational_icons_and_send_tile_display_name_auto_archive
     assert "cave-mail-2line-row" in html
     assert 'id="wlSpineHead" data-wl-toggle-spine="1"' in html
     assert 'id="wlHeaderPropsBadge"' in html
-    assert html.index('id="wlSpineBody"') < html.index('id="wlProposalTray"')
+    assert html.index('id="cosSuggestionsPanel"') < html.index('id="wlSpineBody"')
 
     # 3. Outbound email reconciles recipient display names even when bare envelope_addrs are present,
     #    and auto-archives dedicated "Send / Reply / Email" tiles while keeping archive proposals for multi-step tiles.

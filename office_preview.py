@@ -263,21 +263,25 @@ def xlsx_sheets(data: bytes) -> list:
 # ── HTML ───────────────────────────────────────────────────────────────────
 
 _CSS = """
-body{margin:0;background:#0f1117;color:#e2e4e9;font:15px/1.55 -apple-system,'Segoe UI',system-ui,sans-serif}
-.bar{position:sticky;top:0;background:#1a1d27;border-bottom:1px solid #2e3340;padding:10px 18px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-.bar b{font-size:15px}.bar .kind{color:#8b8f9a;font-size:12px}
-.bar a{color:#6c9cfc;text-decoration:none;border:1px solid #2e3340;border-radius:8px;padding:5px 10px;font-size:13px}
-.bar .note{color:#8b8f9a;font-size:12px;margin-left:auto}
-main{max-width:980px;margin:0 auto;padding:22px 18px 60px}
-h1,h2,h3,h4{margin:1.1em 0 .4em;line-height:1.25}h1{font-size:24px}h2{font-size:20px}h3{font-size:17px}
-p{margin:.45em 0;white-space:pre-wrap}li{margin:.2em 0}
+*,*::before,*::after{box-sizing:border-box}
+html,body{max-width:100%;overflow-x:hidden;margin:0}
+body{background:#0f1117;color:#e2e4e9;font:14.5px/1.55 -apple-system,'Segoe UI',system-ui,sans-serif;overflow-wrap:break-word}
+.bar{position:sticky;top:0;z-index:10;background:#1a1d27;border-bottom:1px solid #2e3340;padding:7px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;max-width:100%}
+.bar b{font-size:13.5px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}.bar .kind{color:#8b8f9a;font-size:11.5px;white-space:nowrap}
+.bar a,.bar button.zbtn{color:#6c9cfc;background:#21262d;text-decoration:none;border:1px solid #2e3340;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap}
+.bar button.zbtn{color:#e2e4e9}
+.bar .note{color:#8b8f9a;font-size:11.5px;margin-left:auto}
+@media(max-width:740px){.bar .note{display:none}}
+main{width:100%;max-width:980px;margin:0 auto;padding:16px 14px 48px;min-width:0}
+h1,h2,h3,h4{margin:1.1em 0 .4em;line-height:1.25;overflow-wrap:break-word}h1{font-size:22px}h2{font-size:18px}h3{font-size:16px}
+p{margin:.45em 0;white-space:pre-wrap;overflow-wrap:break-word}li{margin:.2em 0;overflow-wrap:break-word}
 table{border-collapse:collapse;margin:.8em 0;max-width:100%;display:block;overflow-x:auto}
-td,th{border:1px solid #2e3340;padding:4px 8px;font-size:13px;vertical-align:top;white-space:pre-wrap}
+td,th{border:1px solid #2e3340;padding:4px 8px;font-size:12.5px;vertical-align:top;white-space:pre-wrap;overflow-wrap:break-word}
 th{background:#232733;text-align:left}
-.slide{border:1px solid #2e3340;border-radius:10px;padding:14px 18px;margin:14px 0;background:#151922}
-.slide .n{color:#8b8f9a;font-size:12px;letter-spacing:.06em;text-transform:uppercase}
-.slide h2{margin:.2em 0 .5em;font-size:18px}.slide .notes{color:#8b8f9a;font-size:13px;border-top:1px dashed #2e3340;margin-top:10px;padding-top:8px}
-.sheet h2{font-size:16px;margin-top:1.6em}.dim{color:#8b8f9a;font-size:12px}
+.slide{border:1px solid #2e3340;border-radius:10px;padding:14px 16px;margin:14px 0;background:#151922;max-width:100%}
+.slide .n{color:#8b8f9a;font-size:11.5px;letter-spacing:.06em;text-transform:uppercase}
+.slide h2{margin:.2em 0 .5em;font-size:17px}.slide .notes{color:#8b8f9a;font-size:12.5px;border-top:1px dashed #2e3340;margin-top:10px;padding-top:8px}
+.sheet h2{font-size:16px;margin-top:1.4em}.dim{color:#8b8f9a;font-size:12px}
 """
 
 
@@ -398,7 +402,8 @@ def render_preview(data: bytes, filename: str, download_href: str = "", *, title
         "<title>%s</title><style>%s</style></head><body>"
         "<div class='bar'><b>%s</b><span class='kind'>%s · text preview</span>%s"
         "<span class='note'>Text, tables and slide notes only — no images, charts or formatting.</span></div>"
-        "<main>%s</main></body></html>"
+        "<main id='opMain'>%s</main>"
+        "</body></html>"
         % (_esc(heading), _CSS, _esc(heading), _esc(kind), dl, body)
     )
 

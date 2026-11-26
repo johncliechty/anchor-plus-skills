@@ -4,15 +4,24 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Anchor · Setup</title>
   <link rel="stylesheet" href="/static/provider-setup.css">
+  <style>
+    .pd-hdr{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding-bottom:14px;border-bottom:1px solid var(--ps-line);margin-bottom:16px}
+    .pd-title-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.pd-title-row h2{margin:0;font-size:21px}
+    .pd-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.pd-full{grid-column:1/-1}
+    .pd-kv{display:grid;grid-template-columns:155px 1fr;gap:6px 10px;font-size:13px;margin:8px 0}.pd-kv dt{color:var(--ps-muted)}.pd-kv dd{margin:0;font-weight:600}
+    .pd-ubars{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:8px 0}.pd-ubox{padding:10px 12px;border-radius:9px;border:1px solid var(--ps-line);background:#0b0f17}
+    @media(max-width:900px){.pd-grid,.pd-ubars,.pd-kv{grid-template-columns:1fr}}
+  </style>
 </head>
 <body class="provider-setup">
   <header class="setup-top">
     <span class="setup-brand">⚓ Anchor · Cave of Wonders</span>
-    <span class="w3-badge" id="setup-version-pill" style="font-family:Consolas,monospace;color:#f0b866;border:1px solid rgba(240,184,102,0.45);background:rgba(240,184,102,0.12);padding:4px 10px;border-radius:999px;font-weight:700;">v1.5.2</span>
+    <span class="w3-badge" id="setup-version-pill" style="font-family:Consolas,monospace;color:#f0b866;border:1px solid rgba(240,184,102,0.45);background:rgba(240,184,102,0.12);padding:4px 10px;border-radius:999px;font-weight:700;">v1.5.5</span>
     <span id="setup-host" class="muted"></span>
     <a href="/onboard-wizard" id="open-onboard-wizard-btn" style="background:linear-gradient(135deg,#f0b866,#d89638);color:#11131a;font-weight:700;padding:7px 14px;border-radius:8px;text-decoration:none;font-size:13px;margin-right:8px;">🧭 Onboarding &amp; Setup Wizard (or Sandbox Test Walkthrough)</a>
     <a href="/onboard-wizard?sandbox=1" id="open-onboard-sandbox-btn" style="background:rgba(240,184,102,0.14);border:1px solid rgba(240,184,102,0.45);color:#f0b866;font-weight:600;padding:7px 12px;border-radius:8px;text-decoration:none;font-size:12px;margin-right:8px;">🧪 Sandbox Walkthrough</a>
     <span class="w3-badge w3-badge-emerald" id="setup-top-status-pill">● Mother Ship Active · Nightly 02:00 + Live CLI</span>
+    <span class="w3-badge" id="setup-frontier-model-pill" hidden></span>
     <span class="muted small">✥ Drag bar to move window</span>
     <button id="setup-return" type="button">Return to Cave</button>
     <div class="setup-winctl" aria-label="Window controls">
@@ -108,13 +117,17 @@
         <article class="setup-card" id="mothership-update-registry-card" style="margin:14px 0">
           <div class="wave2-matrix-top">
             <h2>🚀 Anchor Version, Self-Update &amp; Mother Ship Registry (Push / Pull Updates)</h2>
-            <span class="w3-badge w3-badge-emerald" id="ms-current-version-label" style="font-family:Consolas,monospace;">v1.5.2</span>
+            <span class="w3-badge w3-badge-emerald" id="ms-current-version-label" style="font-family:Consolas,monospace;">v1.5.5</span>
           </div>
-          <p class="muted small">Check for or pull the latest Anchor release + 20 bundled Foundry skills on this machine, register your Mother Ship in the shared Anchor repository, or push updates from the Lead Mother Ship to registered collaborator Mother Ships.</p>
+          <p class="muted small">Check for or pull the latest Anchor release + 20 bundled Foundry skills on this machine, watch the signed Ghost World Labs website signal automatically in the background (no Tailscale needed), or enable Low-Memory Saver Mode for older laptops.</p>
           <div class="setup-actions" style="margin:10px 0;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
             <button type="button" id="btn-ms-check-update">🔍 Check for Updates</button>
             <button type="button" id="btn-ms-pull-update" style="background:linear-gradient(135deg,#4ade80,#22c55e);color:#09140e;font-weight:700;">⬆ Pull &amp; Update to Latest Version</button>
-            <span id="ms-update-status-msg" class="muted small">Installed version: v1.5.2</span>
+            <span id="ms-update-status-msg" class="muted small">Installed version: v1.5.5</span>
+          </div>
+          <div style="margin:10px 0;padding:10px 12px;border:1px solid rgba(255,255,255,0.08);border-radius:8px;display:flex;flex-direction:column;gap:8px;">
+            <label class="w3-checkbox-label" style="cursor:pointer;"><input type="checkbox" id="chk-ms-auto-pull-updates" checked> <strong>🌐 Automatic Website-Watched Version Updates:</strong> Watch <code>release-signal.json</code> online (Ed25519-signed) and automatically update Anchor + all 20 Foundry skills when idle</label>
+            <label class="w3-checkbox-label" style="cursor:pointer;"><input type="checkbox" id="chk-ms-low-spec-mode"> <strong>💻 Older Laptop / Low-Memory Mothership Mode:</strong> Cap hidden live panes to 2 and skip background Cave pre-warming (<span id="ms-hw-summary">detecting RAM &amp; cores…</span>)</label>
           </div>
           <hr style="border:0;border-top:1px solid rgba(255,255,255,0.08);margin:14px 0;">
           <h3 style="margin:6px 0 8px;">📋 Register Mother Ship in Anchor Repository (<code>mothership_registry.json</code>)</h3>
@@ -154,6 +167,19 @@
               <button type="button" id="btn-ms-push-update">🚀 Push Latest Anchor to Registered Mother Ships</button>
             </div>
             <div id="ms-registry-list" class="muted small" style="margin-top:8px;">Loading registered Mother Ships…</div>
+          </div>
+        </article>
+
+        <article class="setup-card" id="setup-gwl-license-card" style="margin:14px 0">
+          <div class="wave2-matrix-top">
+            <h2>📜 Ghost World Labs License Acknowledgement (Free Use · No Resale or Commercialization)</h2>
+            <span class="w3-badge" id="setup-gwl-license-badge">Checking…</span>
+          </div>
+          <p class="muted small"><strong>Ghost World Lab License — Version 1, Refinement 2 (<code>GHOST-WORLD-LAB-NON-RESALE-v1</code>):</strong> Free worldwide personal, academic/research, and internal use, private modification, and voluntary free sharing. <strong>All rights reserved — not open source:</strong> software resale, paid bundling, recurring version-use fees, or paid hosted commercialization requires Separate Written Permission from Ghost World Labs.</p>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px">
+            <label class="w3-checkbox-label" style="cursor:pointer;"><input type="checkbox" id="chk-setup-gwl-license"> I have read and agree to the Ghost World Labs License (Free Use · No Resale or Commercialization)</label>
+            <button type="button" class="btn-mini primary" id="btn-setup-accept-license">✓ Save License Acknowledgement</button>
+            <span id="setup-gwl-license-msg" class="muted small"></span>
           </div>
         </article>
 
@@ -759,9 +785,13 @@
           </article>
         </div>
       </section>
+      <section id="setup-section-provider-detail" hidden aria-label="Single-provider credentials, auto-discovery and usage">
+        <div id="provider-detail-root"></div>
+      </section>
     </main>
   </div>
   <script src="/static/provider-controls.js"></script>
+  <script src="/static/provider-detail-page.js"></script>
   <script src="/static/provider-setup.js"></script>
 </body>
 </html>

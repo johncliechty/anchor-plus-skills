@@ -32,24 +32,32 @@ ROADMAP_MJS = (_ecgberht_root() / "engine" / "roadmap.mjs").as_uri()
 WHO = "john"
 
 
-def _cli(project, *args):
+def _cli(project, *args, _healed=False):
     r = subprocess.run(["node", str(ECG), *args, "--project", str(project)], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
     try:
-        return json.loads(r.stdout or "{}")
+        out = json.loads(r.stdout or "{}")
     except Exception:
-        return {"ok": False, "error": "engine answered no json", "raw": (r.stdout or r.stderr)[:200]}
+        out = {"ok": False, "error": "engine answered no json", "raw": (r.stdout or r.stderr)[:200]}
+    if not out.get("ok") and out.get("error") == "roadmap_silent_rewrite" and not _healed:
+        _heal_roadmap_if_needed(project)
+        return _cli(project, *args, _healed=True)
+    return out
 
 
-def _spine_set(project, step_id, fields):
+def _spine_set(project, step_id, fields, _healed=False):
     js = ("import { appendRoadmapEventThroughSpine } from '%s';"
           "const r = appendRoadmapEventThroughSpine(%s, {kind:'step_set', step_id:%s, fields:%s});"
           "console.log(JSON.stringify({ok:r.ok, error:r.error||null}));") % (
         SPINE, json.dumps(str(project).replace("\\", "/")), json.dumps(step_id), json.dumps(fields))
     r = subprocess.run(["node", "--input-type=module", "-e", js], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
     try:
-        return json.loads(r.stdout.strip().splitlines()[-1])
+        out = json.loads(r.stdout.strip().splitlines()[-1])
     except Exception:
-        return {"ok": False, "error": (r.stderr or r.stdout)[:200] or "the spine answered nothing"}
+        out = {"ok": False, "error": (r.stderr or r.stdout)[:200] or "the spine answered nothing"}
+    if not out.get("ok") and out.get("error") == "roadmap_silent_rewrite" and not _healed:
+        _heal_roadmap_if_needed(project)
+        return _spine_set(project, step_id, fields, _healed=True)
+    return out
 
 
 def _projection(project):
@@ -389,7 +397,8 @@ def restore(project, step, navigation, seed=None):
 ACTS = {"move_tier", "rank", "rename", "date", "park", "unpark", "flag", "unflag", "tick", "add", "promote", "withdraw", "restore", "retag",
         "pace", "done_when", "place", "seat", "home", "new_goal", "guide", "not_now", "nudge_again", "seat_new",
         "resume", "resume_done", "if_then", "premortem", "premortem_skip", "premortem_ask",
-        "mark_done", "reopen_step", "schedule_date"}
+        "mark_done", "reopen_step", "schedule_date",
+        "archive_cockpit", "retire_cockpit", "restore_cockpit"}
 
 
 # ── the seats (2026-09-30, John's three levels): a goal's component on the desk ─────────────────────────────────────
@@ -767,24 +776,36 @@ def _heal_roadmap_if_needed(tdir):
         if rm_p.is_file():
             raw = json.loads(rm_p.read_text(encoding="utf-8"))
             if isinstance(raw, dict) and not raw.get("roadmap_events") and raw.get("roadmap_projection"):
+                raw.setdefault("schema", "ecgberht-roadmap-v0")
+                raw.setdefault("project_id", None)
+                raw.setdefault("as_of", "2026-10-15")
                 # Seed step_create events for synthetic/legacy roadmaps that only have roadmap_projection
                 evts = []
+                valid_statuses = {"proposed", "planned", "active", "waiting", "blocked", "done", "parked"}
                 for idx, st in enumerate(raw.get("roadmap_projection") or [], 1):
                     if not isinstance(st, dict) or not st.get("id"):
                         continue
                     st_copy = dict(st)
-                    if st_copy.get("status") == "pending":
-                        st_copy["status"] = "planned"
-                        st["status"] = "planned"
+                    cur_st = str(st_copy.get("status") or "planned").lower()
+                    if cur_st == "pending":
+                        cur_st = "planned"
+                    elif cur_st in ("in_progress", "running"):
+                        cur_st = "active"
+                    elif cur_st not in valid_statuses:
+                        cur_st = "planned"
+                    st_copy["status"] = cur_st
+                    st["status"] = cur_st
                     ev = {
                         "seq": idx,
                         "at": "2026-10-15",
                         "kind": "step_create",
                         "step_id": st_copy["id"],
+                        "name": st_copy.get("name") or st_copy["id"],
+                        "status": cur_st,
                     }
-                    for k, v in st_copy.items():
-                        if k != "id" and v is not None:
-                            ev[k] = v
+                    for k in ("done_when", "waiting_on", "ref", "tier", "area", "due", "pace"):
+                        if st_copy.get(k) is not None:
+                            ev[k] = st_copy[k]
                     evts.append(ev)
                 raw["roadmap_events"] = evts
                 rm_p.write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
@@ -1063,6 +1084,263 @@ def reopen_step(project, step="", target_dir="", target_step="", old_status="act
     return _ok("Reopened ‘%s’ (%s)" % (target_obj.get("name") or tsid, restore_st), reopened_step=tsid)
 
 
+def _park_idle_engines_for_dir(target_dir: str) -> None:
+    """Stop only idle Steward engines under ``target_dir`` (never kill a busy mid-turn worker)."""
+    try:
+        from . import steward_routes as _sr
+        norm = str(Path(target_dir).resolve())
+        with _sr.ENGINES_LOCK:
+            keys = [
+                k for k, eng in list(_sr.ENGINES.items())
+                if (k == norm or k.startswith(norm + os.sep) or k.startswith(norm + "||"))
+                and not (eng.alive() and (eng.busy or eng.queue))
+            ]
+            engs = [_sr.ENGINES.pop(k) for k in keys]
+        for eng in engs:
+            try:
+                eng.stop()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+def _lifecycle_cockpit(project, mode="archive", step="", ref="", pid="", effort_dir=""):
+    """Archive or retire an AI Cockpit (project or effort) from Cave of Wonders, with 1-click Undo."""
+    import rnd_registry as _rnd
+    import project_move as _pm
+    from urllib.parse import unquote as _unquote
+    from . import steward_campaign as _sc
+    from .campaign_parts import parse_ref
+
+    mode = "retire" if str(mode or "").strip().lower() == "retire" else "archive"
+    camp_root = Path(str(project)).resolve()
+    step_id = str(step or "").strip()
+    ref_str = str(ref or "").strip()
+    pid_str = str(pid or "").strip()
+    eff_rel = _unquote(str(effort_dir or "").strip()).strip("/\\")
+
+    s_obj = _step(project, step_id) if step_id else None
+    if isinstance(s_obj, dict) and not ref_str:
+        ref_str = str(s_obj.get("ref") or "").strip()
+        if not ref_str and s_obj.get("effort_dir"):
+            ed_p = Path(str(s_obj["effort_dir"]))
+            for cand_e in _rnd.list_projects(include_archived=True, include_future=True, include_retired=True):
+                fp = str(cand_e.get("folder_path") or "").strip()
+                if not fp:
+                    continue
+                fp_p = Path(fp).resolve()
+                try:
+                    ed_res = ed_p.resolve()
+                except OSError:
+                    continue
+                if ed_res == fp_p:
+                    pid_str = str(cand_e.get("id") or "")
+                    eff_rel = ""
+                    break
+                if fp_p in ed_res.parents:
+                    pid_str = str(cand_e.get("id") or "")
+                    eff_rel = str(ed_res.relative_to(fp_p)).replace("\\", "/")
+                    break
+
+    if ref_str:
+        pr = parse_ref(ref_str)
+        if pr and pr.get("kind") in ("project", "effort"):
+            pid_str = str(pr.get("pid") or pid_str)
+            if pr.get("kind") == "effort" and pr.get("sub"):
+                eff_rel = _unquote(str(pr.get("sub") or "")).strip("/\\")
+            elif pr.get("kind") == "project":
+                eff_rel = ""
+
+    ent = _rnd.get_project(pid_str) if pid_str else None
+    if not isinstance(ent, dict) and isinstance(s_obj, dict):
+        # Native Campaign component with no external project registry entry: unseat & withdraw on Campaign
+        old_seat = s_obj.get("seat") if s_obj.get("seat") in SEATS else None
+        old_pos = _seat_ids(project, old_seat).index(step_id) if (old_seat and step_id in _seat_ids(project, old_seat)) else 0
+        old_nav = s_obj.get("navigation")
+        if old_seat:
+            home(project, step_id)
+        if old_nav:
+            _spine_set(project, step_id, {"navigation": None})
+        verb_lbl = "Retired" if mode == "retire" else "Archived"
+        return _ok(
+            "%s ‘%s’ off the Cave of Wonders board" % (verb_lbl, s_obj.get("name") or step_id),
+            undo={
+                "act": "restore_cockpit",
+                "label": s_obj.get("name") or step_id,
+                "steps": [{"id": step_id, "seat": old_seat, "pos": old_pos, "navigation": old_nav}],
+            },
+        )
+
+    if not isinstance(ent, dict):
+        return _no("could not find that AI Cockpit in the registry")
+
+    proot = Path(str(ent.get("folder_path") or "")).resolve() if ent.get("folder_path") else None
+    if proot and proot == camp_root and not eff_rel:
+        return _no("the Campaign itself cannot be archived or retired")
+    if proot and proot == camp_root and eff_rel.lower() == "cave of wonders":
+        return _no("the Cave of Wonders cockpit cannot be archived or retired")
+    if proot and _pm.is_anchor_repo(proot) and not eff_rel:
+        return _no("Anchor's own repository cockpit cannot be archived or retired")
+
+    display_name = (
+        (s_obj.get("name") if isinstance(s_obj, dict) else None)
+        or (("%s · %s" % (ent.get("name") or pid_str[:8], eff_rel)) if eff_rel else (ent.get("name") or pid_str[:8]))
+    )
+
+    # Collect matching Campaign steps so we unseat + withdraw them cleanly and record exact Undo state
+    proj = _projection(project)
+    match_steps = []
+    for item in proj:
+        if not isinstance(item, dict) or _own_group(item) is not None:
+            continue
+        iid = str(item.get("id") or "")
+        iref = str(item.get("ref") or "").strip()
+        ipr = parse_ref(iref) if iref else None
+        matched = False
+        if step_id and iid == step_id:
+            matched = True
+        elif ipr and str(ipr.get("pid") or "") == pid_str:
+            if eff_rel:
+                if ipr.get("kind") == "effort" and _unquote(str(ipr.get("sub") or "")).strip("/\\") == eff_rel:
+                    matched = True
+            elif ipr.get("kind") == "project":
+                matched = True
+        if matched:
+            match_steps.append(item)
+
+    undo_steps = []
+    for ms in match_steps:
+        ms_id = str(ms.get("id") or "")
+        old_seat = ms.get("seat") if ms.get("seat") in SEATS else None
+        old_pos = _seat_ids(project, old_seat).index(ms_id) if (old_seat and ms_id in _seat_ids(project, old_seat)) else 0
+        old_nav = ms.get("navigation")
+        undo_steps.append({"id": ms_id, "seat": old_seat, "pos": old_pos, "navigation": old_nav})
+        if old_seat:
+            home(project, ms_id)
+        if old_nav:
+            _spine_set(project, ms_id, {"navigation": None})
+
+    if eff_rel:
+        if proot is None or not proot.is_dir():
+            return _no("project folder not found on disk")
+        try:
+            import paths as _paths
+            cdir_p = _paths.resolve_contained_path(proot, eff_rel, allow_missing=False)
+        except Exception:
+            return _no("effort folder not found")
+        if not cdir_p.is_dir():
+            return _no("effort folder not found")
+        _park_idle_engines_for_dir(str(cdir_p))
+        yard = proot / _sc.BONEYARD_DIRNAME
+        yard.mkdir(exist_ok=True)
+        dst = yard / cdir_p.name
+        in_place = False
+        if dst.exists():
+            _sc.retire_in_place(str(cdir_p), "%s from Cave of Wonders" % mode)
+            in_place = True
+        else:
+            import time as _time
+            moved = False
+            last_err = None
+            for _attempt in range(3):
+                try:
+                    cdir_p.rename(dst)
+                    moved = True
+                    break
+                except OSError as exc:
+                    last_err = exc
+                    _time.sleep(0.15)
+            if not moved:
+                _sc.retire_in_place(str(cdir_p), "folder in use at %s time: %s" % (mode, last_err))
+                in_place = True
+        verb_lbl = "Retired" if mode == "retire" else "Archived"
+        return _ok(
+            "%s ‘%s’ to the boneyard — undo restores it" % (verb_lbl, display_name),
+            undo={
+                "act": "restore_cockpit",
+                "kind": "effort",
+                "project_id": pid_str,
+                "effort_dir": eff_rel,
+                "in_place": in_place,
+                "label": display_name,
+                "steps": undo_steps,
+            },
+        )
+
+    old_state = str(ent.get("state") or "active")
+    if proot and proot.is_dir():
+        _park_idle_engines_for_dir(str(proot))
+    if mode == "retire":
+        _rnd.retire_project(pid_str)
+        verb_lbl = "Retired"
+    else:
+        _rnd.archive_project(pid_str)
+        verb_lbl = "Archived"
+    return _ok(
+        "%s ‘%s’ — moved to Archive (undo or Projects → Archived & Retired restores it)" % (verb_lbl, display_name),
+        undo={
+            "act": "restore_cockpit",
+            "kind": "project",
+            "project_id": pid_str,
+            "old_state": old_state,
+            "label": display_name,
+            "steps": undo_steps,
+        },
+    )
+
+
+def archive_cockpit(project, step="", ref="", pid="", effort_dir=""):
+    return _lifecycle_cockpit(project, mode="archive", step=step, ref=ref, pid=pid, effort_dir=effort_dir)
+
+
+def retire_cockpit(project, step="", ref="", pid="", effort_dir=""):
+    return _lifecycle_cockpit(project, mode="retire", step=step, ref=ref, pid=pid, effort_dir=effort_dir)
+
+
+def restore_cockpit(project, kind="project", pid="", effort_dir="", old_state="active", in_place=False, label="", steps=None):
+    """Restore an archived or retired AI Cockpit (project or effort) and its Campaign goal/seat placement."""
+    import rnd_registry as _rnd
+    from . import steward_campaign as _sc
+
+    pid_str = str(pid or "").strip()
+    eff_rel = str(effort_dir or "").strip().strip("/\\")
+    if kind == "effort" and pid_str and eff_rel:
+        ent = _rnd.get_project(pid_str)
+        if not isinstance(ent, dict) or not ent.get("folder_path"):
+            return _no("project not found in registry")
+        proot = Path(str(ent["folder_path"])).resolve()
+        dst = proot / Path(eff_rel).name
+        src = proot / _sc.BONEYARD_DIRNAME / Path(eff_rel).name
+        if dst.is_dir() and _sc.is_retired_in_place(str(dst)):
+            _sc.resurrect_in_place(str(dst))
+        elif src.is_dir() and not dst.exists():
+            src.rename(dst)
+    elif pid_str:
+        ent = _rnd.get_project(pid_str)
+        if not isinstance(ent, dict):
+            return _no("project not found in registry")
+        target_st = str(old_state or "active")
+        if target_st not in ("active", "future", "archived", "retired"):
+            target_st = "active"
+        if target_st == "active":
+            _rnd.reactivate_project(pid_str)
+        else:
+            _rnd.update_project(pid_str, state=target_st)
+
+    for st_info in (steps or []):
+        if not isinstance(st_info, dict) or not st_info.get("id"):
+            continue
+        sid = str(st_info["id"])
+        if isinstance(st_info.get("navigation"), dict):
+            _spine_set(project, sid, {"navigation": st_info["navigation"]})
+        if st_info.get("seat") in SEATS:
+            seat(project, sid, st_info["seat"], st_info.get("pos") or 0)
+
+    nm = str(label or "").strip() or (eff_rel or pid_str[:8] or "AI Cockpit")
+    return _ok("Restored ‘%s’" % nm)
+
+
 def schedule_date(project, step="", due="", target_dir="", target_step=""):
     """Wave 6b: Set or push a due date on either a project step (target_dir + target_step) or a Campaign step."""
     if isinstance(step, dict):
@@ -1166,6 +1444,12 @@ def act(project, body):
             return reopen_step(project, body.get("step"), body.get("target_dir"), body.get("target_step"), body.get("old_status"), body.get("old_seat"), body.get("old_seat_pos"))
         if a == "schedule_date":
             return schedule_date(project, body.get("step"), body.get("due"), body.get("target_dir"), body.get("target_step"))
+        if a == "archive_cockpit":
+            return archive_cockpit(project, body.get("step"), body.get("ref"), body.get("project_id") or body.get("target_pid"), body.get("effort_dir") or body.get("dir"))
+        if a == "retire_cockpit":
+            return retire_cockpit(project, body.get("step"), body.get("ref"), body.get("project_id") or body.get("target_pid"), body.get("effort_dir") or body.get("dir"))
+        if a == "restore_cockpit":
+            return restore_cockpit(project, body.get("kind") or "project", body.get("project_id") or body.get("target_pid"), body.get("effort_dir") or body.get("dir"), body.get("old_state") or "active", bool(body.get("in_place")), body.get("label") or "", body.get("steps"))
     except Exception as e:
         return _no("that did not go through: %s" % e)
     return _no("no such act")

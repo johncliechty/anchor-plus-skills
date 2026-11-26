@@ -42,6 +42,7 @@ import urllib.request
 
 import paths
 import provider_secrets
+import queue as _queue_mod
 import importlib as _importlib
 import scribe_engine as _scribe
 if "scribe_engine" in sys.modules:
@@ -84,9 +85,9 @@ class SendOutcomeUnknownError(Exception):
 
 #: Test seam: when set, called as ``hook(account, message)`` instead of the live Graph/SMTP transport and must
 #: return ``(transport_label, warning)`` or raise ProviderOutageError / SendOutcomeUnknownError.
-_SEND_TRANSPORT_HOOK = None
+_SEND_TRANSPORT_HOOK = globals().get("_SEND_TRANSPORT_HOOK")
 #: Test seam: when set, called as ``hook(cave_dir)`` (returning an engine with ``.say(prompt, human=True)``) or used directly if it exposes ``.say``.
-_CAVE_STEWARD_DISPATCH_HOOK = None
+_CAVE_STEWARD_DISPATCH_HOOK = globals().get("_CAVE_STEWARD_DISPATCH_HOOK")
 
 #: Wave 2 (2026-11-13) 5-state failure contract (`unknown != empty` strictly enforced).
 WAVE2_FAILURE_CONTRACT: dict[str, dict] = {
@@ -133,7 +134,86 @@ MAX_SPAM_UIDS = 500
 MAX_SPAM_SNAPSHOTS = 200
 MAX_SPAM_SNAPSHOT_DRAFTS_PER_UID = 20
 MAX_SPAM_SNAPSHOT_DRAFT_BODY_CHARS = 16384
+SPEED_RACER_QUEUE_MAX_ITEMS = 200
+SCRIBE_FIFO_MAX_CONCURRENCY = min(2, int(getattr(_scribe, "SCRIBE_MAX_CONCURRENT_LLM", 2)))
 STORE_LOCK_TIMEOUT_SEC = 2.0
+
+#: Wave 2 (2026-11-20) 5-row failure-state table for Scribe Queue & Instant Triage (`UNKNOWN` and `EMPTY` strictly separate).
+SCRIBE_TRIAGE_FAILURE_STATE_TABLE: dict[str, dict] = {
+    "dependency-missing": {
+        "status_code": 503,
+        "status_kind": "dependency-missing",
+        "failure_state": "dependency-missing",
+        "error_code": "dependency_missing",
+        "badge": "DEPENDENCY_MISSING",
+        "unknown_state": False,
+        "message": "Scribe LLM or Steward engine unavailable — existing draft and inbox state preserved.",
+    },
+    "dependency-slow-or-killed": {
+        "status_code": 504,
+        "status_kind": "dependency-slow-or-killed",
+        "failure_state": "dependency-slow-or-killed",
+        "error_code": "timeout_exceeded",
+        "badge": "TIMEOUT",
+        "unknown_state": False,
+        "message": "Scribe synthesis or store lock timed out — existing draft preserved; retry safely.",
+    },
+    "dependency-returns-garbage": {
+        "status_code": 400,
+        "llm_status_code": 502,
+        "status_kind": "dependency-returns-garbage",
+        "failure_state": "dependency-returns-garbage",
+        "error_code": "invalid_payload",
+        "badge": "REJECTED_GARBAGE",
+        "unknown_state": False,
+        "message": "Malformed triage/queue payload or invalid Scribe draft rejected — previous state preserved.",
+    },
+    "backing-store-unreadable": {
+        "status_code": 500,
+        "status_kind": "backing-store-unreadable",
+        "failure_state": "backing-store-unreadable",
+        "error_code": "store_unreadable",
+        "state": "unknown",
+        "badge": "UNKNOWN",
+        "unknown_state": True,
+        "message": "Scribe queue or triage store unreadable (UNKNOWN) — inspect Doctor; never treated as empty.",
+    },
+    "empty-but-valid": {
+        "status_code": 200,
+        "status_kind": "empty-but-valid",
+        "failure_state": "empty-but-valid",
+        "error_code": None,
+        "state": "empty",
+        "badge": "EMPTY",
+        "unknown_state": False,
+        "message": "Speed Racer Scribe queue clear (0 pending drafts) · Prime Inbox clear (0 unaddressed).",
+    },
+}
+
+
+def _scribe_triage_failure_dict(row_key: str, *, status_code: int | None = None, detail: str = "", **extra) -> dict:
+    row = dict(SCRIBE_TRIAGE_FAILURE_STATE_TABLE[row_key])
+    eff_code = int(status_code if status_code is not None else row["status_code"])
+    msg = str(extra.pop("message", "") or row["message"])
+    out: dict = {
+        "ok": row_key == "empty-but-valid",
+        "status_code": eff_code,
+        "status_kind": str(row["status_kind"]),
+        "failure_state": str(row["failure_state"]),
+        "badge": str(row["badge"]),
+        "unknown_state": bool(row["unknown_state"]),
+        "message": msg,
+    }
+    if row.get("error_code"):
+        out["error_code"] = str(row["error_code"])
+    if row.get("state"):
+        out["state"] = str(row["state"])
+    if row_key != "empty-but-valid":
+        out["error"] = msg
+    if detail:
+        out["detail"] = str(detail)[:300]
+    out.update(extra)
+    return out
 ORANGES_SKILLS: tuple[str, ...] = (
     "researchPrime",
     "Superjump",
@@ -2680,9 +2760,18 @@ def _is_protected_correspondent(
     )
 
 
-def load_triage_prefs() -> dict:
+def _triage_prefs_lock_path() -> Path:
     p = _triage_prefs_path()
-    base = {
+    return p.with_name(p.name + ".lock")
+
+
+def triage_prefs_lock(timeout_sec: float = STORE_LOCK_TIMEOUT_SEC):
+    """Exclusive cross-thread & cross-process lock for `.anchor/comms-triage-prefs.json`, decoupled from `COMMS_LOCK`."""
+    return paths.cross_process_lock(_triage_prefs_lock_path(), timeout_sec=timeout_sec)
+
+
+def _default_triage_prefs() -> dict:
+    return {
         "opened_uids": [],
         "seen_unopened_uids": [],
         "seen_opened_uids": [],
@@ -2698,8 +2787,32 @@ def load_triage_prefs() -> dict:
         "sender_scores": {},
         "acted_upon_emails": {},
         "unacted_uids": [],
+        "recent_triage_req_ids": [],
     }
-    raw, _st = _cached_read_json_file(p)
+
+
+def load_triage_prefs_state(*, bypass_cache: bool = False) -> tuple[dict, str]:
+    """Read `.anchor/comms-triage-prefs.json` distinguishing `empty`, `loaded`, and `unknown` (corrupt/unreadable)."""
+    p = _triage_prefs_path()
+    base = _default_triage_prefs()
+    if bypass_cache:
+        _invalidate_cached_json_file(p)
+        if not p.exists():
+            return base, "empty"
+        try:
+            txt = p.read_text(encoding="utf-8")
+            if not txt.strip():
+                return base, "empty"
+            raw = json.loads(txt)
+            if not isinstance(raw, dict):
+                return base, "unknown"
+            _st = "loaded"
+        except Exception:
+            return base, "unknown"
+    else:
+        raw, _st = _cached_read_json_file(p)
+        if _st == "unknown" or (_st == "loaded" and not isinstance(raw, dict)):
+            return base, "unknown"
     if _st == "loaded" and isinstance(raw, dict):
         for k in base:
             if k in raw and isinstance(raw[k], type(base[k])):
@@ -2716,7 +2829,13 @@ def load_triage_prefs() -> dict:
         if su and su not in norm_su:
             norm_su.append(su)
     base["spam_uids"] = norm_su
-    return base
+    has_any = any(bool(base.get(k)) for k in base if k != "recent_triage_req_ids")
+    return base, ("loaded" if has_any else "empty")
+
+
+def load_triage_prefs() -> dict:
+    prefs, _ = load_triage_prefs_state()
+    return prefs
 
 
 def _bound_spam_snapshots(
@@ -2789,7 +2908,7 @@ def _bound_spam_snapshots(
 
 def save_triage_prefs(prefs: dict) -> dict:
     p = _triage_prefs_path()
-    lock_p = p.with_name(p.name + ".lock")
+    lock_p = _triage_prefs_lock_path()
     clean_prefs = {k: v for k, v in (prefs or {}).items() if not str(k).startswith("_")}
     if "spam_snapshots" in clean_prefs:
         clean_prefs["spam_snapshots"] = _bound_spam_snapshots(
@@ -2797,10 +2916,9 @@ def save_triage_prefs(prefs: dict) -> dict:
             clean_prefs.get("spam_uids"),
             clean_prefs.get("spam_senders"),
         )
-    with COMMS_LOCK:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        paths.atomic_write_json(p, clean_prefs, lock_path=lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC)
-        _invalidate_cached_json_file(p)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    paths.atomic_write_json(p, clean_prefs, lock_path=lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC)
+    _invalidate_cached_json_file(p)
     return prefs
 
 
@@ -3332,18 +3450,68 @@ def _parse_comparable_email_ts(dt_str: str) -> str:
     return res
 
 
-def _thread_message_utc_key(m: dict) -> tuple[str, int, int]:
-    """Return a descending-comparable UTC tuple `(utc_ts, is_current, is_inbound)` so sorting with
+def _to_utc_epoch(ts_str: str, assume_local_if_naive: bool = True) -> float | None:
+    """Parse an email or triage timestamp into UTC epoch seconds.
+
+    Timezone-qualified strings ('...Z', '+/-HH:MM', or RFC2822 with offset) convert directly to UTC;
+    naive timestamps ('YYYY-MM-DD HH:MM' or 'Nov 22 10:28') are interpreted in the machine's local
+    timezone (or `_LOCAL_NAIVE_TZ_OVERRIDE` in tests) when `assume_local_if_naive=True`, else UTC.
+    """
+    s = str(ts_str or "").strip()
+    if not s:
+        return None
+    try:
+        from email.utils import parsedate_to_datetime
+        dt_rfc = parsedate_to_datetime(s)
+        if dt_rfc.tzinfo is not None:
+            return dt_rfc.astimezone(timezone.utc).timestamp()
+    except Exception:
+        pass
+    if _EXPLICIT_TZ_RE.search(s):
+        try:
+            dt_iso = datetime.fromisoformat(s.replace("Z", "+00:00"))
+            if dt_iso.tzinfo is not None:
+                return dt_iso.astimezone(timezone.utc).timestamp()
+        except Exception:
+            pass
+    naive_dt: datetime | None = None
+    if _ISO_DATE_PREFIX_RE.match(s):
+        for cand_len, fmt in ((19, "%Y-%m-%d %H:%M:%S"), (16, "%Y-%m-%d %H:%M")):
+            if len(s) >= cand_len:
+                try:
+                    naive_dt = datetime.strptime(s[:cand_len].replace("T", " "), fmt)
+                    break
+                except Exception:
+                    continue
+    if naive_dt is None:
+        comp = _parse_local_or_utc_email_ts(s) if assume_local_if_naive else _parse_comparable_email_ts(s)
+        if comp:
+            try:
+                return datetime.strptime(comp[:16], "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc).timestamp()
+            except Exception:
+                return None
+        return None
+    if assume_local_if_naive:
+        aware_dt = naive_dt.replace(tzinfo=_LOCAL_NAIVE_TZ_OVERRIDE) if _LOCAL_NAIVE_TZ_OVERRIDE is not None else naive_dt.astimezone()
+        return aware_dt.astimezone(timezone.utc).timestamp()
+    return naive_dt.replace(tzinfo=timezone.utc).timestamp()
+
+
+def _thread_message_utc_key(m: dict) -> tuple[float, str, int, int]:
+    """Return a descending-comparable UTC tuple `(utc_epoch, utc_ts, is_current, is_inbound)` so sorting with
     `reverse=True` places the most recent email at index 0, the next-most-recent at index 1, and so on."""
     raw_dt = str(m.get("raw_date") or m.get("sent_at_utc") or m.get("approved_at_utc") or m.get("date") or "").strip()
     uid_s = str(m.get("uid") or "").strip()
+    epoch = _to_utc_epoch(raw_dt, assume_local_if_naive=True)
     if m.get("direction") == "sent" and uid_s.startswith(("log-", "sr-")) and raw_dt and not _EXPLICIT_TZ_RE.search(raw_dt):
         ts = _parse_local_or_utc_email_ts(raw_dt)
     else:
         ts = _parse_comparable_email_ts(raw_dt)
-    if not ts and m.get("is_current"):
+    if epoch is None and not ts and m.get("is_current"):
+        epoch = 32503680000.0
         ts = "9999-99-99 99:99"
     return (
+        epoch if epoch is not None else -1.0,
         ts or "",
         1 if m.get("is_current") else 0,
         1 if m.get("direction") == "inbound" else 0,
@@ -3391,6 +3559,7 @@ def _match_user_sent_reply_for_inbox_item(hdr: dict, sent_items: list[dict]) -> 
     frm_raw = f"{hdr.get('from') or ''} {hdr.get('sender_email') or ''}"
     sender_toks: set[str] | None = None
     in_ts = _parse_comparable_email_ts(str(hdr.get("date") or ""))
+    in_epoch = _to_utc_epoch(str(hdr.get("date") or ""), assume_local_if_naive=True)
     might_be_cc = bool(hdr.get("cc_reply_match"))
 
     for s in sent_items or []:
@@ -3416,21 +3585,17 @@ def _match_user_sent_reply_for_inbox_item(hdr: dict, sent_items: list[dict]) -> 
         if sender_toks and to_toks and not same_person and not is_third_party_cc and not _is_specific_multi_person_thread_subject(subj_norm):
             continue
         _explicit_utc = str(s.get("approved_at_utc") or s.get("sent_at_utc") or s.get("at_utc") or "").strip()
-        _s_uid_str = str(s.get("uid") or s.get("id") or "")
-        _is_local_clock_sent = (
-            _s_uid_str.startswith(("sent-", "log-", "sr-"))
-            or bool(s.get("approved_at"))
-            or str(s.get("source") or "") == "manual_log"
-        )
         if _explicit_utc:
-            s_ts = _parse_comparable_email_ts(_explicit_utc)
-        elif _is_local_clock_sent:
-            s_ts = _parse_local_or_utc_email_ts(str(s.get("approved_at") or s.get("at") or s.get("date") or ""))
+            s_epoch = _to_utc_epoch(_explicit_utc, assume_local_if_naive=False)
         else:
-            s_ts = _parse_comparable_email_ts(str(s.get("date") or s.get("approved_at") or s.get("at") or ""))
-        _tol_hrs = 0.02
-        if in_ts and s_ts and not is_third_party_cc and _sent_ts_is_older_than_inbound(s_ts, in_ts, tolerance_hours=_tol_hrs):
+            s_epoch = _to_utc_epoch(str(s.get("approved_at") or s.get("at") or s.get("date") or ""), assume_local_if_naive=True)
+        _tol_secs = 0.02 * 3600.0
+        if in_epoch is not None and s_epoch is not None and not is_third_party_cc and (in_epoch - s_epoch) > _tol_secs:
             continue
+        if (in_epoch is None or s_epoch is None) and in_ts:
+            s_ts = _parse_comparable_email_ts(_explicit_utc or str(s.get("date") or s.get("approved_at") or s.get("at") or ""))
+            if s_ts and not is_third_party_cc and _sent_ts_is_older_than_inbound(s_ts, in_ts, tolerance_hours=0.02):
+                continue
         return s
     return None
 
@@ -3781,47 +3946,58 @@ def mark_emails_read_remote_batch(items: list[dict]) -> dict:
     if not cleaned:
         return {"ok": False, "error": "uid or subject required"}
 
-    try:
-        sync_p = _sync_path()
-        sync_lock = sync_p.with_name(sync_p.name + ".lock")
-        with paths.cross_process_lock(sync_lock, timeout_sec=STORE_LOCK_TIMEOUT_SEC):
-            _invalidate_cached_json_file(sync_p)
-            sync_data = load_comms_sync()
-            headers_list = sync_data.get("email_headers") or []
-            changed = False
-            for ent in cleaned:
-                c_uid = ent["uid"]
-                c_aid = ent["account_id"]
-                c_subj = ent["subject"]
-                t_read = ent["is_read"]
-                uid_matches = [
-                    h for h in headers_list
-                    if isinstance(h, dict)
-                    and c_uid
-                    and str(h.get("uid") or "") == c_uid
-                    and (not c_aid or not h.get("account_id") or str(h.get("account_id") or "") == c_aid)
-                ]
-                if not uid_matches and not c_uid and c_subj:
+    def _sync_local_read_flags() -> None:
+        try:
+            sync_p = _sync_path()
+            sync_lock = sync_p.with_name(sync_p.name + ".lock")
+            with paths.cross_process_lock(sync_lock, timeout_sec=STORE_LOCK_TIMEOUT_SEC):
+                _invalidate_cached_json_file(sync_p)
+                sync_data = load_comms_sync()
+                headers_list = sync_data.get("email_headers") or []
+                changed = False
+                for ent in cleaned:
+                    c_uid = ent["uid"]
+                    c_aid = ent["account_id"]
+                    c_subj = ent["subject"]
+                    t_read = ent["is_read"]
                     uid_matches = [
                         h for h in headers_list
                         if isinstance(h, dict)
-                        and c_subj.lower() == str(h.get("subject") or "").lower()
+                        and c_uid
+                        and str(h.get("uid") or "") == c_uid
                         and (not c_aid or not h.get("account_id") or str(h.get("account_id") or "") == c_aid)
                     ]
-                distinct_aids = {str(h.get("account_id") or "") for h in uid_matches if h.get("account_id")}
-                for hdr in uid_matches:
-                    if not ent["account_id"] and len(distinct_aids) == 1:
-                        ent["account_id"] = next(iter(distinct_aids))
-                    if not ent["subject"] and hdr.get("subject"):
-                        ent["subject"] = str(hdr.get("subject") or "")
-                    if len(distinct_aids) <= 1 or (c_aid and str(hdr.get("account_id") or "") == c_aid):
-                        if bool(hdr.get("is_read")) != t_read:
-                            hdr["is_read"] = t_read
-                            changed = True
-            if changed:
-                save_comms_sync(sync_data)
-    except Exception:
-        pass
+                    if not uid_matches and not c_uid and c_subj:
+                        uid_matches = [
+                            h for h in headers_list
+                            if isinstance(h, dict)
+                            and c_subj.lower() == str(h.get("subject") or "").lower()
+                            and (not c_aid or not h.get("account_id") or str(h.get("account_id") or "") == c_aid)
+                        ]
+                    distinct_aids = {str(h.get("account_id") or "") for h in uid_matches if h.get("account_id")}
+                    for hdr in uid_matches:
+                        if not ent["account_id"] and len(distinct_aids) == 1:
+                            ent["account_id"] = next(iter(distinct_aids))
+                        if not ent["subject"] and hdr.get("subject"):
+                            ent["subject"] = str(hdr.get("subject") or "")
+                        if len(distinct_aids) <= 1 or (c_aid and str(hdr.get("account_id") or "") == c_aid):
+                            if bool(hdr.get("is_read")) != t_read:
+                                hdr["is_read"] = t_read
+                                changed = True
+                if changed:
+                    paths.atomic_write_json(sync_p, sync_data, lock_path=sync_lock, timeout_sec=STORE_LOCK_TIMEOUT_SEC)
+                    _invalidate_cached_json_file(sync_p)
+                    _RECONCILE_COMMS_CACHE.clear()
+        except Exception:
+            pass
+
+    if COMMS_LOCK.acquire(blocking=False):
+        try:
+            _sync_local_read_flags()
+        finally:
+            COMMS_LOCK.release()
+    else:
+        threading.Thread(target=_sync_local_read_flags, name="comms-local-read-flag", daemon=True).start()
 
     first = cleaned[0]
     if _is_hermetic():
@@ -4312,6 +4488,7 @@ def classify_inbox_emails(headers: list[dict], prefs: dict | None = None, sent_h
         _resolved_body = _hdr_body_raw or _clean_snip
         item = {
             "uid": uid,
+            "conversation_id": str(hdr.get("conversation_id") or hdr.get("conversationId") or ""),
             "account_id": str(hdr.get("account_id") or ""),
             "account_badge": _acct_badge_val,
             "subject": subj,
@@ -4320,6 +4497,7 @@ def classify_inbox_emails(headers: list[dict], prefs: dict | None = None, sent_h
             "to": str(hdr.get("to") or ""),
             "cc": str(hdr.get("cc") or ""),
             "domain": dom,
+            "raw_date": str(hdr.get("date") or ""),
             "date": _parse_comparable_email_ts(str(hdr.get("date") or "")) or str(hdr.get("date") or "")[:16],
             "snippet": _clean_snip,
             "body": _resolved_body,
@@ -4363,9 +4541,14 @@ def classify_inbox_emails(headers: list[dict], prefs: dict | None = None, sent_h
                 "tone": "sky",
                 "reason": "Marked Not Important / Other in Anchor",
             }
-        if not acted_entry and uid not in unacted_set and norm_s:
-            _in_dt = _parse_comparable_email_ts(str(hdr.get("date") or ""))
-            _hdr_is_unread = not bool(hdr.get("is_read"))
+        _hdr_is_unread = not bool(hdr.get("is_read"))
+        _own_uid_acted = bool(
+            _raw_am_entry
+            or ((uid in seen_opened_set or uid in seen_unopened_set or uid in down_uids) and not _uid_is_shifted_mismatch)
+        )
+        # Never mark an unread message whose own uid is unacted as acted_upon=True solely via subject/thread inheritance
+        if not acted_entry and not (_hdr_is_unread and not _own_uid_acted) and uid not in unacted_set and norm_s:
+            _in_epoch = _to_utc_epoch(str(hdr.get("date") or ""), assume_local_if_naive=True)
             _cur_ptoks = _extract_person_tokens(sender_ident)
             for _sib_tup in _acted_by_norm_subj.get(norm_s, []):
                 if len(_sib_tup) == 3:
@@ -4384,15 +4567,12 @@ def classify_inbox_emails(headers: list[dict], prefs: dict | None = None, sent_h
                     _explicit_act_utc = str(_aent.get("at_utc") or _aent.get("approved_at_utc") or _aent.get("sent_at_utc") or "").strip()
                     _raw_msg_dt = str(_aent.get("date") or "").strip()
                     if _explicit_act_utc:
-                        _act_dt = _parse_comparable_email_ts(_explicit_act_utc)
+                        _act_epoch = _to_utc_epoch(_explicit_act_utc, assume_local_if_naive=False)
                     elif _raw_msg_dt:
-                        if str(_aent.get("reason") or "").startswith("Approved & sent via Speed Racer") and not _EXPLICIT_TZ_RE.search(_raw_msg_dt):
-                            _act_dt = _parse_local_or_utc_email_ts(_raw_msg_dt)
-                        else:
-                            _act_dt = _parse_comparable_email_ts(_raw_msg_dt)
+                        _act_epoch = _to_utc_epoch(_raw_msg_dt, assume_local_if_naive=True)
                     else:
-                        _act_dt = _parse_local_or_utc_email_ts(str(_aent.get("at") or _aent.get("ts") or ""))
-                    if _act_dt and _in_dt and _sent_ts_is_older_than_inbound(_act_dt, _in_dt, tolerance_hours=0.02):
+                        _act_epoch = _to_utc_epoch(str(_aent.get("at") or _aent.get("ts") or ""), assume_local_if_naive=True)
+                    if _act_epoch is not None and _in_epoch is not None and (_in_epoch - _act_epoch) > (0.02 * 3600.0):
                         continue
                     acted_entry = _aent
                     break
@@ -4468,6 +4648,9 @@ def classify_inbox_emails(headers: list[dict], prefs: dict | None = None, sent_h
                 item["acted_status"] = _raw_st
                 item["acted_tone"] = str(acted_entry.get("tone") or ("emerald" if ("replied" in _raw_st.lower() or "settled" in _raw_st.lower() or "calendar" in _raw_st.lower() or "important" in _raw_st.lower() or "signed" in _raw_st.lower()) else "sky"))
                 item["acted_reason"] = str(acted_entry.get("reason") or "Moved to Acted Upon")
+                _ae_utc = str(acted_entry.get("at_utc") or acted_entry.get("approved_at_utc") or acted_entry.get("sent_at_utc") or "").strip()
+                if _ae_utc:
+                    item["acted_at_utc"] = _ae_utc
             else:
                 item["acted_status"] = "👁 Looked At"
                 item["acted_tone"] = "sky"
@@ -4488,6 +4671,9 @@ def classify_inbox_emails(headers: list[dict], prefs: dict | None = None, sent_h
 
     def _thread_group_key(it: dict) -> tuple[str, str, str]:
         acct_k = str(it.get("account_id") or it.get("account_badge") or "").strip().lower()
+        conv_k = str(it.get("conversation_id") or it.get("conversationId") or "").strip()
+        if conv_k:
+            return (acct_k, "__conv__", conv_k)
         norm_subj = _norm_email_subject(str(it.get("subject") or ""))
         if _is_specific_multi_person_thread_subject(norm_subj):
             return (acct_k, "__thread__", norm_subj)
@@ -4553,13 +4739,18 @@ def classify_inbox_emails(headers: list[dict], prefs: dict | None = None, sent_h
                             _ex_urls.add(_lu)
                             _ex_lks.append(_lk)
                     primary["links"] = _ex_lks
+                _it_ep = _to_utc_epoch(str(it.get("raw_date") or it.get("date") or ""), assume_local_if_naive=True)
+                _pr_ep = _to_utc_epoch(str(primary.get("raw_date") or primary.get("date") or ""), assume_local_if_naive=True)
                 _it_ts = _parse_comparable_email_ts(str(it.get("date") or ""))
                 _pr_ts = _parse_comparable_email_ts(str(primary.get("date") or ""))
-                if _it_ts and (not _pr_ts or _it_ts > _pr_ts):
+                _it_newer = (_it_ep > _pr_ep) if (_it_ep is not None and _pr_ep is not None) else bool(_it_ts and (not _pr_ts or _it_ts > _pr_ts))
+                if _it_newer:
                     primary["date"] = it.get("date")
+                    primary["raw_date"] = it.get("raw_date") or it.get("date")
                     primary["from"] = it.get("from")
                     primary["sender_email"] = it.get("sender_email")
                     primary["uid"] = it.get("uid")
+                    primary["latest_uid"] = it.get("uid")
                     if it.get("body"):
                         primary["body"] = it.get("body")
                     if it.get("snippet"):
@@ -4576,6 +4767,7 @@ def classify_inbox_emails(headers: list[dict], prefs: dict | None = None, sent_h
                 primary["thread_participants"] = _parts
             else:
                 it["thread_count"] = 1
+                it["latest_uid"] = it.get("uid")
                 it["thread_messages"] = [_make_thread_msg_entry(it, is_current=True)]
                 _p_lbl0 = str(it.get("from") or it.get("sender_email") or "").strip()
                 it["thread_participants"] = [_p_lbl0] if _p_lbl0 else []
@@ -4583,9 +4775,9 @@ def classify_inbox_emails(headers: list[dict], prefs: dict | None = None, sent_h
                 out_items.append(it)
         return out_items
 
-    important_list.sort(key=lambda x: (x["steward_score"], _parse_comparable_email_ts(str(x.get("date") or "")), str(x.get("date") or "")), reverse=True)
-    other_list.sort(key=lambda x: (_parse_comparable_email_ts(str(x.get("date") or "")), str(x.get("date") or "")), reverse=True)
-    acted_upon_list.sort(key=lambda x: (_parse_comparable_email_ts(str(x.get("date") or "")), str(x.get("date") or "")), reverse=True)
+    important_list.sort(key=lambda x: (x["steward_score"], _to_utc_epoch(str(x.get("raw_date") or x.get("date") or ""), assume_local_if_naive=True) or -1.0, str(x.get("date") or "")), reverse=True)
+    other_list.sort(key=lambda x: (_to_utc_epoch(str(x.get("raw_date") or x.get("date") or ""), assume_local_if_naive=True) or -1.0, str(x.get("date") or "")), reverse=True)
+    acted_upon_list.sort(key=lambda x: (_to_utc_epoch(str(x.get("raw_date") or x.get("date") or ""), assume_local_if_naive=True) or -1.0, str(x.get("date") or "")), reverse=True)
     dedup_act = _dedup_bucket(acted_upon_list)
     # Cross-bucket deduplication: ensure no thread present in acted_upon_list lingers in important_list or other_list
     _acted_acct_uid_final = {
@@ -4602,24 +4794,24 @@ def classify_inbox_emails(headers: list[dict], prefs: dict | None = None, sent_h
             return True
         if _c_uid and _c_uid in unacted_set:
             return False
+        _c_unread = not bool(cand.get("is_read"))
+        if _c_unread:
+            return False
         _c_subj = str(cand.get("subject") or "")
         _c_sender = f"{cand.get('from') or ''} {cand.get('sender_email') or ''}".strip()
         _c_ptoks = _extract_person_tokens(_c_sender)
-        _c_unread = not bool(cand.get("is_read"))
-        _c_dt = _parse_comparable_email_ts(str(cand.get("date") or ""))
+        _c_epoch = _to_utc_epoch(str(cand.get("raw_date") or cand.get("date") or ""), assume_local_if_naive=True)
         for _act_it in dedup_act:
             _a_aid = str(_act_it.get("account_id") or "")
-            if _c_unread and _c_aid and _a_aid and _c_aid != _a_aid:
-                continue
             _a_subj = str(_act_it.get("subject") or "")
             _a_sender = f"{_act_it.get('from') or ''} {_act_it.get('sender_email') or ''}".strip()
-            if _c_unread and _c_ptoks:
-                _a_ptoks = _extract_person_tokens(_a_sender)
-                if _a_ptoks and not (_c_ptoks & _a_ptoks):
-                    continue
             if _subjects_match_thread(_c_subj, _a_subj, sender1=_c_sender, sender2=_a_sender):
-                _a_dt = _parse_comparable_email_ts(str(_act_it.get("date") or ""))
-                if _a_dt and _c_dt and _sent_ts_is_older_than_inbound(_a_dt, _c_dt, tolerance_hours=0.02):
+                _a_explicit_utc = str(_act_it.get("acted_at_utc") or "").strip()
+                if _a_explicit_utc:
+                    _a_epoch = _to_utc_epoch(_a_explicit_utc, assume_local_if_naive=False)
+                else:
+                    _a_epoch = _to_utc_epoch(str(_act_it.get("raw_date") or _act_it.get("date") or ""), assume_local_if_naive=True)
+                if _a_epoch is not None and _c_epoch is not None and (_c_epoch - _a_epoch) > (0.02 * 3600.0):
                     continue
                 return True
         return False
@@ -4800,6 +4992,8 @@ def gather_sent_emails(sync_cache: dict | None = None, cfg: dict | None = None) 
 
 def record_email_triage_feedback(body: dict) -> dict:
     """Record user triage feedback ('opened', 'seen', 'seen_not_important', 'seen_important', 'steward_action', 'already_replied', 'calendar_done', 'unact', 'downgrade', 'upgrade', 'spam', 'unspam') and update Steward preference weights."""
+    if not isinstance(body, dict):
+        return _scribe_triage_failure_dict("dependency-returns-garbage", status_code=400, detail="JSON object required")
     uid = str(body.get("uid") or "").strip()
     feedback = str(body.get("feedback") or "").strip().lower()
     if feedback == "looked_at_ignore":
@@ -4823,15 +5017,25 @@ def record_email_triage_feedback(body: dict) -> dict:
         "spam",
         "unspam",
     ):
-        return {
-            "ok": False,
-            "error": "uid and valid feedback ('opened'|'seen'|'seen_not_important'|'seen_important'|'steward_action'|'already_replied'|'done'|'calendar_done'|'unact'|'downgrade'|'upgrade'|'spam'|'unspam') required",
-        }
+        return _scribe_triage_failure_dict(
+            "dependency-returns-garbage",
+            status_code=400,
+            detail="uid and valid feedback ('opened'|'seen'|'seen_not_important'|'seen_important'|'steward_action'|'already_replied'|'done'|'calendar_done'|'unact'|'downgrade'|'upgrade'|'spam'|'unspam') required",
+        )
 
+    fast_triage = bool(body.get("fast_triage") or body.get("async_triage"))
+    client_req_id = str(body.get("client_msg_id") or body.get("client_req_id") or "").strip()
     acc_id_fb = str(body.get("account_id") or "").strip()
     subj_fb = str(body.get("subject") or "").strip()
-    sync_cache = load_comms_sync()
-    cfg_cache = load_comms_config()
+
+    sync_cache, sync_st = load_comms_sync_state()
+    if sync_st == "unknown":
+        return _scribe_triage_failure_dict("backing-store-unreadable", detail="comms-sync.json unreadable")
+    _, prefs_init_st = load_triage_prefs_state()
+    if prefs_init_st == "unknown":
+        return _scribe_triage_failure_dict("backing-store-unreadable", detail="comms-triage-prefs.json unreadable")
+
+    cfg_cache = load_comms_config() if feedback == "spam" else {}
     sender_protected = False
     norm_spam_addr = normalize_spam_sender(body.get("sender_email") or body.get("sender") or body.get("from") or "")
     was_read_before_spam = False
@@ -4852,11 +5056,35 @@ def record_email_triage_feedback(body: dict) -> dict:
             break
 
     remote_read_items: list[dict] = []
+    scribe_signal_payload: tuple[dict, str] | None = None
 
-    with COMMS_LOCK:
-        sync_cache = load_comms_sync()
-        cfg_cache = load_comms_config()
-        prefs = load_triage_prefs()
+    try:
+        triage_lock_ctx = triage_prefs_lock(timeout_sec=STORE_LOCK_TIMEOUT_SEC)
+        triage_lock_ctx.__enter__()
+    except TimeoutError as exc:
+        return _scribe_triage_failure_dict("dependency-slow-or-killed", detail=str(exc))
+    try:
+        prefs, prefs_st = load_triage_prefs_state(bypass_cache=True)
+        if prefs_st == "unknown":
+            return _scribe_triage_failure_dict("backing-store-unreadable", detail="comms-triage-prefs.json unreadable")
+        recent_req_ids = [str(x) for x in (prefs.get("recent_triage_req_ids") or []) if str(x)]
+        if client_req_id and client_req_id in recent_req_ids:
+            return {
+                "ok": True,
+                "status_code": 200,
+                "deduplicated": True,
+                "uid": uid,
+                "feedback": feedback,
+                "was_opened": bool(uid in (prefs.get("opened_uids") or []) or was_opened_param),
+                "sender_email": norm_spam_addr,
+                "sender_protected": False,
+                "spam_senders": list(prefs.get("spam_senders") or []),
+                "spam_uids": list(prefs.get("spam_uids") or []),
+                "partial_failure": False,
+                "failed_side_effects": [],
+                "note": "Duplicate triage request ignored idempotently.",
+                "speed_racer": load_speed_racer_queue(),
+            }
         opened_uids = list(prefs.get("opened_uids") or [])
         seen_unopened = list(prefs.get("seen_unopened_uids") or [])
         seen_opened = list(prefs.get("seen_opened_uids") or [])
@@ -4870,21 +5098,6 @@ def record_email_triage_feedback(body: dict) -> dict:
         scores = dict(prefs.get("sender_scores") or {})
         acted_map = dict(prefs.get("acted_upon_emails") or {})
         unacted_uids = list(prefs.get("unacted_uids") or [])
-        if isinstance(sync_cache, dict):
-            for _hs_lk in (sync_cache.get("email_headers") or []):
-                if not isinstance(_hs_lk, dict) or str(_hs_lk.get("uid") or "").strip() != uid:
-                    continue
-                _hs_lk_acct = str(_hs_lk.get("account_id") or "").strip()
-                if acc_id_fb and _hs_lk_acct and _hs_lk_acct != acc_id_fb:
-                    continue
-                if not norm_spam_addr:
-                    norm_spam_addr = normalize_spam_sender(_hs_lk.get("sender_email") or _hs_lk.get("from") or "")
-                if not subj_fb and _hs_lk.get("subject"):
-                    subj_fb = str(_hs_lk.get("subject") or "").strip()
-                if not acc_id_fb and _hs_lk_acct:
-                    acc_id_fb = _hs_lk_acct
-                was_read_before_spam = bool(_hs_lk.get("_pre_spam_is_read", _hs_lk.get("is_read", False)))
-                break
 
         if feedback in ("seen", "seen_not_important", "seen_important", "steward_action", "already_replied", "done", "calendar_done", "downgrade"):
             remote_read_items.append({"account_id": acc_id_fb, "uid": uid, "subject": subj_fb, "is_read": True})
@@ -5652,32 +5865,29 @@ def record_email_triage_feedback(body: dict) -> dict:
                     + ", ".join(failed_side_effects)
                 )
 
-        try:
-            if feedback in ("seen_important", "steward_action", "upgrade", "downgrade", "seen_not_important", "already_replied", "seen", "spam", "unspam"):
-                if feedback in ("spam", "unspam"):
-                    _sc_act = feedback
-                elif feedback in ("seen_important", "steward_action", "upgrade"):
-                    _sc_act = "seen_important"
-                elif feedback in ("downgrade", "seen_not_important"):
-                    _sc_act = "ignore"
-                elif feedback == "already_replied":
-                    _sc_act = "direct_reply"
-                else:
-                    _sc_act = "seen"
-                _scribe.record_interest_signal(
-                    {
-                        "uid": uid,
-                        "account_id": acc_id_fb,
-                        "spam_uid_key": _spam_uid_key(acc_id_fb, uid),
-                        "from": sender or sender_email,
-                        "sender_email": norm_spam_addr or sender_email,
-                        "subject": subj_fb,
-                        "sender_protected": sender_protected,
-                    },
-                    action=_sc_act,
-                )
-        except Exception:
-            pass
+        if feedback in ("seen_important", "steward_action", "upgrade", "downgrade", "seen_not_important", "already_replied", "seen", "spam", "unspam"):
+            if feedback in ("spam", "unspam"):
+                _sc_act = feedback
+            elif feedback in ("seen_important", "steward_action", "upgrade"):
+                _sc_act = "seen_important"
+            elif feedback in ("downgrade", "seen_not_important"):
+                _sc_act = "ignore"
+            elif feedback == "already_replied":
+                _sc_act = "direct_reply"
+            else:
+                _sc_act = "seen"
+            scribe_signal_payload = (
+                {
+                    "uid": uid,
+                    "account_id": acc_id_fb,
+                    "spam_uid_key": _spam_uid_key(acc_id_fb, uid),
+                    "from": sender or sender_email,
+                    "sender_email": norm_spam_addr or sender_email,
+                    "subject": subj_fb,
+                    "sender_protected": sender_protected,
+                },
+                _sc_act,
+            )
 
         if feedback in ("seen", "seen_not_important", "seen_important", "steward_action", "already_replied", "done", "calendar_done", "downgrade") and uid in acted_map:
             _enrich_acted_entry(
@@ -5736,6 +5946,9 @@ def record_email_triage_feedback(body: dict) -> dict:
                         if _sib_uid in unacted_uids:
                             unacted_uids.remove(_sib_uid)
 
+        if client_req_id:
+            recent_req_ids.append(client_req_id)
+        prefs["recent_triage_req_ids"] = recent_req_ids[-200:]
         prefs["opened_uids"] = opened_uids[-500:]
         prefs["seen_unopened_uids"] = seen_unopened[-500:]
         prefs["seen_opened_uids"] = seen_opened[-500:]
@@ -5754,16 +5967,62 @@ def record_email_triage_feedback(body: dict) -> dict:
         prefs["acted_upon_emails"] = acted_map
         prefs["unacted_uids"] = unacted_uids[-500:]
         save_triage_prefs(prefs)
+    finally:
+        triage_lock_ctx.__exit__(None, None, None)
 
+    captured_dd = paths.data_dir()
+
+    def _run_triage_side_effects() -> None:
+        if scribe_signal_payload is not None:
+            try:
+                _scribe.record_interest_signal(
+                    scribe_signal_payload[0],
+                    action=scribe_signal_payload[1],
+                    data_dir=captured_dd,
+                )
+            except Exception:
+                pass
+        if remote_read_items:
+            try:
+                _dispatch_remote_read_items(remote_read_items)
+            except Exception:
+                pass
+
+    if fast_triage:
+        threading.Thread(target=_run_triage_side_effects, name=f"triage-bg-{uid[:16]}", daemon=True).start()
+        res_fast: dict = {
+            "ok": True,
+            "status_code": 200,
+            "fast_triage": True,
+            "uid": uid,
+            "feedback": feedback,
+            "was_opened": already_opened,
+            "sender_email": norm_spam_addr,
+            "sender_protected": sender_protected,
+            "spam_senders": list(prefs.get("spam_senders") or []),
+            "spam_uids": list(prefs.get("spam_uids") or []),
+            "partial_failure": bool(failed_side_effects),
+            "failed_side_effects": failed_side_effects,
+            "note": note,
+            "speed_racer": load_speed_racer_queue(),
+        }
+        if feedback in ("spam", "unspam"):
+            try:
+                res_fast["working_list"] = load_working_list_spine()
+            except Exception:
+                pass
+        return res_fast
+
+    _run_triage_side_effects()
     if remote_read_items:
-        _dispatch_remote_read_items(remote_read_items)
         fresh_sc = load_comms_sync()
         if isinstance(fresh_sc, dict) and fresh_sc.get("email_headers") is not None:
             sync_cache = fresh_sc
 
     imp, oth = classify_inbox_emails(sync_cache.get("email_headers") or [], prefs)
-    res_fb: dict[str, Any] = {
+    res_fb: dict = {
         "ok": True,
+        "status_code": 200,
         "uid": uid,
         "feedback": feedback,
         "was_opened": already_opened,
@@ -5870,6 +6129,125 @@ def _resolve_cave_steward_engine(cave_dir: Path, *, allow_create: bool = False):
         return None
 
 
+COMMS_CLIENT_MSG_ID_MAX = 500
+_COMMS_MSG_ID_MUTEX = threading.RLock()
+_COMMS_MSG_ID_COND = threading.Condition(_COMMS_MSG_ID_MUTEX)
+_INFLIGHT_COMMS_MSG_IDS: set[tuple[str, str, str]] = set()
+_COMMS_MSG_ID_MEM_CACHE: dict[tuple[str, str, str], dict] = {}
+
+
+def _comms_client_msg_ids_path(data_dir: Path | None = None) -> Path:
+    base = Path(data_dir) if data_dir is not None else Path(paths.data_dir())
+    return base / ".anchor" / "comms-client-msg-ids.json"
+
+
+def _remember_comms_msg_id_mem(p: Path, scope: str, client_msg_id: str, receipt: dict) -> None:
+    key = (os.path.normcase(str(p)), scope, client_msg_id)
+    with _COMMS_MSG_ID_MUTEX:
+        _COMMS_MSG_ID_MEM_CACHE[key] = copy.deepcopy(receipt)
+        if len(_COMMS_MSG_ID_MEM_CACHE) > 512:
+            oldest_k = next(iter(_COMMS_MSG_ID_MEM_CACHE))
+            _COMMS_MSG_ID_MEM_CACHE.pop(oldest_k, None)
+
+
+def _lookup_comms_client_msg_id(scope: str, client_msg_id: str, *, data_dir: Path | None = None) -> dict | None:
+    clean_id = str(client_msg_id or "").strip()
+    clean_scope = str(scope or "comms").strip() or "comms"
+    if not clean_id:
+        return None
+    p = _comms_client_msg_ids_path(data_dir)
+    mem_key = (os.path.normcase(str(p)), clean_scope, clean_id)
+    with _COMMS_MSG_ID_MUTEX:
+        mem_hit = _COMMS_MSG_ID_MEM_CACHE.get(mem_key)
+        if isinstance(mem_hit, dict) and p.parent.is_dir():
+            return copy.deepcopy(mem_hit)
+    lock_p = p.with_name(p.name + ".lock")
+    try:
+        if not p.is_file():
+            return None
+        with paths.cross_process_lock(lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC):
+            doc = json.loads(p.read_text(encoding="utf-8"))
+        if not isinstance(doc, dict):
+            return None
+        ring = (doc.get("scopes") or {}).get(clean_scope)
+        if not isinstance(ring, list):
+            return None
+        for entry in reversed(ring):
+            if isinstance(entry, dict) and str(entry.get("client_msg_id") or "") == clean_id:
+                rec = entry.get("receipt")
+                res = dict(rec) if isinstance(rec, dict) else {"ok": True}
+                _remember_comms_msg_id_mem(p, clean_scope, clean_id, res)
+                return res
+    except Exception:
+        return None
+    return None
+
+
+def _record_comms_client_msg_id(
+    scope: str,
+    client_msg_id: str,
+    receipt: dict,
+    *,
+    data_dir: Path | None = None,
+) -> None:
+    clean_id = str(client_msg_id or "").strip()
+    clean_scope = str(scope or "comms").strip() or "comms"
+    if not clean_id or not isinstance(receipt, dict) or not receipt.get("ok"):
+        return
+    p = _comms_client_msg_ids_path(data_dir)
+    lock_p = p.with_name(p.name + ".lock")
+    compact_receipt = {
+        k: receipt[k]
+        for k in (
+            "ok",
+            "status_code",
+            "uid",
+            "draft_id",
+            "draft",
+            "comment",
+            "task_title",
+            "note",
+            "async_draft",
+            "open_speed_racer",
+            "steward_logged",
+            "steward_engine_dispatched",
+        )
+        if k in receipt
+    }
+    _remember_comms_msg_id_mem(p, clean_scope, clean_id, compact_receipt)
+    entry = {
+        "client_msg_id": clean_id,
+        "at_ms": int(time.time() * 1000),
+        "receipt": compact_receipt,
+    }
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with paths.cross_process_lock(lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC):
+            doc: dict = {"version": 1, "scopes": {}}
+            if p.is_file():
+                try:
+                    loaded = json.loads(p.read_text(encoding="utf-8"))
+                    if isinstance(loaded, dict):
+                        doc = loaded
+                except Exception:
+                    doc = {"version": 1, "scopes": {}}
+            scopes = doc.setdefault("scopes", {})
+            if not isinstance(scopes, dict):
+                scopes = {}
+                doc["scopes"] = scopes
+            ring = [
+                it for it in (scopes.get(clean_scope) or [])
+                if isinstance(it, dict) and str(it.get("client_msg_id") or "") != clean_id
+            ]
+            ring.append(entry)
+            if len(ring) > COMMS_CLIENT_MSG_ID_MAX:
+                ring = ring[-COMMS_CLIENT_MSG_ID_MAX:]
+            scopes[clean_scope] = ring
+            paths.atomic_write_text(p, json.dumps(doc, indent=2, ensure_ascii=False))
+    except Exception:
+        pass
+
+
 def record_email_steward_action(body: dict) -> dict:
     """Single consolidated `Send to Steward` handler (Wave 2):
     - Resolves the full incoming email body (never just a snippet).
@@ -5879,11 +6257,57 @@ def record_email_steward_action(body: dict) -> dict:
       returns HTTP 503 `dependency-missing` (`Cave Steward engine unavailable — message queued safely`) if unavailable."""
     uid = str(body.get("uid") or "").strip()
     comment = str(body.get("comment") or body.get("instructions") or "").strip()
+    client_msg_id = str(body.get("client_msg_id") or body.get("client_req_id") or "").strip()
     if not uid or not comment:
         return _wave2_failure_dict(
             "dependency-returns-garbage",
             detail="Both email uid and Steward instruction are required",
         )
+    inflight_key: tuple[str, str, str] | None = None
+    if client_msg_id:
+        inflight_key = (
+            os.path.normcase(str(_comms_client_msg_ids_path())),
+            "email_steward_action",
+            client_msg_id,
+        )
+        with _COMMS_MSG_ID_COND:
+            wait_deadline = time.monotonic() + 30.0
+            while inflight_key in _INFLIGHT_COMMS_MSG_IDS:
+                rem = wait_deadline - time.monotonic()
+                if rem <= 0:
+                    return _wave2_failure_dict(
+                        "dependency-slow-or-killed",
+                        detail="Timed out waiting for in-flight email_steward_action deduplication",
+                    )
+                _COMMS_MSG_ID_COND.wait(timeout=min(rem, 0.5))
+            prev_act = _lookup_comms_client_msg_id("email_steward_action", client_msg_id)
+            if prev_act is not None:
+                dup_act = dict(prev_act)
+                dup_act["ok"] = True
+                dup_act["status_code"] = 200
+                dup_act["deduplicated"] = True
+                dup_act["client_msg_id"] = client_msg_id
+                dup_act.setdefault("working_list", load_working_list_spine())
+                dup_act.setdefault("speed_racer", load_speed_racer_queue())
+                return dup_act
+            _INFLIGHT_COMMS_MSG_IDS.add(inflight_key)
+
+    try:
+        return _execute_email_steward_action_locked_body(body, uid=uid, comment=comment, client_msg_id=client_msg_id)
+    finally:
+        if inflight_key is not None:
+            with _COMMS_MSG_ID_COND:
+                _INFLIGHT_COMMS_MSG_IDS.discard(inflight_key)
+                _COMMS_MSG_ID_COND.notify_all()
+
+
+def _execute_email_steward_action_locked_body(
+    body: dict,
+    *,
+    uid: str,
+    comment: str,
+    client_msg_id: str,
+) -> dict:
 
     sender_raw = str(body.get("from") or body.get("sender") or "Sender").strip()
     sender_display = _proper_capitalize_sender_display(sender_raw) if "_proper_capitalize_sender_display" in globals() else sender_raw
@@ -5994,6 +6418,7 @@ def record_email_steward_action(body: dict) -> dict:
     )
     if wants_email_draft:
         try:
+            _async_sr = bool(body.get("async_draft", False))
             sr_res = queue_speed_racer_draft({
                 "uid": uid,
                 "account_id": acct_id,
@@ -6005,7 +6430,8 @@ def record_email_steward_action(body: dict) -> dict:
                 "incoming_snippet": full_email_body,
                 "steward_directions": comment,
                 "origin": "🧞 Cave Steward Email Dispatch + Scribe Draft",
-                "open_speed_racer": True,
+                "async_draft": _async_sr,
+                "open_speed_racer": not _async_sr,
             })
             if isinstance(sr_res, dict) and sr_res.get("ok"):
                 sr_queued_draft = sr_res.get("draft") or sr_res.get("queued")
@@ -6147,6 +6573,10 @@ def record_email_steward_action(body: dict) -> dict:
         "📋 Sent full email & directive to Cave Steward."
         + (" Staged Scribe draft in Speed Racer." if sr_queued_draft else "")
     )
+    if client_msg_id:
+        triage_res["client_msg_id"] = client_msg_id
+        triage_res.setdefault("deduplicated", False)
+        _record_comms_client_msg_id("email_steward_action", client_msg_id, triage_res)
     return triage_res
 
 
@@ -7105,7 +7535,16 @@ def _slim_email_row(row: dict) -> dict:
     drop_keys = ("body", "quoted_history", "thread_messages", "links", "sandbox_policy")
     if not any(k in row for k in drop_keys):
         return row
+    tmsgs = row.get("thread_messages") if isinstance(row.get("thread_messages"), list) else []
+    t_uids = [str(m.get("uid") or "") for m in tmsgs if isinstance(m, dict) and str(m.get("uid") or "").strip()]
+    if not t_uids and isinstance(row.get("thread_uids"), list):
+        t_uids = [str(u) for u in row["thread_uids"] if str(u or "").strip()]
+    latest_u = str(row.get("latest_uid") or (t_uids[0] if t_uids else "") or row.get("uid") or "").strip()
     out_r = {k: v for k, v in row.items() if k not in drop_keys}
+    if latest_u:
+        out_r["latest_uid"] = latest_u
+    if t_uids:
+        out_r["thread_uids"] = t_uids
     if not out_r.get("snippet") and row.get("body"):
         out_r["snippet"] = " ".join(str(row.get("body") or "").split())[:180]
     out_r["body_slimmed"] = True
@@ -7701,6 +8140,208 @@ def poll_microsoft_device_flow(state: str = "", account_id: str = "") -> dict:
     }
 
 
+_REAL_PATHS_SAFE_URLOPEN = globals().get("_REAL_PATHS_SAFE_URLOPEN") or getattr(paths, "safe_urlopen", None)
+_REAL_IMAP4_SSL = globals().get("_REAL_IMAP4_SSL") or imaplib.IMAP4_SSL
+
+
+def _persist_synced_header_attachments(account_id: str, uid: str, attachments: list[dict]) -> None:
+    """Persist fetched attachment metadata back onto the matching header in `comms-sync.json`."""
+    if not uid or not attachments:
+        return
+    try:
+        sc = load_comms_sync()
+        if not isinstance(sc, dict):
+            return
+        changed = False
+        for h in sc.get("email_headers") or []:
+            if not isinstance(h, dict):
+                continue
+            if str(h.get("uid") or "") == str(uid) and (not account_id or not h.get("account_id") or str(h.get("account_id")) == str(account_id)):
+                h["attachments"] = list(attachments)
+                h["has_attachments"] = True
+                changed = True
+        if changed:
+            save_comms_sync(sc)
+    except Exception:
+        pass
+
+
+def _attach_thread_messages_to_read_result(
+    res: dict,
+    *,
+    sync_doc: dict | None = None,
+    cfg: dict | None = None,
+) -> dict:
+    """Assemble and attach newest-first `thread_messages` + `thread_count` for `read_email_message`."""
+    if not isinstance(res, dict) or not res.get("ok"):
+        return res
+    try:
+        sc = sync_doc if isinstance(sync_doc, dict) else load_comms_sync()
+    except Exception:
+        sc = {}
+    try:
+        conf = cfg if isinstance(cfg, dict) else load_comms_config()
+    except Exception:
+        conf = {}
+
+    aid = str(res.get("account_id") or "").strip()
+    cur_uid = str(res.get("uid") or "").strip()
+    cur_subj = str(res.get("subject") or "").strip()
+    cur_norm = _norm_email_subject(cur_subj)
+    cur_conv = str(res.get("conversation_id") or res.get("conversationId") or "").strip()
+
+    all_in = [h for h in (sc.get("email_headers") or []) if isinstance(h, dict)]
+    all_sent = [h for h in (sc.get("sent_email_headers") or []) if isinstance(h, dict)]
+    cur_hdr = None
+    for h in all_in + all_sent:
+        if cur_uid and str(h.get("uid") or "") == cur_uid and (not aid or not h.get("account_id") or str(h.get("account_id")) == aid):
+            cur_hdr = h
+            if not cur_conv:
+                cur_conv = str(h.get("conversation_id") or h.get("conversationId") or "").strip()
+            break
+
+    cur_raw_dt = str((cur_hdr or {}).get("date") or res.get("raw_date") or res.get("date") or "")
+    cur_party = f"{res.get('from') or ''} {(cur_hdr or {}).get('sender_email') or ''} {res.get('to') or ''}".strip()
+    multi_thread = _is_specific_multi_person_thread_subject(cur_norm)
+
+    candidates: list[tuple[str, dict]] = []
+    for h in all_in:
+        candidates.append((str(h.get("direction") or "inbound"), h))
+    for h in all_sent:
+        candidates.append(("sent", h))
+    for lg in (conf.get("manual_logs") or []):
+        if isinstance(lg, dict) and str(lg.get("direction") or "sent").lower() == "sent":
+            candidates.append(("sent", {
+                "uid": str(lg.get("id") or ""),
+                "account_id": str(lg.get("account_id") or aid),
+                "subject": str(lg.get("subject") or ""),
+                "from": str(lg.get("from") or "You"),
+                "to": str(lg.get("to") or lg.get("counterparty") or ""),
+                "sender_email": str(lg.get("to") or lg.get("counterparty") or ""),
+                "date": str(lg.get("at") or lg.get("date") or ""),
+                "body": str(lg.get("body") or lg.get("summary") or ""),
+                "snippet": str(lg.get("summary") or lg.get("body") or "")[:180],
+                "attachments": [],
+                "direction": "sent",
+            }))
+
+    seen_uids: set[tuple[str, str]] = set()
+    tmsgs: list[dict] = []
+
+    def _build_tmsg(src: dict, direction: str, *, override_res: dict | None = None) -> dict:
+        s_uid = str((override_res or src).get("uid") or "").strip()
+        s_aid = str((override_res or src).get("account_id") or aid).strip()
+        cached = None
+        if override_res is None and s_uid:
+            cached = email_body_cache_get(s_aid, s_uid)
+        raw_dt = str(src.get("date") or (override_res or {}).get("date") or "")
+        body_v = str(
+            (override_res or {}).get("body")
+            or (cached or {}).get("body")
+            or src.get("body")
+            or src.get("snippet")
+            or ""
+        )
+        snip_v = str(src.get("snippet") or " ".join(body_v.split())[:180])
+        quoted_v = str(
+            (override_res or {}).get("quoted_history")
+            or (cached or {}).get("quoted_history")
+            or src.get("quoted_history")
+            or ""
+        )
+        links_v = list(
+            (override_res or {}).get("links")
+            or (cached or {}).get("links")
+            or src.get("links")
+            or []
+        )
+        atts_v = list(
+            (override_res or {}).get("attachments")
+            or (cached or {}).get("attachments")
+            or src.get("attachments")
+            or []
+        )
+        return {
+            "uid": s_uid,
+            "date": _parse_comparable_email_ts(raw_dt) or raw_dt[:16],
+            "raw_date": raw_dt,
+            "from": str((override_res or {}).get("from") or (cached or {}).get("from") or src.get("from") or ""),
+            "to": str((override_res or {}).get("to") or (cached or {}).get("to") or src.get("to") or ""),
+            "cc": str((override_res or {}).get("cc") or (cached or {}).get("cc") or src.get("cc") or ""),
+            "sender_email": str(src.get("sender_email") or ""),
+            "direction": direction or "inbound",
+            "subject": str((override_res or {}).get("subject") or src.get("subject") or cur_subj),
+            "body": body_v,
+            "snippet": snip_v,
+            "quoted_history": quoted_v,
+            "links": links_v,
+            "attachments": atts_v,
+            "has_attachments": bool(atts_v or src.get("has_attachments") or (override_res or {}).get("has_attachments")),
+            "account_badge": str(src.get("account_badge") or ""),
+            "is_current": False,
+        }
+
+    for dir_lbl, cand in candidates:
+        c_uid = str(cand.get("uid") or "").strip()
+        c_aid = str(cand.get("account_id") or "").strip()
+        if not c_uid:
+            continue
+        if dir_lbl != "sent" and aid and c_aid and c_aid != aid:
+            continue
+        c_conv = str(cand.get("conversation_id") or cand.get("conversationId") or "").strip()
+        c_subj = str(cand.get("subject") or "").strip()
+        c_norm = _norm_email_subject(c_subj)
+        c_party = f"{cand.get('from') or ''} {cand.get('sender_email') or ''} {cand.get('to') or ''}".strip()
+
+        matched = False
+        if cur_uid and c_uid == cur_uid and (not aid or not c_aid or c_aid == aid):
+            matched = True
+        elif cur_conv and c_conv and c_conv == cur_conv:
+            matched = True
+        elif cur_norm and c_norm:
+            if multi_thread and c_norm == cur_norm:
+                matched = True
+            elif _subjects_match_thread(c_subj, cur_subj, sender1=c_party, sender2=cur_party):
+                matched = True
+        if not matched:
+            continue
+        dedup_k = (c_aid or aid, c_uid)
+        if dedup_k in seen_uids:
+            continue
+        seen_uids.add(dedup_k)
+        is_target = bool(cur_uid and c_uid == cur_uid and (not aid or not c_aid or c_aid == aid))
+        tmsgs.append(_build_tmsg(cand, dir_lbl, override_res=(res if is_target else None)))
+
+    if cur_uid and (aid, cur_uid) not in seen_uids and not any(m.get("uid") == cur_uid for m in tmsgs):
+        tmsgs.append({
+            "uid": cur_uid,
+            "date": _parse_comparable_email_ts(cur_raw_dt) or str(res.get("date") or "")[:16],
+            "raw_date": cur_raw_dt,
+            "from": str(res.get("from") or ""),
+            "to": str(res.get("to") or ""),
+            "cc": str(res.get("cc") or ""),
+            "sender_email": "",
+            "direction": str(res.get("direction") or "inbound"),
+            "subject": cur_subj,
+            "body": str(res.get("body") or ""),
+            "snippet": " ".join(str(res.get("body") or "").split())[:180],
+            "quoted_history": str(res.get("quoted_history") or ""),
+            "links": list(res.get("links") or []),
+            "attachments": list(res.get("attachments") or []),
+            "has_attachments": bool(res.get("attachments") or res.get("has_attachments")),
+            "account_badge": "",
+            "is_current": False,
+        })
+
+    _sort_thread_messages_newest_first(tmsgs)
+    if tmsgs:
+        for idx, tm in enumerate(tmsgs):
+            tm["is_current"] = idx == 0
+    res["thread_messages"] = tmsgs
+    res["thread_count"] = len(tmsgs)
+    return res
+
+
 def read_email_message(body: dict | None = None, *, account_id: str = "", uid: str = "", subject: str = "") -> dict:
     """Two-way Email Reader: fetch full plain-text/HTML body and attachment metadata of a message by UID or subject match
     across Microsoft Graph API, Gmail REST API, or IMAP SSL."""
@@ -7710,33 +8351,54 @@ def read_email_message(body: dict | None = None, *, account_id: str = "", uid: s
     want_subj = str(payload.get("subject") or "").strip()
 
     cfg = load_comms_config()
-    # When searching by subject without a uid, check synced inbox headers first so a manual_log never shadows an incoming email
+    try:
+        _sc_rd = load_comms_sync()
+    except Exception:
+        _sc_rd = {}
+
+    # When searching by subject without a uid, sort matching inbox headers newest-first so an older message never shadows newer replies
     if not want_uid and want_subj:
         try:
-            _sc_rd = load_comms_sync()
-            for _hrd in (_sc_rd.get("email_headers") or []):
-                if not isinstance(_hrd, dict):
-                    continue
-                if want_subj.lower() in str(_hrd.get("subject") or "").lower():
-                    if _hrd.get("body") and _hrd.get("body_preloaded"):
-                        return enforce_email_sandbox_item({
-                            "ok": True,
-                            "account_id": str(_hrd.get("account_id") or acc_id or ""),
-                            "uid": str(_hrd.get("uid") or ""),
-                            "subject": str(_hrd.get("subject") or want_subj),
-                            "from": str(_hrd.get("from") or ""),
-                            "to": str(_hrd.get("to") or ""),
-                            "cc": str(_hrd.get("cc") or ""),
-                            "date": str(_hrd.get("date") or ""),
-                            "body": str(_hrd.get("body") or ""),
-                            "quoted_history": str(_hrd.get("quoted_history") or ""),
-                            "links": list(_hrd.get("links") or []),
-                            "attachments": list(_hrd.get("attachments") or []),
-                        })
-                    want_uid = str(_hrd.get("uid") or "").strip()
-                    if not acc_id and _hrd.get("account_id"):
-                        acc_id = str(_hrd.get("account_id") or "").strip()
-                    break
+            _subj_hits = [
+                _hrd for _hrd in (_sc_rd.get("email_headers") or [])
+                if isinstance(_hrd, dict)
+                and want_subj.lower() in str(_hrd.get("subject") or "").lower()
+                and (not acc_id or str(_hrd.get("account_id") or "") == acc_id)
+            ]
+            if not _subj_hits and acc_id:
+                _subj_hits = [
+                    _hrd for _hrd in (_sc_rd.get("email_headers") or [])
+                    if isinstance(_hrd, dict) and want_subj.lower() in str(_hrd.get("subject") or "").lower()
+                ]
+            if _subj_hits:
+                _subj_hits.sort(
+                    key=lambda h: (
+                        _to_utc_epoch(str(h.get("date") or ""), assume_local_if_naive=True) or -1.0,
+                        str(h.get("date") or ""),
+                    ),
+                    reverse=True,
+                )
+                _best_hdr = _subj_hits[0]
+                _best_needs_atts = bool(_best_hdr.get("has_attachments") and not _best_hdr.get("attachments"))
+                if _best_hdr.get("body") and _best_hdr.get("body_preloaded") and not _best_needs_atts:
+                    _pre_res = {
+                        "ok": True,
+                        "account_id": str(_best_hdr.get("account_id") or acc_id or ""),
+                        "uid": str(_best_hdr.get("uid") or ""),
+                        "subject": str(_best_hdr.get("subject") or want_subj),
+                        "from": str(_best_hdr.get("from") or ""),
+                        "to": str(_best_hdr.get("to") or ""),
+                        "cc": str(_best_hdr.get("cc") or ""),
+                        "date": str(_best_hdr.get("date") or ""),
+                        "body": str(_best_hdr.get("body") or ""),
+                        "quoted_history": str(_best_hdr.get("quoted_history") or ""),
+                        "links": list(_best_hdr.get("links") or []),
+                        "attachments": list(_best_hdr.get("attachments") or []),
+                    }
+                    return enforce_email_sandbox_item(_attach_thread_messages_to_read_result(_pre_res, sync_doc=_sc_rd, cfg=cfg))
+                want_uid = str(_best_hdr.get("uid") or "").strip()
+                if not acc_id and _best_hdr.get("account_id"):
+                    acc_id = str(_best_hdr.get("account_id") or "").strip()
         except Exception:
             pass
     # Check manual_logs (for sent correspondence logged directly in Anchor)
@@ -7745,7 +8407,7 @@ def read_email_message(body: dict | None = None, *, account_id: str = "", uid: s
             if not isinstance(lg, dict):
                 continue
             if (want_uid and str(lg.get("id") or "") == want_uid) or (not want_uid and want_subj and want_subj.lower() in str(lg.get("subject") or "").lower()):
-                return enforce_email_sandbox_item({
+                _lg_res = {
                     "ok": True,
                     "account_id": str(lg.get("account_id") or acc_id or "anchor-sent"),
                     "uid": str(lg.get("id") or want_uid),
@@ -7756,29 +8418,51 @@ def read_email_message(body: dict | None = None, *, account_id: str = "", uid: s
                     "body": str(lg.get("body") or lg.get("summary") or ""),
                     "direction": str(lg.get("direction") or "sent"),
                     "attachments": [],
-                })
+                }
+                return enforce_email_sandbox_item(_attach_thread_messages_to_read_result(_lg_res, sync_doc=_sc_rd, cfg=cfg))
     accounts = cfg.get("accounts") or []
     acc = next((a for a in accounts if a.get("id") == acc_id), None) if acc_id else (accounts[0] if accounts else None)
     if not acc:
         return {"ok": False, "error": "No email account configured in Comms."}
 
     aid = str(acc.get("id") or "")
+    _matched_sync_hdr = None
+    if want_uid:
+        for _sh in (_sc_rd.get("email_headers") or []):
+            if isinstance(_sh, dict) and str(_sh.get("uid") or "") == want_uid and (not aid or not _sh.get("account_id") or str(_sh.get("account_id")) == aid):
+                _matched_sync_hdr = _sh
+                break
+
     cached_body = email_body_cache_get(aid, want_uid) if want_uid else None
-    if cached_body and cached_body.get("body"):
+    _hdr_needs_atts = bool(
+        _matched_sync_hdr
+        and _matched_sync_hdr.get("has_attachments")
+        and not (cached_body or {}).get("attachments")
+    )
+    if cached_body and cached_body.get("body") and not _hdr_needs_atts:
         # 0ms local pre-cache hit (bounded at 256KB per message) — no provider round trip
-        return enforce_email_sandbox_item(dict(cached_body, ok=True, account_id=aid, uid=want_uid, cache="local"))
-    if _is_hermetic():
-        return {
+        _c_res = dict(cached_body, ok=True, account_id=aid, uid=want_uid, cache="local")
+        if _c_res.get("attachments") is None:
+            _c_res["attachments"] = []
+        return enforce_email_sandbox_item(_attach_thread_messages_to_read_result(_c_res, sync_doc=_sc_rd, cfg=cfg))
+
+    _provider_mocked = (
+        (getattr(paths, "safe_urlopen", None) is not _REAL_PATHS_SAFE_URLOPEN)
+        or (imaplib.IMAP4_SSL is not _REAL_IMAP4_SSL)
+    )
+    if _is_hermetic() and not _provider_mocked:
+        _herm_res = {
             "ok": True,
             "account_id": aid,
             "uid": want_uid or "1",
-            "subject": want_subj or "Simulated Hermetic Message",
-            "from": acc.get("email") or "sender@example.com",
-            "to": acc.get("email") or "recipient@example.com",
-            "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
-            "body": f"Hermetic test message body for {want_subj or want_uid or aid}.",
-            "attachments": [],
+            "subject": str((cached_body or {}).get("subject") or (_matched_sync_hdr or {}).get("subject") or want_subj or "Simulated Hermetic Message"),
+            "from": str((cached_body or {}).get("from") or (_matched_sync_hdr or {}).get("from") or acc.get("email") or "sender@example.com"),
+            "to": str((cached_body or {}).get("to") or (_matched_sync_hdr or {}).get("to") or acc.get("email") or "recipient@example.com"),
+            "date": str((cached_body or {}).get("date") or (_matched_sync_hdr or {}).get("date") or datetime.now().strftime("%Y-%m-%d %H:%M")),
+            "body": str((cached_body or {}).get("body") or (_matched_sync_hdr or {}).get("body") or f"Hermetic test message body for {want_subj or want_uid or aid}."),
+            "attachments": list((cached_body or {}).get("attachments") or (_matched_sync_hdr or {}).get("attachments") or []),
         }
+        return _attach_thread_messages_to_read_result(_herm_res, sync_doc=_sc_rd, cfg=cfg)
 
     secret = get_account_secret(aid)
     if not secret:
@@ -7816,34 +8500,50 @@ def read_email_message(body: dict | None = None, *, account_id: str = "", uid: s
                 elif items:
                     target_id = str(items[0].get("id") or "")
             if target_id:
-                m_url = f"https://graph.microsoft.com/v1.0/me/messages/{urllib.parse.quote(target_id, safe='')}?$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,body,bodyPreview,hasAttachments"
-                with paths.safe_urlopen(urllib.request.Request(m_url, headers=req_hdrs), timeout=6.0) as m_resp:
-                    item = json.loads(m_resp.read().decode("utf-8", errors="replace"))
-                frm_obj = ((item.get("from") or {}).get("emailAddress") or {})
-                from_str = _format_graph_recipient(str(frm_obj.get("name") or ""), str(frm_obj.get("address") or ""))
-                to_list = []
-                for r in (item.get("toRecipients") or []):
-                    if isinstance(r, dict):
-                        ea = (r.get("emailAddress") or {})
-                        nm = str(ea.get("name") or "").strip()
-                        ad = str(ea.get("address") or "").strip()
-                        to_list.append(_format_graph_recipient(nm, ad))
-                cc_list = []
-                for r in (item.get("ccRecipients") or []):
-                    if isinstance(r, dict):
-                        ea = (r.get("emailAddress") or {})
-                        nm = str(ea.get("name") or "").strip()
-                        ad = str(ea.get("address") or "").strip()
-                        cc_list.append(_format_graph_recipient(nm, ad))
-                body_obj = item.get("body") or {}
-                raw_content = str(body_obj.get("content") or item.get("bodyPreview") or "")
-                is_html_body = str(body_obj.get("contentType") or "").lower() == "html"
-                fmt_res = format_clean_email_body_and_links(raw_content, is_html=is_html_body)
-                body_text = str(fmt_res.get("body") or "")
+                item: dict = {}
+                try:
+                    m_url = f"https://graph.microsoft.com/v1.0/me/messages/{urllib.parse.quote(target_id, safe='')}?$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,body,bodyPreview,hasAttachments"
+                    with paths.safe_urlopen(urllib.request.Request(m_url, headers=req_hdrs), timeout=6.0) as m_resp:
+                        item = json.loads(m_resp.read().decode("utf-8", errors="replace"))
+                except Exception:
+                    if not (cached_body and cached_body.get("body")):
+                        raise
+                    item = {}
+                if item:
+                    frm_obj = ((item.get("from") or {}).get("emailAddress") or {})
+                    from_str = _format_graph_recipient(str(frm_obj.get("name") or ""), str(frm_obj.get("address") or ""))
+                    to_list = []
+                    for r in (item.get("toRecipients") or []):
+                        if isinstance(r, dict):
+                            ea = (r.get("emailAddress") or {})
+                            nm = str(ea.get("name") or "").strip()
+                            ad = str(ea.get("address") or "").strip()
+                            to_list.append(_format_graph_recipient(nm, ad))
+                    cc_list = []
+                    for r in (item.get("ccRecipients") or []):
+                        if isinstance(r, dict):
+                            ea = (r.get("emailAddress") or {})
+                            nm = str(ea.get("name") or "").strip()
+                            ad = str(ea.get("address") or "").strip()
+                            cc_list.append(_format_graph_recipient(nm, ad))
+                    body_obj = item.get("body") or {}
+                    raw_content = str(body_obj.get("content") or item.get("bodyPreview") or "")
+                    is_html_body = str(body_obj.get("contentType") or "").lower() == "html"
+                    fmt_res = format_clean_email_body_and_links(raw_content, is_html=is_html_body)
+                    body_text = str(fmt_res.get("body") or "")
+                else:
+                    from_str = str((cached_body or {}).get("from") or "")
+                    to_list = [str((cached_body or {}).get("to") or "")]
+                    cc_list = [str((cached_body or {}).get("cc") or "")]
+                    body_text = str((cached_body or {}).get("body") or "")
+                    fmt_res = {
+                        "quoted_history": str((cached_body or {}).get("quoted_history") or ""),
+                        "links": list((cached_body or {}).get("links") or []),
+                    }
                 atts_meta: list[dict] = []
-                if item.get("hasAttachments"):
+                if item.get("hasAttachments") or _hdr_needs_atts:
                     try:
-                        a_url = f"https://graph.microsoft.com/v1.0/me/messages/{urllib.parse.quote(target_id, safe='')}/attachments?$select=id,name,size,contentType"
+                        a_url = f"https://graph.microsoft.com/v1.0/me/messages/{urllib.parse.quote(target_id, safe='')}/attachments?$select=id,name,size,contentType,isInline"
                         with paths.safe_urlopen(urllib.request.Request(a_url, headers=req_hdrs), timeout=5.0) as a_resp:
                             a_data = json.loads(a_resp.read().decode("utf-8", errors="replace"))
                         for att in a_data.get("value") or []:
@@ -7853,6 +8553,7 @@ def read_email_message(body: dict | None = None, *, account_id: str = "", uid: s
                                     "filename": str(att.get("name") or "attachment"),
                                     "size_bytes": int(att.get("size") or 0),
                                     "content_type": str(att.get("contentType") or "application/octet-stream"),
+                                    "is_inline": bool(att.get("isInline", False)),
                                 })
                     except Exception:
                         pass
@@ -7860,11 +8561,11 @@ def read_email_message(body: dict | None = None, *, account_id: str = "", uid: s
                     "ok": True,
                     "account_id": aid,
                     "uid": str(item.get("id") or target_id),
-                    "subject": str(item.get("subject") or "(No Subject)"),
+                    "subject": str(item.get("subject") or (cached_body or {}).get("subject") or "(No Subject)"),
                     "from": from_str,
                     "to": ", ".join([x for x in to_list if x]),
                     "cc": ", ".join([x for x in cc_list if x]),
-                    "date": str(item.get("receivedDateTime") or "")[:16].replace("T", " "),
+                    "date": (str(item.get("receivedDateTime") or "")[:16].replace("T", " ")) if item.get("receivedDateTime") else str((cached_body or {}).get("date") or ""),
                     "body": body_text[:12000],
                     "quoted_history": str(fmt_res.get("quoted_history") or ""),
                     "links": list(fmt_res.get("links") or []),
@@ -7873,9 +8574,12 @@ def read_email_message(body: dict | None = None, *, account_id: str = "", uid: s
                 if aid and graph_res["uid"]:
                     try:
                         write_email_body_cache(aid, graph_res["uid"], graph_res)
+                        if atts_meta:
+                            _persist_synced_header_attachments(aid, graph_res["uid"], atts_meta)
+                            _sc_rd = load_comms_sync()
                     except Exception:
                         pass
-                return enforce_email_sandbox_item(graph_res)
+                return enforce_email_sandbox_item(_attach_thread_messages_to_read_result(graph_res, sync_doc=_sc_rd, cfg=cfg))
         except Exception as exc:
             return {"ok": False, "error": f"Microsoft Graph read note: {type(exc).__name__}: {str(exc)[:140]}"}
         return {"ok": False, "error": "Message not found via Microsoft Graph API."}
@@ -7921,7 +8625,10 @@ def read_email_message(body: dict | None = None, *, account_id: str = "", uid: s
                 if not read_res.get("ok"):
                     return read_res
                 write_email_body_cache(aid, target_uid, read_res)
-                return enforce_email_sandbox_item(read_res)
+                if read_res.get("attachments"):
+                    _persist_synced_header_attachments(aid, target_uid, list(read_res["attachments"]))
+                    _sc_rd = load_comms_sync()
+                return enforce_email_sandbox_item(_attach_thread_messages_to_read_result(read_res, sync_doc=_sc_rd, cfg=cfg))
             if typ != "OK":
                 return {"ok": False, "error": "Could not select mailbox folder"}
             if target_mid is None:
@@ -7990,7 +8697,7 @@ def read_email_message(body: dict | None = None, *, account_id: str = "", uid: s
                 if isinstance(lk, dict) and lk.get("url") and lk["url"] not in seen_u_set:
                     seen_u_set.add(lk["url"])
                     merged_links.append(lk)
-            return enforce_email_sandbox_item({
+            _imap_res = {
                 "ok": True,
                 "account_id": aid,
                 "uid": target_mid.decode("ascii", errors="replace") if isinstance(target_mid, bytes) else str(target_mid),
@@ -8003,7 +8710,11 @@ def read_email_message(body: dict | None = None, *, account_id: str = "", uid: s
                 "quoted_history": quoted_hist[:8000],
                 "links": merged_links[:12],
                 "attachments": atts_meta,
-            })
+            }
+            if atts_meta and _imap_res["uid"]:
+                _persist_synced_header_attachments(aid, _imap_res["uid"], atts_meta)
+                _sc_rd = load_comms_sync()
+            return enforce_email_sandbox_item(_attach_thread_messages_to_read_result(_imap_res, sync_doc=_sc_rd, cfg=cfg))
         finally:
             try:
                 conn.logout()
@@ -10829,6 +11540,9 @@ def generate_steward_reply_draft(body: dict) -> dict:
         elif intent == "details":
             effective_instruction = "Ask them to email over any remaining execution copies or details we need before finalizing"
 
+    async_draft_flag = bool(body.get("async_draft", False))
+    data_dir_override = body.get("_data_dir")
+    eff_data_dir = Path(data_dir_override) if data_dir_override else None
     email_ctx_for_scribe = {
         "uid": uid,
         "account_id": acc_id,
@@ -10842,6 +11556,7 @@ def generate_steward_reply_draft(body: dict) -> dict:
         "current_draft": current_draft,
         "preserve_manual_draft": bool(body.get("preserve_manual_draft") or current_draft.strip()),
         "preferred_seat": str(body.get("preferred_seat") or body.get("seat") or ""),
+        "async_draft": async_draft_flag,
     }
 
     # Delegate synthesis & 5-mode style transforms directly to Scribe Engine
@@ -10854,26 +11569,30 @@ def generate_steward_reply_draft(body: dict) -> dict:
                 mode=tone,
                 email_obj=email_ctx_for_scribe,
                 instruction="",
+                data_dir=eff_data_dir,
+                async_draft=async_draft_flag,
             )
             or ""
         ).strip()
         steward_note = f"Scribe adjusted your draft ({tone.replace('_', ' ')}) while preserving voice & proper names."
-        _scribe_voice = _scribe.get_sender_voice_profile(email_ctx_for_scribe)
+        _scribe_voice = _scribe.get_sender_voice_profile(email_ctx_for_scribe, data_dir=eff_data_dir)
         last_run = getattr(_scribe, "LAST_SCRIBE_RUN", {})
         if isinstance(last_run, dict) and not last_run.get("ok", True):
             draft_status = {
                 "ok": False,
                 "status_code": int(last_run.get("status_code") or 503),
                 "failure_state": str(last_run.get("failure_state") or "dependency-missing"),
+                "error_code": str(last_run.get("error_code") or "dependency_missing"),
                 "message": str(last_run.get("message") or "Scribe LLM unavailable (provider sign-in required) — existing manual draft preserved."),
                 "previous_draft_preserved": True,
             }
         instruction_rating = _scribe.rate_and_parse_instructions(
             instruction=f"Tone adjustment: {tone}",
             email_obj=email_ctx_for_scribe,
+            data_dir=eff_data_dir,
         )
         try:
-            _scribe.record_interest_signal({"uid": uid, "from": from_str or sender_email, "subject": subj_raw}, action="tone_transform", tone=tone)
+            _scribe.record_interest_signal({"uid": uid, "from": from_str or sender_email, "subject": subj_raw}, action="tone_transform", tone=tone, data_dir=eff_data_dir)
         except Exception:
             pass
     else:
@@ -10881,6 +11600,8 @@ def generate_steward_reply_draft(body: dict) -> dict:
             email_obj=email_ctx_for_scribe,
             instruction=effective_instruction,
             tone=tone,
+            data_dir=eff_data_dir,
+            async_draft=async_draft_flag,
         )
         draft_body = str(scribe_res.get("body") or scribe_res.get("draft_body") or "").strip()
         if not scribe_res.get("ok"):
@@ -10888,6 +11609,7 @@ def generate_steward_reply_draft(body: dict) -> dict:
                 "ok": False,
                 "status_code": int(scribe_res.get("status_code") or 503),
                 "failure_state": str(scribe_res.get("failure_state") or "dependency-missing"),
+                "error_code": str(scribe_res.get("error_code") or "dependency_missing"),
                 "message": str(scribe_res.get("message") or "Scribe LLM unavailable (provider sign-in required) — existing manual draft preserved."),
                 "previous_draft_preserved": bool(scribe_res.get("previous_draft_preserved", True)),
             }
@@ -11671,12 +12393,23 @@ def get_calendar_dialogue_context(body: dict) -> dict:
     }
 
 
-# ── Speed Racer Email Approval Queue & Persistent Working List Spine (2026-11-06) ──
+# ── Speed Racer Email Approval Queue, Exclusive Lock & Bounded FIFO Scribe Worker (2026-11-20) ──
 
-def _speed_racer_path() -> Path:
-    p = paths.data_dir() / ".anchor" / "speed-racer-queue.json"
+def _speed_racer_path(data_dir: Path | None = None) -> Path:
+    base = Path(data_dir) if data_dir is not None else paths.data_dir()
+    p = base / ".anchor" / "speed-racer-queue.json"
     p.parent.mkdir(parents=True, exist_ok=True)
     return p
+
+
+def _speed_racer_lock_path(data_dir: Path | None = None) -> Path:
+    p = _speed_racer_path(data_dir)
+    return p.with_name(p.name + ".lock")
+
+
+def speed_racer_queue_lock(timeout_sec: float = STORE_LOCK_TIMEOUT_SEC, data_dir: Path | None = None):
+    """Exclusive cross-thread & cross-process lock for `.anchor/speed-racer-queue.json`, decoupled from `COMMS_LOCK`."""
+    return paths.cross_process_lock(_speed_racer_lock_path(data_dir), timeout_sec=timeout_sec)
 
 
 def _default_speed_racer_state() -> dict:
@@ -11692,61 +12425,441 @@ def _default_speed_racer_state() -> dict:
 _SPEED_RACER_QUEUE_CACHE: dict[str, tuple[int, int, dict]] = {}
 
 
-def load_speed_racer_queue() -> dict:
-    p = _speed_racer_path()
-    if p.is_file():
-        try:
-            st = p.stat()
-            ck = os.path.normcase(str(p.resolve()))
-            hit = _SPEED_RACER_QUEUE_CACHE.get(ck)
-            if hit is not None and hit[0] == st.st_mtime_ns and hit[1] == st.st_size:
-                return copy.deepcopy(hit[2])
-            data = json.loads(p.read_text(encoding="utf-8"))
-            if isinstance(data, dict) and isinstance(data.get("queue"), list):
-                if not isinstance(data.get("archive"), list):
-                    data["archive"] = []
-                try:
-                    for _lst in (data.get("queue") or [], data.get("archive") or []):
-                        for _it in _lst:
-                            if isinstance(_it, dict):
-                                _to_v = str(_it.get("to") or "")
-                                if "<" in _to_v:
-                                    _it["to"] = _proper_capitalize_sender_display(_to_v)
-                                _db_v = str(_it.get("draft_body") or "")
-                                if _db_v and not _it.get("user_edited"):
-                                    _it["draft_body"] = _proper_capitalize_names_in_prose(
-                                        _db_v, _first_name_from_sender(_to_v)
-                                    )
-                except Exception:
-                    pass
-                _SPEED_RACER_QUEUE_CACHE[ck] = (st.st_mtime_ns, st.st_size, copy.deepcopy(data))
-                return data
-        except Exception:
-            pass
-    default_st = _default_speed_racer_state()
-    if not p.exists():
-        try:
-            p.write_text(json.dumps(default_st, indent=2), encoding="utf-8")
-        except Exception:
-            pass
-    return default_st
+def compute_scribe_queue_counts(state: dict | None) -> dict:
+    q = [it for it in ((state or {}).get("queue") or []) if isinstance(it, dict)]
+    queued_n = sum(1 for it in q if str(it.get("status") or "").lower() == "queued")
+    drafting_n = sum(1 for it in q if str(it.get("status") or "").lower() == "drafting")
+    error_n = sum(1 for it in q if str(it.get("status") or "").lower() == "error")
+    ready_n = sum(
+        1 for it in q
+        if str(it.get("status") or "").lower() in ("ready", "")
+        or (str(it.get("draft_body") or "").strip() and str(it.get("status") or "").lower() not in ("queued", "drafting", "error"))
+    )
+    return {
+        "queued": queued_n,
+        "drafting": drafting_n,
+        "pending": queued_n + drafting_n,
+        "ready": ready_n,
+        "error": error_n,
+        "total": len(q),
+        "max_items": SPEED_RACER_QUEUE_MAX_ITEMS,
+    }
 
 
-def save_speed_racer_queue(state: dict) -> None:
-    p = _speed_racer_path()
-    lock_p = p.with_name(p.name + ".lock")
+def _normalize_speed_racer_loaded_dict(data: dict) -> dict:
+    if not isinstance(data.get("archive"), list):
+        data["archive"] = []
     try:
-        paths.atomic_write_json(p, state, lock_path=lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC)
+        for _lst in (data.get("queue") or [], data.get("archive") or []):
+            for _it in _lst:
+                if isinstance(_it, dict):
+                    _to_v = str(_it.get("to") or "")
+                    if "<" in _to_v:
+                        _it["to"] = _proper_capitalize_sender_display(_to_v)
+                    _db_v = str(_it.get("draft_body") or "")
+                    if _db_v and not _it.get("user_edited"):
+                        _it["draft_body"] = _proper_capitalize_names_in_prose(
+                            _db_v, _first_name_from_sender(_to_v)
+                        )
     except Exception:
         pass
+    return data
+
+
+def _read_text_retry_win_sharing(p: Path) -> tuple[os.stat_result | None, str | None]:
+    """Read `p` tolerating momentary Windows NTFS sharing-violation `PermissionError` during cross-process `os.replace`."""
+    for attempt in range(25):
+        try:
+            if not p.exists():
+                return None, None
+            st = p.stat()
+            raw_txt = p.read_text(encoding="utf-8")
+            return st, raw_txt
+        except PermissionError:
+            if attempt == 24:
+                raise
+            time.sleep(0.003)
+        except FileNotFoundError:
+            return None, None
+    return None, None
+
+
+def load_speed_racer_queue_state(*, data_dir: Path | None = None, bypass_cache: bool = False) -> tuple[dict, str]:
+    """Read `.anchor/speed-racer-queue.json` while keeping `unknown` (corrupt) strictly separate from `empty`."""
+    p = _speed_racer_path(data_dir)
+    if not p.exists():
+        return _default_speed_racer_state(), "empty"
+    if not p.is_file():
+        return _default_speed_racer_state(), "unknown"
+    try:
+        ck = os.path.normcase(str(p.resolve()))
+        if not bypass_cache:
+            try:
+                st_fast = p.stat()
+            except PermissionError:
+                st_fast = None
+            except FileNotFoundError:
+                return _default_speed_racer_state(), "empty"
+            if st_fast is not None and st_fast.st_size > 0:
+                hit = _SPEED_RACER_QUEUE_CACHE.get(ck)
+                if hit is not None and hit[0] == st_fast.st_mtime_ns and hit[1] == st_fast.st_size:
+                    cached_doc = copy.deepcopy(hit[2])
+                    has_items = bool(cached_doc.get("queue") or cached_doc.get("archive"))
+                    return cached_doc, ("loaded" if has_items else "empty")
+        st, raw_txt = _read_text_retry_win_sharing(p)
+        if st is None or raw_txt is None or not raw_txt.strip():
+            return _default_speed_racer_state(), "empty"
+        data = json.loads(raw_txt)
+        if not isinstance(data, dict) or not isinstance(data.get("queue"), list):
+            return _default_speed_racer_state(), "unknown"
+        data = _normalize_speed_racer_loaded_dict(data)
+        _SPEED_RACER_QUEUE_CACHE[ck] = (st.st_mtime_ns, st.st_size, copy.deepcopy(data))
+        has_items = bool(data.get("queue") or data.get("archive"))
+        return data, ("loaded" if has_items else "empty")
+    except Exception:
+        return _default_speed_racer_state(), "unknown"
+
+
+def load_speed_racer_queue(data_dir: Path | None = None) -> dict:
+    p = _speed_racer_path(data_dir)
+    doc, status = load_speed_racer_queue_state(data_dir=data_dir)
+    if status == "empty" and not p.exists():
+        try:
+            save_speed_racer_queue(doc, data_dir=data_dir)
+        except Exception:
+            pass
+    return doc
+
+
+def save_speed_racer_queue(state: dict, *, data_dir: Path | None = None, timeout_sec: float = STORE_LOCK_TIMEOUT_SEC) -> None:
+    p = _speed_racer_path(data_dir)
+    lock_p = _speed_racer_lock_path(data_dir)
+    try:
+        paths.atomic_write_json(p, state, lock_path=lock_p, timeout_sec=timeout_sec)
+    except TimeoutError as exc:
+        raise LockBusyError(str(exc)) from exc
     _SPEED_RACER_QUEUE_CACHE.clear()
     _invalidate_cached_json_file(p)
 
 
-def queue_speed_racer_draft(body: dict) -> dict:
-    """Place an email (from Inbox UID, Working List Tile, or Steward Dialogue/CLI) into the Speed Racer approval queue."""
-    state = load_speed_racer_queue()
-    queue = list(state.get("queue") or [])
+def mutate_speed_racer_queue(mutator_fn, *, data_dir: Path | None = None, timeout_sec: float = STORE_LOCK_TIMEOUT_SEC):
+    """Execute an atomic read-modify-write transaction (`temp + os.fsync + os.replace`) on `.anchor/speed-racer-queue.json`
+    under `speed_racer_queue_lock` (decoupled from `COMMS_LOCK`), guaranteeing zero lost items across concurrent processes."""
+    p = _speed_racer_path(data_dir)
+    try:
+        with speed_racer_queue_lock(timeout_sec=timeout_sec, data_dir=data_dir):
+            _SPEED_RACER_QUEUE_CACHE.clear()
+            _invalidate_cached_json_file(p)
+            state, st_kind = load_speed_racer_queue_state(data_dir=data_dir, bypass_cache=True)
+            if st_kind == "unknown":
+                raise UnknownStoreError(SCRIBE_TRIAGE_FAILURE_STATE_TABLE["backing-store-unreadable"]["message"])
+            result, should_save = mutator_fn(state)
+            if should_save:
+                payload_txt = json.dumps(state, indent=2, ensure_ascii=False)
+                paths.atomic_write_text(p, payload_txt)
+                _SPEED_RACER_QUEUE_CACHE.clear()
+                _invalidate_cached_json_file(p)
+            return state, result
+    except TimeoutError as exc:
+        raise LockBusyError(str(exc)) from exc
+
+
+class _ScribeFifoWorkerPool:
+    """Bounded asynchronous FIFO Scribe draft worker (`max_concurrency <= 2`, decoupled from `COMMS_LOCK`).
+    Processes queued Speed Racer drafts in strict FIFO order (`queued -> drafting -> ready | error`) without 8s semaphore 504 drops."""
+
+    def __init__(self, max_concurrency: int = SCRIBE_FIFO_MAX_CONCURRENCY):
+        self.max_concurrency = max(1, min(2, int(max_concurrency)))
+        self._q: _queue_mod.Queue[dict] = _queue_mod.Queue()
+        self._meta_lock = threading.Lock()
+        self._dequeue_lock = threading.Lock()
+        self._commit_cond = threading.Condition(self._meta_lock)
+        self._next_seq = 0
+        self._next_commit_seq = 0
+        self._in_flight = 0
+        self._sidecars_in_flight = 0
+        self._active_drafting = 0
+        self._peak_concurrency = 0
+        self._workers_started = False
+        self._completion_log: list[tuple[str, str]] = []
+
+    def submit_sidecar(self, fn) -> None:
+        with self._meta_lock:
+            self._sidecars_in_flight += 1
+
+        def _runner():
+            try:
+                fn()
+            except Exception:
+                pass
+            finally:
+                with self._commit_cond:
+                    self._sidecars_in_flight = max(0, self._sidecars_in_flight - 1)
+                    self._commit_cond.notify_all()
+
+        threading.Thread(target=_runner, name="scribe-sidecar-bg", daemon=True).start()
+
+    def _ensure_workers(self) -> None:
+        with self._meta_lock:
+            if self._workers_started:
+                return
+            self._workers_started = True
+            for idx in range(self.max_concurrency):
+                t = threading.Thread(
+                    target=self._worker_loop,
+                    name=f"scribe-fifo-worker-{idx}",
+                    daemon=True,
+                )
+                t.start()
+
+    def submit(self, job: dict) -> int:
+        self._ensure_workers()
+        with self._meta_lock:
+            seq = self._next_seq
+            self._next_seq += 1
+            self._in_flight += 1
+        job_copy = dict(job, _fifo_seq=seq)
+        self._q.put(job_copy)
+        return seq
+
+    def wait_idle(self, timeout_sec: float = 30.0) -> bool:
+        deadline = time.monotonic() + max(0.05, float(timeout_sec))
+        with self._commit_cond:
+            while self._in_flight > 0 or self._sidecars_in_flight > 0 or not self._q.empty():
+                rem = deadline - time.monotonic()
+                if rem <= 0:
+                    return False
+                self._commit_cond.wait(timeout=min(0.05, rem))
+            return True
+
+    def stats(self) -> dict:
+        with self._meta_lock:
+            return {
+                "max_concurrency": self.max_concurrency,
+                "in_flight": self._in_flight,
+                "active_drafting": self._active_drafting,
+                "peak_concurrency": self._peak_concurrency,
+                "completed_count": len(self._completion_log),
+                "completion_log": list(self._completion_log[-50:]),
+            }
+
+    def _worker_loop(self) -> None:
+        while True:
+            # Serialize dequeue + `queued -> drafting` state transition so drafting starts in strict FIFO order.
+            with self._dequeue_lock:
+                job = self._q.get()
+                time.sleep(0.004)
+                seq = int(job.get("_fifo_seq", 0))
+                data_dir = Path(job["data_dir"])
+                draft_id = str(job["draft_id"])
+                item_present = True
+                try:
+                    def _mark_drafting(st: dict):
+                        q_list = list(st.get("queue") or [])
+                        idx = next((i for i, it in enumerate(q_list) if isinstance(it, dict) and str(it.get("id") or "") == draft_id), -1)
+                        if idx < 0:
+                            return False, False
+                        cur = dict(q_list[idx])
+                        hist = list(cur.get("state_history") or ["queued"])
+                        if not hist or hist[-1] != "drafting":
+                            hist.append("drafting")
+                        cur["status"] = "drafting"
+                        cur["state_history"] = hist
+                        cur["drafting_at_ts"] = time.time()
+                        cur["updated_at_ts"] = time.time()
+                        q_list[idx] = cur
+                        st["queue"] = q_list
+                        return True, True
+
+                    _, item_present = mutate_speed_racer_queue(_mark_drafting, data_dir=data_dir)
+                except Exception:
+                    item_present = True
+
+                with self._meta_lock:
+                    self._active_drafting += 1
+                    if self._active_drafting > self._peak_concurrency:
+                        self._peak_concurrency = self._active_drafting
+
+            gen_res: dict = {}
+            try:
+                if item_present:
+                    gen_payload = dict(job["gen_payload"])
+                    gen_payload["async_draft"] = True
+                    gen_payload["_data_dir"] = str(data_dir)
+                    gen_res = generate_steward_reply_draft(gen_payload)
+            except Exception as exc:
+                gen_res = {
+                    "ok": False,
+                    "status_code": 503,
+                    "failure_state": "dependency-missing",
+                    "error_code": "worker_exception",
+                    "message": f"Scribe async worker error: {exc}",
+                }
+            finally:
+                with self._meta_lock:
+                    self._active_drafting = max(0, self._active_drafting - 1)
+
+            # Commit `drafting -> ready | error` in strict FIFO sequence order so 5+ rapid emails complete in exact FIFO order.
+            try:
+                with self._commit_cond:
+                    while self._next_commit_seq < seq:
+                        self._commit_cond.wait(timeout=0.05)
+                if item_present:
+                    self._commit_job_result(job, gen_res, data_dir=data_dir)
+            finally:
+                with self._commit_cond:
+                    self._completion_log.append((draft_id, "ready" if gen_res.get("ok") else "error"))
+                    if len(self._completion_log) > 200:
+                        self._completion_log = self._completion_log[-200:]
+                    self._next_commit_seq = max(self._next_commit_seq, seq + 1)
+                    self._in_flight = max(0, self._in_flight - 1)
+                    self._commit_cond.notify_all()
+                self._q.task_done()
+
+    def _commit_job_result(self, job: dict, gen_res: dict, *, data_dir: Path) -> None:
+        draft_id = str(job["draft_id"])
+        uid = str(job.get("uid") or "")
+        from_hint = str(job.get("from_hint") or "")
+        steward_directions = str(job.get("steward_directions") or "")
+        reply_mode = str(job.get("reply_mode") or "reply")
+
+        def _apply_result(st: dict):
+            q_list = list(st.get("queue") or [])
+            idx = next((i for i, it in enumerate(q_list) if isinstance(it, dict) and str(it.get("id") or "") == draft_id), -1)
+            if idx < 0:
+                return None, False
+            cur = dict(q_list[idx])
+            hist = list(cur.get("state_history") or ["queued", "drafting"])
+            if gen_res.get("ok") and str(gen_res.get("draft_body") or "").strip():
+                raw_draft = str(gen_res.get("draft_body") or "")
+                capped = _proper_capitalize_names_in_prose(raw_draft, _first_name_from_sender(from_hint or str(cur.get("to") or "")))
+                if cur.get("user_edited") and str(cur.get("draft_body") or "").strip():
+                    cur["last_scribe_draft"] = capped
+                else:
+                    cur["draft_body"] = capped
+                    cur["original_scribe_draft"] = capped
+                    cur["last_scribe_draft"] = capped
+                if str(gen_res.get("incoming_body") or "").strip():
+                    cur["incoming_snippet"] = str(gen_res["incoming_body"]).strip()
+                    cur["incoming_body"] = str(gen_res["incoming_body"]).strip()
+                if str(gen_res.get("to") or "").strip() and reply_mode == "reply" and (not cur.get("to") or cur.get("to") == "recipient@example.com"):
+                    cur["to"] = str(gen_res["to"]).strip()
+                if not cur.get("cc") and str(gen_res.get("cc") or "").strip():
+                    cur["cc"] = str(gen_res["cc"]).strip()
+                if isinstance(gen_res.get("instruction_rating"), dict) and gen_res.get("instruction_rating"):
+                    cur["instruction_rating"] = gen_res["instruction_rating"]
+                    cur["instruction_rating_label"] = str(gen_res["instruction_rating"].get("label") or cur.get("instruction_rating_label") or "")
+                gen_note = str(gen_res.get("steward_note") or "").strip()
+                if gen_note:
+                    cur["context_reason"] = gen_note
+                if not hist or hist[-1] != "ready":
+                    hist.append("ready")
+                cur["status"] = "ready"
+                cur["state_history"] = hist
+                cur.pop("error_code", None)
+                cur.pop("error_message", None)
+                now_ready_ts = time.time()
+                if not cur.get("ready_at_ts"):
+                    cur["ready_at_ts"] = now_ready_ts
+                cur["completed_at_ts"] = now_ready_ts
+                cur["updated_at_ts"] = now_ready_ts
+                st["auto_open_ts"] = float(cur["ready_at_ts"])
+            else:
+                if not hist or hist[-1] != "error":
+                    hist.append("error")
+                cur["status"] = "error"
+                cur["state_history"] = hist
+                cur["error_code"] = str(gen_res.get("error_code") or "dependency_missing")
+                cur["failure_state"] = str(gen_res.get("failure_state") or "dependency-missing")
+                cur["status_code"] = int(gen_res.get("status_code") or 503)
+                cur["error_message"] = str(gen_res.get("message") or gen_res.get("steward_note") or "Scribe draft generation failed.")
+                cur["completed_at_ts"] = time.time()
+                cur["updated_at_ts"] = time.time()
+            q_list[idx] = cur
+            st["queue"] = q_list
+            return cur, True
+
+        try:
+            mutate_speed_racer_queue(_apply_result, data_dir=data_dir)
+        except Exception:
+            pass
+
+        if uid and not uid.startswith("sr-") and gen_res.get("ok"):
+            try:
+                p_tp = data_dir / ".anchor" / "comms-triage-prefs.json"
+                lk_tp = p_tp.with_name(p_tp.name + ".lock")
+                with paths.cross_process_lock(lk_tp, timeout_sec=STORE_LOCK_TIMEOUT_SEC):
+                    if p_tp.is_file():
+                        tp_doc = json.loads(p_tp.read_text(encoding="utf-8"))
+                        if isinstance(tp_doc, dict) and isinstance(tp_doc.get("acted_upon_emails"), dict) and uid in tp_doc["acted_upon_emails"]:
+                            tp_doc["acted_upon_emails"][uid]["status"] = "🏎️ In Speed Racer"
+                            tp_doc["acted_upon_emails"][uid]["reason"] = (
+                                f"Steward instructed: {steward_directions}" if steward_directions else "Draft ready in Speed Racer"
+                            )
+                            paths.atomic_write_text(p_tp, json.dumps(tp_doc, indent=2, ensure_ascii=False))
+                            _invalidate_cached_json_file(p_tp)
+            except Exception:
+                pass
+
+
+_SCRIBE_FIFO_POOL = _ScribeFifoWorkerPool(max_concurrency=SCRIBE_FIFO_MAX_CONCURRENCY)
+
+
+def wait_for_scribe_queue_idle(timeout_sec: float = 30.0) -> bool:
+    """Wait until all queued asynchronous Scribe drafts have transitioned to `ready` or `error`."""
+    deadline = time.monotonic() + max(0.05, float(timeout_sec))
+    while True:
+        rem = deadline - time.monotonic()
+        if rem <= 0:
+            return False
+        if not _SCRIBE_FIFO_POOL.wait_idle(timeout_sec=rem):
+            return False
+        st, kind = load_speed_racer_queue_state()
+        if kind == "unknown":
+            return True
+        pending_on_disk = [
+            it for it in (st.get("queue") or [])
+            if isinstance(it, dict) and str(it.get("status") or "") in ("queued", "drafting")
+        ]
+        if not pending_on_disk:
+            return True
+        time.sleep(0.02)
+
+
+def get_scribe_fifo_worker_stats() -> dict:
+    return _SCRIBE_FIFO_POOL.stats()
+
+
+def queue_speed_racer_draft(body: dict, *, async_draft: bool | None = None) -> dict:
+    """Place an email (from Inbox UID, Working List Tile, or Steward Dialogue/CLI) into the Speed Racer approval queue.
+    - Default `async_draft=False`: synthesizes synchronously for direct Python callers while enforcing `SPEED_RACER_QUEUE_MAX_ITEMS = 200`
+      and atomic exclusive-lock writes decoupled from `COMMS_LOCK`.
+    - `async_draft=True` (or `body['async_draft'] == True`): persists a `status='queued'` job via `temp + fsync + rename` under
+      `speed_racer_queue_lock` and returns in `<50 ms`, handing synthesis off to `_SCRIBE_FIFO_POOL` (`queued -> drafting -> ready | error`)."""
+    if not isinstance(body, dict):
+        return _scribe_triage_failure_dict("dependency-returns-garbage", status_code=400, detail="JSON object required")
+    use_async = bool(body.get("async_draft", False)) if async_draft is None else bool(async_draft)
+    client_req_id = str(body.get("client_msg_id") or body.get("client_req_id") or body.get("idempotency_key") or "").strip()
+    force_new = bool(body.get("force_new"))
+
+    init_state, init_st_kind = load_speed_racer_queue_state()
+    if init_st_kind == "unknown":
+        return _scribe_triage_failure_dict("backing-store-unreadable", detail="speed-racer-queue.json unreadable")
+
+    if client_req_id:
+        prev_sr = _lookup_comms_client_msg_id("speed_racer_queue", client_req_id)
+        if prev_sr is not None:
+            return {
+                **prev_sr,
+                "ok": True,
+                "status_code": 200,
+                "deduplicated": True,
+                "client_msg_id": client_req_id,
+                "client_req_id": client_req_id,
+                "speed_racer": init_state,
+                "scribe_queue_counts": compute_scribe_queue_counts(init_state),
+            }
+
     uid = str(body.get("uid") or "").strip()
     draft_id = str(body.get("draft_id") or body.get("id") or "").strip()
     subj = str(body.get("subject") or "").strip()
@@ -11765,7 +12878,9 @@ def queue_speed_racer_draft(body: dict) -> dict:
     sync_cache: dict = {}
     matched_hdr: dict = {}
     if uid:
-        sync_cache = load_comms_sync()
+        sync_cache, sync_st_q = load_comms_sync_state()
+        if sync_st_q == "unknown":
+            return _scribe_triage_failure_dict("backing-store-unreadable", detail="comms-sync.json unreadable")
         matched_hdr = next(
             (h for h in (sync_cache.get("email_headers") or []) if isinstance(h, dict) and str(h.get("uid") or "") == uid),
             {},
@@ -11799,9 +12914,9 @@ def queue_speed_racer_draft(body: dict) -> dict:
         if any(p in sd_low for p in ("include anyone in the cc", "include everyone in the cc", "keep cc", "reply all", "reply-all")):
             reply_mode = "reply_all"
 
-    # Resolve recipient names against the unified address book when to_str is missing, placeholder, or bare name
-    addr_book_q = gather_unified_address_book()
-    if (not to_str or to_str == "recipient@example.com" or "@" not in to_str):
+    # Resolve recipient names against the unified address book ONLY when to_str is missing, placeholder, or bare name
+    if not to_str or to_str == "recipient@example.com" or "@" not in to_str:
+        addr_book_q = gather_unified_address_book()
         search_target = to_str if (to_str and to_str != "recipient@example.com") else steward_directions
         if search_target:
             matched_to_addrs: list[str] = []
@@ -11900,12 +13015,31 @@ def queue_speed_racer_draft(body: dict) -> dict:
             cc_str = validated_sr["cc_header"]
             bcc_str = validated_sr["bcc_header"]
         except InvalidPayloadError as exc:
-            return _wave2_failure_dict("dependency-returns-garbage", detail=str(exc), speed_racer=state)
+            return _scribe_triage_failure_dict("dependency-returns-garbage", status_code=400, detail=str(exc), speed_racer=init_state)
 
-    gen_note = ""
-    instr_rating_obj: dict = {}
-    # HARD LAW: If steward_directions is provided, Scribe MUST synthesize the draft unless preserve_manual_draft is explicitly set.
-    # Never allow raw instructions or 'Following up regarding: <instructions>' to bypass Scribe!
+    if not draft_id:
+        id_seed = f"{uid}:{reply_subj}:{to_str}:{steward_directions}" if use_async else f"{uid}:{reply_subj}:{to_str}"
+        draft_id = "sr-" + hashlib.sha1(id_seed.encode("utf-8")).hexdigest()[:10]
+    if not acct_badge:
+        acct_badge = "Email"
+
+    # Fast check for repeat-invocation idempotence or queue cap BEFORE running synchronous Scribe synthesis
+    for _existing_it in (init_state.get("queue") or []):
+        if not isinstance(_existing_it, dict):
+            continue
+        if client_req_id and str(_existing_it.get("client_req_id") or "") == client_req_id:
+            return {
+                "ok": True,
+                "status_code": 200,
+                "deduplicated": True,
+                "async_draft": use_async,
+                "draft_id": str(_existing_it.get("id") or draft_id),
+                "draft": _existing_it,
+                "speed_racer": init_state,
+                "scribe_queue_counts": compute_scribe_queue_counts(init_state),
+                "open_speed_racer": bool(body.get("open_speed_racer", not use_async)),
+            }
+
     is_echoed_instruction = bool(
         steward_directions
         and draft_body
@@ -11926,7 +13060,261 @@ def queue_speed_racer_draft(body: dict) -> dict:
             )
         )
     )
-    if not draft_body or is_echoed_instruction or (steward_directions and not looks_like_full_manual_draft):
+    needs_scribe_synthesis = bool(not draft_body or is_echoed_instruction or (steward_directions and not looks_like_full_manual_draft))
+
+    # ── FAST ASYNC ENQUEUE PATH (<50 ms, zero COMMS_LOCK, zero synchronous LLM wait) ──
+    if use_async:
+        sr_quoted_hist_async = str(matched_hdr.get("quoted_history") or body.get("quoted_history") or "")[:8000]
+        cur_dt_async = str(matched_hdr.get("date") or body.get("date") or "").strip()
+        async_thread_msgs = [{
+            "uid": uid or draft_id,
+            "direction": "inbound",
+            "from": _proper_capitalize_sender_display(orig_from_hdr or str(body.get("from") or to_str or "Sender")),
+            "date": _parse_comparable_email_ts(cur_dt_async) or cur_dt_async[:16],
+            "raw_date": cur_dt_async,
+            "subject": subj,
+            "body": snippet,
+            "quoted_history": sr_quoted_hist_async,
+            "account_badge": acct_badge,
+            "is_current": True,
+        }]
+        initial_body_async = (
+            _proper_capitalize_names_in_prose(draft_body, _first_name_from_sender(str(body.get("from") or to_str)))
+            if (not needs_scribe_synthesis and draft_body)
+            else ""
+        )
+        initial_status_async = "queued" if needs_scribe_synthesis else "ready"
+        async_reason = str(body.get("context_reason") or "").strip() or (
+            f"Queued for Scribe FIFO worker per your directions: '{steward_directions}'"
+            if steward_directions
+            else "Queued for Scribe FIFO worker — synthesizing voice-faithful response."
+        )
+        now_q_ts = time.time()
+        queued_item = {
+            "id": draft_id,
+            "uid": uid or draft_id,
+            "client_req_id": client_req_id,
+            "status": initial_status_async,
+            "state_history": [initial_status_async],
+            "queued_at_ts": now_q_ts,
+            "ready_at_ts": now_q_ts if initial_status_async == "ready" else 0.0,
+            "account_id": acct_id,
+            "account_badge": acct_badge,
+            "account": acct_badge,
+            "reply_mode": reply_mode,
+            "from": orig_from_hdr or str(body.get("from") or to_str),
+            "sender_email": orig_sender_em or to_str,
+            "to": "" if (reply_mode == "forward" and not to_str) else (_proper_capitalize_sender_display(to_str or "recipient@example.com") if ("<" in str(to_str or "") and "," not in str(to_str or "")) else (to_str or "recipient@example.com")),
+            "cc": cc_str,
+            "bcc": bcc_str,
+            "reply_to": reply_recips_q.get("reply_to") or (_proper_capitalize_sender_display(to_str or "") if "<" in str(to_str or "") else to_str),
+            "reply_all_to": reply_recips_q.get("reply_all_to") or (_proper_capitalize_sender_display(to_str or "") if "<" in str(to_str or "") else to_str),
+            "reply_all_cc": reply_recips_q.get("reply_all_cc") or cc_str,
+            "subject": reply_subj,
+            "origin": origin,
+            "queued_by": str(body.get("queued_by") or ""),
+            "context_reason": async_reason,
+            "steward_directions": steward_directions,
+            "instruction_rating": {},
+            "instruction_rating_label": "⏳ Queued for Scribe" if needs_scribe_synthesis else "5/5 · Manual Draft Ready",
+            "incoming_snippet": snippet or f"Queued for rapid approval ({reply_subj})",
+            "incoming_body": snippet or f"Queued for rapid approval ({reply_subj})",
+            "quoted_history": sr_quoted_hist_async,
+            "thread_messages": async_thread_msgs,
+            "draft_body": initial_body_async,
+            "original_scribe_draft": initial_body_async,
+            "last_scribe_draft": initial_body_async,
+            "user_edited": False,
+            "updated_at_ts": time.time(),
+            "attachments": atts,
+            "created_at": datetime.now().strftime("%H:%M"),
+        }
+
+        def _enqueue_tx(st_tx: dict):
+            q_tx = [it for it in (st_tx.get("queue") or []) if isinstance(it, dict)]
+            for ex in q_tx:
+                if client_req_id and str(ex.get("client_req_id") or "") == client_req_id:
+                    return ("dedup", ex), False
+                if (
+                    not force_new
+                    and uid
+                    and str(ex.get("uid") or "") == uid
+                    and str(ex.get("steward_directions") or "") == steward_directions
+                    and str(ex.get("reply_mode") or "reply") == reply_mode
+                    and str(ex.get("status") or "") in ("queued", "drafting", "ready")
+                ):
+                    return ("dedup", ex), False
+            # Replace prior item with identical draft_id if re-queuing with force_new, else enforce 200 cap
+            filtered_q = [it for it in q_tx if str(it.get("id") or "") != draft_id]
+            if len(filtered_q) >= SPEED_RACER_QUEUE_MAX_ITEMS:
+                return ("cap_exceeded", None), False
+            filtered_q.append(queued_item)
+            st_tx["queue"] = filtered_q
+            if not st_tx.get("last_opened_draft_id"):
+                st_tx["last_opened_draft_id"] = draft_id
+            if bool(body.get("open_speed_racer", False)):
+                st_tx["auto_open_ts"] = time.time()
+            return ("enqueued", queued_item), True
+
+        try:
+            updated_state, (tx_outcome, tx_item) = mutate_speed_racer_queue(_enqueue_tx)
+        except LockBusyError as exc:
+            return _scribe_triage_failure_dict("dependency-slow-or-killed", detail=str(exc))
+        except UnknownStoreError as exc:
+            return _scribe_triage_failure_dict("backing-store-unreadable", detail=str(exc))
+
+        if tx_outcome == "cap_exceeded":
+            return {
+                "ok": False,
+                "refused": True,
+                "status_code": 429,
+                "error_code": "QUEUE_CAP_EXCEEDED",
+                "status_kind": "dependency-returns-garbage",
+                "failure_state": "dependency-returns-garbage",
+                "badge": "QUEUE_CAP_EXCEEDED",
+                "unknown_state": False,
+                "max_items": SPEED_RACER_QUEUE_MAX_ITEMS,
+                "error": f"Speed Racer Scribe queue cap ({SPEED_RACER_QUEUE_MAX_ITEMS}) exceeded — review or clear pending drafts first.",
+                "message": f"Speed Racer Scribe queue cap ({SPEED_RACER_QUEUE_MAX_ITEMS}) exceeded — review or clear pending drafts first.",
+                "speed_racer": updated_state,
+                "scribe_queue_counts": compute_scribe_queue_counts(updated_state),
+            }
+
+        if tx_outcome == "dedup" and isinstance(tx_item, dict):
+            return {
+                "ok": True,
+                "status_code": 200,
+                "deduplicated": True,
+                "client_msg_id": client_req_id,
+                "client_req_id": client_req_id,
+                "async_draft": True,
+                "draft_id": str(tx_item.get("id") or draft_id),
+                "draft": tx_item,
+                "speed_racer": updated_state,
+                "scribe_queue_counts": compute_scribe_queue_counts(updated_state),
+                "open_speed_racer": bool(body.get("open_speed_racer", False)),
+            }
+
+        cur_data_dir = Path(paths.data_dir())
+        msg_receipt = {
+            "ok": True,
+            "status_code": 200,
+            "async_draft": True,
+            "draft_id": draft_id,
+            "draft": tx_item,
+            "open_speed_racer": bool(body.get("open_speed_racer", False)),
+        }
+        if client_req_id:
+            _remember_comms_msg_id_mem(
+                _comms_client_msg_ids_path(cur_data_dir),
+                "speed_racer_queue",
+                client_req_id,
+                msg_receipt,
+            )
+
+        def _flush_async_enqueue_sidecars() -> None:
+            if client_req_id:
+                _record_comms_client_msg_id(
+                    "speed_racer_queue",
+                    client_req_id,
+                    msg_receipt,
+                    data_dir=cur_data_dir,
+                )
+            if uid and not uid.startswith("sr-"):
+                try:
+                    p_tp = cur_data_dir / ".anchor" / "comms-triage-prefs.json"
+                    lk_tp = p_tp.with_name(p_tp.name + ".lock")
+                    with paths.cross_process_lock(lk_tp, timeout_sec=STORE_LOCK_TIMEOUT_SEC):
+                        _pr_fast = _default_triage_prefs()
+                        if p_tp.is_file():
+                            _raw_tp = json.loads(p_tp.read_text(encoding="utf-8"))
+                            if isinstance(_raw_tp, dict):
+                                _pr_fast.update(_raw_tp)
+                        _am_fast = dict(_pr_fast.get("acted_upon_emails") or {})
+                        _ua_fast = [u for u in (_pr_fast.get("unacted_uids") or []) if u != uid]
+                        _now_f = datetime.now().strftime("%Y-%m-%d %H:%M")
+                        _now_f_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                        if uid not in _am_fast or _am_fast[uid].get("status") != "🏎️ In Speed Racer":
+                            _am_fast[uid] = {
+                                "uid": uid,
+                                "account_id": acct_id,
+                                "status": "⏳ Queued for Scribe" if needs_scribe_synthesis else "🏎️ In Speed Racer",
+                                "tone": "amber",
+                                "reason": (f"Steward instructed: {steward_directions}" if steward_directions else "Queued for Scribe response"),
+                                "subject": subj,
+                                "sender_email": orig_sender_em or to_str,
+                                "from": orig_from_hdr or str(body.get("from") or to_str),
+                                "date": str(matched_hdr.get("date") or _now_f_utc),
+                                "at": _now_f,
+                                "at_utc": _now_f_utc,
+                            }
+                            _pr_fast["acted_upon_emails"] = _am_fast
+                            _pr_fast["unacted_uids"] = _ua_fast
+                            p_tp.parent.mkdir(parents=True, exist_ok=True)
+                            paths.atomic_write_text(p_tp, json.dumps(_pr_fast, indent=2, ensure_ascii=False))
+                            _invalidate_cached_json_file(p_tp)
+                except Exception:
+                    pass
+                _dispatch_remote_read_items([{"account_id": acct_id, "uid": uid, "subject": subj, "is_read": True}])
+
+        if client_req_id or (uid and not uid.startswith("sr-")):
+            _SCRIBE_FIFO_POOL.submit_sidecar(_flush_async_enqueue_sidecars)
+
+        if needs_scribe_synthesis:
+            _SCRIBE_FIFO_POOL.submit({
+                "data_dir": str(cur_data_dir),
+                "draft_id": draft_id,
+                "uid": uid,
+                "from_hint": orig_from_hdr or str(body.get("from") or to_str),
+                "steward_directions": steward_directions,
+                "reply_mode": reply_mode,
+                "gen_payload": {
+                    "uid": uid,
+                    "account_id": acct_id,
+                    "subject": subj,
+                    "from": orig_from_hdr or str(body.get("from") or to_str),
+                    "sender_email": orig_sender_em or to_str,
+                    "cc": cc_str,
+                    "body": snippet,
+                    "intent": str(body.get("intent") or "default"),
+                    "custom_prompt": steward_directions,
+                    "preferred_seat": str(body.get("preferred_seat") or body.get("seat") or ""),
+                },
+            })
+
+        return {
+            "ok": True,
+            "status_code": 200,
+            "async_draft": True,
+            "queued_status": initial_status_async,
+            "draft_id": draft_id,
+            "draft": queued_item,
+            "speed_racer": updated_state,
+            "scribe_queue_counts": compute_scribe_queue_counts(updated_state),
+            "open_speed_racer": bool(body.get("open_speed_racer", False)),
+        }
+
+    # ── SYNCHRONOUS DEFAULT PATH (`async_draft=False`, preserved for direct Python callers) ──
+    if len([it for it in (init_state.get("queue") or []) if isinstance(it, dict) and str(it.get("id") or "") != draft_id and (not uid or str(it.get("uid") or "") != uid)]) >= SPEED_RACER_QUEUE_MAX_ITEMS:
+        return {
+            "ok": False,
+            "refused": True,
+            "status_code": 429,
+            "error_code": "QUEUE_CAP_EXCEEDED",
+            "status_kind": "dependency-returns-garbage",
+            "failure_state": "dependency-returns-garbage",
+            "badge": "QUEUE_CAP_EXCEEDED",
+            "unknown_state": False,
+            "max_items": SPEED_RACER_QUEUE_MAX_ITEMS,
+            "error": f"Speed Racer Scribe queue cap ({SPEED_RACER_QUEUE_MAX_ITEMS}) exceeded — review or clear pending drafts first.",
+            "message": f"Speed Racer Scribe queue cap ({SPEED_RACER_QUEUE_MAX_ITEMS}) exceeded — review or clear pending drafts first.",
+            "speed_racer": init_state,
+            "scribe_queue_counts": compute_scribe_queue_counts(init_state),
+        }
+
+    gen_note = ""
+    instr_rating_obj: dict = {}
+    if needs_scribe_synthesis:
         gen = generate_steward_reply_draft({
             "uid": uid,
             "account_id": acct_id,
@@ -11937,16 +13325,20 @@ def queue_speed_racer_draft(body: dict) -> dict:
             "body": snippet,
             "intent": str(body.get("intent") or "default"),
             "custom_prompt": steward_directions,
+            "preferred_seat": str(body.get("preferred_seat") or body.get("seat") or ""),
+            "async_draft": False,
         })
         if not gen.get("ok") and not str(gen.get("draft_body") or "").strip():
-            return {
-                "ok": False,
-                "status_code": int(gen.get("status_code") or 503),
-                "failure_state": str(gen.get("failure_state") or "dependency-missing"),
-                "error_code": str(gen.get("error_code") or "dependency_missing"),
-                "message": str(gen.get("message") or gen.get("steward_note") or "Scribe draft generation failed."),
-                "speed_racer": load_speed_racer_queue(),
-            }
+            f_state = str(gen.get("failure_state") or "dependency-missing")
+            f_row = f_state if f_state in SCRIBE_TRIAGE_FAILURE_STATE_TABLE else "dependency-missing"
+            f_code = int(gen.get("status_code") or SCRIBE_TRIAGE_FAILURE_STATE_TABLE[f_row]["status_code"])
+            return _scribe_triage_failure_dict(
+                f_row,
+                status_code=f_code,
+                error_code=str(gen.get("error_code") or SCRIBE_TRIAGE_FAILURE_STATE_TABLE[f_row].get("error_code") or "dependency_missing"),
+                message=str(gen.get("message") or gen.get("steward_note") or "Scribe draft generation failed."),
+                speed_racer=load_speed_racer_queue(),
+            )
         draft_body = str(gen.get("draft_body") or "")
         gen_note = str(gen.get("steward_note") or "").strip()
         instr_rating_obj = gen.get("instruction_rating") if isinstance(gen.get("instruction_rating"), dict) else {}
@@ -11987,12 +13379,6 @@ def queue_speed_racer_draft(body: dict) -> dict:
             draft_body = str(_val_manual.get("constrained_draft") or draft_body)
         except Exception:
             pass
-
-    if not draft_id:
-        draft_id = "sr-" + hashlib.sha1(f"{uid}:{reply_subj}:{to_str}".encode("utf-8")).hexdigest()[:10]
-
-    if not acct_badge:
-        acct_badge = "Email"
 
     context_reason = str(body.get("context_reason") or gen_note or "").strip()
     if steward_directions and not context_reason:
@@ -12048,6 +13434,9 @@ def queue_speed_racer_draft(body: dict) -> dict:
     new_item = {
         "id": draft_id,
         "uid": uid or draft_id,
+        "client_req_id": client_req_id,
+        "status": "ready",
+        "state_history": ["ready"],
         "account_id": acct_id,
         "account_badge": acct_badge,
         "account": acct_badge,
@@ -12072,26 +13461,66 @@ def queue_speed_racer_draft(body: dict) -> dict:
         "original_scribe_draft": initial_capped_draft,
         "last_scribe_draft": initial_capped_draft,
         "user_edited": False,
+        "ready_at_ts": time.time(),
         "updated_at_ts": time.time(),
         "attachments": atts,
         "created_at": datetime.now().strftime("%H:%M"),
     }
 
-    with COMMS_LOCK:
-        state = load_speed_racer_queue()
-        queue = list(state.get("queue") or [])
-        queue = [it for it in queue if isinstance(it, dict) and it.get("id") != draft_id and (not uid or it.get("uid") != uid)]
-        queue.insert(0, new_item)
-        state["queue"] = queue[:30]
-        state["last_opened_draft_id"] = draft_id
+    def _sync_insert_tx(st_sync: dict):
+        q_sync = [it for it in (st_sync.get("queue") or []) if isinstance(it, dict)]
+        for ex in q_sync:
+            if client_req_id and str(ex.get("client_req_id") or "") == client_req_id:
+                return ("dedup", ex), False
+        q_sync = [it for it in q_sync if it.get("id") != draft_id and (not uid or it.get("uid") != uid)]
+        if len(q_sync) >= SPEED_RACER_QUEUE_MAX_ITEMS:
+            return ("cap_exceeded", None), False
+        q_sync.insert(0, new_item)
+        st_sync["queue"] = q_sync[:SPEED_RACER_QUEUE_MAX_ITEMS]
+        st_sync["last_opened_draft_id"] = draft_id
         if bool(body.get("open_speed_racer", True)):
-            state["auto_open_ts"] = time.time()
-        save_speed_racer_queue(state)
+            st_sync["auto_open_ts"] = time.time()
+        return ("inserted", new_item), True
+
+    try:
+        state, (sync_outcome, sync_item) = mutate_speed_racer_queue(_sync_insert_tx)
+    except LockBusyError as exc:
+        return _scribe_triage_failure_dict("dependency-slow-or-killed", detail=str(exc))
+    except UnknownStoreError as exc:
+        return _scribe_triage_failure_dict("backing-store-unreadable", detail=str(exc))
+
+    if sync_outcome == "cap_exceeded":
+        return {
+            "ok": False,
+            "refused": True,
+            "status_code": 429,
+            "error_code": "QUEUE_CAP_EXCEEDED",
+            "status_kind": "dependency-returns-garbage",
+            "failure_state": "dependency-returns-garbage",
+            "badge": "QUEUE_CAP_EXCEEDED",
+            "unknown_state": False,
+            "max_items": SPEED_RACER_QUEUE_MAX_ITEMS,
+            "error": f"Speed Racer Scribe queue cap ({SPEED_RACER_QUEUE_MAX_ITEMS}) exceeded — review or clear pending drafts first.",
+            "message": f"Speed Racer Scribe queue cap ({SPEED_RACER_QUEUE_MAX_ITEMS}) exceeded — review or clear pending drafts first.",
+            "speed_racer": state,
+            "scribe_queue_counts": compute_scribe_queue_counts(state),
+        }
+    if sync_outcome == "dedup" and isinstance(sync_item, dict):
+        return {
+            "ok": True,
+            "status_code": 200,
+            "deduplicated": True,
+            "draft_id": str(sync_item.get("id") or draft_id),
+            "draft": sync_item,
+            "speed_racer": state,
+            "scribe_queue_counts": compute_scribe_queue_counts(state),
+            "open_speed_racer": bool(body.get("open_speed_racer", True)),
+        }
 
     # Mark the source email (and any sibling messages in the same thread) as Acted Upon ('🏎️ In Speed Racer') and mark Read in live Outlook/Gmail
     _sc_q = load_comms_sync()
     try:
-        with COMMS_LOCK:
+        with triage_prefs_lock(timeout_sec=STORE_LOCK_TIMEOUT_SEC):
             _pr_q = load_triage_prefs()
             _am_q = dict(_pr_q.get("acted_upon_emails") or {})
             _ua_q = list(_pr_q.get("unacted_uids") or [])
@@ -12113,12 +13542,13 @@ def queue_speed_racer_draft(body: dict) -> dict:
             if uid and uid not in _matched_q_uids:
                 _matched_q_uids.append(uid)
             if not new_item.get("uid") and _matched_q_uids and not _matched_q_uids[0].startswith("sr-"):
-                state = load_speed_racer_queue()
-                for _qi in (state.get("queue") or []):
-                    if isinstance(_qi, dict) and _qi.get("id") == draft_id:
-                        _qi["uid"] = _matched_q_uids[0]
+                def _patch_uid(st_p: dict):
+                    for _qi in (st_p.get("queue") or []):
+                        if isinstance(_qi, dict) and _qi.get("id") == draft_id:
+                            _qi["uid"] = _matched_q_uids[0]
+                    return None, True
+                state, _ = mutate_speed_racer_queue(_patch_uid)
                 new_item["uid"] = _matched_q_uids[0]
-                save_speed_racer_queue(state)
             _now_q = datetime.now().strftime("%Y-%m-%d %H:%M")
             _now_q_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             for _t_uid in _matched_q_uids:
@@ -12157,10 +13587,12 @@ def queue_speed_racer_draft(body: dict) -> dict:
     _imp_q, _oth_q = classify_inbox_emails(_sc_q.get("email_headers") or [], _pr_q2)
     return {
         "ok": True,
+        "status_code": 200,
         "draft_id": draft_id,
         "draft": new_item,
         "speed_racer": state,
-        "open_speed_racer": True,
+        "scribe_queue_counts": compute_scribe_queue_counts(state),
+        "open_speed_racer": bool(body.get("open_speed_racer", True)),
         "important_emails": _imp_q,
         "other_emails": _oth_q,
         "acted_upon_emails": _pr_q2.get("_acted_upon_resolved") or [],
@@ -12170,14 +13602,34 @@ def queue_speed_racer_draft(body: dict) -> dict:
 
 def act_speed_racer_draft(body: dict) -> dict:
     """Handle Speed Racer user actions: list, skip, dismiss/discard, redraft, update_body, undo_send, and approve_send (ONLY with explicit human click + draft_id)."""
-    state = load_speed_racer_queue()
+    state, st_kind = load_speed_racer_queue_state()
+    if st_kind == "unknown":
+        return _scribe_triage_failure_dict("backing-store-unreadable", detail="speed-racer-queue.json unreadable")
     queue = [it for it in (state.get("queue") or []) if isinstance(it, dict)]
     sub_action = str(body.get("sr_action") or body.get("sub_action") or body.get("op") or body.get("action") or "").strip().lower()
     draft_id = str(body.get("draft_id") or body.get("id") or "").strip()
 
-    # Read-only list / get: NEVER sends or mutates
+    # Read-only list / get: NEVER sends or mutates; distinguishes EMPTY (200) vs ACTIVE (200) vs UNKNOWN (500)
     if sub_action in ("", "list", "get"):
-        return {"ok": True, "sub_action": "list", "speed_racer": state}
+        counts = compute_scribe_queue_counts(state)
+        if not queue:
+            empty_row = _scribe_triage_failure_dict(
+                "empty-but-valid",
+                sub_action="list",
+                speed_racer=state,
+                scribe_queue_counts=counts,
+            )
+            return empty_row
+        return {
+            "ok": True,
+            "status_code": 200,
+            "status_kind": "ok",
+            "badge": "ACTIVE",
+            "unknown_state": False,
+            "sub_action": "list",
+            "speed_racer": state,
+            "scribe_queue_counts": counts,
+        }
 
     if sub_action == "undo_send":
         last_app = state.get("last_approved")
@@ -13175,6 +14627,628 @@ def build_chief_of_staff_recommendations_from_the_list(wl_state: dict | None = N
     return recommendations
 
 
+_COS_COCKPIT_CANDIDATES_CACHE: dict[str, tuple[int, int, list[dict]]] = {}
+
+
+def _cos_feedback_ledger_path() -> Path:
+    p = paths.data_dir() / ".anchor" / "cos-feedback-ledger.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def _default_cos_feedback_ledger() -> dict:
+    return {
+        "schema": "anchor.cos.feedback.v1",
+        "tombstoned_keys": {},
+        "acted_keys": {},
+        "postponed_until": {},
+        "category_weights": {"Teaching": 1.0, "Research": 1.0, "Business": 1.0, "Personal": 1.0},
+        "source_weights": {
+            "steward_dispatch": 1.35,
+            "cockpit_review": 1.25,
+            "cockpit_active": 1.15,
+            "cave_dialogue": 1.15,
+            "watchlist_due": 1.25,
+            "prime_email": 1.10,
+            "star_chart_q2": 1.15,
+        },
+        "cockpit_weights": {},
+        "action_history": [],
+    }
+
+
+def load_cos_feedback_ledger() -> dict:
+    p = _cos_feedback_ledger_path()
+    base = _default_cos_feedback_ledger()
+    if not p.is_file():
+        return base
+    try:
+        raw = json.loads(p.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            return base
+        for k, v in base.items():
+            if k not in raw or not isinstance(raw[k], type(v)):
+                raw[k] = copy.deepcopy(v)
+        return raw
+    except Exception:
+        return base
+
+
+def save_cos_feedback_ledger(ledger: dict) -> None:
+    p = _cos_feedback_ledger_path()
+    lock_p = p.with_name(p.name + ".lock")
+    paths.atomic_write_json(p, ledger, lock_path=lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC)
+
+
+def record_cos_suggestion_feedback(
+    cos_action: str,
+    suggestion: dict,
+    *,
+    directions: str = "",
+    defer_hours: float = 18.0,
+) -> dict:
+    """Persist structured learning signal from Chief-of-Staff actions.
+
+    Separates `postpone` (timing deferral — snoozes `source_key` without penalizing topic/deep-work weights)
+    from `delete` (tombstones `source_key` and lowers noisy source/category weight), while `act_now`,
+    `add_to_list`, `send_to_steward`, and `complete` reinforce matching category, source, and cockpit weights.
+    """
+    act = str(cos_action or "").strip().lower()
+    sk = str(suggestion.get("source_key") or suggestion.get("id") or "").strip()
+    cat = str(suggestion.get("category") or "Business").strip()
+    src = str(suggestion.get("source_kind") or suggestion.get("source") or "cockpit_active").strip()
+    ck_name = str(suggestion.get("cockpit_name") or suggestion.get("cockpitName") or "").strip()
+    now_ts = time.time()
+    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    ledger = load_cos_feedback_ledger()
+    cat_w = dict(ledger.get("category_weights") or {})
+    src_w = dict(ledger.get("source_weights") or {})
+    ck_w = dict(ledger.get("cockpit_weights") or {})
+    tombs = dict(ledger.get("tombstoned_keys") or {})
+    acted = dict(ledger.get("acted_keys") or {})
+    postp = dict(ledger.get("postponed_until") or {})
+    hist = list(ledger.get("action_history") or [])
+
+    def _clamp(v: float) -> float:
+        return round(max(0.4, min(2.5, float(v))), 4)
+
+    if act in ("act_now", "add_to_list", "send_to_steward", "complete", "modify"):
+        cat_w[cat] = _clamp(float(cat_w.get(cat, 1.0)) + 0.16)
+        src_w[src] = _clamp(float(src_w.get(src, 1.0)) + 0.14)
+        if ck_name:
+            ck_w[ck_name] = _clamp(float(ck_w.get(ck_name, 1.0)) + 0.20)
+        if sk and act in ("act_now", "add_to_list", "complete"):
+            acted[sk] = now_iso
+            postp.pop(sk, None)
+    elif act == "postpone":
+        # Timing mismatch only — do NOT penalize category, source, or Quadrant II deep-work weights
+        if sk:
+            postp[sk] = now_ts + max(0.25, float(defer_hours or 18.0)) * 3600.0
+    elif act in ("delete", "dismiss"):
+        cat_w[cat] = _clamp(float(cat_w.get(cat, 1.0)) - 0.06)
+        src_w[src] = _clamp(float(src_w.get(src, 1.0)) - 0.14)
+        if ck_name:
+            ck_w[ck_name] = _clamp(float(ck_w.get(ck_name, 1.0)) - 0.10)
+        if sk:
+            tombs[sk] = now_iso
+            postp.pop(sk, None)
+
+    hist.append({
+        "at": now_iso,
+        "action": act,
+        "source_key": sk,
+        "title": str(suggestion.get("title") or "")[:140],
+        "category": cat,
+        "source_kind": src,
+        "cockpit_name": ck_name,
+        "directions": str(directions or "")[:240],
+    })
+    ledger["category_weights"] = cat_w
+    ledger["source_weights"] = src_w
+    ledger["cockpit_weights"] = ck_w
+    ledger["tombstoned_keys"] = tombs
+    ledger["acted_keys"] = acted
+    ledger["postponed_until"] = {k: v for k, v in postp.items() if float(v or 0) > now_ts - 86400}
+    ledger["action_history"] = hist[-200:]
+    save_cos_feedback_ledger(ledger)
+    return ledger
+
+
+def _infer_silent_oranges_skill(title: str, category: str = "", detail: str = "") -> str:
+    """Silently pick the best Parable-of-the-Oranges skill in the background (never cluttering the UI)."""
+    blob = f"{title} {category} {detail}".lower()
+    if any(k in blob for k in ("syllabus", "lecture", "course", "exam", "student", "stat ", "mba", "teaching", "class")):
+        return "Einstein"
+    if any(k in blob for k in ("trust", "contract", "agreement", "legal", "dissolution", "compliance", "patent", "filing")):
+        return "Legal-Beagle"
+    if any(k in blob for k in ("valuation", "waterfall", "cap table", "tax", "budget", "finance", "deal", "pricing")):
+        return "Financial-Analyst"
+    if any(k in blob for k in ("novel", "book", "chapter", "story", "manuscript", "dragon", "magi")):
+        return "Chekhov"
+    if any(k in blob for k in ("email", "reply", "respond", "inbox", "follow up with")):
+        return "Scribe"
+    if any(k in blob for k in ("brainstorm", "ideate", "novel idea", "pivot")):
+        return "Superjump"
+    if any(k in blob for k in ("review", "audit", "critique", "premortem", "verify")):
+        return "Gandalf"
+    return "researchPrime"
+
+
+def _synthesize_silent_plan_steps(title: str, detail: str, cockpit_name: str, skill: str, proposal_op: str = "") -> list[str]:
+    clean_t = str(title or "effort").strip()
+    ck = str(cockpit_name or "AI Cockpit").strip()
+    if proposal_op == "archive_tile" or "review" in clean_t.lower():
+        return [
+            f"Inspect latest output for '{clean_t}' in {ck} and verify completeness.",
+            f"Run silent {skill} check if adjustments are needed, or mark complete on The List.",
+        ]
+    return [
+        f"Scope concrete deliverable & acceptance check for '{clean_t}' in {ck}.",
+        f"Execute next work pass (Steward prepped with {skill} in the background).",
+        "Verify result and check off on The List.",
+    ]
+
+
+def _scan_live_cockpit_and_cave_candidates(
+    existing_titles_low: set[str] | None = None,
+    existing_pids: set[str] | None = None,
+) -> list[dict]:
+    """Fast `<1 ms` steady-state `(mtime_ns, size)`-gated scanner across active AI Cockpits and Cave of Wonders.
+
+    Finds active cockpit efforts, `for_review` deliverables, and recent Cave / cockpit commitments that are NOT
+    yet tracked on The List (or have newly reviewable deliverables), without ever full-scanning transcripts on every request.
+    """
+    existing_titles_low = existing_titles_low or set()
+    existing_pids = existing_pids or set()
+    candidates: list[dict] = []
+    if _is_hermetic() and not os.environ.get("ANCHOR_TEST_ENABLE_COCKPIT_SCAN"):
+        return candidates
+    try:
+        import rnd_registry as _rnd
+        projects = [e for e in _rnd.list_projects() if isinstance(e, dict) and _rnd._effective_state(e) == _rnd.STATE_ACTIVE]
+    except Exception:
+        projects = []
+
+    now_ts = time.time()
+    recent_cutoff = now_ts - 7 * 86400.0  # active within last 7 days
+
+    for proj in projects:
+        pid = str(proj.get("id") or "").strip()
+        pname = str(proj.get("name") or "").strip()
+        folder = str(proj.get("folder_path") or "").strip()
+        grp = str(proj.get("group") or "Research").strip()
+        if not pid or not pname or not folder:
+            continue
+        cat = "Teaching" if "teach" in grp.lower() else (
+            "Personal" if any(x in grp.lower() for x in ("family", "personal")) else (
+                "Business" if any(x in grp.lower() for x in ("commercial", "business", "capital")) else "Research"
+            )
+        )
+        f_path = Path(folder)
+        if not f_path.is_dir():
+            continue
+
+        # Check root cockpit + 1-level effort subdirectories via cheap stat()
+        effort_dirs: list[tuple[str, Path]] = [("", f_path)]
+        if pname.lower() == "campaign" or (f_path / "Cave of Wonders").is_dir():
+            try:
+                for sub in sorted(f_path.iterdir()):
+                    if sub.is_dir() and not sub.name.startswith(".") and (
+                        (sub / ".ecgberht" / "conversation-log.json").is_file() or (sub / "DELIVERABLES.md").is_file()
+                    ):
+                        effort_dirs.append((sub.name, sub))
+            except OSError:
+                pass
+
+        for eff_name, eff_path in effort_dirs[:16]:
+            conv_p = eff_path / ".ecgberht" / "conversation-log.json"
+            plan_p = eff_path / ".ecgberht" / "plan.json"
+            rm_p = eff_path / "roadmap.json"
+            deliv_p = eff_path / "DELIVERABLES.md"
+            stat_files = [p for p in (conv_p, plan_p, rm_p, deliv_p) if p.is_file()]
+            if not stat_files:
+                continue
+            try:
+                max_mtime_ns = max(p.stat().st_mtime_ns for p in stat_files)
+                tot_size = sum(p.stat().st_size for p in stat_files)
+            except OSError:
+                continue
+            if (max_mtime_ns / 1e9) < recent_cutoff:
+                continue
+
+            cache_k = f"{pid}::{eff_name}"
+            cached = _COS_COCKPIT_CANDIDATES_CACHE.get(cache_k)
+            if cached is not None and cached[0] == max_mtime_ns and cached[1] == tot_size:
+                raw_cands = cached[2]
+            else:
+                raw_cands = []
+                disp_ck = f"{eff_name} ({pname})" if eff_name and eff_name.lower() != pname.lower() else pname
+                from urllib.parse import quote as _uq
+                ck_href = f"/steward/v1?pid={pid}&dir={_uq(eff_name, safe='')}"
+
+                active_plan_steps: list[str] = []
+                if plan_p.is_file():
+                    try:
+                        pl_doc = json.loads(plan_p.read_text(encoding="utf-8"))
+                        for ps in (pl_doc.get("steps") or [])[:6]:
+                            if isinstance(ps, dict) and str(ps.get("status") or "").lower() not in ("done", "completed", "cancelled"):
+                                pt = str(ps.get("title") or ps.get("text") or "").strip()
+                                if pt:
+                                    active_plan_steps.append(pt)
+                    except Exception:
+                        pass
+
+                # 1. Check roadmap.json for `for_review` deliverables or active in-progress steps
+                if rm_p.is_file():
+                    try:
+                        rm_doc = json.loads(rm_p.read_text(encoding="utf-8"))
+                        for d in (rm_doc.get("deliverables") or [])[:6]:
+                            if not isinstance(d, dict):
+                                continue
+                            dst = str(d.get("status") or d.get("state") or "").strip().lower()
+                            d_title = str(d.get("title") or d.get("label") or d.get("name") or "").strip()
+                            if dst in ("for_review", "review", "needs_review") and d_title:
+                                sk = f"cockpit-review:{pid}:{eff_name}:{d.get('id') or d_title.lower()[:40]}"
+                                raw_cands.append({
+                                    "source_key": sk,
+                                    "source_kind": "cockpit_review",
+                                    "title": f"Review deliverable: {d_title}",
+                                    "summary": f"Ready for review in {disp_ck}",
+                                    "detail": f"{disp_ck} produced '{d_title}' marked ready for your review.",
+                                    "category": cat,
+                                    "priority": 1,
+                                    "base_score": 88.0,
+                                    "is_q2": True,
+                                    "cockpit_name": disp_ck,
+                                    "cockpit_href": ck_href,
+                                    "pid": pid,
+                                    "effort_dir": eff_name,
+                                    "proposal_op": "review",
+                                })
+                    except Exception:
+                        pass
+
+                # 2. Tail-inspect recent user turn in conversation-log.json when modified within 72h
+                if conv_p.is_file() and (conv_p.stat().st_mtime_ns / 1e9) >= (now_ts - 3 * 86400.0):
+                    try:
+                        # Only parse if <= 4 MB to guarantee <20ms worst-case cold read
+                        if conv_p.stat().st_size <= 4 * 1024 * 1024:
+                            c_doc = json.loads(conv_p.read_text(encoding="utf-8"))
+                            turns = (
+                                (c_doc.get("turns") or c_doc.get("messages") or [])
+                                if isinstance(c_doc, dict)
+                                else (c_doc if isinstance(c_doc, list) else [])
+                            )
+                            user_turns = [
+                                t for t in (turns or [])[-8:]
+                                if isinstance(t, dict) and str(t.get("role") or t.get("speaker") or "").lower() in ("user", "human", "john")
+                            ]
+                            if user_turns:
+                                last_u = user_turns[-1]
+                                u_txt = re.sub(r"\s+", " ", str(last_u.get("text") or last_u.get("content") or "")).strip()
+                                if len(u_txt) >= 18 and eff_name != "Star Chart":
+                                    is_cave = (eff_name == "Cave of Wonders")
+                                    cand_title = (
+                                        f"Follow through on Cave request: {u_txt[:62]}…" if (is_cave and len(u_txt) > 62)
+                                        else (f"Follow through: {u_txt}" if is_cave else f"Advance {disp_ck}")
+                                    )
+                                    sk_act = (
+                                        f"cave-turn:{last_u.get('id') or hashlib.sha1(u_txt[:120].encode('utf-8')).hexdigest()[:10]}"
+                                        if is_cave
+                                        else f"cockpit-active:{pid}:{eff_name}"
+                                    )
+                                    raw_cands.append({
+                                        "source_key": sk_act,
+                                        "source_kind": "cave_dialogue" if is_cave else "cockpit_active",
+                                        "title": cand_title,
+                                        "summary": (
+                                            "Recent Cave of Wonders focus"
+                                            if is_cave
+                                            else (f"Next in {disp_ck}: {active_plan_steps[0][:56]}" if active_plan_steps else f"Active work in {disp_ck} — not yet on The List")
+                                        ),
+                                        "detail": f"Latest activity in {disp_ck}: \"{u_txt[:180]}{'…' if len(u_txt) > 180 else ''}\"",
+                                        "plan_steps": active_plan_steps[:3] if len(active_plan_steps) >= 2 else None,
+                                        "category": cat,
+                                        "priority": 2,
+                                        "base_score": 72.0 + max(0.0, 10.0 - (now_ts - conv_p.stat().st_mtime_ns / 1e9) / 7200.0),
+                                        "is_q2": not is_cave,
+                                        "cockpit_name": disp_ck,
+                                        "cockpit_href": ck_href,
+                                        "pid": pid,
+                                        "effort_dir": eff_name,
+                                        "proposal_op": "add_tile",
+                                    })
+                    except Exception:
+                        pass
+
+                _COS_COCKPIT_CANDIDATES_CACHE[cache_k] = (max_mtime_ns, tot_size, raw_cands)
+
+            for rc in raw_cands:
+                # Skip `cockpit_active` echoes if this cockpit or title is ALREADY on The List!
+                if rc.get("source_kind") == "cockpit_active":
+                    ck_low = str(rc.get("cockpit_name") or "").lower()
+                    if pid in existing_pids or any(ck_low and (ck_low in et or et in ck_low) for et in existing_titles_low):
+                        continue
+                candidates.append(dict(rc))
+    return candidates
+
+
+def build_chief_of_staff_suggestions(wl_state: dict | None = None) -> dict:
+    """Build the tight, adaptive Chief-of-Staff suggestion stack (`top_three` + `overflow` + `overflow_count`).
+
+    Combines:
+      1. Pending Steward proposals (`proposals` from `Send to Steward`, Prime emails, `<=7d` Watchlist deadlines, `for_review` deliverables).
+      2. Untracked active AI Cockpit & Cave of Wonders activity (`_scan_live_cockpit_and_cave_candidates`).
+      3. High-priority Star Chart Goals / Initiatives (`goals_dropdown_catalog`) not yet represented on The List.
+    Applies learned weights from `.anchor/cos-feedback-ledger.json`, filters out `tombstoned_keys` and active
+    `postponed_until` snoozes, silently attaches Parable-of-the-Oranges plans, and reserves >=1 deep-work slot
+    in `top_three` whenever urgent `<=24h` items do not occupy all 3 slots.
+    """
+    st = wl_state if isinstance(wl_state, dict) else load_working_list_spine()
+    tiles = [t for t in (st.get("tiles") or []) if isinstance(t, dict) and not t.get("archived")]
+    existing_titles_low = {str(t.get("title") or "").strip().lower() for t in tiles if str(t.get("title") or "").strip()}
+    existing_ck_low = {str(t.get("cockpitName") or "").replace(" Cockpit", "").strip().lower() for t in tiles if str(t.get("cockpitName") or "").strip()}
+    existing_pids = {str(t.get("cockpitPid") or t.get("cockpitId") or "").strip() for t in tiles if str(t.get("cockpitPid") or t.get("cockpitId") or "").strip()}
+    dismissed_prop_keys = {str(x).strip() for x in (st.get("dismissed_proposal_keys") or []) if str(x).strip()}
+    accepted_prop_keys = {str(x).strip() for x in (st.get("accepted_proposal_keys") or []) if str(x).strip()}
+
+    ledger = load_cos_feedback_ledger()
+    tombs = ledger.get("tombstoned_keys") or {}
+    acted_keys = ledger.get("acted_keys") or {}
+    postp = ledger.get("postponed_until") or {}
+    cat_w = ledger.get("category_weights") or {}
+    src_w = ledger.get("source_weights") or {}
+    ck_w = ledger.get("cockpit_weights") or {}
+    now_ts = time.time()
+
+    pool: list[dict] = []
+    seen_sk: set[str] = set()
+
+    def _add_candidate(cand: dict) -> None:
+        sk = str(cand.get("source_key") or "").strip()
+        if not sk or sk in seen_sk or sk in tombs or sk in dismissed_prop_keys or sk in accepted_prop_keys:
+            return
+        if sk in acted_keys and not cand.get("proposal_id"):
+            return
+        snooze_until = float(postp.get(sk) or 0.0)
+        if snooze_until > now_ts:
+            return
+        title_c = str(cand.get("title") or "").strip()
+        if not title_c:
+            return
+        seen_sk.add(sk)
+        cat_c = str(cand.get("category") or "Business").strip()
+        src_c = str(cand.get("source_kind") or "cockpit_active").strip()
+        ck_c = str(cand.get("cockpit_name") or "Cave of Wonders").strip()
+        skill_c = _infer_silent_oranges_skill(title_c, cat_c, str(cand.get("detail") or ""))
+        mult = float(cat_w.get(cat_c, 1.0)) * float(src_w.get(src_c, 1.0)) * float(ck_w.get(ck_c, 1.0))
+        base_s = float(cand.get("base_score") or 70.0)
+        final_s = round(base_s * mult, 2)
+        sug_id = str(cand.get("id") or ("cos-" + hashlib.sha1(sk.encode("utf-8")).hexdigest()[:10]))
+        plan_steps = cand.get("plan_steps") or _synthesize_silent_plan_steps(
+            title_c,
+            str(cand.get("detail") or ""),
+            ck_c,
+            skill_c,
+            str(cand.get("proposal_op") or ""),
+        )
+        pool.append({
+            "id": sug_id,
+            "source_key": sk,
+            "source_kind": src_c,
+            "proposal_id": str(cand.get("proposal_id") or ""),
+            "proposal_op": str(cand.get("proposal_op") or "add_tile"),
+            "list_tile_id": str(cand.get("list_tile_id") or ""),
+            "title": title_c,
+            "summary": str(cand.get("summary") or cand.get("detail") or "Suggested next action")[:120],
+            "detail": str(cand.get("detail") or cand.get("summary") or title_c),
+            "plan_steps": list(plan_steps),
+            "background_skill": skill_c,
+            "category": cat_c,
+            "priority": _normalize_priority_number(cand.get("priority"), default=2),
+            "cockpit_name": ck_c,
+            "cockpit_href": str(cand.get("cockpit_href") or "/steward/v1"),
+            "pid": str(cand.get("pid") or ""),
+            "effort_dir": str(cand.get("effort_dir") or ""),
+            "email_uid": str(cand.get("email_uid") or ""),
+            "due": str(cand.get("due") or ""),
+            "is_urgent_24h": bool(cand.get("is_urgent_24h")),
+            "is_q2": bool(cand.get("is_q2")),
+            "score": final_s,
+            "steward_plan_prompt": (
+                f"Execute Chief-of-Staff plan for '{title_c}' (using {skill_c} as needed): "
+                + "; ".join(f"({i+1}) {s}" for i, s in enumerate(plan_steps))
+            ),
+        })
+
+    # 1. Pending Steward proposals (from `Send to Steward`, Prime emails, Watchlist deadlines, deliverables)
+    for pr in (st.get("proposals") or []):
+        if not isinstance(pr, dict) or not _is_pending_proposal(pr):
+            continue
+        sk_p = str(pr.get("source_key") or pr.get("id") or "").strip()
+        p_prio = _normalize_priority_number(pr.get("priority"), default=2)
+        src_p = str(pr.get("source") or "steward")
+        is_24h = ":24h" in sk_p or p_prio == 1
+        src_kind = (
+            "steward_dispatch" if src_p == "steward_dispatch"
+            else ("watchlist_due" if "watchlist" in sk_p else ("prime_email" if pr.get("email_uid") else "cockpit_review"))
+        )
+        p_steps = [str(pr.get("step_text")).strip()] if str(pr.get("step_text") or "").strip() else None
+        _add_candidate({
+            "id": str(pr.get("id") or ""),
+            "proposal_id": str(pr.get("id") or ""),
+            "proposal_op": str(pr.get("proposal_op") or "add_tile"),
+            "list_tile_id": str(pr.get("tile_id") or ""),
+            "source_key": sk_p,
+            "source_kind": src_kind,
+            "title": str(pr.get("title") or pr.get("step_text") or "Steward Suggestion"),
+            "summary": str(pr.get("reason") or "Proposed by Steward"),
+            "detail": str(pr.get("step_text") or pr.get("reason") or ""),
+            "plan_steps": p_steps,
+            "category": str(pr.get("category") or "Business"),
+            "priority": p_prio,
+            "cockpit_name": str(pr.get("cockpitName") or "Cave of Wonders"),
+            "cockpit_href": str(pr.get("cockpitUrl") or "/steward/v1"),
+            "email_uid": str(pr.get("email_uid") or ""),
+            "due": str(pr.get("due") or ""),
+            "is_urgent_24h": is_24h,
+            "is_q2": bool(pr.get("is_active_p1_milestone")),
+            "base_score": 95.0 if src_kind == "steward_dispatch" else (90.0 if is_24h else 80.0),
+        })
+
+    # 1b. Open Watchlist deadlines due within <=7d & top actionable Prime emails (live signals without waiting on batch reconcile)
+    try:
+        today_cos = date.today()
+        wl_doc_cos = _read_watchlist_unlocked(_watchlist_path())
+        for w_it in (wl_doc_cos.get("items") or []):
+            if not isinstance(w_it, dict) or str(w_it.get("status") or "open").lower() == "done":
+                continue
+            due_s = str(w_it.get("due") or "")[:10]
+            if not due_s:
+                continue
+            try:
+                days_left = (date.fromisoformat(due_s) - today_cos).days
+            except ValueError:
+                continue
+            if days_left > 7:
+                continue
+            w_id = str(w_it.get("id") or w_it.get("uid") or w_it.get("title") or "").strip()
+            w_title = str(w_it.get("title") or "Watchlist Deadline").strip()
+            if not w_id or w_title.lower() in existing_titles_low:
+                continue
+            win_lbl = "24h" if days_left <= 1 else ("48h" if days_left <= 2 else "7d")
+            w_cat = "Personal" if any(k in w_title.lower() for k in ("family", "flight", "trip", "trust", "birthday")) else "Business"
+            _add_candidate({
+                "source_key": f"watchlist:{w_id}:{win_lbl}",
+                "source_kind": "watchlist_due",
+                "title": w_title,
+                "summary": f"Due {due_s} ({win_lbl} window)",
+                "detail": f"Upcoming commitment '{w_title}' is due {due_s}.",
+                "category": w_cat,
+                "priority": 1 if days_left <= 2 else 2,
+                "cockpit_name": "Cave of Wonders",
+                "cockpit_href": "/steward/v1",
+                "due": due_s,
+                "is_urgent_24h": days_left <= 1,
+                "is_q2": False,
+                "base_score": 91.0 if days_left <= 1 else (84.0 if days_left <= 2 else 76.0),
+            })
+    except Exception:
+        pass
+
+    try:
+        if _comms_sync_path().is_file():
+            sync_cos = load_comms_sync()
+            t_prefs_cos = load_triage_prefs()
+            imp_cos, _ = classify_inbox_emails(
+                sync_cos.get("email_headers") or [],
+                prefs=t_prefs_cos,
+                sent_headers=sync_cos.get("sent_email_headers") or [],
+            )
+            for em_c in (imp_cos or [])[:4]:
+                if not isinstance(em_c, dict):
+                    continue
+                em_uid = str(em_c.get("uid") or "").strip()
+                em_subj = str(em_c.get("subject") or "").strip()
+                if not em_uid or not em_subj:
+                    continue
+                if not (em_c.get("action_required") or int(em_c.get("steward_score") or 0) >= 82):
+                    continue
+                if em_subj.lower() in existing_titles_low:
+                    continue
+                frm_short = str(em_c.get("from") or em_c.get("sender_email") or "Sender").split("<")[0].strip().strip('"')[:28]
+                _add_candidate({
+                    "source_key": f"prime-email:{em_uid}",
+                    "source_kind": "prime_email",
+                    "title": em_subj,
+                    "summary": f"Prime email from {frm_short}",
+                    "detail": f"From {em_c.get('from') or 'Sender'}: {str(em_c.get('snippet') or em_subj)[:180]}",
+                    "category": "Business",
+                    "priority": 1 if int(em_c.get("steward_score") or 0) >= 85 else 2,
+                    "cockpit_name": "Email Hub",
+                    "cockpit_href": "/?comms_open=1&mail_open=1#cal",
+                    "email_uid": em_uid,
+                    "is_urgent_24h": int(em_c.get("steward_score") or 0) >= 88,
+                    "is_q2": False,
+                    "base_score": 85.0 if int(em_c.get("steward_score") or 0) >= 85 else 75.0,
+                })
+    except Exception:
+        pass
+
+    # 2. Live Cross-Cockpit & Cave of Wonders activity candidates
+    for ck_cand in _scan_live_cockpit_and_cave_candidates(existing_titles_low | existing_ck_low, existing_pids):
+        _add_candidate(ck_cand)
+
+    # 3. High-impact Star Chart Quadrant II Goals / Initiatives not yet on The List
+    for g in (st.get("goals_dropdown_catalog") or [])[:8]:
+        if not isinstance(g, dict):
+            continue
+        g_name = str(g.get("name") or g.get("title") or "").strip()
+        if not g_name or g_name.lower() in existing_titles_low:
+            continue
+        if any(g_name.lower() in str(t.get("goalName") or "").lower() for t in tiles):
+            continue
+        g_role = str(g.get("role") or g.get("kind") or "Star Chart Goal")
+        _add_candidate({
+            "source_key": f"star-chart-goal:{g.get('id') or g_name.lower()[:40]}",
+            "source_kind": "star_chart_q2",
+            "title": g_name,
+            "summary": f"Star Chart ({g_role}) — candidate for The List",
+            "detail": f"Quadrant II deep-work goal '{g_name}' on Star Chart has no active item on The List yet.",
+            "category": "Research",
+            "priority": 2,
+            "cockpit_name": "Star Chart",
+            "cockpit_href": str(g.get("href") or "/campaign"),
+            "is_q2": True,
+            "base_score": 68.0,
+        })
+
+    # 4. Top #1/#2 uncompleted List items whose next step is ready to execute right now (only if pool has <3 new candidates)
+    if len(pool) < 3:
+        for rec in build_chief_of_staff_recommendations_from_the_list(st)[:4]:
+            ltid = str(rec.get("list_tile_id") or "")
+            _add_candidate({
+                "source_key": f"list-next-step:{ltid}:{rec.get('step_idx')}",
+                "source_kind": "cockpit_active",
+                "list_tile_id": ltid,
+                "proposal_op": "advance_tile",
+                "title": str(rec.get("raw_title") or rec.get("title") or ""),
+                "summary": f"On The List ({rec.get('ordinal_label')}) · Next: {rec.get('next_step_text')}",
+                "detail": str(rec.get("driver") or ""),
+                "plan_steps": [str(rec.get("next_step_text") or "Advance next step in cockpit")],
+                "category": str(rec.get("category") or "Business"),
+                "priority": int(rec.get("priority") or 2),
+                "cockpit_name": str(rec.get("open_label") or "AI Cockpit").replace("↗ Open ", ""),
+                "cockpit_href": str(rec.get("href") or "/steward/v1"),
+                "is_q2": int(rec.get("priority") or 2) >= 2,
+                "base_score": 64.0 - int(rec.get("priority") or 2),
+            })
+
+    pool.sort(key=lambda x: (-float(x.get("score") or 0.0), int(x.get("priority") or 2)))
+
+    # Premortem protection (`a-1`): ensure >=1 Quadrant II / active-cockpit deep-work candidate in top 3 when <3 urgent 24h blockers
+    top_three = pool[:3]
+    overflow = pool[3:]
+    if len(top_three) == 3 and not any(x.get("is_q2") for x in top_three):
+        if not all(x.get("is_urgent_24h") for x in top_three):
+            q2_idx = next((i for i, x in enumerate(overflow) if x.get("is_q2")), -1)
+            if q2_idx >= 0:
+                promoted_q2 = overflow.pop(q2_idx)
+                demoted = top_three.pop(2)
+                top_three.append(promoted_q2)
+                overflow.insert(0, demoted)
+
+    ordered_all = top_three + overflow
+    return {
+        "top_three": top_three,
+        "overflow": overflow,
+        "overflow_count": len(overflow),
+        "total_count": len(ordered_all),
+        "suggestions": ordered_all,
+    }
+
+
 def build_live_cockpits_and_goals_catalogs() -> dict:
     """Build live dropdown catalogs for The List:
     1) `cockpits_dropdown_catalog`: starts with Active AI Cockpits, then On Deck AI Cockpits, then Other Project Cockpits.
@@ -13851,6 +15925,7 @@ def _enrich_working_list_state(
         today=today,
     )
     data["cos_recommendations"] = build_chief_of_staff_recommendations_from_the_list(data)
+    data["cos_suggestions"] = build_chief_of_staff_suggestions(data)
     active_n = sum(1 for t in data["tiles"] if isinstance(t, dict) and not t.get("archived") and not t.get("done"))
     data["active_count"] = active_n
     if active_n == 0:
@@ -14755,6 +16830,184 @@ def mutate_working_list_spine(op_or_body, extra: dict | None = None) -> dict:
                         "message": state.get("message", ""),
                         "working_list": state,
                         "cos_recommendations": state.get("cos_recommendations") or [],
+                        "cos_suggestions": state.get("cos_suggestions") or build_chief_of_staff_suggestions(state),
+                    }
+
+                if op == "cos_act":
+                    cos_action = str(body.get("cos_action") or body.get("sub_act") or "").strip().lower()
+                    if cos_action not in ("act_now", "add_to_list", "postpone", "delete", "send_to_steward"):
+                        return _wave2_failure_dict("dependency-returns-garbage", detail=f"Invalid cos_action: {cos_action}")
+                    sug_id = str(body.get("suggestion_id") or body.get("id") or "").strip()
+                    src_key = str(body.get("source_key") or "").strip()
+                    directions = str(body.get("directions") or "").strip()
+                    defer_hours = float(body.get("defer_hours") or 18.0)
+
+                    cur_bundle = state.get("cos_suggestions") if isinstance(state.get("cos_suggestions"), dict) else build_chief_of_staff_suggestions(state)
+                    all_sugs = list(cur_bundle.get("suggestions") or [])
+                    matched_sug = next(
+                        (
+                            s for s in all_sugs
+                            if (sug_id and str(s.get("id") or "") == sug_id)
+                            or (src_key and str(s.get("source_key") or "") == src_key)
+                        ),
+                        None,
+                    )
+                    if matched_sug is None:
+                        matched_sug = {
+                            "id": sug_id or "cos-adhoc",
+                            "source_key": src_key or sug_id or f"cos-adhoc:{time.time_ns()}",
+                            "source_kind": str(body.get("source_kind") or "cockpit_active"),
+                            "proposal_id": str(body.get("proposal_id") or ""),
+                            "proposal_op": str(body.get("proposal_op") or "add_tile"),
+                            "list_tile_id": str(body.get("list_tile_id") or ""),
+                            "title": str(body.get("title") or "Suggested Effort").strip(),
+                            "summary": str(body.get("summary") or ""),
+                            "detail": str(body.get("detail") or ""),
+                            "plan_steps": list(body.get("plan_steps") or []),
+                            "background_skill": str(body.get("background_skill") or "Steward"),
+                            "category": str(body.get("category") or "Business"),
+                            "priority": _normalize_priority_number(body.get("priority"), default=2),
+                            "cockpit_name": str(body.get("cockpit_name") or "Cave of Wonders"),
+                            "cockpit_href": str(body.get("cockpit_href") or "/steward/v1"),
+                            "pid": str(body.get("pid") or ""),
+                            "effort_dir": str(body.get("effort_dir") or ""),
+                        }
+
+                    eff_sk = str(matched_sug.get("source_key") or "").strip()
+                    prop_id_linked = str(matched_sug.get("proposal_id") or "").strip()
+                    applied_tile = None
+                    steward_dispatched = False
+                    open_href = str(matched_sug.get("cockpit_href") or "/steward/v1")
+
+                    if cos_action == "add_to_list":
+                        if prop_id_linked:
+                            p_idx = next((i for i, p in enumerate(proposals) if str(p.get("id") or "") == prop_id_linked), -1)
+                            if p_idx >= 0:
+                                chosen_p = proposals.pop(p_idx)
+                                edits_p = {"notes": directions} if directions else {}
+                                if body.get("title"):
+                                    edits_p["title"] = str(body["title"]).strip()
+                                applied_tile = _apply_proposal_to_tiles(tiles, chosen_p, edits=edits_p)
+                        if applied_tile is None:
+                            t_title = str(body.get("title") or matched_sug.get("title") or "Suggested Effort").strip()
+                            t_cat = str(body.get("category") or matched_sug.get("category") or "Business").strip()
+                            t_prio = _normalize_priority_number(body.get("priority") or matched_sug.get("priority"), default=2)
+                            raw_steps = list(matched_sug.get("plan_steps") or [])
+                            if directions:
+                                raw_steps.insert(0, directions)
+                            if not raw_steps:
+                                raw_steps = [f"Complete next action for {t_title}"]
+                            new_tid = "tile-" + hashlib.sha1(f"{t_title}:{time.time_ns()}".encode("utf-8")).hexdigest()[:8]
+                            ck_nm = str(matched_sug.get("cockpit_name") or f"{t_title[:22]} Cockpit")
+                            built_steps = [
+                                {
+                                    "id": "st-" + hashlib.sha1(f"s{idx_s}:{new_tid}".encode("utf-8")).hexdigest()[:6],
+                                    "text": str(st_txt).strip(),
+                                    "done": False,
+                                    "cockpitItem": {"cockpitName": ck_nm, "itemLabel": f"Step {idx_s + 1}", "kind": "Step", "href": open_href},
+                                    "cockpitStatus": "⏳ Ready",
+                                    "cockpitUrl": open_href,
+                                    "initiativeItem": None,
+                                    "initiativeUrl": "",
+                                }
+                                for idx_s, st_txt in enumerate(raw_steps) if str(st_txt).strip()
+                            ]
+                            applied_tile = {
+                                "id": new_tid,
+                                "title": t_title,
+                                "category": t_cat,
+                                "priority": t_prio,
+                                "prio": str(t_prio),
+                                "due": str(matched_sug.get("due") or "")[:10],
+                                "cockpitPid": str(matched_sug.get("pid") or ""),
+                                "cockpitName": ck_nm,
+                                "cockpitUrl": open_href,
+                                "cockpitHref": open_href,
+                                "goalId": "",
+                                "goalName": "",
+                                "skills": [str(matched_sug.get("background_skill") or "researchPrime")],
+                                "expanded": False,
+                                "done": False,
+                                "archived": False,
+                                "brainstormNotes": directions or str(matched_sug.get("detail") or ""),
+                                "steps": built_steps,
+                            }
+                            tiles.insert(0, applied_tile)
+                        if eff_sk and eff_sk not in accepted_keys:
+                            accepted_keys.append(eff_sk)
+
+                    elif cos_action in ("act_now", "send_to_steward"):
+                        if prop_id_linked:
+                            proposals = [p for p in proposals if str(p.get("id") or "") != prop_id_linked]
+                        if eff_sk and eff_sk not in accepted_keys:
+                            accepted_keys.append(eff_sk)
+                        if directions or cos_action == "send_to_steward":
+                            plan_txt = "; ".join(f"{i+1}. {s}" for i, s in enumerate(matched_sug.get("plan_steps") or []))
+                            bg_sk = str(matched_sug.get("background_skill") or "Steward")
+                            msg_to_steward = (
+                                f"[Chief of Staff · {matched_sug.get('title')}] "
+                                + (f"User directions: {directions}\n" if directions else "")
+                                + (f"Proposed plan ({bg_sk}): {plan_txt}" if plan_txt else "")
+                            ).strip()
+                            try:
+                                from steward_cockpit import steward_engine as _se_cos
+                                target_cdir = ""
+                                t_pid = str(matched_sug.get("pid") or "").strip()
+                                t_edir = str(matched_sug.get("effort_dir") or "").strip()
+                                if t_pid:
+                                    import rnd_registry as _rnd_cos
+                                    p_ent = next((e for e in _rnd_cos.list_projects() if str(e.get("id") or "") == t_pid), None)
+                                    if p_ent and p_ent.get("folder_path"):
+                                        base_fp = Path(str(p_ent["folder_path"]))
+                                        target_cdir = str((base_fp / t_edir) if t_edir else base_fp)
+                                if not target_cdir or not Path(target_cdir).is_dir():
+                                    camp_fp = Path(paths.data_dir()).resolve().parent / "Campaign" / "Cave of Wonders"
+                                    if camp_fp.is_dir():
+                                        target_cdir = str(camp_fp)
+                                if target_cdir and not _is_hermetic():
+                                    eng_cos = _se_cos.get_engine(target_cdir)
+                                    eng_cos.enqueue(msg_to_steward)
+                                    steward_dispatched = True
+                            except Exception:
+                                steward_dispatched = False
+
+                    elif cos_action == "delete":
+                        if prop_id_linked:
+                            proposals = [p for p in proposals if str(p.get("id") or "") != prop_id_linked]
+                        if eff_sk and eff_sk not in dismissed_keys:
+                            dismissed_keys.append(eff_sk)
+
+                    elif cos_action == "postpone":
+                        pass  # Handled non-destructively by record_cos_suggestion_feedback below
+
+                    feedback_ledger = record_cos_suggestion_feedback(
+                        cos_action,
+                        matched_sug,
+                        directions=directions,
+                        defer_hours=defer_hours,
+                    )
+                    state["tiles"] = tiles
+                    state["proposals"] = proposals
+                    state["dismissed_proposal_keys"] = dismissed_keys
+                    state["accepted_proposal_keys"] = accepted_keys
+                    _enrich_working_list_state(state)
+                    paths.atomic_write_json(wl_p, state, lock_path=lock_p, timeout_sec=STORE_LOCK_TIMEOUT_SEC)
+                    _WORKING_LIST_SPINE_CACHE.clear()
+                    _invalidate_cached_json_file(wl_p)
+                    return {
+                        "ok": True,
+                        "status_code": 200,
+                        "cos_action": cos_action,
+                        "tile": applied_tile,
+                        "open_href": open_href,
+                        "steward_dispatched": steward_dispatched,
+                        "working_list": state,
+                        "cos_suggestions": state.get("cos_suggestions") or build_chief_of_staff_suggestions(state),
+                        "cos_recommendations": state.get("cos_recommendations") or [],
+                        "feedback_summary": {
+                            "category_weights": feedback_ledger.get("category_weights", {}),
+                            "source_weights": feedback_ledger.get("source_weights", {}),
+                        },
                     }
 
                 if op in ("list_proposals", "proposals"):
@@ -15462,10 +17715,51 @@ def handle_comms_get(qs: dict | None = None) -> tuple[dict, int]:
             obj_pm["cockpit_options"] = _psm.list_cockpit_viewer_options()
         return obj_pm, code_pm
 
+    if view == "scribe_queue":
+        sr_state, sr_st_kind = load_speed_racer_queue_state()
+        if sr_st_kind == "unknown":
+            err_sr = _scribe_triage_failure_dict("backing-store-unreadable", detail="speed-racer-queue.json unreadable")
+            return err_sr, int(err_sr["status_code"])
+        _, tp_st_kind = load_triage_prefs_state()
+        if tp_st_kind == "unknown":
+            err_tp = _scribe_triage_failure_dict("backing-store-unreadable", detail="comms-triage-prefs.json unreadable")
+            return err_tp, int(err_tp["status_code"])
+        counts = compute_scribe_queue_counts(sr_state)
+        if counts["total"] == 0:
+            empty_res = _scribe_triage_failure_dict(
+                "empty-but-valid",
+                speed_racer=sr_state,
+                scribe_queue_counts=counts,
+                worker_stats=get_scribe_fifo_worker_stats(),
+            )
+            return empty_res, 200
+        return {
+            "ok": True,
+            "status_code": 200,
+            "status_kind": "ok",
+            "state": "ok",
+            "badge": "ACTIVE",
+            "unknown_state": False,
+            "speed_racer": sr_state,
+            "scribe_queue_counts": counts,
+            "worker_stats": get_scribe_fifo_worker_stats(),
+        }, 200
+
     _, store_state = load_comms_sync_state()
     if store_state == "unknown":
-        failure = prime_inbox_state([], store_readable=False)
-        return {"ok": False, **failure}, int(failure["status_code"])
+        err_sync = _scribe_triage_failure_dict("backing-store-unreadable", detail="comms-sync.json unreadable")
+        err_sync["message"] = "Comms state unreadable (unknown) — inspect Doctor"
+        return err_sync, int(err_sync["status_code"])
+
+    _, sr_main_st = load_speed_racer_queue_state()
+    if sr_main_st == "unknown":
+        err_sr_main = _scribe_triage_failure_dict("backing-store-unreadable", detail="speed-racer-queue.json unreadable")
+        return err_sr_main, int(err_sr_main["status_code"])
+
+    _, tp_main_st = load_triage_prefs_state()
+    if tp_main_st == "unknown":
+        err_tp_main = _scribe_triage_failure_dict("backing-store-unreadable", detail="comms-triage-prefs.json unreadable")
+        return err_tp_main, int(err_tp_main["status_code"])
 
     # Enforce Wave 2 `unknown != empty` if Working List or Watchlist JSON exists and is corrupt/unreadable
     try:
@@ -15473,21 +17767,30 @@ def handle_comms_get(qs: dict | None = None) -> tuple[dict, int]:
         _read_watchlist_unlocked(_watchlist_path())
     except UnknownStoreError as exc:
         err = _wave2_failure_dict("backing-store-unreadable", detail=str(exc))
+        err["status_kind"] = "backing-store-unreadable"
+        err["badge"] = "UNKNOWN"
+        err["unknown_state"] = True
         return err, int(err["status_code"])
 
     try:
         result = reconcile_comms_with_roadmaps()
     except (OSError, IOError, json.JSONDecodeError):
-        failure = prime_inbox_state([], store_readable=False)
-        return {"ok": False, **failure}, int(failure["status_code"])
+        failure = _scribe_triage_failure_dict("backing-store-unreadable", detail="reconcile store unreadable")
+        return failure, int(failure["status_code"])
     prime_state = prime_inbox_state(result.get("important_emails") or [], store_readable=True)
     if _qs_first(qs, "slim").lower() in ("1", "true", "yes"):
         result = _slim_comms_payload(result)
     else:
         result = dict(result)
+    result["scribe_queue_counts"] = compute_scribe_queue_counts(result.get("speed_racer"))
     result["prime_inbox_state"] = prime_state
     if prime_state.get("state") == "empty":
         result["message"] = prime_state["message"]
+        result["status_kind"] = "empty-but-valid"
+        result["badge"] = "EMPTY"
+        result["unknown_state"] = False
+    else:
+        result["unknown_state"] = False
     return result, 200
 
 
@@ -15603,7 +17906,7 @@ def handle_comms_post(body: dict) -> tuple[dict, int]:
     if action == "email_triage_feedback":
         res = record_email_triage_feedback(body)
         res["action"] = action
-        return res, (200 if res.get("ok") else 400)
+        return res, int(res.get("status_code") or (200 if res.get("ok") else 400))
 
     if action == "email_steward_action":
         res = record_email_steward_action(body)

@@ -374,6 +374,8 @@ ROUTES = [
     # the Cave's Projects list, built when he opens it (2026-10-02)
     _r("GET", "/api/high-seat/projects", AUTH_TOKEN,
        handler="handle_high_seat_projects", migrated=True),
+    _r("GET", "/api/high-seat/processing", AUTH_TOKEN,
+       handler="handle_high_seat_processing", migrated=True),
     # ── Ecgberht High Seat (TW6 — wireframes v2.1 Screens 0+2+3) ──────────
     # Same live-Anchor host + Ecgberht engine bridge (high-seat-bridge.mjs).
     # Specific prefixes are registered BEFORE the bare /high_seat prefix so
@@ -416,6 +418,7 @@ ROUTES = [
     _r("GET", "/setup", AUTH_TOKEN, handler="handle_provider_setup_page", migrated=True),
     _r("GET", "/setup/install", AUTH_TOKEN, handler="handle_provider_setup_page", migrated=True),
     _r("GET", "/api/provider-setup", AUTH_TOKEN, handler="handle_provider_setup_get", migrated=True),
+    _r("GET", "/api/provider-setup/detail", AUTH_TOKEN, handler="handle_provider_setup_get", migrated=True),
     _r("GET", "/api/provider-setup/login", AUTH_TOKEN, handler="handle_provider_setup_get", migrated=True),
     _r("POST", "/api/provider-setup/accounts", AUTH_TOKEN, handler="handle_provider_setup_post", migrated=True),
     _r("POST", "/api/provider-setup/initialize", AUTH_TOKEN, handler="handle_provider_setup_post", migrated=True),
@@ -425,6 +428,14 @@ ROUTES = [
     _r("POST", "/api/provider-setup/login", AUTH_TOKEN, handler="handle_provider_setup_post", migrated=True),
     _r("POST", "/api/provider-setup/cancel", AUTH_TOKEN, handler="handle_provider_setup_post", migrated=True),
     _r("POST", "/api/provider-setup/api-key", AUTH_TOKEN, handler="handle_provider_setup_post", migrated=True),
+    _r("POST", "/api/provider-setup/probe-mothership", AUTH_TOKEN, handler="handle_provider_setup_post", migrated=True),
+    _r("POST", "/api/provider-setup/adopt-mothership", AUTH_TOKEN, handler="handle_provider_setup_post", migrated=True),
+    _r("POST", "/api/provider-setup/billing-mode", AUTH_TOKEN, handler="handle_provider_setup_post", migrated=True),
+
+    # ── Wave 3: Crash-durable unified composer drafts (/api/steward/drafts) ──
+    _r("GET", "/api/steward/drafts", AUTH_TOKEN, handler="handle_steward_drafts_get", migrated=True),
+    _r("POST", "/api/steward/drafts", AUTH_TOKEN, handler="handle_steward_drafts_post", migrated=True),
+    _r("DELETE", "/api/steward/drafts", AUTH_TOKEN, handler="handle_steward_drafts_delete", migrated=True),
 
     # ── doctor V3 W3 — the /doctor page + background diagnostics ──────────
     # The page itself is an open bootstrap (same posture as "/" — browser

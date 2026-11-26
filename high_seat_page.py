@@ -265,11 +265,17 @@ def _masthead(ctx, mode=False):
         'style="font-size:11px;padding:2px 8px;border-radius:999px;background:rgba(224,168,54,0.14);border:1px solid rgba(224,168,54,0.45);'
         'color:#e0a836;text-decoration:none;font-family:Consolas,monospace;margin-left:8px;">v%s</a>'
     ) % ver_str
+    theme_btn = (
+        '<button type="button" class="mh-theme-toggle" id="caveThemeToggle" data-cave-theme-toggle="1" '
+        'aria-pressed="false" title="Switch between Dark and Skill Foundry Light color scheme">'
+        '<span class="mh-theme-ico" id="caveThemeIcon">&#9728;</span>'
+        '<span class="mh-theme-lbl" id="caveThemeLabel">Light</span></button>'
+    )
     return (
         '<div class="masthead"><div class="mh-title">%sAnchor%s</div><div class="mh-div"></div>'
         '<div class="mh-lock">%s<div><div class="mh-w1">Ghost World <span class="gwl-accent">Labs</span></div>'
-        '<div class="mh-w2">R&amp;D Mission Control</div></div></div><div class="mh-sp"></div>%s</div>'
-    ) % (anchor_mark(b), ver_pill, _brand_img(b, "gwl-m-icon.svg", "mh-mark"), stew)
+        '<div class="mh-w2">R&amp;D Mission Control</div></div></div><div class="mh-sp"></div>%s%s</div>'
+    ) % (anchor_mark(b), ver_pill, _brand_img(b, "gwl-m-icon.svg", "mh-mark"), stew, theme_btn)
 
 
 def _health_banner(ctx):
@@ -303,11 +309,8 @@ def _hdr(ctx):
     b = ctx["build"]
     is_admin = bool(ctx.get("admin_edition", _paths.is_anchor_admin_edition()))
     admin_links = (
-        '<a class="tool" href="/gwl-admin" target="_blank" rel="noopener" title="Anchor Collaboration System Admin GUI (Review, Manual Edits, Account &amp; 2FA Resets, Shared Docs)">%sAnchor Admin</a>'
-        '<a class="tool" href="/static/downloads/Anchor-Test-Onboard.zip?download=1" data-alt-href="/download/Anchor-Test-Onboard.zip?download=1" title="Download isolated Desktop Onboarding Test (Port 8787 + separate profile; never touches your working Anchor.exe)">&#129514; Test Onboard .zip</a>'
-        '<a class="tool" href="/static/downloads/Anchor.zip?download=1" data-alt-href="/download/Anchor.zip?download=1" title="Download clean shareable Collaborator Anchor.exe (.zip) for external collaborators">&#11015; Anchor.exe .zip</a>'
-        '<a class="tool" href="/static/downloads/Anchor-Admin.zip?download=1" data-alt-href="/download/Anchor-Admin.zip?download=1" title="Download Anchor Admin.exe (.zip) with Admin &amp; Packaging controls">%sAnchor Admin.exe</a>'
-        % (_brand_img(b, "anchor-admin-key.jpg"), _brand_img(b, "anchor-admin-key.png"))
+        '<a class="tool" href="/gwl-admin" target="_blank" rel="noopener" title="Anchor Collaboration System Admin GUI (Review, Manual Edits, Account &amp; 2FA Resets, Packaging &amp; Shared Docs)">%sAnchor Admin</a>'
+        % (_brand_img(b, "anchor-admin-key.jpg"),)
     ) if is_admin else ""
     return (
         '<div class="hdr"><h2>%s</h2><span class="who">%s</span>'
@@ -483,15 +486,16 @@ def _projects_tile(ctx):
         '<section class="ptile" id="ptile"><div class="ptile-line"><button class="ptile-h" id="ptileToggle"><span class="k">Projects</span>'
         '<span class="n" id="ptileCount">&middot; %d project%s in %d folder%s%s</span><span class="sp"></span>'
         '<span class="tog" id="ptileTog">Show all</span></button>'
-        '<button type="button" class="tog np" id="apNew" title="the folder-creation dialog, in a small window">&#65291; New project</button></div>%s'
-        '<div class="ptile-body"><div class="addbox"><h4>Add a project</h4>'
-        '<div class="addhint" id="apHint">Say it to the steward above (&ldquo;start a new project called &lt;name&gt; at &lt;folder&gt;&rdquo;) and confirm the card, '
-        'or press New project: the dialog opens in a small window and puts it in a folder of your choosing.</div>'
+        '<button type="button" class="tog np" id="apAddFolder" data-open-folder-wizard="folder" title="Guided walkthrough to create a folder and group projects">&#128193; + Add Folder</button>'
+        '<button type="button" class="tog np" id="apNew" data-open-folder-wizard="project" title="Guided walkthrough to create or register a project into a folder">&#65291; New project</button></div>%s'
+        '<div class="ptile-body"><div class="addbox"><h4>Organize Folders &amp; Projects</h4>'
+        '<div class="addhint" id="apHint">Click any folder below to open its projects, drag any project row (&#8942;&#8942;) onto a folder header to move it, '
+        'or use the guided walkthrough buttons (<b>&#128193; + Add Folder</b> / <b>&#65291; New project</b>) to add a folder or project step by step.</div>'
         '<select id="apGroups" hidden>%s</select></div>'
         '<div id="folders">%s</div></div></section>'
     ) % (n, "" if n == 1 else "s", len(groups), "" if len(groups) == 1 else "s",
          (" &middot; <b>%d</b> with no steward record yet" % quiet_n) if quiet_n else "",
-         _orphans_line(ctx), group_opts, ctx.get("projects_html") or '<p class="ptile-note">No project list was handed to the page.</p>')
+         _orphans_line(ctx), group_opts, ctx.get("projects_html") or '<p class="ptile-note" id="ptileLoading">Click Show all to open your project folders.</p>')
 
 
 def _orphans_line(ctx):
@@ -791,7 +795,7 @@ def _comms_pulse_html(ctx):
     import comms_connector as _cc
     today = ctx.get("today") or date.today()
     try:
-        comms = ctx.get("comms") or _cc.reconcile_comms_with_roadmaps(
+        comms = ctx.get("_resolved_comms") or ctx.get("comms") or _cc.reconcile_comms_with_roadmaps(
             entries=ctx.get("entries") or [],
             facts=ctx.get("facts") or {},
             today=today,
@@ -923,8 +927,29 @@ def _comms_pulse_html(ctx):
         + "; window.ANCHOR_CAVE_COMMS_BOOT = "
         + json.dumps(cave_comms_boot).replace("</", "<\\/")
     )
-    sr_open_cls = " open" if sr_queue else ""
-    sr_body_hidden = "" if sr_queue else " hidden"
+    sr_counts_init = _cc.compute_scribe_queue_counts(sr_state) if hasattr(_cc, "compute_scribe_queue_counts") else {"pending": 0, "ready": len(sr_queue), "total": len(sr_queue)}
+    sr_pending_n = int(sr_counts_init.get("pending") or 0)
+    sr_ready_n = int(sr_counts_init.get("ready") or 0)
+    if sr_pending_n > 0:
+        sq_state_attr = "active"
+        sq_style = "display:inline-flex;align-items:center;gap:5px;padding:2px 9px;font-size:11px;font-weight:800;border:1px solid rgba(245,158,11,0.65);background:rgba(245,158,11,0.18);color:#fde68a;border-radius:999px;white-space:nowrap"
+        sq_label = f"&#9203; Scribe Queue &middot; {sr_pending_n} drafting" + (f" ({sr_ready_n} ready)" if sr_ready_n else "")
+    elif sr_ready_n > 0:
+        sq_state_attr = "ready"
+        sq_style = "display:inline-flex;align-items:center;gap:5px;padding:2px 9px;font-size:11px;font-weight:750;border:1px solid rgba(16,185,129,0.55);background:rgba(16,185,129,0.16);color:#a7f3d0;border-radius:999px;white-space:nowrap"
+        sq_label = f"&#9203; Scribe Queue &middot; {sr_ready_n} ready"
+    else:
+        sq_state_attr = "idle"
+        sq_style = "display:inline-flex;align-items:center;gap:5px;padding:2px 9px;font-size:11px;font-weight:700;border:1px solid rgba(56,189,248,0.45);background:rgba(56,189,248,0.12);color:#bae6fd;border-radius:999px;white-space:nowrap"
+        sq_label = "&#9203; Scribe Queue &middot; 0"
+    scribe_queue_pill_html = (
+        f'<span class="comms-pill cave-scribe-queue-pill" id="caveScribeQueuePill" '
+        f'data-scribe-queue-state="{sq_state_attr}" data-scribe-queue-pending="{sr_pending_n}" '
+        f'data-scribe-queue-ready="{sr_ready_n}" style="{sq_style}">{sq_label}</span>'
+    )
+    cal_open_init_cls = " open" if ctx.get("comms_open") else ""
+    sr_open_cls = " open" if (sr_ready_n > 0 and not ctx.get("comms_open")) else ""
+    sr_body_hidden = "" if (sr_ready_n > 0 and not ctx.get("comms_open")) else " hidden"
     sr_prompt_bar_attrs = (
         ' style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;background:#111622;border:1px solid #2b3548;padding:6px 10px;border-radius:7px;font-size:11.5px"'
     )
@@ -952,12 +977,10 @@ def _comms_pulse_html(ctx):
             '<span class="comms-badge amber" style="font-weight:800">Draft 1 of %d</span>'
             '<span class="comms-badge sky">%s</span>'
             '<span class="comms-badge emerald">%s</span>'
-            '<span class="comms-badge emerald" id="caveSrInstructionRatingBadge" style="border:1px solid rgba(16,185,129,0.55);background:rgba(16,185,129,0.22);color:#ecfdf5;font-weight:800" title="Scribe reads the full incoming email, past correspondence, and rates/executes every instruction before creating a draft">&#127919; Instruction &amp; Email Check: %s</span>'
             '%s</div>'
             '<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">'
             '<button type="button" class="tw-btn" data-sr-nav="-1" title="Previous Draft">&larr; Prev</button>%s'
-            '<button type="button" class="tw-btn" data-sr-nav="1" title="Next Draft">Next &rarr;</button>'
-            '<button type="button" class="tw-btn" data-cave-close-speed-racer="1" style="border-color:rgba(244,63,94,0.55);background:rgba(244,63,94,0.14);color:#fda4af;font-weight:750" title="Close the Speed Racer dialogue">&#10005; Close Speed Racer</button></div></div>'
+            '<button type="button" class="tw-btn" data-sr-nav="1" title="Next Draft">Next &rarr;</button></div></div>'
             '<div class="sr-diff-grid">'
             '<div style="background:#070b12;border:1px solid #1e293b;border-radius:7px;padding:10px 12px;display:flex;flex-direction:column;justify-content:space-between;gap:8px">'
             '<div style="display:flex;flex-direction:column;flex:1 1 auto">'
@@ -974,15 +997,15 @@ def _comms_pulse_html(ctx):
             f'<button type="button" class="tw-btn{" on" if it0_mode == "reply_all" else ""}" data-sr-reply-mode="reply_all" style="font-size:10.5px;padding:2px 8px;font-weight:750">&#8617;&#8617; Reply All</button>'
             f'<button type="button" class="tw-btn{" on" if it0_mode == "forward" else ""}" data-sr-reply-mode="forward" style="font-size:10.5px;padding:2px 8px;font-weight:750">&#10150; Forward</button>'
             '</div>'
-            '<span style="font-size:10px;color:#7dd3fc" title="Autocomplete searches all connected email accounts">&#128214; Unified Address Book Active (To, Cc, Bcc)</span>'
+            '<span style="font-size:10px;color:#7dd3fc" title="Click the down-arrow on To, Cc, or Bcc to inspect all recipients or search contacts">&#128214; Click &#9662; on To/Cc/Bcc to view full list</span>'
             '</div>'
             '<div style="display:grid;grid-template-columns:1fr 0.85fr 0.85fr 1fr;gap:6px">'
             '<div><label style="font-size:10px;color:#94a3b8;display:block">To</label>'
-            '<input type="text" id="caveSrToInput" value="%s" list="caveUnifiedAddressBookList" placeholder="Name or email (comma/semicolon separated)..." style="width:100%%;box-sizing:border-box;padding:4px 7px;border-radius:5px;border:1px solid #334155;background:#070b12;color:#f8fafc;font-size:11.5px"></div>'
+            '<div class="sr-recip-wrap"><input type="text" id="caveSrToInput" value="%s" placeholder="Name or email (comma/semicolon separated)..." autocomplete="off"><button type="button" class="sr-recip-dd-btn" data-recip-dropdown-for="caveSrToInput" title="View all To recipients &amp; search address book">&#9662;</button></div></div>'
             '<div><label style="font-size:10px;color:#94a3b8;display:block">Cc (Optional)</label>'
-            '<input type="text" id="caveSrCcInput" value="%s" list="caveUnifiedAddressBookList" placeholder="cc@... (type name or email)" style="width:100%%;box-sizing:border-box;padding:4px 7px;border-radius:5px;border:1px solid #334155;background:#070b12;color:#f8fafc;font-size:11.5px"></div>'
+            '<div class="sr-recip-wrap"><input type="text" id="caveSrCcInput" value="%s" placeholder="cc@... (type name or email)" autocomplete="off"><button type="button" class="sr-recip-dd-btn" data-recip-dropdown-for="caveSrCcInput" title="View all Cc recipients &amp; search address book">&#9662;</button></div></div>'
             '<div><label style="font-size:10px;color:#94a3b8;display:block">Bcc (Optional)</label>'
-            '<input type="text" id="caveSrBccInput" value="%s" list="caveUnifiedAddressBookList" placeholder="bcc@... (blind copy)" style="width:100%%;box-sizing:border-box;padding:4px 7px;border-radius:5px;border:1px solid #334155;background:#070b12;color:#f8fafc;font-size:11.5px"></div>'
+            '<div class="sr-recip-wrap"><input type="text" id="caveSrBccInput" value="%s" placeholder="bcc@... (blind copy)" autocomplete="off"><button type="button" class="sr-recip-dd-btn" data-recip-dropdown-for="caveSrBccInput" title="View all Bcc recipients &amp; search address book">&#9662;</button></div></div>'
             '<div><label style="font-size:10px;color:#94a3b8;display:block">Subject</label>'
             '<input type="text" id="caveSrSubjInput" value="%s" style="width:100%%;box-sizing:border-box;padding:4px 7px;border-radius:5px;border:1px solid #334155;background:#070b12;color:#f8fafc;font-size:11.5px"></div></div>'
             '<div style="padding:7px 9px;border-radius:7px;background:rgba(16,185,129,0.10);border:1px solid rgba(16,185,129,0.45);display:flex;flex-direction:column;gap:5px">'
@@ -1003,21 +1026,20 @@ def _comms_pulse_html(ctx):
             '<button type="button" class="tw-btn" id="btnCaveSrApplyFeedback" style="border-color:#a78bfa;background:rgba(167,139,250,0.18);color:#e9d5ff;font-weight:800;padding:5px 11px">&#10024; Refine with Scribe</button>'
             '<button type="button" class="tw-btn" id="btnCaveSrSendFeedbackSteward" style="border-color:rgba(56,189,248,0.55);background:rgba(56,189,248,0.14);color:#e0f2fe;font-weight:800;padding:5px 11px" title="Send this Speed Racer draft and your instructions to the Cave of Wonders Steward">&#129517; Send to Steward</button></div></div></div>'
             '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid #1e293b">'
+            '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
             '<span style="font-size:11px;color:#fde68a;font-weight:650">&#128274; Permission Gate: Steward holds this draft until you click <b>Approve &amp; Send</b></span>'
+            '<span id="caveSrSaveStatus" style="font-size:10.5px;color:#6ee7b7;font-weight:700">&#10003; Direct edits auto-save</span></div>'
             '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
-            '<button type="button" class="tw-btn" id="btnCaveSrSaveModified" style="border-color:rgba(56,189,248,0.55);color:#7dd3fc;font-weight:750" title="Save any modifications you made to To, Cc, Bcc, Subject, or Draft Body">&#128190; Save Modifications</button>'
             '<button type="button" class="tw-btn" id="btnCaveSrSkip" title="Keep in queue and move to next draft">&#9197; Skip / Later</button>'
             '<button type="button" class="tw-btn" id="btnCaveSrSpam" data-sr-spam="1" style="border-color:rgba(244,63,94,0.55);background:rgba(244,63,94,0.12);color:#fda4af;font-weight:750" title="Mark sender as Spam and remove draft from Speed Racer">&#128683; Spam</button>'
             '<button type="button" class="tw-btn" id="btnCaveSrDiscard" style="border-color:rgba(244,63,94,0.55);background:rgba(244,63,94,0.12);color:#fda4af;font-weight:750" title="Cancel and remove this draft from Speed Racer without sending">&#10005; Cancel / Discard</button>'
             '<button type="button" class="tw-btn done" id="btnCaveSrApproveSend" style="border-color:#10b981;background:rgba(16,185,129,0.24);color:#ecfdf5;font-weight:800;padding:4px 12px">&#10003; Approve &amp; Send</button>'
-            '<button type="button" class="tw-btn" data-cave-close-speed-racer="1" style="border-color:rgba(244,63,94,0.55);background:rgba(244,63,94,0.14);color:#fda4af;font-weight:750" title="Close the Speed Racer dialogue">&#10005; Close Speed Racer</button>'
             '</div></div></div>'
             % (
                 esc(it0.get("id") or ""),
                 len(sr_queue),
                 esc(it0.get("account") or "Inbox"),
                 esc(it0.get("urgency") or "Steward Staged"),
-                it0_rating_lbl,
                 q_by_html,
                 "".join(nav_pills_init),
                 esc(it0.get("subject") or "(No Subject)"),
@@ -1448,88 +1470,131 @@ def _comms_pulse_html(ctx):
         else ""
     )
 
-    acc_pills = []
+    svc_rows_html = []
+    svc_names_preview = []
+    svc_ok_n = 0
+    svc_total_n = 0
     for a in (comms.get("accounts") or []):
         if not isinstance(a, dict):
             continue
+        svc_total_n += 1
         aid = esc(a.get("id") or "")
-        albl = esc(a.get("label") or a.get("family") or "Account")
+        albl = esc(a.get("label") or a.get("family") or "Service")
+        svc_names_preview.append(albl)
         aem = esc(a.get("email") or "Calendar ICS")
         astat = str(a.get("status") or "configured").strip().lower()
         afam = str(a.get("family") or "gmail").strip().lower()
+        amode = str(a.get("auth_mode") or "").strip().lower()
+        has_ics = bool(str(a.get("ics_url") or "").strip()) or afam == "outlook"
         note_tip = esc(str(a.get("last_imap_note") or a.get("last_ics_note") or "")[:180])
+        is_degraded = astat in ("paused_safety", "auth_error", "error", "disconnected")
+        if not is_degraded:
+            svc_ok_n += 1
+        dot_cls = "red" if astat in ("auth_error", "error", "disconnected") else ("amber" if is_degraded else "emerald")
+        mail_pill = (
+            '<span class="comms-pill sky">Email: ICS Only</span>'
+            if amode == "ics_only"
+            else (
+                '<span class="comms-pill amber">Email: Paused</span>'
+                if astat == "paused_safety"
+                else (
+                    '<span class="comms-pill red">Email: Needs Sign-In</span>'
+                    if is_degraded
+                    else '<span class="comms-pill emerald">Email: Connected</span>'
+                )
+            )
+        )
+        cal_pill = (
+            '<span class="comms-pill amber">Calendar: Paused</span>'
+            if astat == "paused_safety"
+            else (
+                '<span class="comms-pill red">Calendar: Needs Auth</span>'
+                if astat in ("auth_error", "error", "disconnected") and not has_ics
+                else (
+                    '<span class="comms-pill emerald">Calendar: Synced</span>'
+                    if has_ics or not is_degraded
+                    else '<span class="comms-pill sky">Calendar: Optional</span>'
+                )
+            )
+        )
+        fix_btn = ""
         if astat == "paused_safety":
-            acc_pills.append(
-                '<span class="comms-pill amber" title="%s" style="display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(56,189,248,0.55);background:rgba(56,189,248,0.12);color:#bae6fd">'
-                '&#128737; %s (%s) &middot; <span style="font-size:10.5px;opacity:0.95">Paused for PSU Safety</span> '
+            fix_btn = (
                 '<button type="button" class="mini" data-comms-ms-device-auth="%s" data-comms-ms-email="%s" data-comms-ms-label="%s" '
-                'title="Sign in safely with your new PSU password + Duo 2FA in browser (never sends raw password over IMAP)" '
-                'style="border-color:#fbbf24;color:#fde68a;background:rgba(245,158,11,0.18);padding:1px 8px;font-size:11px;font-weight:700">'
-                '&#128273; Sign In with Microsoft 365 (Duo 2FA)</button> '
-                '<button type="button" class="mini" data-comms-auto-outlook="1" '
-                'title="Or read calendar &amp; inbox from your signed-in Windows Desktop Outlook app" '
-                'style="border-color:#38bdf8;color:#7dd3fc;background:rgba(56,189,248,0.14);padding:1px 7px;font-size:11px;font-weight:700">'
-                '&#128187; Local Outlook</button> '
-                '<button type="button" class="mini" data-comms-remove-id="%s" title="Remove this account" style="padding:0 5px;font-size:11px;line-height:1.2">&times;</button>'
-                '</span>' % (note_tip, albl, aem, aid, aem, albl, aid)
+                'title="Sign in safely with Microsoft 365 + 2FA">&#128273; Microsoft 365 2FA</button>'
+                '<button type="button" class="mini" data-comms-auto-outlook="1" title="Read from Windows Desktop Outlook">&#128187; Local Outlook</button>'
+                % (aid, aem, albl)
             )
         elif astat == "auth_error":
             if afam == "outlook":
                 fix_btn = (
                     '<button type="button" class="mini" data-comms-ms-device-auth="%s" data-comms-ms-email="%s" data-comms-ms-label="%s" '
-                    'title="Sign in with Microsoft 365 + 2FA (Duo / Authenticator) using Device Code" '
-                    'style="border-color:#fbbf24;color:#fde68a;background:rgba(245,158,11,0.15);padding:1px 7px;font-size:11px;font-weight:700">'
-                    '&#128273; Sign In with Microsoft 365 (2FA)</button>'
+                    'title="Sign in with Microsoft 365 + 2FA">&#128273; Sign In (2FA)</button>'
                     % (aid, aem, albl)
                 )
             else:
                 fix_btn = (
                     '<button type="button" class="mini" data-comms-gmail-2fa="%s" data-comms-edit-account="%s" data-comms-edit-email="%s" data-comms-edit-label="%s" data-comms-edit-family="%s" '
-                    'title="Uses your stored OS Vault password to trigger the Google 2FA prompt on your phone (no password typing needed)" '
-                    'style="border-color:#38bdf8;color:#7dd3fc;background:rgba(56,189,248,0.15);padding:1px 7px;font-size:11px;font-weight:700">'
-                    '&#128273; Authenticate 2FA (Phone Prompt)</button>'
+                    'title="Trigger Google 2FA prompt on your phone">&#128273; Authenticate 2FA</button>'
                     % (aid, aid, aem, albl, esc(afam))
                 )
-            acc_pills.append(
-                '<span class="comms-pill amber" title="%s" style="display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(245,158,11,0.5);background:rgba(245,158,11,0.1);color:#fde68a">'
-                '&#9888; %s (%s) &middot; <span style="font-size:10.5px;opacity:0.9">Needs Sign-In / 2FA</span> %s '
-                '<button type="button" class="mini" data-comms-remove-id="%s" title="Remove this account" style="padding:0 5px;font-size:11px;line-height:1.2">&times;</button>'
-                '</span>' % (note_tip, albl, aem, fix_btn, aid)
-            )
-        else:
-            acc_pills.append(
-                '<span class="comms-pill emerald cave-acct-healthy-pill" title="%s">'
-                '&#10003; %s'
-                '</span>' % (note_tip, albl)
-            )
-    healthy_manage_pills = []
-    for a in (comms.get("accounts") or []):
-        if not isinstance(a, dict):
-            continue
-        if str(a.get("status") or "configured").strip().lower() in ("paused_safety", "auth_error"):
-            continue
-        aid_m = esc(a.get("id") or "")
-        albl_m = esc(a.get("label") or a.get("family") or "Account")
-        aem_m = esc(a.get("email") or "Calendar ICS")
-        afam_m = esc(str(a.get("family") or "gmail").strip().lower())
-        healthy_manage_pills.append(
-            f'<span class="comms-pill emerald" style="display:inline-flex;align-items:center;gap:5px">'
-            f'&#10003; {albl_m} ({aem_m}) '
-            f'<button type="button" class="mini" data-comms-edit-account="{aid_m}" data-comms-edit-email="{aem_m}" data-comms-edit-label="{albl_m}" data-comms-edit-family="{afam_m}" title="Update password for {aem_m}">&#9998; Password</button>'
-            f'<button type="button" class="mini" data-comms-remove-id="{aid_m}" title="Disconnect account">&times;</button>'
-            f'</span>'
+        edit_btn = (
+            f'<button type="button" class="mini" data-comms-edit-account="{aid}" data-comms-edit-email="{aem}" '
+            f'data-comms-edit-label="{albl}" data-comms-edit-family="{esc(afam)}" title="Update credentials for {aem}">&#9998; Credentials</button>'
         )
-    healthy_manage_row = (
-        f'<div style="width:100%%;display:flex;flex-wrap:wrap;gap:6px;padding-bottom:6px;border-bottom:1px solid #1e293b">{"".join(healthy_manage_pills)}</div>'
-        if healthy_manage_pills
-        else ""
+        rm_btn = f'<button type="button" class="mini" data-comms-remove-id="{aid}" title="Disconnect {albl}">&times;</button>'
+        svc_rows_html.append(
+            f'<div class="cave-svc-row is-{dot_cls}" data-svc-account-id="{aid}" title="{note_tip}">'
+            f'  <span class="cave-svc-dot {dot_cls}"></span>'
+            f'  <div class="cave-svc-ident"><b>{albl}</b><span>{aem}</span></div>'
+            f'  <div class="cave-svc-pills">{mail_pill}{cal_pill}</div>'
+            f'  <div class="cave-svc-acts">{fix_btn}{edit_btn}{rm_btn}</div>'
+            f'</div>'
+        )
+    svc_bad_n = max(0, svc_total_n - svc_ok_n)
+    if svc_total_n == 0:
+        svc_bar_tone = "red"
+        svc_badge_txt = "0 Connected"
+        svc_names_txt = "No external Email or Calendar service connected yet — click to connect"
+    elif svc_ok_n == 0:
+        svc_bar_tone = "red"
+        svc_badge_txt = f"0/{svc_total_n} Healthy · Needs Sign-In"
+        svc_names_txt = " &middot; ".join(svc_names_preview[:4])
+    elif svc_bad_n > 0:
+        svc_bar_tone = "amber"
+        svc_badge_txt = f"{svc_ok_n}/{svc_total_n} Connected · {svc_bad_n} Attention"
+        svc_names_txt = " &middot; ".join(svc_names_preview[:4])
+    else:
+        svc_bar_tone = "emerald"
+        svc_badge_txt = f"{svc_ok_n}/{svc_total_n} Connected"
+        svc_names_txt = " &middot; ".join(svc_names_preview[:4])
+    services_bar_html = (
+        f'<details class="cave-services-bar is-{svc_bar_tone}" id="caveCommsServicesBar">'
+        f'  <summary class="cave-services-summary" id="caveCommsServicesSummary">'
+        f'    <span class="cave-svc-dot {svc_bar_tone}" id="caveCommsServicesDot"></span>'
+        f'    <b class="cave-services-title">Services</b>'
+        f'    <span class="comms-pill {svc_bar_tone}" id="caveCommsServicesStatusPill">{esc(svc_badge_txt)}</span>'
+        f'    <span class="cave-services-names" id="caveCommsServicesNames">{svc_names_txt}</span>'
+        f'    <span class="sp"></span>'
+        f'    <span class="cave-services-sync-note">Auto-sync {poller_min}m</span>'
+        f'    <span class="tog cave-services-tog">Expand &#9662;</span>'
+        f'  </summary>'
+        f'  <div class="cave-services-body" id="caveCommsServicesBody">'
+        f'    <div class="cave-services-rows" id="caveConnectedAccountsBar">'
+        + ("".join(svc_rows_html) or '<div class="tw-empty">No connected accounts yet — use + Connect Account below.</div>')
+        + '</div>'
+        '    <div class="cave-services-foot">'
+        '      <span class="comms-pill emerald">&#9679; OS Vault (advapi32)</span>'
+        '      <button type="button" class="mini comms-sync-btn" id="btnCaveCommsQuickConnect" data-open-comms-connect="1" style="font-weight:700">+ Connect Account</button>'
+        '      <button type="button" class="mini comms-sync-btn" id="btnCaveCommsAutoOutlook" data-comms-auto-outlook="1">&#128187; Local Outlook</button>'
+        '      <button type="button" class="mini comms-sync-btn" id="btnCaveCommsMs2FAQuick" data-comms-ms-device-auth="">&#128273; Microsoft 365 2FA</button>'
+        '      <a class="mini comms-setup-btn" id="btnCaveCommsSetup" href="/setup?section=comms" data-open-href="/setup?section=comms">&#9881; Full Comms Settings</a>'
+        '    </div>'
+        '  </div>'
+        '</details>'
     )
-    acc_bar_html = (
-        '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px" id="caveConnectedAccountsBar">%s</div>'
-        % "".join(acc_pills)
-        if acc_pills
-        else ""
-    )
+    healthy_manage_row = ""
+    acc_bar_html = ""
 
     conn_note = (
         '<p class="conn-zero">Connected to %d account%s via OS Credential Vault &mdash; auto-syncing every %d min.</p>'
@@ -1539,7 +1604,7 @@ def _comms_pulse_html(ctx):
     )
 
     return (
-        '<section class="cal" id="cal" data-comms-pulse="1" data-connected-count="%d">'
+        '<section class="cal' + cal_open_init_cls + '" id="cal" data-comms-pulse="1" data-connected-count="%d">'
         '<div class="cal-h cal-two-line" id="calHead">'
         '<span class="sr" id="commsStateBadge">%s</span>'
         '<div class="cal-2line-rows">'
@@ -1567,7 +1632,8 @@ def _comms_pulse_html(ctx):
         '</div>'
         '</div>'
         '<div class="cal-body" id="calBody">'
-        '<!-- Unified Calm Top Toolbar: Accounts + Source Filters + Sync + Layout -->'
+        + services_bar_html
+        + '<!-- Unified Calm Top Toolbar: Source Filters + Sync + Layout -->'
         '<div class="comms-toolbar cave-elegance-toolbar" id="caveCommsPulse">'
         '<div style="display:inline-flex;align-items:center;flex-wrap:wrap;gap:6px">'
         '%s'
@@ -1586,17 +1652,7 @@ def _comms_pulse_html(ctx):
         '<button type="button" class="mini" data-comms-layout="cal">&#128197; Calendar</button>'
         '<button type="button" class="mini" data-comms-layout="mail">&#9993; Email</button>'
         '</div>'
-        '<details id="caveCommsSetupDrawer"%s style="position:relative">'
-        '<summary class="mini" style="cursor:pointer;list-style:none">&#9881; Accounts &amp; Setup &#9662;</summary>'
-        '<div class="cave-setup-popover">'
-        + healthy_manage_row +
-        '<span class="comms-pill emerald">&#9679; OS Vault (advapi32)</span>'
-        '<button type="button" class="mini comms-sync-btn" id="btnCaveCommsQuickConnect" data-open-comms-connect="1" style="border-color:#10b981;color:#6ee7b7;font-weight:700">+ Connect Account</button>'
-        '<button type="button" class="mini comms-sync-btn" id="btnCaveCommsAutoOutlook" data-comms-auto-outlook="1" style="border-color:#38bdf8;color:#7dd3fc">&#128187; Local Outlook</button>'
-        '<button type="button" class="mini comms-sync-btn" id="btnCaveCommsMs2FAQuick" data-comms-ms-device-auth="" style="border-color:#a78bfa;color:#c4b5fd">&#128273; Microsoft 365 2FA</button>'
-        '<a class="mini comms-setup-btn" id="btnCaveCommsSetup" href="/setup?section=comms" data-open-href="/setup?section=comms">&#9881; Full Comms Settings</a>'
-        '</div>'
-        '</details>'
+        '<details id="caveCommsSetupDrawer"%s hidden style="display:none"></details>'
         '</div>'
         '</div>'
         '<div id="caveCommsDeviceFlowBox" hidden style="margin:8px 0;padding:12px 14px;border:1px solid rgba(167,139,250,0.65);border-radius:10px;background:#131b2e;color:#e6edf3"></div>'
@@ -1765,6 +1821,7 @@ def _comms_pulse_html(ctx):
         '<button type="button" class="tw-btn cave-btab" id="btnCaveMailFolderActed" data-cave-mail-folder="acted" title="Emails answered, moved to Speed Racer, or marked Seen/Done">&#9745; Acted (<span id="caveActedCountBadge">%d</span>)</button>'
         '<button type="button" class="tw-btn cave-btab" id="btnCaveMailFolderSent" data-cave-mail-folder="sent" title="Sent emails">&#128228; Sent (<span id="caveSentCountBadge">%d</span>)</button>'
         '<button type="button" class="tw-btn cave-btab cave-btab-sr" id="btnCaveOpenSpeedRacer" data-cave-open-speed-racer="1" title="Toggle Speed Racer Scribe Draft Queue">&#127950;&#65039; Speed Racer (<span id="caveSrBtnCount">%d</span>)</button>'
+        + scribe_queue_pill_html +
         '</div>'
         '<div style="display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap">'
         '<button type="button" class="tw-btn" id="btnCaveCommsDraftNew" data-comms-draft-reply="1" data-comms-draft-subject="Update on next steps" data-comms-draft-to="" data-comms-draft-project="" data-comms-draft-step="" title="Compose a new email">&#9998; Compose</button>'
@@ -1877,6 +1934,7 @@ def _comms_pulse_html(ctx):
         '        <textarea id="caveDlgStewardDirectionsInput" rows="1" class="cave-autogrow-ta" placeholder="Give Scribe instructions for Speed Racer, or tell Cave Steward what to add/update on The List..."></textarea>'
         '      </div>'
         '      <div class="cave-scribe-bar-btns">'
+        '        <button type="button" class="tw-btn cave-clear-draft-btn" id="btnCaveDlgClearDirectionsDraft" data-clear-draft title="Clear unsent instruction draft">Clear</button>'
         '        <button type="button" class="tw-btn cave-btn-sr" id="btnCaveDlgSendDirectionsToSr" title="Have Scribe synthesize a reply in Speed Racer">&#127950;&#65039; Scribe &rarr; Speed Racer</button>'
         '        <button type="button" class="tw-btn cave-btn-steward" id="btnCaveDlgSendStewardAction" title="Send full email + your instruction directly to Cave Steward">&#128203; Send to Steward</button>'
         '      </div>'
@@ -1907,11 +1965,11 @@ def _comms_pulse_html(ctx):
         '        </div>'
         '        <div class="cave-recip-grid">'
         '          <label class="cave-recip-lbl" for="caveReplyTo">To:</label>'
-        '          <div><input type="text" id="caveReplyTo" class="cave-recip-in" list="caveUnifiedAddressBookList" placeholder="recipient@example.org (comma/semicolon separated)"></div>'
+        '          <div class="sr-recip-wrap"><input type="text" id="caveReplyTo" class="cave-recip-in" placeholder="recipient@example.org (comma/semicolon separated)"><button type="button" class="sr-recip-dd-btn" data-recip-dropdown-for="caveReplyTo" title="Inspect all To recipients or add from Address Book">&#9662;</button></div>'
         '          <label class="cave-recip-lbl" for="caveReplyCc">CC:</label>'
-        '          <div><input type="text" id="caveReplyCc" class="cave-recip-in" list="caveUnifiedAddressBookList" placeholder="Optional CC (multiple supported)..."></div>'
+        '          <div class="sr-recip-wrap"><input type="text" id="caveReplyCc" class="cave-recip-in" placeholder="Optional CC (multiple supported)..."><button type="button" class="sr-recip-dd-btn" data-recip-dropdown-for="caveReplyCc" title="Inspect all CC recipients or add from Address Book">&#9662;</button></div>'
         '          <label class="cave-recip-lbl" for="caveReplyBcc">BCC:</label>'
-        '          <div><input type="text" id="caveReplyBcc" class="cave-recip-in" list="caveUnifiedAddressBookList" placeholder="Optional BCC (blind copy)..."></div>'
+        '          <div class="sr-recip-wrap"><input type="text" id="caveReplyBcc" class="cave-recip-in" placeholder="Optional BCC (blind copy)..."><button type="button" class="sr-recip-dd-btn" data-recip-dropdown-for="caveReplyBcc" title="Inspect all BCC recipients or add from Address Book">&#9662;</button></div>'
         '          <label class="cave-recip-lbl" for="caveReplySubject">Subj:</label>'
         '          <div><input type="text" id="caveReplySubject" class="cave-recip-in"></div>'
         '        </div>'
@@ -2182,7 +2240,13 @@ def _candidates_tile(ctx):
     in_goal, loose = candidates(ctx)
     n = len(in_goal) + len(loose)
     if not n:
-        return ""
+        return (
+            '<section class="shelf cands" id="shCands"><details class="cands-tile" id="candsTile"><summary class="shelf-h">'
+            '<h3>In Reserve</h3><span class="c">0</span><span class="cand-cockpit-pill">0 AI cockpits in reserve</span><span class="rule"></span>'
+            '<span class="sub">click to expand reserve AI cockpits &amp; desk items</span>'
+            '<span class="tog cands-tog-lbl">Expand</span></summary>'
+            '<div class="empty" style="padding:8px 12px">No AI cockpits or desk items currently in reserve.</div></details></section>'
+        )
     in_goal_cockpits = [(i, p) for i, p in in_goal if p.get("kind") in ("project", "effort")]
     in_goal_tasks = [(i, p) for i, p in in_goal if p.get("kind") not in ("project", "effort")]
     n_cockpits = len(in_goal_cockpits) + len(loose)
@@ -2193,14 +2257,38 @@ def _candidates_tile(ctx):
         href = "/steward/v1?pid=%s&amp;dir=%s" % (esc(pid), esc(_quote(str(rel or ""))))
         return '<a class="t-go cand-go" href="%s" target="_blank" rel="noopener" data-tip="Open cockpit &#8599;" title="Open the AI cockpit"><span class="t-btn-txt">cockpit </span><span class="t-go-arr">&#8599;</span></a>' % href
 
-    def acts_step(sid, pid="", rel=""):
+    camp_pid = str((ctx.get("campaign") or {}).get("pid") or "")
+
+    def lc_btns(sid="", ref="", pid="", rel=""):
+        if not sid and not ref and not pid:
+            return ""
+        if pid and pid == camp_pid and (not rel or str(rel).strip().lower() == "cave of wonders"):
+            return ""
+        attrs = []
+        if sid:
+            attrs.append('data-step="%s"' % esc(sid))
+        if ref:
+            attrs.append('data-ref="%s"' % esc(ref))
+        if pid:
+            attrs.append('data-pid="%s"' % esc(pid))
+        if rel:
+            attrs.append('data-dir="%s"' % esc(rel))
+        a_str = " ".join(attrs)
+        return (
+            '<button type="button" class="mini cave-lc-btn" data-cockpit-lifecycle="archive" %s title="Archive this AI Cockpit (reversible)">Archive</button>'
+            '<button type="button" class="mini cave-lc-btn danger" data-cockpit-lifecycle="retire" %s title="Retire this AI Cockpit (reversible)">Retire</button>'
+        ) % (a_str, a_str)
+
+    def acts_step(sid, pid="", rel="", ckind="cockpit"):
+        extra = lc_btns(sid=sid, pid=pid, rel=rel) if ckind == "cockpit" else ""
         return ('<span class="acts">%s<button class="mini" data-seat="deck" data-step="%s">&rarr; on deck</button>'
-                '<button class="mini" data-seat="active" data-step="%s">&rarr; active</button></span>') % (cockpit_link(pid, rel), esc(sid), esc(sid))
+                '<button class="mini" data-seat="active" data-step="%s">&rarr; active</button>%s</span>') % (cockpit_link(pid, rel), esc(sid), esc(sid), extra)
 
     def acts_new(c):
+        extra = lc_btns(ref=c.get("ref") or "", pid=c.get("pid") or "", rel=c.get("dir") or "")
         return ('<span class="acts">%s<button class="mini" data-cand-seat="deck" data-ref="%s" data-name="%s">&rarr; on deck</button>'
-                '<button class="mini" data-cand-seat="active" data-ref="%s" data-name="%s">&rarr; active</button></span>') % (
-            cockpit_link(c.get("pid") or "", c.get("dir") or ""), esc(c["ref"]), esc(c["name"]), esc(c["ref"]), esc(c["name"]))
+                '<button class="mini" data-cand-seat="active" data-ref="%s" data-name="%s">&rarr; active</button>%s</span>') % (
+            cockpit_link(c.get("pid") or "", c.get("dir") or ""), esc(c["ref"]), esc(c["name"]), esc(c["ref"]), esc(c["name"]), extra)
 
     def meta(score, why, created, worked, ckind="cockpit"):
         return ('data-score="%d" data-created="%s" data-worked="%s" data-cand-kind="%s"' % (score, esc(created or ""), esc(worked or ""), esc(ckind)),
@@ -2233,15 +2321,16 @@ def _candidates_tile(ctx):
             meta(p.get("c_score", 0), p.get("c_why", ""), p.get("c_created"), p.get("c_worked"), "task")[2],
             ('<span class="wm">&#9873;</span> ' if p.get("needs_you") else "") + esc(part_name(p)),
             "%s &middot; in %s" % (esc(KIND_LABEL.get(p.get("kind"), "")), esc(i.get("name") or "")),
-            acts_step(p.get("id") or ""))
+            acts_step(p.get("id") or "", ckind="task"))
         for i, p in sorted(in_goal_tasks, key=lambda t: -t[1].get("c_score", 0))
     )
     return (
         '<section class="shelf cands" id="shCands"><details class="cands-tile" id="candsTile"><summary class="shelf-h">'
-        '<h3>Candidates</h3><span class="c">%d</span><span class="cand-cockpit-pill">%d AI cockpit%s ready</span><span class="rule"></span>'
-        '<span class="sub">every AI cockpit and desk item you could put on deck or make active</span></summary>'
-        '<div class="cand-tools"><input type="search" id="candSearch" placeholder="search the candidates&hellip;" aria-label="search the candidates" autocomplete="off">'
-        '<div class="cand-filter" id="candFilter" role="group" aria-label="filter candidates">'
+        '<h3>In Reserve</h3><span class="c">%d</span><span class="cand-cockpit-pill">%d AI cockpit%s in reserve</span><span class="rule"></span>'
+        '<span class="sub">click to expand &mdash; every AI cockpit and desk item you could put on deck or make active</span>'
+        '<span class="tog cands-tog-lbl">Expand</span></summary>'
+        '<div class="cand-tools"><input type="search" id="candSearch" placeholder="search reserve cockpits&hellip;" aria-label="search reserve cockpits" autocomplete="off">'
+        '<div class="cand-filter" id="candFilter" role="group" aria-label="filter reserve items">'
         '<button type="button" class="cand-flt on" data-cand-filter="all">All (%d)</button>'
         '<button type="button" class="cand-flt" data-cand-filter="cockpit">AI Cockpits (%d)</button>'
         '<button type="button" class="cand-flt" data-cand-filter="task">Desk Tasks (%d)</button>'
@@ -2251,9 +2340,36 @@ def _candidates_tile(ctx):
         '<span class="cand-note" id="candNote"></span></div>'
         '%s%s%s</details></section>'
     ) % (n, n_cockpits, "" if n_cockpits == 1 else "s", n, n_cockpits, len(in_goal_tasks),
-         ('<div class="cand-group" data-cand-group="cockpit"><div class="k">Candidate AI cockpits (in a goal, not on the desk) &middot; %d</div><ul>%s</ul></div>' % (len(in_goal_cockpits), rows_cockpits_goal)) if in_goal_cockpits else "",
+         ('<div class="cand-group" data-cand-group="cockpit"><div class="k">Reserve AI cockpits (in a goal, not on the desk) &middot; %d</div><ul>%s</ul></div>' % (len(in_goal_cockpits), rows_cockpits_goal)) if in_goal_cockpits else "",
          ('<div class="cand-group" data-cand-group="cockpit"><div class="k">AI cockpits in no goal &middot; %d</div><ul>%s</ul></div>' % (len(loose), rows_b)) if loose else "",
          ('<div class="cand-group" data-cand-group="task"><div class="k">In a goal, not on the desk (desk tasks) &middot; %d</div><ul>%s</ul></div>' % (len(in_goal_tasks), rows_tasks_goal)) if in_goal_tasks else "")
+
+
+def _cockpits_hub_tile(ctx):
+    """Collapsible AI Cockpits tile (closed by default): summarizes Active, On Deck, and In Reserve counts,
+    and expands on click to reveal Active, On Deck, and the expandable In Reserve bar."""
+    inits = [i for i in ctx.get("initiatives") or [] if i.get("status") not in ("done", "parked")]
+    n_active = len(seated(inits, "active"))
+    n_deck = len(seated(inits, "deck"))
+    in_goal, loose = candidates(ctx)
+    n_reserve = sum(1 for _, p in in_goal if p.get("kind") in ("project", "effort")) + len(loose)
+    return (
+        '<section class="cockpits-hub" id="caveCockpitsTile" data-cockpits-hub="1">'
+        '<button type="button" class="cockpits-hub-h" id="caveCockpitsToggle" data-cockpits-toggle="1" aria-expanded="false" aria-controls="caveCockpitsBody">'
+        '<span class="k">AI Cockpits</span>'
+        '<span class="cockpits-counts" id="caveCockpitsCounts">'
+        '<span class="ck-cnt active"><b id="ckCntActive">%d</b> Active</span>'
+        '<span class="ck-sep">&middot;</span>'
+        '<span class="ck-cnt deck"><b id="ckCntDeck">%d</b> On Deck</span>'
+        '<span class="ck-sep">&middot;</span>'
+        '<span class="ck-cnt reserve"><b id="ckCntReserve">%d</b> In Reserve</span>'
+        '</span>'
+        '<span class="sp"></span>'
+        '<span class="tog" id="caveCockpitsTog">Expand</span>'
+        '</button>'
+        '<div class="cockpits-hub-body" id="caveCockpitsBody" hidden>%s%s</div>'
+        '</section>'
+    ) % (n_active, n_deck, n_reserve, _seat_shelves(ctx), _candidates_tile(ctx))
 
 
 def _seed_panel(ctx):
@@ -2396,14 +2512,9 @@ def nudge_html(n, where="brief"):
 
 def _panel(ctx):
     st = ctx["steward"]
-    seeds = int(ctx.get("seeds") or 0)
     return (
-        '<aside class="panel"><div class="seedbar"><button class="seedbtn" id="seedBtn" aria-expanded="false" aria-controls="seedPanel"><span>Seeds</span><span class="cnt" id="seedCount">%d</span></button><span class="lbl" id="seedLbl">%s</span></div>%s'
-        # the brief is gone (John, 2026-10-03: "I'm not sure it helps on the cave of wonders page either"); the
-        # steward's nudge and the ready-to-resume note keep their place at the top of the panel (Grok R1 F1)
+        '<aside class="panel">'
         '<section class="nudgeslot" id="nudgeSlot" aria-label="The steward steps in">%s%s</section>'
-        # R14 (2026-09-29): the token is pasted INTO the page — a browser pop-up (window.prompt) is what his desktop
-        # browser suppressed ("I click that button and nothing happens"); the box is hidden until it is needed
         '<div class="loginbox" id="loginBox" hidden><span class="lb-t">This browser is not logged in to Anchor.</span>'
         '<input id="loginTok" type="password" placeholder="paste the token here" autocomplete="off" spellcheck="false">'
         '<button class="mini" id="loginGo">Log in</button><span class="lb-msg" id="loginMsg"></span></div>'
@@ -2411,10 +2522,9 @@ def _panel(ctx):
         '<button id="cave-provider-capacity" class="provider-capacity" type="button" aria-label="Provider capacity and details"><strong>Provider capacity</strong><span>Unknown · reading host settings</span></button>'
         '<section class="composer"><label class="sr" for="say">Tell the steward what to do</label>'
         '<textarea id="say" rows="2" placeholder="Ask %s, discuss, or tell it what to do &mdash; it answers above as it writes; a %s verb applies on the record"></textarea>'
-        '<div class="comp-row"><span class="hint">Enter sends &middot; Shift+Enter new line &middot; the Cave&rsquo;s steward answers above &middot; start a new project called &lt;name&gt; at &lt;folder&gt;</span><button class="send" id="sendBtn">Send</button></div>'
+        '<div class="comp-row"><span class="hint">Enter sends &middot; Shift+Enter new line &middot; the Cave&rsquo;s steward answers above &middot; start a new project called &lt;name&gt; at &lt;folder&gt;</span><button type="button" class="mini clear-draft-btn" id="clearSayDraftBtn" data-clear-draft title="Clear unsent instruction draft">Clear</button><button class="send" id="sendBtn">Send</button></div>'
         '<div class="receipt" id="receipt" hidden><span class="r-mark">&#10003;</span><span id="receiptText"></span> <button class="mini" id="undoBtn" hidden>undo</button></div></section></aside>'
-    ) % (seeds, "ideas that could start a project" if seeds else "no seeds yet", _seed_panel(ctx),
-         resume_html(ctx.get("resume")), nudge_html(ctx.get("nudge"), "brief"), _dialogue(ctx), esc(st["label"]), esc(mode_name(st)))
+    ) % (resume_html(ctx.get("resume")), nudge_html(ctx.get("nudge"), "brief"), _dialogue(ctx), esc(st["label"]), esc(mode_name(st)))
 
 
 def render_locked_html(ctx) -> str:
@@ -2463,459 +2573,170 @@ def _tile_names(ctx):
         _json.dumps(mode_name(st)), _json.dumps(pic(st.get("campaign_icon"))))
 
 
+def _render_cos_suggestion_row_html(sug: dict, rank: int | None = None) -> str:
+    sid = esc(str(sug.get("id") or ""))
+    sk = esc(str(sug.get("source_key") or ""))
+    title = esc(str(sug.get("title") or "Suggested Effort"))
+    summary = esc(str(sug.get("summary") or ""))
+    detail = esc(str(sug.get("detail") or ""))
+    ck_name = esc(str(sug.get("cockpit_name") or "Cave of Wonders"))
+    ck_href = esc(str(sug.get("cockpit_href") or "/steward/v1"))
+    cat = esc(str(sug.get("category") or "Business"))
+    prio = int(sug.get("priority") or 2)
+    rank_lbl = f"#{rank}" if rank is not None else "&#8226;"
+    steps_html = "".join(
+        f"<li>{esc(str(st))}</li>" for st in (sug.get("plan_steps") or []) if str(st).strip()
+    )
+    return (
+        f'<div class="cos-min-row" data-cos-sug-id="{sid}" data-cos-source-key="{sk}">'
+        f'  <div class="cos-min-main" data-cos-toggle-detail="{sid}">'
+        f'    <span class="cos-min-rank">{rank_lbl}</span>'
+        f'    <div class="cos-min-text">'
+        f'      <span class="cos-min-title">{title}</span>'
+        f'      <span class="cos-min-sub">{summary} &middot; <em>{ck_name}</em></span>'
+        f'    </div>'
+        f'    <div class="cos-min-acts">'
+        f'      <a class="cos-min-btn act" href="{ck_href}" target="_blank" rel="noopener" data-cos-act="act_now" data-cos-id="{sid}" title="Open &amp; act immediately">&#8599; Act</a>'
+        f'      <button type="button" class="cos-min-btn add" data-cos-act="add_to_list" data-cos-id="{sid}" title="Add to The List">+ List</button>'
+        f'      <button type="button" class="cos-min-btn later" data-cos-act="postpone" data-cos-id="{sid}" title="Postpone for later">Later</button>'
+        f'      <button type="button" class="cos-min-btn del" data-cos-act="delete" data-cos-id="{sid}" title="Delete suggestion">&times;</button>'
+        f'    </div>'
+        f'  </div>'
+        f'  <div class="cos-min-detail" id="cosSugDetail-{sid}" hidden>'
+        f'    <div class="cos-min-why">{detail}</div>'
+        f'    <div class="cos-min-plan-lbl">Proposed Plan ({cat} &middot; Priority #{prio}):</div>'
+        f'    <ol class="cos-min-plan-list">{steps_html}</ol>'
+        f'    <div class="cos-min-dir-row">'
+        f'      <input type="text" class="cos-min-dir-in" id="cosDirIn-{sid}" placeholder="Give Steward modifying directions or refine plan...">'
+        f'      <button type="button" class="cos-min-btn act" data-cos-act="send_to_steward" data-cos-id="{sid}">Send to Steward</button>'
+        f'      <button type="button" class="cos-min-btn add" data-cos-act="add_to_list" data-cos-id="{sid}" data-cos-with-edits="1">+ List with Edits</button>'
+        f'    </div>'
+        f'  </div>'
+        f'</div>'
+    )
+
+
 def _proactive_triage_strip(ctx):
-    """Wave 6b, Wave 15, Wave 19 & Wave 21 (2026-11-02): Asymmetric Horizon Chief-of-Staff Next-Effort Engine
-    at the top of the Cave of Wonders board (Today 44% · This Week 28% · This Month 14% · Star Chart Q2 Goals 14%)
-    co-populated by the Cave of Wonders Steward and Star Chart Steward with:
-      - Break-Between-Cockpits Filter (All · 15m Break · 30m Prep · 60m+ Q2 Deep Work · Family & Relationships)
-      - Live Q1 -> Q2 Deep-Work Unlock Meter (clearing Urgent items unlocks protected Quadrant II Deep Work)
-      - Parable-of-the-Oranges Skill Pre-Staging (Einstein, researchPrime, Superjump, Gandalf, Chekhov, Legal-Beagle, Financial-Analyst)
-      - 1-click Open AI Cockpit, Create AI Cockpit, Mark Cleared, and Rotate / Next Suggestion."""
-    cards = proactive_triage_cards(ctx)
+    """Minimalist Chief-of-Staff + 'The List' Single-Row Bar:
+      - Single top row contains: [Chief of Staff (N)] toggle, [The List (M)] toggle, [K Running] tile, and [Poincare Map].
+      - Parable-of-the-Oranges skill preparation runs silently in the background.
+      - Checking Chief of Staff reveals at most 3 ordered suggestions + a 4th '+N other suggestions' line.
+      - Checking The List reveals the clean living list directly below without a duplicate header or Expand button."""
     cos = chief_of_staff_horizon_efforts(ctx)
-    desk_pid = str(ctx.get("desk_pid") or "")
-    desk_href = ("/steward/v1?pid=%s&amp;dir=Small%%20items" % esc(desk_pid)) if desk_pid else "/desk"
-
-    # Build Today asymmetric effort cards (Widest column 44%)
-    cos_today_html = []
-    for ef in cos.get("today_efforts") or ():
-        done_btn = ""
-        list_tid = str(ef.get("list_tile_id") or "")
-        if list_tid:
-            done_btn = (
-                '<button type="button" class="cos-act-btn done-unlock" data-wl-cos-complete="%s" data-mark-done="1" data-cos-clear-id="%s" '
-                'data-target-dir="%s" data-target-step="%s" title="Check off this item on The List and move it to Things Done">&#10003; Check Off The List (&rarr; Things Done)</button>'
-                '<button type="button" class="cos-act-btn" data-wl-focus-tile="%s" title="Open this item inside The List tile below">&#128203; Open in The List</button>'
-                % (esc(list_tid), esc(ef["id"]), esc(ef.get("folder") or ""), esc(ef.get("step_id") or ""), esc(list_tid))
-            )
-        elif ef.get("unlock_note"):
-            done_btn = (
-                '<button type="button" class="cos-act-btn done-unlock" data-mark-done="1" data-cos-clear-id="%s" '
-                'data-target-dir="%s" data-target-step="%s" title="Mark cleared and unlock Q2 Deep Work">&#10003; Mark Cleared (%s)</button>'
-                % (esc(ef["id"]), esc(ef.get("folder") or ""), esc(ef.get("step_id") or ""), esc(ef["unlock_note"]))
-            )
-        oranges_cls = "cos-oranges q2" if ef.get("tier_cls") == "q2-deep" else "cos-oranges"
-        cos_today_html.append(
-            '<div class="cos-effort-card %s" id="%s" data-cos-card="1" data-break="%s">'
-            '<div class="cos-ef-top">'
-            '<span class="cos-ef-name" data-cos-modal-open="1" data-cos-title="%s" data-cos-tier="%s" '
-            'data-cos-driver="%s" data-cos-oranges="%s" data-cos-href="%s" data-cos-prompt="%s">%s</span>'
-            '<div class="cos-ef-badges">'
-            '<span class="cos-pill %s">%s</span>'
-            '<span class="cos-pill sky">%s</span>'
-            '</div></div>'
-            '<div class="cos-ef-driver"><strong>Driver:</strong> %s</div>'
-            '<div class="%s">&#127818; <strong>Parable of the Oranges (Pre-Staged &middot; %s):</strong> %s</div>'
-            '<div class="cos-ef-actions">'
-            '<a class="cos-act-btn cockpit-open" href="%s" target="_blank" rel="noopener">%s</a>'
-            '<button type="button" class="cos-act-btn skill-prestage" data-cos-prestage-prompt="%s" data-cos-skill="%s">%s</button>'
-            '%s'
-            '<button type="button" class="cos-act-btn" data-cos-rotate="%s" title="Rotate to next Steward suggestion">&#9197; Rotate</button>'
-            '</div></div>'
-            % (
-                esc(ef["tier_cls"]),
-                esc(ef["id"]),
-                esc(ef["break_tags"]),
-                esc(ef["title"]),
-                esc(ef["tier_badge"]),
-                esc(ef["driver"]),
-                esc(ef["oranges_text"]),
-                esc(ef["href"]),
-                esc(ef["skill_prompt"]),
-                esc(ef["title"]),
-                esc(ef["tier_pill_cls"]),
-                esc(ef["tier_badge"]),
-                esc(ef["break_badge"]),
-                esc(ef["driver"]),
-                oranges_cls,
-                esc(ef["oranges_skill"]),
-                esc(ef["oranges_text"]),
-                esc(ef["href"]),
-                esc(ef["open_label"]),
-                esc(ef["skill_prompt"]),
-                esc(ef["oranges_skill"]),
-                esc(ef["skill_btn_label"]),
-                done_btn,
-                esc(ef["id"]),
-            )
-        )
-
-    # Build This Week asymmetric effort cards (Medium column — Soon-to-Be Urgent + Family & Relationships, tied to The List)
-    cos_week_html = []
-    for ef in cos.get("week_efforts") or ():
-        open_cls = "cockpit-create" if ef.get("is_create") else "cockpit-open"
-        w_ltid = esc(str(ef.get("list_tile_id") or ""))
-        w_lbdg = esc(str(ef.get("list_badge") or "📋 The List"))
-        cos_week_html.append(
-            '<div class="cos-effort-card %s" id="%s" data-cos-card="1" data-break="%s">'
-            '<div class="cos-ef-top">'
-            '<span class="cos-ef-name" data-cos-modal-open="1" data-cos-title="%s" data-cos-tier="%s" '
-            'data-cos-driver="%s" data-cos-oranges="%s" data-cos-href="%s" data-cos-prompt="%s">%s</span>'
-            '<div class="cos-ef-badges"><span class="cos-pill %s">%s</span>'
-            '<button type="button" class="cos-act-btn" data-wl-focus-tile="%s" style="font-size:9.5px;padding:1px 6px" title="Tied to The List — click to open in The List">%s</button></div>'
-            '</div>'
-            '<div class="cos-ef-driver"><strong>Driver:</strong> %s</div>'
-            '<div class="cos-ef-actions">'
-            '<a class="cos-act-btn %s" href="%s" target="_blank" rel="noopener">%s</a>'
-            '<button type="button" class="cos-act-btn skill-prestage" data-cos-prestage-prompt="%s" data-cos-skill="%s">%s</button>'
-            '<button type="button" class="cos-act-btn" data-wl-focus-tile="%s" title="Open this item in The List">&#128203; In The List</button>'
-            '<button type="button" class="cos-act-btn" data-cos-rotate="%s" title="Rotate suggestion">&#9197;</button>'
-            '</div></div>'
-            % (
-                esc(ef["tier_cls"]),
-                esc(ef["id"]),
-                esc(ef["break_tags"]),
-                esc(ef["title"]),
-                esc(ef["tier_badge"]),
-                esc(ef["driver"]),
-                esc(ef["oranges_skill"]),
-                esc(ef["href"]),
-                esc(ef["skill_prompt"]),
-                esc(ef["title"]),
-                esc(ef["tier_pill_cls"]),
-                esc(ef["tier_badge"]),
-                w_ltid,
-                w_lbdg,
-                esc(ef["driver"]),
-                open_cls,
-                esc(ef["href"]),
-                esc(ef["open_label"]),
-                esc(ef["skill_prompt"]),
-                esc(ef["oranges_skill"]),
-                esc(ef["skill_btn_label"]),
-                w_ltid,
-                esc(ef["id"]),
-            )
-        )
-
-    # Build This Month compact expandable cards (tied to The List)
-    cos_month_html = []
-    for ef in cos.get("month_efforts") or ():
-        open_cls = "cockpit-create" if ef.get("is_create") else "cockpit-open"
-        m_ltid = esc(str(ef.get("list_tile_id") or ""))
-        m_lbdg = esc(str(ef.get("list_badge") or "📋 The List"))
-        cos_month_html.append(
-            '<div class="cos-compact-effort" id="%s" data-cos-card="1" data-break="%s" data-cos-expand-col="month">'
-            '<div class="cos-ce-title"><span>%s</span><span class="cos-pill %s">%s</span></div>'
-            '<div class="cos-ce-meta">%s &middot; <button type="button" class="cos-act-btn" data-wl-focus-tile="%s" style="font-size:9.5px;padding:0 5px">%s</button></div>'
-            '<div class="cos-ce-detail">'
-            '<div class="cos-oranges">&#127818; %s</div>'
-            '<div class="cos-ef-actions">'
-            '<a class="cos-act-btn %s" href="%s" target="_blank" rel="noopener">%s</a>'
-            '<button type="button" class="cos-act-btn skill-prestage" data-cos-prestage-prompt="%s">%s</button>'
-            '<button type="button" class="cos-act-btn" data-wl-focus-tile="%s">&#128203; Open in The List</button>'
-            '</div></div></div>'
-            % (
-                esc(ef["id"]),
-                esc(ef["break_tags"]),
-                esc(ef["title"]),
-                esc(ef["pill_cls"]),
-                esc(ef["badge"]),
-                esc(ef["meta"]),
-                m_ltid,
-                m_lbdg,
-                esc(ef["oranges_text"]),
-                open_cls,
-                esc(ef["href"]),
-                esc(ef["open_label"]),
-                esc(ef["skill_prompt"]),
-                esc(ef["skill_btn_label"]),
-                m_ltid,
-            )
-        )
-
-    # Build Quarter / Star Chart Q2 compact expandable cards (tied to The List)
-    cos_qtr_html = []
-    for ef in cos.get("quarter_efforts") or ():
-        open_cls = "cockpit-create" if ef.get("is_create") else "cockpit-open"
-        q_ltid = esc(str(ef.get("list_tile_id") or ""))
-        q_lbdg = esc(str(ef.get("list_badge") or "📋 The List"))
-        cos_qtr_html.append(
-            '<div class="cos-compact-effort" id="%s" data-cos-card="1" data-break="%s" data-cos-expand-col="quarter">'
-            '<div class="cos-ce-title"><span>%s</span><span class="cos-pill %s">%s</span></div>'
-            '<div class="cos-ce-meta">%s &middot; <button type="button" class="cos-act-btn" data-wl-focus-tile="%s" style="font-size:9.5px;padding:0 5px">%s</button></div>'
-            '<div class="cos-ce-detail">'
-            '<div class="cos-oranges q2">&#127818; %s</div>'
-            '<div class="cos-ef-actions">'
-            '<a class="cos-act-btn %s" href="%s" target="_blank" rel="noopener">%s</a>'
-            '<button type="button" class="cos-act-btn skill-prestage" data-cos-prestage-prompt="%s">%s</button>'
-            '<button type="button" class="cos-act-btn" data-wl-focus-tile="%s">&#128203; Open in The List</button>'
-            '</div></div></div>'
-            % (
-                esc(ef["id"]),
-                esc(ef["break_tags"]),
-                esc(ef["title"]),
-                esc(ef["pill_cls"]),
-                esc(ef["badge"]),
-                esc(ef["meta"]),
-                q_ltid,
-                q_lbdg,
-                esc(ef["oranges_text"]),
-                open_cls,
-                esc(ef["href"]),
-                esc(ef["open_label"]),
-                esc(ef["skill_prompt"]),
-                esc(ef["skill_btn_label"]),
-                q_ltid,
-            )
-        )
-
-    # Build Today drawer items (preserving .triage-card, data-mark-done, and Desktop Ad-Hoc AI Cockpit links)
-    today_items_html = []
-    for c in cards:
-        acts = []
-        if c.get("is_desk"):
-            acts.append('<a class="tc-btn primary" href="%s" target="_blank" rel="noopener">&#128421; Open Ad-Hoc Cockpit &#8599;</a>' % desk_href)
-            acts.append('<a class="tc-btn" href="/desk" target="_blank" rel="noopener">Desk Board</a>')
-        else:
-            if c.get("folder"):
-                acts.append(
-                    '<button type="button" class="tc-btn done" data-mark-done="1" data-target-dir="%s" data-target-step="%s" title="Mark this step done">&#10003; Mark Done</button>'
-                    % (esc(c["folder"]), esc(c.get("step_id") or ""))
-                )
-            if c.get("pid"):
-                acts.append(
-                    '<a class="tc-btn" href="/steward/v1?pid=%s&amp;dir=" target="_blank" rel="noopener">Cockpit &#8599;</a>'
-                    % esc(c["pid"])
-                )
-        badge_cls = "q2" if c.get("tone") == "focus" else ("q1" if c.get("tone") in ("warn", "urgent") else "q3")
-        today_items_html.append(
-            '<div class="hz-item triage-card %s" id="%s">'
-            '<div class="hz-item-row">'
-            '<span class="hz-qbadge %s tc-rule">%s</span>'
-            '<span class="hz-item-title tc-title">%s</span>'
-            '<span class="hz-item-meta">%s</span>'
-            '<div class="tc-acts">%s</div>'
-            '</div>'
-            '<div class="hz-detail"><div class="tc-why">%s</div></div>'
-            '</div>'
-            % (esc(c["tone"]), esc(c["id"]), badge_cls, esc(c["rule"]), esc(c["title"]), esc(c["rule"]), "".join(acts), esc(c["why"]))
-        )
-
-    # Build This Week drawer items from this_week_horizon_buckets(ctx)
-    hb = this_week_horizon_buckets(ctx)
-    week_items_html = []
-    week_total = 0
-    week_labels = []
-    for bucket_lbl, bucket_cls, items_list in (
-        ("Overdue", "q1", hb.get("col_overdue") or []),
-        ("Today", "q2", hb.get("col_today") or []),
-        ("Next 72h", "q2", hb.get("col_72h") or []),
-        ("Days 4-7", "q3", hb.get("col_week") or []),
-    ):
-        for it in items_list:
-            week_total += 1
-            nm = it.get("name") or "Step"
-            pnm = it.get("project_name") or ""
-            pid = it.get("project_id") or ""
-            due_s = _short(it.get("due") or "")
-            if len(week_labels) < 3:
-                week_labels.append(nm)
-            act_btn = ('<a class="tc-btn" href="/project/%s" target="_blank" rel="noopener">Project &#8599;</a>' % esc(pid)) if pid else ""
-            week_items_html.append(
-                '<div class="hz-item">'
-                '<div class="hz-item-row">'
-                '<span class="hz-qbadge %s">%s</span>'
-                '<span class="hz-item-title">%s</span>'
-                '<span class="hz-item-meta">%s &middot; %s</span>'
-                '<div class="tc-acts">%s</div>'
-                '</div>'
-                '<div class="hz-detail">%s &mdash; due %s (%s)</div>'
-                '</div>'
-                % (bucket_cls, esc(bucket_lbl), esc(nm), esc(due_s), esc(pnm), act_btn, esc(nm), esc(due_s), esc(pnm))
-            )
-    if not week_items_html:
-        week_items_html.append(
-            '<div class="hz-item"><div class="hz-item-row"><span class="hz-qbadge q2">This Week</span>'
-            '<span class="hz-item-title">Clear 7-Day Horizon &mdash; Deep Work Focus</span><span class="hz-item-meta">0 due</span>'
-            '<div class="tc-acts"><button type="button" class="tc-btn" data-toggle-dated="1">Dated Ruler</button></div></div>'
-            '<div class="hz-detail">No open dated steps due within the next 7 days.</div></div>'
-        )
-
-    # Build This Month, This Quarter, This Year drawers from initiatives & goals
-    inits = ctx.get("initiatives") or []
-    goals = goals_only(inits)
-    active_or_deck = [i for i in inits if (i.get("seat") in ("active", "on_deck") or i.get("status") in ("in_progress", "active"))]
-    month_items_html = []
-    for i in (active_or_deck or inits)[:6]:
-        nm = i.get("title") or i.get("name") or i.get("id") or "Initiative"
-        why = i.get("done_when") or i.get("summary") or "Monthly deliverable target"
-        month_items_html.append(
-            '<div class="hz-item"><div class="hz-item-row"><span class="hz-qbadge q2">Month</span>'
-            '<span class="hz-item-title">%s</span><span class="hz-item-meta">%s</span>'
-            '<div class="tc-acts"><a class="tc-btn" href="/campaign">Star Chart &#8599;</a></div></div>'
-            '<div class="hz-detail">%s</div></div>' % (esc(nm), esc(i.get("seat") or "deliverable"), esc(why))
-        )
-    if not month_items_html:
-        month_items_html.append(
-            '<div class="hz-item"><div class="hz-item-row"><span class="hz-qbadge q2">Month</span>'
-            '<span class="hz-item-title">Monthly Campaign Deliverables &amp; System Hardening</span><span class="hz-item-meta">Month arc</span>'
-            '<div class="tc-acts"><a class="tc-btn" href="/campaign">Star Chart &#8599;</a></div></div>'
-            '<div class="hz-detail">Click into Star Chart to review monthly campaign milestones.</div></div>'
-        )
-
-    quarter_items_html = []
-    for g in (goals or inits)[:6]:
-        nm = g.get("title") or g.get("name") or g.get("id") or "Quarter Goal"
-        why = g.get("done_when") or g.get("summary") or "Quarterly campaign milestone"
-        quarter_items_html.append(
-            '<div class="hz-item"><div class="hz-item-row"><span class="hz-qbadge q2">&#9733; Quarter</span>'
-            '<span class="hz-item-title">%s</span><span class="hz-item-meta">Star Chart Goal</span>'
-            '<div class="tc-acts"><a class="tc-btn" href="/campaign">Star Chart &#8599;</a></div></div>'
-            '<div class="hz-detail">%s</div></div>' % (esc(nm), esc(why))
-        )
-    if not quarter_items_html:
-        quarter_items_html.append(
-            '<div class="hz-item"><div class="hz-item-row"><span class="hz-qbadge q2">&#9733; Quarter</span>'
-            '<span class="hz-item-title">Quarterly Star Chart Campaign Objectives</span><span class="hz-item-meta">Star Chart</span>'
-            '<div class="tc-acts"><a class="tc-btn" href="/campaign">Star Chart &#8599;</a></div></div>'
-            '<div class="hz-detail">Ties directly into Star Chart quarterly rocks and milestones.</div></div>'
-        )
-
-    year_items_html = [
-        '<div class="hz-item"><div class="hz-item-row"><span class="hz-qbadge q2">&#9733; Year Vision</span>'
-        '<span class="hz-item-title">%s</span><span class="hz-item-meta">Annual North Star</span>'
-        '<div class="tc-acts"><a class="tc-btn" href="/campaign">Star Chart &#8599;</a></div></div>'
-        '<div class="hz-detail">%s</div></div>'
-        % (esc((g.get("title") or g.get("name") or "Annual Flagship Goal")), esc(g.get("done_when") or "Annual academic & deep-work vision on the Star Chart."))
-        for g in (goals[:4] if goals else [{"title": "Academic Deep-Work & Anchor Collaboration Platform", "done_when": "Full year research, book/manuscript creation, and Anchor + Skill Foundry release."}])
-    ]
-
-    today_sum = " &middot; ".join(esc(c.get("title") or "")[:36] for c in cards[:2]) or "No urgent obligations queued today"
-    week_sum = " &middot; ".join(esc(lbl)[:32] for lbl in week_labels[:2]) or "Clear 7-day horizon"
-    mode_lbl = esc(mode_name(ctx.get("steward") or {}))
-
-    hz_cnts = cos.get("horizon_counts") if isinstance(cos.get("horizon_counts"), dict) else {}
-    c_today_n = int(hz_cnts.get("today") if "today" in hz_cnts else len(cos.get("today_efforts") or ()))
-    c_week_n = int(hz_cnts.get("week") if "week" in hz_cnts else len(cos.get("week_efforts") or ()))
-    c_month_n = int(hz_cnts.get("month") if "month" in hz_cnts else len(cos.get("month_efforts") or ()))
-    c_qtr_n = int(hz_cnts.get("star_chart") if "star_chart" in hz_cnts else len(cos.get("quarter_efforts") or ()))
-
-    def _eff_summary(items, empty_copy):
-        titles = [esc(str(x.get("title") or "")[:34]) for x in (items or ())[:2] if isinstance(x, dict) and x.get("title")]
-        return " &middot; ".join(titles) if titles else empty_copy
-
-    cos_today_sum = _eff_summary(cos.get("today_efforts"), today_sum)
-    cos_week_sum = _eff_summary(cos.get("week_efforts"), week_sum)
-    cos_month_sum = _eff_summary(cos.get("month_efforts"), "30-day lead-time radar clear")
-    cos_qtr_sum = _eff_summary(cos.get("quarter_efforts"), "Star Chart Q2 deep-work goals")
+    import cave_processing_feed as _cpf
+    proc_feed = _cpf.read_processing_feed_for_cave(ctx)
+    proc_unk = proc_feed.get("state") == "unknown"
+    running_n = int(proc_feed.get("count") or 0)
     cos_unknown_pill = (
         '<span class="cos-pill red" id="cosUnknownBadge" title="Backing store unreadable (unknown != empty)">&#9888; Store Unreadable (Unknown)</span>'
         if cos.get("status") == "unknown"
         else ""
     )
 
-    _cos_out = (
-        '<section class="triage-strip compact-horizons is-collapsed" id="shTriage">'
-        '<div class="ts-head chz-head" style="margin-bottom:4px;gap:6px">'
-        '<div class="ts-title chz-title" data-cos-toggle-body="1" style="cursor:pointer;gap:5px" title="Click to expand or collapse Chief-of-Staff Recommendations &amp; Parable-of-the-Oranges Skill Pre-Staging">'
-        '<span class="ts-badge chz-badge">&#9733; Chief of Staff</span>'
-        '<span class="cos-pill sky">&#128994; %d Running</span>'
-        '<span class="cos-pill orange">&#127818; %d Pre-Staged</span>'
-        '%s'
-        '<span class="cos-pill emerald" id="cosListLinkBadge">&#128203; Live Effort &amp; Next-Action Recommender</span>'
-        '<span class="ts-sub chz-sub" style="font-size:10.5px">&#127818; Parable of the Oranges &middot; Driven by Live Cockpits, Watchlist/Inbox Signals &amp; Star Chart Goals</span>'
-        '</div>'
-        '<div class="ts-quick chz-quick" style="gap:4px">'
-        '<button type="button" class="ts-pill cos-expand-toggle" id="btnCosToggleExpand" data-cos-toggle-body="1" aria-expanded="false" title="Click to drill down into Today Chief-of-Staff Next-Effort Recommendations">&#9662; Recommendations (%d)</button>'
-        '<button type="button" class="ts-pill" data-wl-populate-cos="1" style="border-color:rgba(16,185,129,0.55);color:#6ee7b7" title="Populate Chief-of-Staff priorities from The List">&#9889; Sync from The List</button>'
-        '<button type="button" class="ts-pill" id="btnTriageSynthesize" data-triage-synthesize="1" title="Synthesize a cross-portfolio Chief-of-Staff Executive Brief">&#10022; Brief</button>'
-        '<a class="ts-pill desk" href="%s" target="_blank" rel="noopener" title="Run ad-hoc admin tasks in the Desktop AI Cockpit">&#128421; Ad-Hoc Cockpit</a>'
-        '<a class="ts-pill" href="/steward-static/poincare.html" target="_blank" rel="noopener" style="border-color:rgba(56,189,248,0.55);color:#7dd3fc" title="Open Interactive 2D Möbius-Zoomable Poincaré Deep-Memory Atlas">&#129517; Poincar&eacute; Map</a>'
-        '<button type="button" class="ts-pill" data-toggle-dated="1" title="Toggle Dated Schedule Ruler">&#128197; Dated Ruler</button>'
-        '</div></div>'
-        '<div class="cos-compact-summary-row" id="cosCompactSummaryRow">'
-        '<button type="button" class="cos-cs-pill today" data-cos-drill="today" data-hz-toggle="today" aria-expanded="false" aria-controls="hzDrawer-today" title="Click to drill down into Today recommendations &amp; pre-staged skills">'
-        '<span class="cos-cs-tag red" id="cosCompactListTag">&#128293; Today (%d)</span>'
-        '<span class="cos-cs-text" id="cosCompactListText">%s</span>'
-        '<span class="cos-cs-caret">&#9662;</span></button>'
-        '<button type="button" class="cos-cs-pill week" data-cos-drill="week" data-hz-toggle="week" aria-expanded="false" aria-controls="hzDrawer-week" title="Click to drill down into This Week recommendations">'
-        '<span class="cos-cs-tag amber">&#128992; This Week (%d)</span>'
-        '<span class="cos-cs-text">%s</span>'
-        '<span class="cos-cs-caret">&#9662;</span></button>'
-        '<button type="button" class="cos-cs-pill month" data-cos-drill="month" data-hz-toggle="month" aria-expanded="false" aria-controls="hzDrawer-month" title="Click to drill down into This Month lead-time radar">'
-        '<span class="cos-cs-tag pink">&#128197; This Month (%d)</span>'
-        '<span class="cos-cs-text">%s</span>'
-        '<span class="cos-cs-caret">&#9662;</span></button>'
-        '<button type="button" class="cos-cs-pill quarter" data-cos-drill="quarter" data-hz-toggle="quarter" aria-expanded="false" aria-controls="hzDrawer-quarter" title="Click to drill down into Star Chart Quadrant II Deep-Work Goals">'
-        '<span class="cos-cs-tag emerald">&#127775; Quarter / Star Chart (%d)</span>'
-        '<span class="cos-cs-text">%s</span>'
-        '<span class="cos-cs-caret">&#9662;</span></button>'
-        '</div>'
-        '<!--__THE_LIST_INSIDE_COS__-->'
-        '<div class="triage-exec-brief" id="triageExecBrief" hidden style="margin:6px 0 0;padding:8px 12px;border-radius:8px;border:1px solid #2b3546;background:#121822;font-size:12px;color:#e6edf3"></div>'
-        '<div class="cos-modal-backdrop" id="cosOrangesModal" hidden>'
-        '<div class="cos-modal-card">'
-        '<div class="cos-modal-head"><h3 id="cosModalTitle">Effort Details</h3>'
-        '<button type="button" class="cos-act-btn" id="btnCosModalClose">&#10005; Close</button></div>'
-        '<div style="margin-bottom:6px"><span class="cos-pill orange" id="cosModalTier">Next-Best Effort</span></div>'
-        '<p style="font-size:12px;color:#9da7b6;margin:6px 0" id="cosModalDriver"></p>'
-        '<div class="cos-oranges" style="margin:8px 0;padding:8px 10px" id="cosModalOranges"></div>'
-        '<div style="font-size:11.5px;font-weight:700;margin-top:10px;color:#e6edf3">&#127818; Pre-Stage or Dispatch Foundry Skills into This AI Cockpit:</div>'
-        '<div class="cos-skill-chip-row">'
-        '<button type="button" class="cos-act-btn skill-prestage" data-cos-dispatch-skill="researchPrime">&#128300; researchPrime</button>'
-        '<button type="button" class="cos-act-btn skill-prestage" data-cos-dispatch-skill="Superjump">&#128640; Superjump</button>'
-        '<button type="button" class="cos-act-btn skill-prestage" data-cos-dispatch-skill="Gandalf">&#129497; Gandalf</button>'
-        '<button type="button" class="cos-act-btn skill-prestage" data-cos-dispatch-skill="Einstein">&#127891; Einstein</button>'
-        '<button type="button" class="cos-act-btn skill-prestage" data-cos-dispatch-skill="Chekhov">&#127917; Chekhov</button>'
-        '<button type="button" class="cos-act-btn skill-prestage" data-cos-dispatch-skill="Legal-Beagle">&#9878; Legal-Beagle</button>'
-        '<button type="button" class="cos-act-btn skill-prestage" data-cos-dispatch-skill="Financial-Analyst">&#128202; Financial-Analyst</button>'
-        '<button type="button" class="cos-act-btn skill-prestage" data-cos-dispatch-skill="Scribe">&#129718; Scribe</button>'
-        '</div>'
-        '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;padding-top:8px;border-top:1px solid #26354d">'
-        '<button type="button" class="cos-act-btn cockpit-create" data-foundry-action="new_cockpit">+ Create New AI Cockpit</button>'
-        '<a class="cos-act-btn cockpit-open" id="cosModalOpenBtn" href="/steward/v1" target="_blank" rel="noopener">&#8599; Open Ready AI Cockpit</a>'
-        '</div></div></div>'
-        '<div class="chz-drawer" id="hzDrawer-today" hidden>'
-        '<div class="chz-drawer-head"><span><strong>Today &mdash; Chief-of-Staff Priority Stack</strong> (click any item for detail or action)</span>'
-        '<button type="button" class="mini" data-hz-close="1">Close &#10005;</button></div>'
-        '<div id="cosTodayListCards"></div>'
-        '<div class="hz-list">%s</div></div>'
-        '<div class="chz-drawer" id="hzDrawer-week" hidden>'
-        '<div class="chz-drawer-head"><span><strong>This Week &mdash; 7-Day Sprints &amp; Commitments</strong></span>'
-        '<button type="button" class="mini" data-hz-close="1">Close &#10005;</button></div>'
-        '<div class="hz-list">%s</div></div>'
-        '<div class="chz-drawer" id="hzDrawer-month" hidden>'
-        '<div class="chz-drawer-head"><span><strong>This Month &mdash; 30-Day Deliverables</strong></span>'
-        '<button type="button" class="mini" data-hz-close="1">Close &#10005;</button></div>'
-        '<div class="hz-list">%s</div></div>'
-        '<div class="chz-drawer" id="hzDrawer-quarter" hidden>'
-        '<div class="chz-drawer-head"><span><strong>This Quarter &mdash; %s Quarterly Rocks</strong></span>'
-        '<button type="button" class="mini" data-hz-close="1">Close &#10005;</button></div>'
-        '<div class="hz-list">%s</div></div>'
-        '<div class="chz-drawer" id="hzDrawer-year" hidden>'
-        '<div class="chz-drawer-head"><span><strong>This Year &mdash; Annual %s Vision</strong></span>'
-        '<button type="button" class="mini" data-hz-close="1">Close &#10005;</button></div>'
-        '<div class="hz-list">%s</div></div>'
-        '</section>'
-    ) % (
-        int(cos.get("running_cockpits") or 0),
-        int(cos.get("skills_prestaged") or 0),
-        cos_unknown_pill,
-        int(cos.get("total_efforts") or 0),
-        desk_href,
-        c_today_n,
-        cos_today_sum,
-        c_week_n,
-        cos_week_sum,
-        c_month_n,
-        cos_month_sum,
-        c_qtr_n,
-        cos_qtr_sum,
-        "".join(cos_today_html) + "".join(today_items_html),
-        "".join(cos_week_html) + "".join(week_items_html),
-        "".join(cos_month_html) + "".join(month_items_html),
-        mode_lbl, "".join(cos_qtr_html) + "".join(quarter_items_html),
-        mode_lbl, "".join(year_items_html),
+    sug_bundle = {"top_three": [], "overflow": [], "overflow_count": 0, "total_count": 0, "suggestions": []}
+    email_unread_n = 0
+    cal_sched_n = 0
+    try:
+        import comms_connector as _cc_cos
+        sug_bundle = _cc_cos.build_chief_of_staff_suggestions()
+        _cos_comms = ctx.get("_resolved_comms") or ctx.get("comms")
+        if not isinstance(_cos_comms, dict):
+            _cos_comms = _cc_cos.reconcile_comms_with_roadmaps(
+                entries=ctx.get("entries") or [],
+                facts=ctx.get("facts") or {},
+                today=ctx.get("today") or date.today(),
+            )
+            ctx["_resolved_comms"] = _cos_comms
+        email_unread_n = sum(
+            1
+            for _em in ((_cos_comms or {}).get("important_emails") or [])
+            if isinstance(_em, dict) and not _em.get("is_read") and not _em.get("acted_upon")
+        )
+        _all_evs = (_cos_comms or {}).get("calendar_events_all")
+        if not isinstance(_all_evs, list):
+            _all_evs = (_cos_comms or {}).get("calendar_events") or []
+        cal_sched_n = len(_all_evs)
+    except Exception:
+        pass
+
+    top_three = list(sug_bundle.get("top_three") or [])
+    overflow = list(sug_bundle.get("overflow") or [])
+    overflow_n = int(sug_bundle.get("overflow_count") or len(overflow))
+    tot_sug_n = int(sug_bundle.get("total_count") or (len(top_three) + len(overflow)))
+
+    top_rows_html = (
+        "".join(_render_cos_suggestion_row_html(s, idx + 1) for idx, s in enumerate(top_three))
+        if top_three
+        else '<div class="tw-empty" style="padding:8px 10px;font-size:12px">No pending suggestions right now &mdash; Chief of Staff is watching your AI Cockpits, Cave dialogue, and inbox in the background.</div>'
     )
-    return _cos_out.replace("<!--__THE_LIST_INSIDE_COS__-->", _working_list_spine_html(ctx))
+    overflow_rows_html = "".join(_render_cos_suggestion_row_html(s, idx + 4) for idx, s in enumerate(overflow))
+    overflow_line_html = (
+        f'<div class="cos-min-overflow-wrap" id="cosOverflowWrap"{"" if overflow_n > 0 else " hidden"}>'
+        f'  <button type="button" class="cos-min-overflow-btn" id="btnCosOverflowToggle" data-cos-toggle-overflow="1" aria-expanded="false">'
+        f'    +<span id="cosOverflowCount">{overflow_n}</span> other suggestion{"" if overflow_n == 1 else "s"} &#9662;'
+        f'  </button>'
+        f'  <div class="cos-min-overflow-list" id="cosOverflowList" hidden>{overflow_rows_html}</div>'
+        f'</div>'
+    )
+    run_cls = " is-unknown" if proc_unk else (" is-running" if running_n > 0 else "")
+    run_dot = "&#9888;" if proc_unk else ("&#128994;" if running_n > 0 else "&#9898;")
+    run_cnt = "!" if proc_unk else str(running_n)
+    proc_init_attr = esc(json.dumps(proc_feed))
+    mail_cls = " has-unread" if email_unread_n > 0 else ""
+
+    wl_bundle = _build_working_list_spine_bundle(ctx)
+    wl_top_cnt = "!" if wl_bundle["unknown"] else str(wl_bundle["active_count"])
+    wl_top_cls = " is-error" if wl_bundle["unknown"] else ""
+
+    return (
+        '<section class="triage-strip cos-minimal is-collapsed" id="shTriage">'
+        '<div class="cos-min-bar" id="cosTopRowBar">'
+        '  <div class="cos-min-bar-left">'
+        f'    <button type="button" class="cos-check-toggle" id="btnCosToggleExpand" data-cos-toggle-body="1" aria-expanded="false" title="Toggle Chief of Staff top suggestions">'
+        f'      <span class="cos-check-box" id="cosCheckGlyph">&#9744;</span>'
+        f'      <span class="cos-check-lbl">Chief of Staff</span>'
+        f'      <span class="cos-count-pill" id="cosTotalCountBadge">{tot_sug_n}</span>'
+        f'    </button>'
+        f'    <button type="button" class="cos-check-toggle wl-check-toggle{wl_top_cls}" id="btnWlToggleTop" data-wl-toggle-spine="1" aria-expanded="true" title="Toggle The List">'
+        f'      <span class="cos-check-box" id="wlCheckGlyph">&#9745;</span>'
+        f'      <span class="cos-check-lbl">The List</span>'
+        f'      <span class="cos-count-pill" id="wlTopCountBadge">{wl_top_cnt}</span>'
+        f'    </button>'
+        f'    <button type="button" class="cos-running-tile{run_cls}" id="cosRunningTile" data-cos-toggle-processing="1" aria-expanded="false" aria-controls="cosProcessingPanel" title="Toggle active work in Cave of Wonders &amp; delegated AI Cockpits">'
+        f'      <span id="cosRunningDot">{run_dot}</span> <b id="cosRunningCount">{run_cnt}</b> Processing <span id="cosRunningCaret">&#9662;</span>'
+        f'    </button>'
+        f'    <button type="button" class="cos-comms-tile email{mail_cls}" id="cosEmailTile" data-cos-open-comms="email" title="Open Email &amp; Speed Racer">'
+        f'      <span>&#9993;</span> Email <span class="cos-count-pill" id="cosEmailCount">{email_unread_n}</span>'
+        f'    </button>'
+        f'    <button type="button" class="cos-comms-tile calendar" id="cosCalendarTile" data-cos-open-comms="calendar" title="Open Calendar">'
+        f'      <span>&#128197;</span> Calendar <span class="cos-count-pill" id="cosCalendarCount">{cal_sched_n}</span>'
+        f'    </button>'
+        f'    {cos_unknown_pill}'
+        '  </div>'
+        '  <div class="cos-min-bar-right">'
+        '    <a class="ts-pill cos-poincare-pill" id="btnCosPoincareMap" href="/steward-static/poincare.html" target="_blank" rel="noopener" title="Open Interactive 2D Möbius-Zoomable Poincaré Deep-Memory Atlas">&#129517; Poincar&eacute; Map</a>'
+        '  </div>'
+        '</div>'
+        f'<div class="cos-processing-panel" id="cosProcessingPanel" data-proc-init="{proc_init_attr}" hidden></div>'
+        '<div id="cosCompactSummaryRow" hidden style="display:none"></div>'
+        f'<div class="cos-suggestions-panel" id="cosSuggestionsPanel" hidden>'
+        f'  <div class="cos-top3-stack" id="cosTopThreeStack">{top_rows_html}</div>'
+        f'  {overflow_line_html}'
+        f'</div>'
+        f'{wl_bundle["html"]}'
+        '</section>'
+    )
+
 
 def _working_list_spine_html(ctx) -> str:
-    """Wave 2 Living 'The List':
+    return _build_working_list_spine_bundle(ctx)["html"]
+
+
+def _build_working_list_spine_bundle(ctx) -> dict:
+    """Clean Living 'The List':
     - Open-by-default (#caveWorkingListSpine has `open` + `is-open`, `#wlSpineBody` visible).
-    - Compact dynamic horizon counts (Today, This Week, This Month, Star Chart Goals).
-    - Direct Parable-of-the-Oranges Cockpit & Skill pre-staging controls.
-    - Auto-checked step undo strip (#wlAutoCheckedStrip) + Steward reactive proposal tray (#wlProposalTray).
+    - Toggled directly from `#btnWlToggleTop` on the unified Chief of Staff / Poincaré Map top row (no redundant Expand/Collapse button).
+    - Steward step verification surfaces directly inside each row's `✓ done/total` pill (no separate self-check or proposal banners).
     - Honest 5-state backing-store reporting (`unknown != empty`)."""
     wl_unknown = False
     wl_err_msg = ""
@@ -2936,6 +2757,7 @@ def _working_list_spine_html(ctx) -> str:
                 "goals_dropdown_catalog": [],
                 "project_folders_catalog": [],
                 "cos_recommendations": [],
+                "cos_suggestions": {"top_three": [], "overflow": [], "overflow_count": 0, "total_count": 0, "suggestions": []},
                 "unknown": True,
                 "error": wl_err_msg,
                 "status_code": int(wl_code or 500),
@@ -2956,6 +2778,7 @@ def _working_list_spine_html(ctx) -> str:
             "goals_dropdown_catalog": [],
             "project_folders_catalog": [],
             "cos_recommendations": [],
+            "cos_suggestions": {"top_three": [], "overflow": [], "overflow_count": 0, "total_count": 0, "suggestions": []},
             "unknown": True,
             "error": wl_err_msg,
             "status_code": 500,
@@ -2975,14 +2798,7 @@ def _working_list_spine_html(ctx) -> str:
     hz_week = int(hz.get("this_week") if "this_week" in hz else (hz.get("week") or 0))
     hz_month = int(hz.get("this_month") if "this_month" in hz else (hz.get("month") or 0))
     hz_star = int(hz.get("star_chart_goals") if "star_chart_goals" in hz else (hz.get("star_chart") or 0))
-    pending_props = [p for p in (wl_state.get("proposals") or []) if isinstance(p, dict) and str(p.get("status") or "pending") == "pending"]
-    auto_checked = [a for a in (wl_state.get("auto_checked") or []) if isinstance(a, dict) and not a.get("undone")]
     wl_json = json.dumps(wl_state).replace("</", r"<\/")
-
-    def _ord_lbl(n: int) -> str:
-        n = max(1, int(n or 1))
-        suf = "th" if 10 <= (n % 100) <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
-        return f"#{n} ({n}{suf})"
 
     init_rows = []
     for t in active_tiles:
@@ -2993,12 +2809,22 @@ def _working_list_spine_html(ctx) -> str:
         steps = [s for s in (t.get("steps") or []) if isinstance(s, dict)]
         done_n = sum(1 for s in steps if s.get("done"))
         tot_n = len(steps)
+        unconf_auto = [
+            s for s in steps
+            if s.get("done") and s.get("auto_checked_at") and not s.get("auto_check_confirmed")
+        ]
         ck_name = esc(str(t.get("cockpitName") or "").replace(" Cockpit", ""))
         ck_href = esc(str(t.get("cockpitHref") or "/steward/v1"))
         goal_name = esc(str(t.get("goalName") or ""))
         ck_chip = (f'<a class="wl-pill sky" href="{ck_href}" target="_blank" rel="noopener" title="Open AI Cockpit: {ck_name}">&#127760; {ck_name[:20]} &#8599;</a>') if ck_name else ""
         goal_chip = (f'<span class="wl-pill purple" title="Star Chart Goal: {goal_name}">&#127775; {goal_name[:22]}</span>') if goal_name else ""
-        step_cls = "emerald" if (tot_n > 0 and done_n == tot_n) else "sky"
+        step_cls = "emerald wl-step-autochecked" if unconf_auto else ("emerald" if (tot_n > 0 and done_n == tot_n) else "sky")
+        step_lbl = f"&#10003; {done_n}/{tot_n} &middot; +{len(unconf_auto)}" if unconf_auto else f"&#10003; {done_n}/{tot_n}"
+        step_tip = (
+            esc(f"Steward checked off {len(unconf_auto)} step(s) — click to inspect or undo")
+            if unconf_auto
+            else esc(f"{done_n} of {tot_n} steps done — click to view steps")
+        )
         p_cls = "prio-a" if p_num == 1 else ("prio-b" if p_num == 2 else "prio-c")
         init_rows.append(
             f'<article class="wl-tile {p_cls}" data-wl-tile-id="{tid}" data-wl-priority="{p_num}">'
@@ -3007,7 +2833,7 @@ def _working_list_spine_html(ctx) -> str:
             f'<b class="wl-title">{title}</b>'
             f'<span class="wl-pill cat">{cat}</span>'
             f'{ck_chip}{goal_chip}'
-            f'<span class="wl-pill {step_cls}">&#10003; {done_n}/{tot_n}</span>'
+            f'<span class="wl-pill {step_cls}" data-wl-step-pill="{tid}" title="{step_tip}">{step_lbl}</span>'
             f'<div class="wl-acts">'
             f'<button type="button" class="wl-icon-btn" data-wl-move="up" data-wl-id="{tid}" title="Move up">&uarr;</button>'
             f'<button type="button" class="wl-icon-btn" data-wl-move="down" data-wl-id="{tid}" title="Move down">&darr;</button>'
@@ -3021,136 +2847,21 @@ def _working_list_spine_html(ctx) -> str:
         top_compact_html = f'<span class="wl-unknown-empty" style="font-size:11.5px;color:#fda4af">&#9888; {esc(wl_err_msg)}</span>'
     elif init_rows:
         tiles_init_html = "".join(init_rows)
-        top_three = sorted(active_tiles, key=lambda x: int(x.get("priority") or 99))[:3]
-        top_pills = []
-        for t in top_three:
-            tid_c = esc(str(t.get("id") or ""))
-            title_c = esc(str(t.get("title") or "Effort Tile")[:40])
-            p_num_c = int(t.get("priority") or 1)
-            p_cls_c = "red" if p_num_c == 1 else ("amber" if p_num_c == 2 else "emerald")
-            steps_c = [s for s in (t.get("steps") or []) if isinstance(s, dict)]
-            done_c = sum(1 for s in steps_c if s.get("done"))
-            tot_c = len(steps_c)
-            top_pills.append(
-                f'<button type="button" class="cos-cs-pill" data-wl-focus-tile="{tid_c}" title="Click to open The List and expand {title_c}">'
-                f'<span class="cos-cs-tag {p_cls_c}">#{p_num_c}</span>'
-                f'<span class="cos-cs-text">{title_c} <span style="color:#7dd3fc;font-family:var(--mono)">({done_c}/{tot_c})</span></span>'
-                '<span class="cos-cs-caret">&#9662;</span></button>'
-            )
-        if len(active_tiles) > 3:
-            rem_n = len(active_tiles) - 3
-            top_pills.append(
-                f'<button type="button" class="cos-cs-pill" data-wl-toggle-spine="1" title="Click to expand all {len(active_tiles)} items on The List">'
-                f'<span class="cos-cs-tag sky">+{rem_n} more</span>'
-                f'<span class="cos-cs-text">Expand full list ({len(active_tiles)} items)</span>'
-                '<span class="cos-cs-caret">&#9662;</span></button>'
-            )
-        top_pills.append(
-            f'<button type="button" class="cos-cs-pill" data-wl-open-things-done="1" title="Click to view checked-off items in Things Done">'
-            f'<span class="cos-cs-tag emerald">&#10003; Things Done ({len(arch_tiles)})</span>'
-            '<span class="cos-cs-text">Archived</span>'
-            '<span class="cos-cs-caret">&#9662;</span></button>'
-        )
-        top_compact_html = "".join(top_pills)
+        top_compact_html = ""
     else:
         tiles_init_html = '<div class="tw-empty">The List is clear (0 active items)</div>'
-        top_compact_html = (
-            '<span class="tw-empty" style="padding:2px 8px;font-size:11.5px">The List is clear (0 active items)</span>'
-            f'<button type="button" class="cos-cs-pill" data-wl-open-things-done="1" title="Click to view checked-off items in Things Done">'
-            f'<span class="cos-cs-tag emerald">&#10003; Things Done ({len(arch_tiles)})</span>'
-            '<span class="cos-cs-text">Archived</span>'
-            '<span class="cos-cs-caret">&#9662;</span></button>'
-        )
+        top_compact_html = ""
 
-    auto_rows = []
-    for ac in auto_checked[:15]:
-        aid = esc(str(ac.get("id") or ""))
-        atid = esc(str(ac.get("tile_id") or ""))
-        atitle_raw = str(ac.get("tile_title") or ac.get("clean_step_text") or ac.get("step_text") or "Completed step").strip()
-        astep_raw = str(ac.get("clean_step_text") or ac.get("step_text") or "").strip()
-        asrc_raw = str(ac.get("reason") or ac.get("source") or "Steward auto-check").strip()
-        atitle = esc(atitle_raw[:68] + ("…" if len(atitle_raw) > 68 else ""))
-        astep_short = esc(astep_raw[:72] + ("…" if len(astep_raw) > 72 else ""))
-        asrc_short = esc(asrc_raw[:52] + ("…" if len(asrc_raw) > 52 else ""))
-        done_cnt = int(ac.get("done_steps_count") or 1)
-        tot_cnt = int(ac.get("total_steps_count") or max(1, done_cnt))
-        all_done_ac = bool(ac.get("all_steps_done") or (tot_cnt > 0 and done_cnt >= tot_cnt))
-        full_tip = esc(f"{atitle_raw} — {astep_raw} ({asrc_raw})")
-        arch_btn_html = (
-            f'<button type="button" class="tw-btn done" data-wl-confirm-archive-autocheck="{aid}" '
-            'title="Confirm done and move this completed item to Things Done">&#10003; Done &amp; Archive</button>'
-            if all_done_ac
-            else ""
-        )
-        step_badge_lbl = f"All {done_cnt}/{tot_cnt} done" if all_done_ac else f"{done_cnt}/{tot_cnt} done"
-        auto_rows.append(
-            f'<div class="wl-autocheck-card wl-autocheck-pill" data-autocheck-id="{aid}" title="{full_tip}">'
-            '<div class="wl-autocheck-main">'
-            f'<button type="button" class="wl-autocheck-title-btn" data-wl-focus-tile="{atid}" title="Click to view this item on The List">{atitle}</button>'
-            f'<span class="wl-pill emerald">{step_badge_lbl}</span>'
-            f'{("<span class=\"wl-autocheck-step\">" + astep_short + "</span>") if astep_raw and astep_raw != atitle_raw else ""}'
-            f'<span class="wl-autocheck-why">({asrc_short})</span>'
-            '</div>'
-            '<div class="wl-autocheck-acts">'
-            f'<button type="button" class="tw-btn done" data-wl-confirm-autocheck="{aid}" title="Keep this step marked Done and clear this notice">&#10003; Confirm Done</button>'
-            f'{arch_btn_html}'
-            f'<button type="button" class="tw-btn" data-wl-undo-autocheck="{aid}" title="Not done yet — uncheck this step on The List">&#8634; Undo</button>'
-            '</div></div>'
-        )
-    auto_more_html = (
-        f'<div class="wl-autocheck-sub" style="padding:2px 4px">+{len(auto_checked) - 15} more auto-checked steps &mdash; click <b>&#10003; Confirm All &amp; Clear</b> above to clear all.</div>'
-        if len(auto_checked) > 15
-        else ""
-    )
-    auto_hidden = "" if auto_rows else " hidden"
-    auto_strip_inner = (
-        '<div class="wl-autocheck-head">'
-        f'<span>&#10003; <b>Steward Auto-Checked Steps (<span id="wlAutoCheckedCount">{len(auto_checked)}</span>)</b> '
-        '<span class="wl-autocheck-sub">&mdash; checked off from your sent replies or completed deliverables. Confirm to clear, click title to view, or Undo:</span></span>'
-        '<button type="button" class="tw-btn done" id="btnWlConfirmAllAutochecks" data-wl-confirm-all-autochecks="1" title="Keep all auto-checked steps marked Done and clear this box">&#10003; Confirm All &amp; Clear</button>'
-        '</div>'
-        f'<div class="wl-autocheck-cards-host">{"".join(auto_rows)}{auto_more_html}</div>'
-    ) if auto_rows else ""
-
-    prop_rows = []
-    for pr in pending_props[:20]:
-        pr_id = esc(str(pr.get("id") or ""))
-        pr_kind = esc(str(pr.get("proposal_op") or pr.get("kind") or "add_tile"))
-        pr_title = esc(str(pr.get("title") or pr.get("step_text") or "Proposed List Change"))
-        pr_reason = esc(str(pr.get("reason") or "Steward reactive proposal"))
-        pr_prio = int(pr.get("priority") or 2)
-        pr_cat = esc(str(pr.get("category") or "Business"))
-        prop_rows.append(
-            f'<div class="wl-proposal-card" data-proposal-id="{pr_id}">'
-            '<div class="wl-proposal-main">'
-            f'<span class="comms-badge amber">{pr_kind}</span>'
-            f'<b class="wl-proposal-title">{pr_title}</b>'
-            f'<span class="wl-pill">#{pr_prio} &middot; {pr_cat}</span>'
-            f'<span class="wl-proposal-reason">{pr_reason}</span>'
-            '</div>'
-            '<div class="wl-proposal-acts">'
-            f'<button type="button" class="tw-btn done" data-wl-accept-proposal="{pr_id}">&#10003; Accept</button>'
-            f'<button type="button" class="tw-btn" data-wl-edit-proposal="{pr_id}">&#9998; Edit</button>'
-            f'<button type="button" class="tw-btn" data-wl-dismiss-proposal="{pr_id}">&#10005; Dismiss</button>'
-            '</div></div>'
-        )
-    prop_hidden = "" if prop_rows else " hidden"
     unk_hidden = "" if wl_unknown else " hidden"
+    unk_sec_cls = " has-unknown-error" if wl_unknown else ""
     hdr_cnt_lbl = "Unknown (Store Unreadable)" if wl_unknown else f"{len(active_tiles)} Active"
 
-    oranges_chips = "".join(
-        f'<button type="button" class="tw-btn wl-oranges-skill-btn" data-wl-prestage-skill="{sk}" title="Pre-stage {sk} for the selected List item or active AI Cockpit">&#127818; {sk}</button>'
-        for sk in ("researchPrime", "Superjump", "Gandalf", "Einstein", "Chekhov", "Legal-Beagle", "Financial-Analyst", "Scribe")
-    )
-
-    return (
-        '<section class="wl-spine-sec open is-open" id="caveWorkingListSpine" data-the-list-tile="1" data-open="1" aria-label="The List">'
+    wl_html = (
+        f'<section class="wl-spine-sec open is-open{unk_sec_cls}" id="caveWorkingListSpine" data-the-list-tile="1" data-open="1" aria-label="The List">'
         f'<script>window.ANCHOR_WORKING_LIST_INIT = {wl_json};</script>'
-        '<div class="wl-head" id="wlSpineHead" data-wl-toggle-spine="1" style="cursor:pointer" title="Click to expand or collapse The List">'
-        '  <div class="wl-head-left" id="wlSpineToggleBar" data-wl-toggle-spine="1" style="cursor:pointer;display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex:1">'
-        '    <span class="wl-main-heading">&#128203; The List &mdash; Daily Command Spine</span>'
-        f'    <span class="comms-pill sky" id="wlHeaderCounts" style="font-family:var(--mono);font-size:11px;font-weight:750;padding:2px 8px">{hdr_cnt_lbl}</span>'
-        f'    <span class="comms-badge amber" id="wlHeaderPropsBadge"{prop_hidden} style="font-size:10.5px;font-weight:750">&#129517; <span id="wlHeaderPropsCount">{len(pending_props)}</span> Steward Proposal{"" if len(pending_props) == 1 else "s"}</span>'
+        '<div class="wl-head" id="wlSpineHead" data-wl-toggle-spine="1" hidden style="display:none">'
+        '  <div class="wl-head-left" id="wlSpineToggleBar" data-wl-toggle-spine="1">'
+        f'    <span class="comms-pill sky" id="wlHeaderCounts">{hdr_cnt_lbl}</span>'
         '    <span class="wl-horizon-strip" id="wlHorizonCountsBar" hidden style="display:none">'
         f'      <span class="wl-hz-chip red">Today: <b id="wlHzToday">{hz_today}</b></span>'
         f'      <span class="wl-hz-chip amber">Week: <b id="wlHzWeek">{hz_week}</b></span>'
@@ -3158,22 +2869,12 @@ def _working_list_spine_html(ctx) -> str:
         f'      <span class="wl-hz-chip emerald">Star Chart: <b id="wlHzStarChart">{hz_star}</b></span>'
         '    </span>'
         '    <span id="wlHeaderSubSummary" hidden></span>'
-        '  </div>'
-        '  <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
-        f'    <button type="button" class="ts-pill cos-expand-toggle" id="wlSpineCollapseBtn" data-wl-toggle-spine="1" aria-expanded="true" title="Collapse or expand The List">&#9652; Collapse</button>'
+        '    <span id="wlHeaderPropsBadge" hidden style="display:none"><span id="wlHeaderPropsCount">0</span></span>'
         '  </div>'
         '</div>'
         f'<div id="wlUnknownBanner" class="wl-unknown-banner"{unk_hidden}>&#9888; <span id="wlUnknownBannerText">{esc(wl_err_msg or "The List / Watchlist unreadable (unknown) — inspect Doctor")}</span></div>'
-        f'<div id="theListCompactRow" class="cos-compact-summary-row" hidden style="margin-top:6px">{top_compact_html}</div>'
-        '<div class="wl-body" id="wlSpineBody" style="margin-top:8px;padding-top:8px;border-top:1px solid #242936">'
-        f'  <div id="wlAutoCheckedStrip" class="wl-autocheck-strip"{auto_hidden}>{auto_strip_inner}</div>'
-        f'  <div id="wlProposalTray" class="wl-proposal-tray"{prop_hidden}>'
-        '    <div class="wl-proposal-tray-head">'
-        f'      <span>&#129517; <b>Cave Steward Proposed Updates to The List (<span id="wlProposalCount">{len(pending_props)}</span>)</b></span>'
-        '      <button type="button" class="tw-btn done" id="btnWlAcceptAllProposals" data-wl-accept-all="1">&#10003; Accept All</button>'
-        '    </div>'
-        f'    <div id="wlProposalCardsHost" class="wl-proposal-cards-host">{"".join(prop_rows)}</div>'
-        '  </div>'
+        f'<div id="theListCompactRow" class="cos-compact-summary-row" hidden style="display:none">{top_compact_html}</div>'
+        '<div class="wl-body" id="wlSpineBody">'
         '  <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px">'
         '    <div class="wl-cat-tabs" id="wlCatTabs" style="display:inline-flex;gap:5px;flex-wrap:wrap">'
         f'      <button type="button" class="tw-btn on" data-wl-cat="all">All (<span id="wlCntAll">{len(active_tiles)}</span>)</button>'
@@ -3183,14 +2884,6 @@ def _working_list_spine_html(ctx) -> str:
         f'      <button type="button" class="tw-btn" data-wl-cat="Personal">&#127968; Personal (<span id="wlCntPersonal">{cnt_per}</span>)</button>'
         f'      <button type="button" class="tw-btn" data-wl-cat="archived">&#10003; Things Done (<span id="wlCntArchived">{len(arch_tiles)}</span>)</button>'
         '    </div>'
-        '    <details class="wl-oranges-drawer" id="wlOrangesPrestageBar">'
-        '      <summary class="tw-btn" style="border-color:rgba(245,158,11,0.45);color:#fde68a;font-size:11px;list-style:none">&#127818; Cockpit &amp; Skill Pre-Staging &#9662;</summary>'
-        '      <div class="wl-oranges-popover">'
-        '        <a class="tw-btn" href="/steward/v1" target="_blank" rel="noopener" style="border-color:rgba(56,189,248,0.55);color:#7dd3fc;text-decoration:none;font-weight:700">&#8599; Open AI Cockpit</a>'
-        '        <button type="button" class="tw-btn" data-foundry-action="new_cockpit" style="border-color:rgba(16,185,129,0.55);color:#6ee7b7;font-weight:700">+ Create AI Cockpit</button>'
-        f'        {oranges_chips}'
-        '      </div>'
-        '    </details>'
         '  </div>'
         '  <div class="wl-add-bar">'
         '    <input type="text" id="wlNewTileTitle" placeholder="+ Add item to The List (press Enter)..." style="flex:1;min-width:210px;padding:6px 10px;border-radius:6px;border:1px solid #334155;background:#0b0e16;color:#f1f5f9;font-size:12.5px">'
@@ -3207,11 +2900,10 @@ def _working_list_spine_html(ctx) -> str:
         '      <option value="4">#4</option>'
         '      <option value="5">#5</option>'
         '    </select>'
-        '    <button type="button" class="tw-btn" id="btnWlAddTopA1" style="border-color:rgba(245,158,11,0.55);color:#fde68a;font-weight:700">+ #1</button>'
         '    <button type="button" class="tw-btn done" id="btnWlAddTile" style="font-weight:700">+ Add</button>'
         '  </div>'
         '  <div style="display:flex;align-items:stretch;gap:4px">'
-        f'    <div class="wl-tiles-stack" id="wlTilesContainer" style="flex:1;min-width:0;max-height:360px;overflow-y:auto">{tiles_init_html}</div>'
+        f'    <div class="wl-tiles-stack" id="wlTilesContainer" style="flex:1;min-width:0;max-height:620px;overflow-y:auto">{tiles_init_html}</div>'
         '    <div class="cave-oval-scrollbar" data-oval-scroll-for="wlTilesContainer" title="Slide oval up and down to scroll The List">'
         '      <div class="cave-oval-thumb"></div>'
         '    </div>'
@@ -3219,6 +2911,11 @@ def _working_list_spine_html(ctx) -> str:
         '</div>'
         '</section>'
     )
+    return {
+        "html": wl_html,
+        "active_count": len(active_tiles),
+        "unknown": wl_unknown,
+    }
 
 
 ANCHOR_DIR = Path(__file__).resolve().parent
@@ -3267,7 +2964,7 @@ def render_high_seat_html(ctx) -> str:
     ctx["orphans"] = [e for e in entries if e.get("id") and e["id"] not in in_goal and e["id"] != camp_pid and e["id"] not in parked_ids]
     ctx["quiet_n"] = sum(1 for e in entries if not (facts.get(e.get("id")) or {}).get("has_record") and e.get("id") not in parked_ids)
     ctx["on_board"] = {p["pid"]: SEAT_NAMES[seat] for seat in ("deck", "active") for g, p in seated(live_inits, seat) if p.get("pid")}      # Active wins when a project has cards on both (Grok's read of W2c)
-    board = ('<div class="board"><div id="anchorCaveTopAlarmBanner" class="cave-cal-alarm-banner" hidden></div>' + lane_html(ctx.get("lane"), ctx.get("resume_from") or "") + _proactive_triage_strip(ctx) + _campaign_tile(ctx) + _seat_shelves(ctx) + _candidates_tile(ctx) + _projects_tile(ctx)
+    board = ('<div class="board"><div id="anchorCaveTopAlarmBanner" class="cave-cal-alarm-banner" hidden></div>' + lane_html(ctx.get("lane"), ctx.get("resume_from") or "") + _proactive_triage_strip(ctx) + _campaign_tile(ctx) + _cockpits_hub_tile(ctx) + _projects_tile(ctx)
              + _desk_line(ctx) + _ruler(ctx) + _mothership_collab_html(ctx) + _terminal(ctx) + '</div>')
     fb_build = str(ctx.get("build") or "")
     v_sd_css = _static_asset_version("/static/steward-dialogue.css", fb_build)
@@ -3278,11 +2975,15 @@ def render_high_seat_html(ctx) -> str:
     v_ct_js = _static_asset_version("/static/cave-terminal.js", fb_build)
     v_af_js = _static_asset_version("/static/app-frame.js", fb_build)
     v_ps_css = _static_asset_version("/static/provider-setup.css", fb_build)
+    v_cfl_css = _static_asset_version("/static/cave-foundry-light.css", fb_build)
     v_pc_js = _static_asset_version("/static/provider-controls.js", fb_build)
     v_ca_js = _static_asset_version("/static/calendar-alarm.js", fb_build)
+    v_cpd_js = _static_asset_version("/static/cave-processing-drawer.js", fb_build)
+    v_ctc_js = _static_asset_version("/static/cave-tidy-controls.js", fb_build)
     page = (
         '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
         '<title>%s</title>%s'
+        '<script>try{if(localStorage.getItem("anchor_cave_theme")==="light")document.documentElement.setAttribute("data-cave-theme","light");}catch(e){}</script>'
         '<link rel="stylesheet" href="/static/steward-dialogue.css?v=%s"><link rel="stylesheet" href="/static/high-seat-page.css?v=%s">'
         '<script>window.ANCHOR_BOOT = {build_id: "%s", campaign_pid: "%s", auth_required: %s, logged_in: %s, steward: "%s", stamp: "%s", you: "%s", health: "%s"};window.ANCHOR_BOOT_META = {steward: "%s", stamp: "%s", you: "%s"};window.ANCHOR_TILES = {%s};</script></head>'
         '<body><div class="app">%s<div class="main">%s%s%s<div class="prefs">%s</div><div class="canvas">%s%s</div>'
@@ -3293,8 +2994,8 @@ def render_high_seat_html(ctx) -> str:
     ) % (esc(ctx["steward"]["high_seat_name"]), tab_icon_link(ctx["steward"].get("high_seat"), ctx["build"], anchor=False), esc(v_sd_css), esc(v_hsp_css), esc(ctx["build"]), esc((ctx.get("campaign") or {}).get("pid") or ""), "true" if ctx.get("auth_required") else "false", "true" if ctx.get("logged_in") else "false",
          esc(ctx["steward"]["label"]), esc(str(ctx.get("stamp") or "")), esc(str(ctx.get("you") or HIS_NAME)), esc(str(ctx.get("health_sig") or "")), esc(ctx["steward"]["label"]), esc(str(ctx.get("stamp") or "")), esc(str(ctx.get("you") or HIS_NAME)), _tile_names(ctx), _rail(ctx), _masthead(ctx), _health_banner(ctx), _hdr(ctx),
          ctx.get("prefs_html") or "", board, _panel(ctx), _brand_img(ctx["build"], "gwl-m-icon.svg"), esc(v_md_js), esc(v_sd_js), esc(v_hsp_js), esc(v_ct_js))
-    return page.replace('</head>', '<script src="/static/app-frame.js?v=%s"></script><link rel="stylesheet" href="/static/provider-setup.css?v=%s"></head>' % (esc(v_af_js), esc(v_ps_css))).replace('</body>',
-        '<script src="/static/provider-controls.js?v=%s"></script><script src="/static/calendar-alarm.js?v=%s"></script></body>' % (esc(v_pc_js), esc(v_ca_js)))
+    return page.replace('</head>', '<script src="/static/app-frame.js?v=%s"></script><link rel="stylesheet" href="/static/provider-setup.css?v=%s"><link rel="stylesheet" href="/static/cave-foundry-light.css?v=%s"></head>' % (esc(v_af_js), esc(v_ps_css), esc(v_cfl_css))).replace('</body>',
+        '<script src="/static/provider-controls.js?v=%s"></script><script src="/static/calendar-alarm.js?v=%s"></script><script src="/static/cave-processing-drawer.js?v=%s"></script><script src="/static/cave-tidy-controls.js?v=%s"></script></body>' % (esc(v_pc_js), esc(v_ca_js), esc(v_cpd_js), esc(v_ctc_js)))
 
 
 def render_high_seat_page(logged_in: bool = False) -> str:

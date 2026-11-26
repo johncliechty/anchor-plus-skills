@@ -2812,45 +2812,43 @@ def render_project_tile_html(entry: dict, facts=None, chrome: bool = True) -> st
         entry, sline, registry_running=int(refl.get("running", 0) or 0))
 
     # Per-row cost/tokens/time rollup (v4 Wave 8, MASTER-PLAN cockpit dashboard
-    # rows). Reuses the Wave-3 `effort_history.project_effort_rollup` (RUN-session
-    # totals only — imported/discovered contribute 0, never fabricated) and the
-    # shared `_fmt_rollup_line` formatter. Rendered at LIFETIME by default; the
-    # R&D view's single global lifetime/30-day toggle (rndRowsRollupWindow) swaps
-    # every row's text in place via the read-only `/api/rnd/project_rollup`
-    # endpoint, so a no-JS view still shows lifetime totals. Never raises.
-    rate = {}
-    try:
-        rate = _rollhon.project_capture_rate(pid_raw, window="lifetime") or {}
-    except Exception:
+    # rows). Skipped when ``not chrome`` (Cave of Wonders #ptile) where rollup_block
+    # is omitted anyway, keeping GET /api/high-seat/projects sub-200ms across 30+ projects.
+    if chrome:
         rate = {}
-    try:
-        roll = _eh.project_effort_rollup(pid_raw, window=_eh.WINDOW_LIFETIME)
-    except Exception:
-        roll = {"tokens": 0, "cost_usd": 0.0, "wall_clock_ms": 0, "sessions": 0}
-    live_n = _live_session_count(pid_raw)
-    try:
-        roll_txt = html_lib.escape(
-            _fmt_project_usage_line(roll, rate=rate, live_count=live_n,
-                                    project_id=pid_raw))
-    except Exception:
-        roll_txt = html_lib.escape("Σ no run sessions yet")
-    # Honesty stamp: measured vs unmeasured (incl. Grok wall-clock-only).
-    cap_note = ""
-    try:
-        if int(rate.get("total", 0) or 0) > 0:
-            cap_note = " · " + html_lib.escape(
-                _rollhon.capture_rate_text(rate)
-                if hasattr(_rollhon, "capture_rate_text")
-                else _fmt_capture_rate_short(rate))
-    except Exception:
+        try:
+            rate = _rollhon.project_capture_rate(pid_raw, window="lifetime") or {}
+        except Exception:
+            rate = {}
+        try:
+            roll = _eh.project_effort_rollup(pid_raw, window=_eh.WINDOW_LIFETIME)
+        except Exception:
+            roll = {"tokens": 0, "cost_usd": 0.0, "wall_clock_ms": 0, "sessions": 0}
+        live_n = _live_session_count(pid_raw)
+        try:
+            roll_txt = html_lib.escape(
+                _fmt_project_usage_line(roll, rate=rate, live_count=live_n,
+                                        project_id=pid_raw))
+        except Exception:
+            roll_txt = html_lib.escape("Σ no run sessions yet")
         cap_note = ""
-    rollup_block = (
-        f'<span class="rnd-row-roll" data-pid="{pid}" data-window="lifetime" '
-        f'title="Run-session costs stay separate from steward cockpit usage. '
-        f'ChatGPT/Grok subscription turns have no per-turn dollar amount; '
-        f'token updates alone do not increase a reported subtotal."'
-        f'>{roll_txt}{cap_note}</span>'
-    )
+        try:
+            if int(rate.get("total", 0) or 0) > 0:
+                cap_note = " · " + html_lib.escape(
+                    _rollhon.capture_rate_text(rate)
+                    if hasattr(_rollhon, "capture_rate_text")
+                    else _fmt_capture_rate_short(rate))
+        except Exception:
+            cap_note = ""
+        rollup_block = (
+            f'<span class="rnd-row-roll" data-pid="{pid}" data-window="lifetime" '
+            f'title="Run-session costs stay separate from steward cockpit usage. '
+            f'ChatGPT/Grok subscription turns have no per-turn dollar amount; '
+            f'token updates alone do not increase a reported subtotal."'
+            f'>{roll_txt}{cap_note}</span>'
+        )
+    else:
+        rollup_block = ""
 
     is_active = state in ("active", "path-missing")
     rescan_btn = (f'<button class="rnd-mini" onclick="rndRescan(\'{pid}\')" '
@@ -2899,11 +2897,35 @@ def render_project_tile_html(entry: dict, facts=None, chrome: bool = True) -> st
     # the path server-side, not from the row).
     group = entry.get("group", "") or ""
     group_attr = html_lib.escape(group, quote=True)
-    if not chrome:   # no script for them on the High Seat: the kebab (above), the rollup, the boneyard button, the drag
-        grave = rollup_block = ""
-    drag_attr = 'draggable="true" ' if chrome else ''
+    if not chrome:   # Cave of Wonders Projects tile: delegate seat / archive / retire / reactivate to high-seat-page.js
+        rollup_block = ""
+        is_protected = False
+        try:
+            import project_move as _pm
+            fp_p = Path(str(folder)).resolve() if folder else None
+            is_protected = bool(fp_p and (fp_p == _campaign_dir() or _pm.is_anchor_repo(fp_p)))
+        except Exception:
+            is_protected = False
+        if is_protected:
+            grave = ""
+        elif is_active:
+            grave = (
+                f'<span class="cave-row-acts" onclick="event.stopPropagation()">'
+                f'<button type="button" class="mini" data-cand-seat="deck" data-ref="project:{pid}" data-name="{name}" title="Send to On deck">&rarr; on deck</button>'
+                f'<button type="button" class="mini" data-cand-seat="active" data-ref="project:{pid}" data-name="{name}" title="Send to Active">&rarr; active</button>'
+                f'<button type="button" class="mini cave-lc-btn" data-cockpit-lifecycle="archive" data-pid="{pid}" title="Archive this AI Cockpit (kept in Archive, restorable anytime)">Archive</button>'
+                f'<button type="button" class="mini cave-lc-btn danger" data-cockpit-lifecycle="retire" data-pid="{pid}" title="Retire this AI Cockpit (kept in Archive as retired, restorable anytime)">Retire</button>'
+                f'</span>'
+            )
+        else:
+            grave = (
+                f'<span class="cave-row-acts" onclick="event.stopPropagation()">'
+                f'<button type="button" class="mini cave-lc-btn restore" data-cockpit-lifecycle="restore" data-pid="{pid}" data-label="{name}" title="Reactivate this AI Cockpit">Reactivate</button>'
+                f'</span>'
+            )
+    drag_attr = 'draggable="true" ' if (chrome or is_active) else ''
     grip = ('<span class="rnd-grip" aria-hidden="true" '
-            'title="Drag into a folder">&#8942;&#8942;</span>') if chrome else ''
+            'title="Drag into a folder">&#8942;&#8942;</span>') if (chrome or is_active) else ''
     return (
         f'<div class="rnd-row" data-project-id="{pid}" data-notes="{notes_attr}" '
         f'data-blurb="{blurb_attr}" data-group="{group_attr}" '
@@ -7935,22 +7957,49 @@ def handle_high_seat_projects(handler, path, body):
         everything = list(_rnd.list_projects(include_archived=True, include_future=True, include_retired=True))
     except Exception:
         everything = []
-    entries = [e for e in everything if str(e.get("state") or "active") not in ("archived", "future", "retired")]
+    entries = [ent for ent in everything if str(ent.get("state") or "active") not in ("archived", "future", "retired")]
+    inactive = [ent for ent in everything if str(ent.get("state") or "active") in ("archived", "retired")]
     groups = {}
-    for e in sorted(entries, key=lambda x: (int(x.get("priority") or 2), str(x.get("name") or "").lower())):
-        groups.setdefault(str(e.get("group") or "").strip() or "Ungrouped", []).append(e)
+    for ent in sorted(entries, key=lambda x: (int(x.get("priority") or 2), str(x.get("name") or "").lower())):
+        groups.setdefault(str(ent.get("group") or "").strip() or "Ungrouped", []).append(ent)
     facts = {f["id"]: f for f in _hr.all_project_facts(entries, datetime.now().date())}
-    handler._send_json({"ok": True, "html": _high_seat_projects_html(groups, facts)})
+    handler._send_json({"ok": True, "html": _high_seat_projects_html(groups, facts, inactive=inactive)})
 
 
-def _high_seat_projects_html(groups, facts):
-    """The Projects tile's body on the High Seat: the OLD dashboard's project list — its folders and its rows, the one
-    renderer (`_render_group_folders` → `render_project_tile_html`), every folder closed (John, 2026-09-27: "the same
-    look and feel, and all of the folders closed"). Rendered without the chrome that needs the old page's script (the
-    kebab menu, the cost rollup, the boneyard button, the drag) — the renderer's own argument, not a clip after the
-    fact (Grok R8b). Never raises: a throw becomes one sentence in the tile."""
+def handle_high_seat_processing(handler, path, body):
+    """GET /api/high-seat/processing (token) — pure stat-memoized feed for Cave [N Processing] drawer."""
+    import cave_processing_feed as _cpf
+    payload, code = _cpf.handle_processing_http_get(path, headers=handler.headers)
+    handler._send_json(payload, code)
+
+
+def _high_seat_projects_html(groups, facts, inactive=None):
+    """The Projects tile's body on the High Seat: collapsible folders + thin project rows,
+    every folder closed by default, with `+ New folder` toolbar, drag-into-folder support,
+    and the non-destructive Archived & Retired drawer below."""
     try:
-        return _render_group_folders(groups, facts=facts, chrome=False)
+        toolbar_html = (
+            '<div class="rnd-folder-toolbar cave-ptile-toolbar">'
+            '<button class="rnd-newfolder-btn" type="button" data-open-folder-wizard="folder" '
+            'onclick="window.rndNewFolder && window.rndNewFolder()" title="Guided GUI to create a folder and organize projects">'
+            '&#128193; + Add Folder</button>'
+            '<button class="rnd-newfolder-btn cave-newproj-btn" type="button" data-open-folder-wizard="project" '
+            'title="Guided GUI to create or link a project into a folder">'
+            '&#65291; Add Project to Folder</button>'
+            '<span class="rnd-folder-hint">Click any folder below to open its projects, or drag a project row (&#8942;&#8942;) onto a folder header to move it.</span>'
+            '</div>'
+        )
+        active_html = toolbar_html + _render_group_folders(groups, facts=facts, chrome=False)
+        inact_list = sorted(list(inactive or ()), key=lambda x: str(x.get("name") or "").lower())
+        if inact_list:
+            rows = "".join(render_project_tile_html(e, facts={}, chrome=False) for e in inact_list)
+            active_html += (
+                f'<details class="ptile-archived" id="ptileArchived">'
+                f'<summary>Archived &amp; Retired AI Cockpits &middot; <b>{len(inact_list)}</b> '
+                f'<span class="dim">(kept non-destructively &mdash; click Reactivate to restore)</span></summary>'
+                f'<div class="rnd-folder-body">{rows}</div></details>'
+            )
+        return active_html
     except Exception as e:
         return '<p class="ptile-note">The project list could not be rendered: %s</p>' % html_lib.escape("%s: %s" % (type(e).__name__, e))
 
@@ -8100,17 +8149,6 @@ def _desk_context(entry):
     return ctx
 
 
-def render_desk_page(entry) -> str:
-    """The Desk view of the Campaign project's cockpit (W3b); an honest error page, never a blank."""
-    try:
-        import desk_page as _dp
-        return _dp.render_desk_html(_desk_context(entry))
-    except Exception as e:
-        return ("<!DOCTYPE html><html><body style=\"font-family:system-ui;background:#0b0e14;color:#e6e9ef;padding:24px\">"
-                "<h1>The Desk could not render</h1><p>%s</p><p><a href=\"/project/%s?doc=1\" style=\"color:#8ab4f8\">the ordinary cockpit</a></p></body></html>"
-                % (html_lib.escape("%s: %s" % (type(e).__name__, e)), html_lib.escape(str(entry.get("id") or ""))))
-
-
 def render_campaign_page(entry, open_id=None) -> str:
     """The Campaign view of the Campaign project's cockpit (W3c); an honest error page, never a blank."""
     try:
@@ -8195,6 +8233,8 @@ def render_desk_page(logged_in=False) -> str:
     """GET /desk - the Desk page; an honest error page, never a blank."""
     try:
         import desk_page as _dp
+        if isinstance(logged_in, dict):
+            return _dp.render_desk_html(_desk_context(logged_in))
         entry, summ = _desk_state(create=True)
         if entry is None:
             raise RuntimeError("the Desk project could not be created at %s" % __import__("desk").desk_dir())
@@ -8373,7 +8413,6 @@ def render_high_seat_page(logged_in=False) -> str:
     """GET /high-seat — the steward's portfolio surface (W1b); an honest error page, never a blank. ``logged_in``: the
     request carried a valid token or the login cookie (W2c-4: the page shows its login box only when it did not)."""
     try:
-        _doctor_sync_live_code()
         import high_seat_page as _hsp
         if not logged_in and bool(_paths.expected_token()):
             return _hsp.render_locked_html({"build": BUILD_ID, "steward": _steward_ui(), "auth_required": True, "logged_in": False})
@@ -13903,6 +13942,18 @@ def handle_ecgberht_high_seat_say(handler, path, body):
     if b.get("verbs_only") and not _NEW_PROJECT_ASK.search(text):
         handler._send_json({"ok": True, "talk": True}, 200)
         return
+    client_msg_id = str(b.get("client_msg_id") or "").strip()
+    from steward_cockpit import steward_engine as _se_dedup
+    _dedup_dir = str(_campaign_dir()) if _campaign_dir().is_dir() else str(_paths.data_dir())
+    if client_msg_id:
+        _prev_hs = _se_dedup.lookup_client_msg_id_receipt(_dedup_dir, client_msg_id)
+        if _prev_hs is not None:
+            _dup_out = dict(_prev_hs)
+            _dup_out["ok"] = True
+            _dup_out["deduplicated"] = True
+            _dup_out["client_msg_id"] = client_msg_id
+            handler._send_json(_dup_out, 200)
+            return
     # W5 (High Seat, 2026-09-26): a Campaign verb typed on the home is applied on the Campaign record by its own
     # writer (the engine names the act; nothing is sent to a model); anything else talks to the dashboard steward
     from steward_cockpit.campaign_say import say_campaign, fast_steward_command
@@ -13912,6 +13963,11 @@ def handle_ecgberht_high_seat_say(handler, path, body):
         if spoken is None:
             spoken = say_campaign(str(_cd), text)      # a refusal on a failed compile or a writer error; None = not a verb
         if spoken is not None:
+            if client_msg_id and spoken.get("ok"):
+                spoken = dict(spoken)
+                spoken["client_msg_id"] = client_msg_id
+                spoken["deduplicated"] = False
+                _se_dedup.record_client_msg_id_receipt(_dedup_dir, client_msg_id, spoken)
             handler._send_json(spoken, 200 if spoken.get("ok") else 400)
             return
     folder, err, status = _ecgberht_project_folder("__dashboard__")
@@ -13930,6 +13986,11 @@ def handle_ecgberht_high_seat_say(handler, path, body):
         args.extend(["--turns", json.dumps(packed)])
     out = _ecgberht_bridge(args, timeout=ECGBERHT_CONVERSE_TIMEOUT_S)
     out = _e1_enforce_turn_close("PORTFOLIO: " + text, out)
+    if client_msg_id and out.get("ok"):
+        out = dict(out)
+        out["client_msg_id"] = client_msg_id
+        out["deduplicated"] = False
+        _se_dedup.record_client_msg_id_receipt(_dedup_dir, client_msg_id, out)
     handler._send_json(out, 200 if out.get("ok") else 502)
 
 
@@ -17815,7 +17876,11 @@ def _doctor_sync_live_code():
     global BUILD_ID
     try:
         new_id = _compute_build_id()
-        if new_id:
+        if new_id and new_id != BUILD_ID:
+            BUILD_ID = new_id
+            os.environ["ANCHOR_RUNNING_HEAD"] = BUILD_ID.split("+")[0]
+            os.environ["ANCHOR_STARTED_AT"] = str(time.time())
+        elif new_id:
             BUILD_ID = new_id
             os.environ["ANCHOR_RUNNING_HEAD"] = BUILD_ID.split("+")[0]
     except Exception:
@@ -17823,7 +17888,7 @@ def _doctor_sync_live_code():
     try:
         import importlib
         _mod_mtimes = globals().setdefault("_DOCTOR_MOD_MTIMES", {})
-        for mod_name in ("paths", "brownfield_scan", "office_preview", "proc_probe", "lanes", "deliverables_register", "home_rows", "high_seat_page",
+        for mod_name in ("paths", "brownfield_scan", "office_preview", "report_viewer", "proc_probe", "lanes", "deliverables_register", "home_rows", "high_seat_page",
                          "campaign_page", "desk", "desk_page", "mothership_collab", "website_portal",
                          "foundry_page", "foundry_api", "usage_capacity", "usage_ledger", "usage_index",
                          "usage_allowance_monitor", "usage_nightly_sync",
@@ -17832,10 +17897,13 @@ def _doctor_sync_live_code():
                          "steward_cockpit.steward_campaign", "steward_cockpit.steward_engine",
                          "steward_cockpit.campaign_acts", "steward_cockpit.campaign_say",
                          "steward_cockpit.anvil_session", "steward_cockpit.aegis_session",
-                         "steward_cockpit.steward_routes",
+                         "steward_cockpit.dictation_engine", "steward_cockpit.steward_routes",
+                         "comms_connector",
                          "model_policy", "provider_setup", "gwl_admin_gui", "onboard_wizard",
                          "terminal_session", "comms_connector", "doctor_plain", "poincare_state_map"):
             if mod_name in sys.modules:
+                if os.environ.get("PYTEST_CURRENT_TEST") and mod_name in ("model_policy", "provider_setup", "steward_cockpit.dictation_engine", "comms_connector", "steward_cockpit.steward_routes"):
+                    continue
                 try:
                     _m_obj = sys.modules[mod_name]
                     _m_file = getattr(_m_obj, "__file__", None)
@@ -17859,6 +17927,35 @@ def _doctor_sync_live_code():
     except Exception:
         pass
     return BUILD_ID
+
+
+def handle_steward_drafts_get(handler, path, body=None):
+    from steward_cockpit import steward_routes as _scr
+    _scr.handle_drafts_http(handler, path, "GET", body=body)
+
+
+def handle_steward_drafts_post(handler, path, body=None):
+    from steward_cockpit import steward_routes as _scr
+    _scr.handle_drafts_http(
+        handler,
+        path,
+        "POST",
+        body=body,
+        raw_parse_error=bool(getattr(handler, "_draft_raw_parse_error", False)),
+        raw_body_too_large=bool(getattr(handler, "_draft_raw_too_large", False)),
+        raw_body_len=int(getattr(handler, "_draft_raw_len", 0) or 0),
+    )
+
+
+def handle_steward_drafts_delete(handler, path, body=None):
+    from steward_cockpit import steward_routes as _scr
+    _scr.handle_drafts_http(
+        handler,
+        path,
+        "DELETE",
+        body=body,
+        raw_parse_error=bool(getattr(handler, "_draft_raw_parse_error", False)),
+    )
 
 
 def handle_doctor_resolve_all(handler, path, body):
@@ -22127,6 +22224,7 @@ _MIGRATED_HANDLERS = {
     "handle_desk": handle_desk,
     "handle_debug_threads": handle_debug_threads,
     "handle_high_seat_projects": handle_high_seat_projects,
+    "handle_high_seat_processing": handle_high_seat_processing,
     "handle_cave_terminals": handle_cave_terminals,
     "handle_version": handle_version,
     "handle_status": handle_status,
@@ -22168,6 +22266,9 @@ _MIGRATED_HANDLERS = {
     "handle_provider_setup_page": handle_provider_setup_page,
     "handle_provider_setup_get": handle_provider_setup_get,
     "handle_provider_setup_post": handle_provider_setup_post,
+    "handle_steward_drafts_get": handle_steward_drafts_get,
+    "handle_steward_drafts_post": handle_steward_drafts_post,
+    "handle_steward_drafts_delete": handle_steward_drafts_delete,
     "handle_settings_post": handle_settings_post,
     "handle_set_blurb": handle_set_blurb,
     "handle_link_task": handle_link_task,
@@ -22455,9 +22556,11 @@ class AnchorHandler(BaseHTTPRequestHandler):
             except Exception:
                 pass
             _q = parse_qs(urlparse(self.path).query)
-            _qpid = (_q.get("pid") or _q.get("dir") or [""])[0]
+            _qpid = (_q.get("pid") or _q.get("project") or _q.get("dir") or [""])[0]
             if method == "GET":
                 qs = {k: v[0] for k, v in _q.items()}
+                if "effort" in qs and "dir" not in qs:
+                    qs["dir"] = qs["effort"]
                 qs.pop("_range_cont", None)
                 if verb == "deliverable-file":
                     _rng_h = (self.headers.get("Range") or "").strip()
@@ -22470,11 +22573,9 @@ class AnchorHandler(BaseHTTPRequestHandler):
                 elif verb == "setup_chart":
                     obj, code = _scr.setup_chart_get(qs)
                 elif verb == "comms":
-                    _doctor_sync_live_code()
                     import comms_connector as _cc
                     obj, code = _cc.handle_comms_get(qs)
                 elif verb == "poincare":
-                    _doctor_sync_live_code()
                     import poincare_state_map as _psm
                     proot_p = self._steward_pid_dir(_qpid) if _qpid else None
                     if _qpid and proot_p is None and qs.get("mode") != "fleet":
@@ -22488,19 +22589,32 @@ class AnchorHandler(BaseHTTPRequestHandler):
                         _ents = []
                     obj, code = _mc.handle_collab_get(entries=_ents)
                 else:
-                    proot = self._steward_pid_dir(_qpid)
-                    if proot is None and verb in ("spellcheck", "dictate", "fleet-brief", "fleet-relay", "anvil", "anvil/walkthrough", "mothership-files"):
-                        if verb in ("anvil", "anvil/walkthrough") and os.path.isdir(str(ROOT_DIR.parent / "Hierarchical Normalizing Flows" / "Paper 1")):
-                            proot = str(ROOT_DIR.parent / "Hierarchical Normalizing Flows" / "Paper 1")
-                        else:
-                            proot = str(ROOT_DIR.parent / "Campaign") if os.path.isdir(str(ROOT_DIR.parent / "Campaign")) else str(ROOT_DIR)
+                    _is_anvil_verb = verb == "anvil" or verb.startswith("anvil/")
+                    proot = self._steward_pid_dir(_qpid) if (not _is_anvil_verb or _qpid.strip()) else None
+                    if proot is None and _is_anvil_verb:
+                        self._send_json(
+                            {
+                                "ok": False,
+                                "error_code": "UNKNOWN_PROJECT_ID",
+                                "error": "Unknown project id",
+                                "message": "Unknown project id",
+                            },
+                            code=404,
+                        )
+                        return
+                    if proot is None and verb in ("spellcheck", "dictate", "drafts", "fleet-brief", "fleet-relay", "mothership-files"):
+                        _rdir = globals().get("ROOT_DIR") or ANCHOR_DIR
+                        proot = str(_rdir.parent / "Campaign") if os.path.isdir(str(_rdir.parent / "Campaign")) else str(_rdir)
                     if proot is None:
                         self._send_json({"error": "unknown project"}, code=404); return
                     obj, code = _scr.api_get(proot, verb, qs)
             else:
                 # the client shim carries pid in the URL query for POST too;
                 # accept it from the body OR the query
-                pid = (body or {}).get("pid") or _qpid
+                pid = (body or {}).get("pid") or (body or {}).get("project") or _qpid
+                if isinstance(body, dict) and "effort" in body and "dir" not in body:
+                    body = dict(body)
+                    body["dir"] = body["effort"]
                 if verb == "drain-all":         # W5 (2026-10-09): global - every engine of this service, no project
                     obj, code = _scr.drain_all()
                 elif verb == "usage-allowance":
@@ -22508,11 +22622,9 @@ class AnchorHandler(BaseHTTPRequestHandler):
                 elif verb == "setup_chart":
                     obj, code = _scr.setup_chart_post(body or {})
                 elif verb == "comms":
-                    _doctor_sync_live_code()
                     import comms_connector as _cc
                     obj, code = _cc.handle_comms_post(body or {})
                 elif verb == "poincare":
-                    _doctor_sync_live_code()
                     import poincare_state_map as _psm
                     proot_p = self._steward_pid_dir(pid) if pid else None
                     if pid and proot_p is None and (body or {}).get("mode") != "fleet":
@@ -22526,12 +22638,22 @@ class AnchorHandler(BaseHTTPRequestHandler):
                         _ents = []
                     obj, code = _mc.handle_collab_post(body or {}, entries=_ents)
                 else:
-                    proot = self._steward_pid_dir(pid)
-                    if proot is None and verb in ("spellcheck", "dictate", "fleet-brief", "fleet-relay", "anvil", "anvil/walkthrough", "mothership-files"):
-                        if verb in ("anvil", "anvil/walkthrough") and os.path.isdir(str(ROOT_DIR.parent / "Hierarchical Normalizing Flows" / "Paper 1")):
-                            proot = str(ROOT_DIR.parent / "Hierarchical Normalizing Flows" / "Paper 1")
-                        else:
-                            proot = str(ROOT_DIR.parent / "Campaign") if os.path.isdir(str(ROOT_DIR.parent / "Campaign")) else str(ROOT_DIR)
+                    _is_anvil_verb = verb == "anvil" or verb.startswith("anvil/")
+                    proot = self._steward_pid_dir(pid) if (not _is_anvil_verb or str(pid or "").strip()) else None
+                    if proot is None and _is_anvil_verb:
+                        self._send_json(
+                            {
+                                "ok": False,
+                                "error_code": "UNKNOWN_PROJECT_ID",
+                                "error": "Unknown project id",
+                                "message": "Unknown project id",
+                            },
+                            code=404,
+                        )
+                        return
+                    if proot is None and verb in ("spellcheck", "dictate", "drafts", "fleet-brief", "fleet-relay", "mothership-files"):
+                        _rdir = globals().get("ROOT_DIR") or ANCHOR_DIR
+                        proot = str(_rdir.parent / "Campaign") if os.path.isdir(str(_rdir.parent / "Campaign")) else str(_rdir)
                     if proot is None:
                         self._send_json({"ok": False, "error": "unknown project"}, code=404); return
                     obj, code = _scr.api_post(proot, verb, body or {})
@@ -22574,13 +22696,43 @@ class AnchorHandler(BaseHTTPRequestHandler):
                     )
                 except Exception as exc:
                     if not _is_benign_disconnect(exc):
-                        self._send_json({"error": "deliverable read failed: " + str(exc)}, code=500)
+                        self._send_json({"ok": False, "error": "deliverable read failed: " + str(exc)}, code=500)
                 return
             self._send_json(obj, code=code)
         except Exception as exc:
             if _is_benign_disconnect(exc):
                 return
-            self._send_json({"error": "steward: " + str(exc)}, code=500)
+            self._send_json({"ok": False, "error": "steward: " + str(exc)}, code=500)
+
+    @staticmethod
+    def _latin1_safe_content_disposition(content_disposition=None, disposition="inline", filename="download") -> str:
+        """Ensure Content-Disposition is always valid HTTP latin-1 while preserving UTF-8 filenames via RFC-5987."""
+        import unicodedata as _ud
+        from urllib.parse import quote as _url_quote
+        if content_disposition:
+            cand = str(content_disposition).replace("\r", "").replace("\n", "")
+            try:
+                cand.encode("latin-1")
+                return cand
+            except UnicodeEncodeError:
+                pass
+        disp = (str(disposition or "inline").strip() or "inline").replace("\r", "").replace("\n", "")
+        raw_fn = str(filename or "download").replace("\r", "").replace("\n", "").replace('"', "'").strip() or "download"
+        ascii_map = str.maketrans({
+            "\u2014": "-", "\u2013": "-", "\u2212": "-", "\u2010": "-", "\u2011": "-",
+            "\u2018": "'", "\u2019": "'", "\u201c": "'", "\u201d": "'",
+            "\u2026": "...", "\u00a0": " ", "\u00b7": "-", "\u2022": "-",
+        })
+        norm = _ud.normalize("NFKD", raw_fn.translate(ascii_map))
+        ascii_fn = "".join(ch for ch in norm if 32 <= ord(ch) <= 126 and ch not in ('"', "\\")).strip()
+        if not ascii_fn or ascii_fn.startswith("."):
+            ext = Path(raw_fn).suffix
+            ascii_ext = "".join(ch for ch in ext if 32 <= ord(ch) <= 126 and ch not in ('"', "\\", "/", " "))
+            ascii_fn = "document" + (ascii_ext or "")
+        hdr = '%s; filename="%s"' % (disp, ascii_fn)
+        if any(ord(ch) > 126 or ord(ch) < 32 for ch in raw_fn) or ascii_fn != raw_fn:
+            hdr += "; filename*=UTF-8''" + _url_quote(raw_fn, safe="")
+        return hdr
 
     def _serve_file_response(self, file_path, content_type, *, disposition="inline",
                              filename=None, content_disposition=None, csp=None,
@@ -22594,10 +22746,10 @@ class AnchorHandler(BaseHTTPRequestHandler):
             .replace('\r', '')
             .replace('\n', '')
         )
-        cd_hdr = (
-            content_disposition.replace('\r', '').replace('\n', '')
-            if content_disposition
-            else ('%s; filename="%s"' % (disposition or "inline", safe_fn))
+        cd_hdr = self._latin1_safe_content_disposition(
+            content_disposition=content_disposition,
+            disposition=disposition or "inline",
+            filename=safe_fn,
         )
         with open(file_path, "rb") as fh:
             st = os.fstat(fh.fileno())
@@ -23508,8 +23660,10 @@ class AnchorHandler(BaseHTTPRequestHandler):
                 _scr.CONFIG["build"] = BUILD_ID   # the shim's self-heal probe
                 _page = _path_only[len("/steward/"):].strip("/")
                 _q = parse_qs(urlparse(self.path).query)
-                _pid = (_q.get("pid") or [""])[0]
-                _doc = _scr.serve_page_doc(_page, _pid)
+                _pid = (_q.get("pid") or _q.get("project") or [""])[0]
+                _dir = (_q.get("dir") or _q.get("effort") or [""])[0]
+                _view = (_q.get("view") or [""])[0]
+                _doc = _scr.serve_page_doc(_page, _pid, effort_dir=_dir, embed=False, view=_view)
                 if _doc is None:
                     self.send_error(404); return
                 self._send_html(_doc)
@@ -23590,7 +23744,7 @@ class AnchorHandler(BaseHTTPRequestHandler):
                 return
             if _path_only.startswith("/api/steward/") or urlparse(self.path).path == "/api/anvil/walkthrough":
                 _verb_get = "anvil/walkthrough" if urlparse(self.path).path == "/api/anvil/walkthrough" else _path_only[len("/api/steward/"):]
-                if not (self._term_token_ok() or (_verb_get in ("dictate", "anvil", "anvil/walkthrough", "mothership-files") and _local_browser(self))):
+                if not (self._term_token_ok() or ((_verb_get in ("dictate", "anvil", "anvil/walkthrough", "mothership-files") or _verb_get.startswith("anvil/")) and _local_browser(self))):
                     print("  [%s] REFUSED GET %s %s" % (datetime.now().strftime("%H:%M:%S"), _path_only, self._auth_shape()))      # 2026-10-01: a refusal is visible in the log
                     self._send_json({"error": "unauthorized"}, code=401); return
                 self._steward_api("GET", _verb_get)
@@ -23624,7 +23778,6 @@ class AnchorHandler(BaseHTTPRequestHandler):
                 if _lock:
                     self._send_html(_lock, cookie=None)
                 else:
-                    _doctor_sync_live_code()
                     import poincare_state_map as _psm
                     _q_pm = parse_qs(_parsed.query or "")
                     _qs_pm = {k: v[0] for k, v in _q_pm.items() if v}
@@ -23692,6 +23845,16 @@ class AnchorHandler(BaseHTTPRequestHandler):
                 q = parse_qs(urlparse(self.path).query)
                 is_sb = str((q.get("sandbox") or [""])[0]).strip().lower() in ("1", "true", "yes")
                 self._send_json(_gag.get_gwl_admin_state(sandbox=is_sb), 200)
+            elif _path_only == "/api/website/license":
+                import website_portal as _wp
+                self._send_json(
+                    {
+                        "ok": True,
+                        "license": _wp.get_non_resale_license_spec(),
+                        "status": _wp.get_local_license_status(),
+                    },
+                    200,
+                )
             elif _path_only == "/api/system/version":
                 import mothership_updater as _mu
                 self._send_json(_mu.get_version_status(), 200)
@@ -23699,7 +23862,8 @@ class AnchorHandler(BaseHTTPRequestHandler):
                 import mothership_updater as _mu
                 q = parse_qs(urlparse(self.path).query)
                 rem_url = str((q.get("remote_url") or [""])[0]).strip() or None
-                self._send_json(_mu.check_for_updates(remote_url=rem_url), 200)
+                chk_web = ("PYTEST_CURRENT_TEST" not in os.environ) or bool(rem_url)
+                self._send_json(_mu.check_for_updates(remote_url=rem_url, check_website=chk_web), 200)
             elif _path_only == "/api/mothership/registry":
                 import mothership_updater as _mu
                 self._send_json(_mu.load_mothership_registry(), 200)
@@ -24132,7 +24296,7 @@ class AnchorHandler(BaseHTTPRequestHandler):
                             self.send_response(200)
                             self.send_header("Content-Type", ctype or "application/octet-stream")
                             self.send_header("Content-Disposition",
-                                             "attachment; filename=\"%s\"" % Path(rel).name.replace('"', ""))
+                                             self._latin1_safe_content_disposition(disposition="attachment", filename=Path(rel).name))
                             self.send_header("Content-Length", str(len(data)))
                             self.end_headers()
                             self.wfile.write(data)
@@ -24329,14 +24493,32 @@ class AnchorHandler(BaseHTTPRequestHandler):
     def do_POST(self):
       try:
         content_len = int(self.headers.get("Content-Length", 0))
+        self._draft_raw_parse_error = False
+        self._draft_raw_too_large = False
+        self._draft_raw_len = content_len
+        _req_path_pre = urlparse(self.path).path
         # Reject an oversized cockpit upload before reading/base64-decoding its
         # body. The route's decoded-file ceiling is 250 MB; 345 MB safely covers
         # base64 plus the small JSON envelope without buffering arbitrary data.
-        if (urlparse(self.path).path == "/api/steward/upload"
+        if (_req_path_pre == "/api/steward/upload"
                 and content_len > 345_000_000):
             self._send_json({"ok": False, "error": "over 250 MB"}, 413)
             return
-        body = json.loads(self.rfile.read(content_len)) if content_len > 0 else {}
+        if _req_path_pre == "/api/steward/drafts" and content_len > (256 * 1024 + 32768):
+            # Drain at most 64 KB if socket carries small excess, else flag bound-exceeded after auth
+            if content_len <= 1_048_576:
+                _ = self.rfile.read(content_len)
+            self._draft_raw_too_large = True
+            body = {}
+        elif _req_path_pre == "/api/steward/drafts":
+            raw_bytes = self.rfile.read(content_len) if content_len > 0 else b""
+            try:
+                body = json.loads(raw_bytes.decode("utf-8")) if raw_bytes else {}
+            except Exception:
+                self._draft_raw_parse_error = True
+                body = {}
+        else:
+            body = json.loads(self.rfile.read(content_len)) if content_len > 0 else {}
 
         # Contract-versioning shim (re-architecture 2026-07 · W2). A browser
         # page declares the build id it was rendered from (window.ANCHOR_BOOT
@@ -24438,7 +24620,7 @@ class AnchorHandler(BaseHTTPRequestHandler):
             _out = _gag.dispatch_gwl_admin_action(_act, _b, sandbox=is_sb)
             self._send_json(_out, 200 if _out.get("ok") else 400)
             return
-        if _path_only in ("/api/system/pull_update", "/api/mothership/register", "/api/mothership/push_update"):
+        if _path_only in ("/api/system/pull_update", "/api/system/update_preferences", "/api/mothership/register", "/api/mothership/push_update"):
             import mothership_updater as _mu
             _node_cap_ok = (
                 _path_only == "/api/system/pull_update"
@@ -24452,6 +24634,12 @@ class AnchorHandler(BaseHTTPRequestHandler):
                 _out = _mu.pull_latest_update(
                     target_version=str(_b.get("target_version") or "").strip() or None,
                     sync_skills=bool(_b.get("sync_skills", True)),
+                )
+            elif _path_only == "/api/system/update_preferences":
+                _out = _mu.configure_update_and_hardware_preferences(
+                    auto_pull_updates=_b.get("auto_pull_updates"),
+                    low_spec_mode=_b.get("low_spec_mode"),
+                    release_watch_url=_b.get("release_watch_url"),
                 )
             elif _path_only == "/api/mothership/register":
                 _out = _mu.register_mothership_in_repo(_b)
@@ -24471,6 +24659,9 @@ class AnchorHandler(BaseHTTPRequestHandler):
             return
 
         # --- Steward cockpit POST (additive; token-gated by the check above) ---
+        if _path_only == "/api/steward/drafts":
+            handle_steward_drafts_post(self, self.path, body)
+            return
         if _path_only.startswith("/api/steward/") or urlparse(self.path).path == "/api/anvil/walkthrough":
             _verb_post = "anvil/walkthrough" if urlparse(self.path).path == "/api/anvil/walkthrough" else _path_only[len("/api/steward/"):]
             self._steward_api("POST", _verb_post, body)
@@ -24531,6 +24722,66 @@ class AnchorHandler(BaseHTTPRequestHandler):
                 # Client closed the connection mid-POST. Not a server error.
                 return
             _logger.error(f"POST {self.path} failed: {e}\n{traceback.format_exc()}")
+            self._send_json({"ok": False, "error": str(e)}, 500)
+
+    def do_DELETE(self):
+      try:
+        content_len = int(self.headers.get("Content-Length", 0))
+        self._draft_raw_parse_error = False
+        self._draft_raw_too_large = False
+        self._draft_raw_len = content_len
+        if content_len > 65536:
+            self._send_json({"ok": False, "error": "payload too large"}, 413)
+            return
+        raw_bytes = self.rfile.read(content_len) if content_len > 0 else b""
+        if raw_bytes:
+            try:
+                body = json.loads(raw_bytes.decode("utf-8"))
+            except Exception:
+                self._draft_raw_parse_error = True
+                body = {}
+        else:
+            body = {}
+
+        client_build = (self.headers.get("X-Anchor-Build") or "").strip()
+        if client_build and client_build != BUILD_ID:
+            self._send_json({
+                "ok": False,
+                "error": BUILD_MISMATCH_ERROR,
+                "reason": "reload-required",
+                "server_build": BUILD_ID,
+                "client_build": client_build,
+                "action": "reload",
+            }, 409)
+            return
+
+        _q_del = parse_qs(urlparse(self.path).query)
+        _cands = [
+            self.headers.get("X-Anchor-Token"),
+            _paths.token_from_authorization(self.headers.get("Authorization")),
+            body.get("token") if isinstance(body, dict) else None,
+            (_q_del.get("token") or [None])[0],
+            _paths.token_from_cookie(self.headers.get("Cookie")),
+        ]
+        _cands = [t for t in _cands if t]
+        provided = next((t for t in _cands if _paths.auth_ok(t)), _cands[0] if _cands else None)
+        _path_only = urlparse(self.path).path
+        _del_route = _routes.match("DELETE", _path_only)
+        _del_open = (_del_route is not None and _del_route.auth == _routes.AUTH_OPEN)
+        if not _del_open and not _paths.auth_ok(provided):
+            self._send_json({"ok": False, "error": "unauthorized"}, 401)
+            return
+
+        if _path_only == "/api/steward/drafts":
+            handle_steward_drafts_delete(self, self.path, body)
+            return
+        if self._strangler_dispatch("DELETE", _path_only, body):
+            return
+        self._send_json({"ok": False, "error": "Unknown endpoint"}, 404)
+      except Exception as e:
+            if _is_benign_disconnect(e):
+                return
+            _logger.error(f"DELETE {self.path} failed: {e}\n{traceback.format_exc()}")
             self._send_json({"ok": False, "error": str(e)}, 500)
 
 
@@ -24742,7 +24993,7 @@ def main():
     except Exception:
         pass
     port = 8777
-    no_browser = "--no-browser" in sys.argv
+    no_browser = ("--no-browser" in sys.argv) or (not _paths.is_interactive_desktop_session())
     if "--port" in sys.argv:
         idx = sys.argv.index("--port")
         if idx + 1 < len(sys.argv):

@@ -317,6 +317,9 @@ def _read_refinement_uncached(campaign_dir: str):
 
 def refinement_items(campaign_dir, state):
     """Opening metadata from the verified event fold; no Python lifecycle fold."""
+    if campaign_dir and isinstance(state, dict):
+        from . import deliverable_shelves as _ds
+        _ds.remember_refinement_state(campaign_dir, state)
     return _core.fold_refinement_items(campaign_dir, state)
 
 
@@ -3966,6 +3969,8 @@ def _read_deliverables(campaign_dir: str):
                     else m_run.group(2).strip()
                 cell = (where_text[:m_run.start()]
                         + where_text[m_run.end():]).strip()
+            cell_for_bt = re.sub(r"\breview:\s*`[^`]+`", " ", cell)
+            bt_all = [m.strip() for m in re.findall(r"`([^`]+)`", cell_for_bt) if m and m.strip()]
             m_bt = re.search(r"`([^`]+)`", cell)
             # (2026-09-04) a register row written without backticks (the
             # Fractal Orthogonal Basis effort: "report/DRAFT-v1.md") must still
@@ -3983,6 +3988,7 @@ def _read_deliverables(campaign_dir: str):
                         if "/" in tok or "." in tok:
                             cand_plain = tok
                             break
+            companion_paths: list[str] = []
             if m_bt or cand_plain:
                 cand = (m_bt.group(1).strip() if m_bt else cand_plain)
                 if cand.startswith("/"):
@@ -3996,9 +4002,18 @@ def _read_deliverables(campaign_dir: str):
                     openable = route is not None
                 else:
                     path_rel, openable = _resolve_fuzzy_final_path(campaign_dir, cdir_real, cand)
+            if len(bt_all) > 1:
+                for extra_bt in bt_all[1:]:
+                    if extra_bt.startswith("/"):
+                        continue
+                    cp_rel, _cp_op = _resolve_fuzzy_final_path(campaign_dir, cdir_real, extra_bt)
+                    cp_clean = (cp_rel or extra_bt).replace("\\", "/").strip()
+                    if cp_clean and not cp_clean.startswith(("..", "/")) and cp_clean != path_rel and cp_clean not in companion_paths:
+                        companion_paths.append(cp_clean)
             items.append({"what": re.sub(r"\*\*", "", what),
                           "where_text": where_text,
                           "path": path_rel,
+                          "companion_paths": companion_paths,
                           "route": route,
                           "run": run_cmd,
                           "date": date,
@@ -4971,6 +4986,14 @@ def sync_steward_projections(campaign_dir: str, reason: str = "") -> dict:
         return {"ok": False, "changed": False}
     if any(isinstance(e, dict) and e.get("kind") == "refinement_update" for e in (roadmap.get("roadmap_events") or [])):
         return {"ok": True, "changed": False, "managed": True}
+    if roadmap.get("roadmap_events"):
+        # Append-only evented roadmaps (e.g. Campaign) obey the Ecgberht single-writer spine law:
+        # never mutate roadmap_projection in place without spine events (prevents roadmap_silent_rewrite).
+        try:
+            rec_res = reconcile_plan_under_lock(campaign_dir, roadmap=roadmap, reason=reason)
+            return {"ok": True, "changed": bool(rec_res.get("changed")), "managed": True}
+        except Exception:
+            return {"ok": True, "changed": False, "managed": True}
     roadmap = dict(roadmap)
     proj = [deepcopy(s) for s in (roadmap.get("roadmap_projection") or roadmap.get("steps") or []) if isinstance(s, dict)]
     roadmap["roadmap_projection"] = proj
@@ -6421,6 +6444,7 @@ def read_deliverables(campaign_dir: str):
                 "supporting_files": [],
                 "supporting_drawer": {"title": "Supporting & Earlier Files", "collapsed": True, "count": 0, "files": []},
             },
+            "shelves": {"most_recent_batches": [], "most_recent_summary": {"batch_count": 0, "file_count": 0}, "final": [], "final_items": [], "earlier": [], "earlier_items": []},
         }
     try:
         map_ = read_map(campaign_dir, include_plan_history=False, include_overview=False)
@@ -6574,6 +6598,13 @@ def read_deliverables(campaign_dir: str):
         deliv_hierarchy = build_deliverable_hierarchy(campaign_dir, decorated, approved, steps)
     except Exception:
         deliv_hierarchy = {"is_course": False, "executive_summary": {}, "categories": []}
+    try:
+        from . import deliverable_shelves as _ds
+        _ref_state = ((map_ or {}).get("refinement") or {}).get("state") if isinstance((map_ or {}).get("refinement"), dict) else None
+        shelves = _ds.compute_shelves_for_campaign(campaign_dir, decorated, approved=approved, refinement_state=_ref_state)
+        deliv_hierarchy = _ds.enrich_hierarchy_with_curation(deliv_hierarchy, _ds.read_batches_doc(campaign_dir), shelves.get("final") or [])
+    except Exception:
+        shelves = {"most_recent_batches": [], "most_recent_summary": {"batch_count": 0, "file_count": 0}, "final": [], "final_items": [], "earlier": [], "earlier_items": []}
     out = {
         **result,
         "ok": True,
@@ -6585,6 +6616,7 @@ def read_deliverables(campaign_dir: str):
         "current_warning": focus_warn,
         "current_summary": current_summary,
         "deliverable_hierarchy": deliv_hierarchy,
+        "shelves": shelves,
     }
     if "approved" in result:
         out["approved"] = approved
@@ -6748,6 +6780,7 @@ def map_stamp(campaign_dir: str):
     for rel in ("ECGBERHT.md", "roadmap.json", "strip.json", "DELIVERABLES.md", "plan-proposal.json",
                 ".ecgberht/attention.json", ".ecgberht/dismissed-deliverables.json",
                 ".ecgberht/plan-proposal.json", ".ecgberht/plan-history.json",
+                ".ecgberht/wave-state.json", ".ecgberht/deliverable-batches.json",
                 ".ecgberht/code-jobs.json", ".ecgberht/skill-jobs.json"):
         try:
             stamp.append((root / rel).stat().st_mtime_ns)
@@ -7412,16 +7445,6 @@ def read_plan_history(campaign_dir: str, m: dict | None = None, roadmap: dict | 
 
     docs = _plan_docs(root)
     primary_plan_doc = docs[0].name if docs else ""
-
-    # Seed .ecgberht/plan-history.json automatically if absent and live_steps exist
-    if live_steps and not hist_path.is_file():
-        _record_plan_history_snapshot(
-            campaign_dir,
-            live_steps,
-            label=f"{today_str} · Live Plan ({live_done}/{live_total} done)",
-            summary=f"Active campaign plan ({live_done} of {live_total} steps done).",
-            trigger="live",
-        )
 
     saved_entries = []
     if hist_path.is_file():

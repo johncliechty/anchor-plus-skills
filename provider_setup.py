@@ -25,6 +25,69 @@ import provider_settings as metadata
 
 TTL = 300
 
+PROVIDER_SETUP_FAILURE_STATE_TABLE = {
+    "dependency-missing": {
+        "http_status": 503,
+        "status_kind": "dependency-missing",
+        "badge": "DEPENDENCY_MISSING",
+        "unknown_state": False,
+        "message": "Native subscription CLI is missing or unauthenticated on host; install or sign in to refresh capabilities.",
+    },
+    "dependency-slow-or-killed": {
+        "http_status": 504,
+        "status_kind": "dependency-slow-or-killed",
+        "badge": "TIMEOUT",
+        "unknown_state": False,
+        "message": "Provider capability probe timed out or was killed before completing; existing setup is retained.",
+    },
+    "dependency-returns-garbage": {
+        "http_status": 502,
+        "status_kind": "dependency-returns-garbage",
+        "badge": "REJECTED_GARBAGE",
+        "unknown_state": False,
+        "message": "Provider CLI returned malformed capability output — rejected fail-closed; existing setup is retained.",
+    },
+    "backing-store-unreadable": {
+        "http_status": 500,
+        "status_kind": "backing-store-unreadable",
+        "badge": "UNKNOWN",
+        "unknown_state": True,
+        "message": "Provider backing store is unreadable (unknown state, not empty); existing setup is retained.",
+    },
+    "empty-but-valid": {
+        "http_status": 200,
+        "status_kind": "empty-but-valid",
+        "badge": "EMPTY",
+        "unknown_state": False,
+        "message": "Provider catalog store parsed cleanly with 0 configured provider entries.",
+    },
+}
+
+
+class ProviderSurfaceError(RuntimeError):
+    def __init__(self, kind: str, detail: str = ""):
+        spec = PROVIDER_SETUP_FAILURE_STATE_TABLE[kind]
+        self.kind = kind
+        self.http_status = int(spec["http_status"])
+        self.badge = str(spec["badge"])
+        self.unknown_state = bool(spec["unknown_state"])
+        self.user_message = str(spec["message"])
+        self.detail = detail
+        super().__init__(self.user_message)
+
+    def to_response(self) -> tuple[dict, int]:
+        return (
+            {
+                "ok": False,
+                "status_kind": self.kind,
+                "badge": self.badge,
+                "unknown_state": self.unknown_state,
+                "message": self.user_message,
+                "error": self.user_message,
+            },
+            self.http_status,
+        )
+
 
 def stamp():
     return datetime.now(timezone.utc).isoformat()
@@ -291,7 +354,139 @@ class ProviderService:
                 "active_routing": routing_info["active_routing"],
                 "logged_in_services": routing_info["logged_in_services"],
                 "catalog_defaults": routing_info["catalog_defaults"],
+                "status_kind": "empty-but-valid" if not out else "ok",
+                "badge": "EMPTY" if not out else "READY",
+                "unknown_state": False,
                 "product_complete": False}
+
+    def _check_backing_store_state(self, *, family: str | None = None) -> dict | None:
+        """Strictly separate `backing-store-unreadable` (500 UNKNOWN) from `empty-but-valid` (200 EMPTY)
+        and first-run missing setup (`first_setup: True`)."""
+        state_path = anchor_settings.settings_path()
+        store_override = paths.data_dir() / ".anchor" / "provider_catalog_store.json"
+
+        def _empty_valid_payload(rev: int = 0) -> dict:
+            spec = PROVIDER_SETUP_FAILURE_STATE_TABLE["empty-but-valid"]
+            norm = anchor_settings._normalize(None)
+            return {
+                "ok": True,
+                "host": host_state(),
+                "settings_revision": rev,
+                "settings_error": None,
+                "preferences": deepcopy(norm["provider_preferences"]),
+                "default_family": norm["default_cli"],
+                "coding_family": norm["coding_family"],
+                "review_family": norm["review_family"],
+                "connections": [],
+                "rows": [],
+                "api_storage_available": provider_secrets.available(),
+                "provider_matrix": [],
+                "usage_summary": None,
+                "active_routing": {},
+                "logged_in_services": {"ai_providers": [], "comms_accounts": []},
+                "catalog_defaults": {},
+                "status_kind": spec["status_kind"],
+                "badge": spec["badge"],
+                "unknown_state": False,
+                "message": spec["message"],
+                "product_complete": False,
+            }
+
+        if store_override.exists():
+            try:
+                if store_override.is_dir():
+                    raise OSError("provider_catalog_store.json is a directory")
+                parsed_store = json.loads(store_override.read_text(encoding="utf-8"))
+                if not isinstance(parsed_store, dict):
+                    raise ValueError("catalog store root must be an object")
+            except (OSError, ValueError) as exc:
+                raise ProviderSurfaceError("backing-store-unreadable", str(exc)) from exc
+            entries = parsed_store.get("providers")
+            if isinstance(entries, list) and len(entries) == 0 and not family:
+                return _empty_valid_payload()
+
+        if state_path.exists():
+            try:
+                if state_path.is_dir():
+                    raise OSError("settings.json is a directory")
+                raw_settings = json.loads(state_path.read_text(encoding="utf-8"))
+                if not isinstance(raw_settings, dict):
+                    raise ValueError("settings.json root is not an object")
+            except (OSError, ValueError) as exc:
+                raise ProviderSurfaceError("backing-store-unreadable", str(exc)) from exc
+            conns_raw = raw_settings.get("provider_connections")
+            if isinstance(conns_raw, list) and len(conns_raw) == 0 and not family:
+                rev = raw_settings.get("settings_revision", 0)
+                return _empty_valid_payload(rev if isinstance(rev, int) and not isinstance(rev, bool) else 0)
+
+        st = anchor_settings.read_settings_state()
+        if not st["valid"] and not st["missing"]:
+            raise ProviderSurfaceError("backing-store-unreadable", str(st["error"]))
+        return None
+
+    def probe_catalog_surface(self, family: str | None = None):
+        """Evaluate `/api/provider-setup` catalog readiness under the 5-row failure-state contract.
+        Strictly separates `backing-store-unreadable` (500 UNKNOWN) from `empty-but-valid` (200 EMPTY)."""
+        import subprocess as _sp
+        early = self._check_backing_store_state(family=family)
+        if early is not None:
+            return early
+        if not family:
+            snap = self.snapshot()
+            if not snap.get("connections"):
+                spec = PROVIDER_SETUP_FAILURE_STATE_TABLE["empty-but-valid"]
+                snap.update(
+                    status_kind=spec["status_kind"],
+                    badge=spec["badge"],
+                    unknown_state=False,
+                    message=spec["message"],
+                )
+            return snap
+        fam = str(family).strip().lower()
+        disc_env = None
+        st = anchor_settings.read_settings_state()
+        if st["valid"]:
+            try:
+                conn = metadata.selected_connection(st["settings"], fam)
+                disc_env = native.account_env(conn)
+            except Exception:
+                disc_env = None
+        try:
+            rows, _ = model_policy.discover(fam, env=disc_env) if disc_env is not None else model_policy.discover(fam)
+            selected = model_policy.select_model(fam, rows)
+            return {
+                "ok": True,
+                "family": fam,
+                "status_kind": "ok",
+                "badge": "READY",
+                "unknown_state": False,
+                "selection": {"model": selected["model"], "effort": selected["effort"]},
+                "rows": [{"model": r["model"], "efforts": r["efforts"]} for r in rows],
+            }
+        except _sp.TimeoutExpired as exc:
+            raise ProviderSurfaceError("dependency-slow-or-killed", str(exc)) from exc
+        except FileNotFoundError as exc:
+            raise ProviderSurfaceError("dependency-missing", str(exc)) from exc
+        except model_policy.PolicyUnavailable as exc:
+            msg = str(exc).lower()
+            code = getattr(exc, "code", "")
+            if (
+                code in ("cli_missing", "auth_required")
+                or "not installed" in msg
+                or "filenotfounderror" in msg
+                or "subscription login required" in msg
+            ):
+                raise ProviderSurfaceError("dependency-missing", str(exc)) from exc
+            if "timeoutexpired" in msg or "timed out" in msg or "killed" in msg:
+                raise ProviderSurfaceError("dependency-slow-or-killed", str(exc)) from exc
+            raise ProviderSurfaceError("dependency-returns-garbage", str(exc)) from exc
+        except (ValueError, RuntimeError, OSError) as exc:
+            msg = str(exc).lower()
+            if isinstance(exc, FileNotFoundError) or "filenotfounderror" in msg or "subscription login required" in msg:
+                raise ProviderSurfaceError("dependency-missing", str(exc)) from exc
+            if "timeout" in msg or "killed" in msg:
+                raise ProviderSurfaceError("dependency-slow-or-killed", str(exc)) from exc
+            raise ProviderSurfaceError("dependency-returns-garbage", str(exc)) from exc
 
     def add(self, body):
         settings = anchor_settings.get_launch_settings()
@@ -817,13 +1012,30 @@ def selected_for_launch(settings, family, surface="cockpit", check_capacity=Fals
     return connection
 
 
-def resolve_quality(family, settings, connection, *, surface="cockpit"):
+def resolve_quality(family, settings, connection, *, surface="cockpit", role=None, label=None, tier=None):
     choice = settings.get("provider_preferences", metadata.DEFAULT_PREFERENCES)["quality"].get(family)
     if surface == "jobs" and family == "chatgpt" and choice and choice != {"model": "latest_supported", "effort": "highest_supported"}:
         raise ValueError("The Codex one-shot adapter requires latest model and highest reasoning")
     # Default accounts still need their own marker and homes when this process
     # was launched under another provider. Keep the selected native login.
-    selected = model_policy.resolve(family, settings=settings, env=native.account_env(connection))
+    selected = model_policy.resolve(
+        family,
+        settings=settings,
+        env=native.account_env(connection),
+        role=role,
+        label=label,
+        tier=tier,
+    )
+    if family == "claude" and (
+        model_policy.is_claude_verification_role(role=role, label=label)
+        or str(tier or "").strip().lower() == "heavy"
+    ):
+        return {
+            **selected,
+            "model": model_policy.CANONICAL_CLAUDE_FABLE_MODEL,
+            "effort": selected.get("effort") or "max",
+            "selection_evidence": "heavy_review_fable_pin",
+        }
     if not choice or choice == {"model": "latest_supported", "effort": "highest_supported"}:
         return selected
     rows, _ = model_policy.discover(family, env=native.account_env(connection))
@@ -842,24 +1054,21 @@ def resolve_quality(family, settings, connection, *, surface="cockpit"):
     return {**selected, "model": model, "effort": effort, "selection_evidence": "explicit_setup_choice"}
 
 
-def _human_model_display(family, model_id, effort_id):
+def _human_model_display(family, model_id, effort_id, *, default_model=None):
     m = str(model_id or "").strip()
     e = str(effort_id or "").strip()
-    if family == "claude" and m in ("best", "latest_supported", ""):
-        m = "claude-fable-5-1"
-        e = "max" if e in ("", "highest_supported") else e
-    elif m in ("latest_supported", ""):
+    if m in ("latest_supported", ""):
         defaults = {
             "gemini": ("gemini-4-neon", "high"),
             "chatgpt": ("gpt-6-luna", "ultra"),
             "grok": ("grok-4.7", "xhigh"),
-            "claude": ("claude-fable-5-1", "max"),
+            "claude": ("claude-fable-5-2", "max"),
         }
         dm, de = defaults.get(family, (family, "high"))
-        m = dm
+        m = default_model or dm
         if e in ("", "highest_supported"):
             e = de
-    elif e == "highest_supported":
+    elif e in ("", "highest_supported"):
         e = {"claude": "max", "gemini": "high", "chatgpt": "ultra", "grok": "xhigh"}.get(family, "high")
     return f"{m} · {e}" if e else m
 
@@ -906,6 +1115,15 @@ def _build_services_and_routing_summary(settings, connections, capabilities=None
                     }
     except Exception:
         cat_defaults = {}
+    claude_cat = dict(cat_defaults.get("claude") or {})
+    claude_models = list(claude_cat.get("models") or [])
+    if "claude-fable-5-2" not in claude_models:
+        claude_models = ["claude-fable-5-2", *[m for m in claude_models if m != "claude-fable-5-2"]]
+    cat_defaults["claude"] = {
+        "frontier_model": "claude-fable-5-2",
+        "effort_frontier": claude_cat.get("effort_frontier") or "max",
+        "models": claude_models or list(model_policy.CLAUDE_CATALOG_MODELS),
+    }
 
     transports = {
         "claude": "Claude Code CLI",
@@ -930,10 +1148,14 @@ def _build_services_and_routing_summary(settings, connections, capabilities=None
         cap = (capabilities or {}).get(fam) or {}
         mon = mon_families.get(fam) or {}
         q = quality_map.get(fam) or {"model": "latest_supported", "effort": "highest_supported"}
-        cat_sel = ((primary.get("catalog") or {}).get("selection") or {})
+        cat_obj = primary.get("catalog") or {}
+        cat_state = str(cat_obj.get("state") or "unknown")
+        cat_rows = cat_obj.get("rows") or []
+        cat_sel = cat_obj.get("selection") or {}
+        cat_def_model = (cat_defaults.get(fam) or {}).get("frontier_model")
         eff_model = cat_sel.get("model") if q.get("model") in (None, "", "latest_supported") and cat_sel.get("model") else q.get("model")
         eff_effort = cat_sel.get("effort") if q.get("effort") in (None, "", "highest_supported") and cat_sel.get("effort") else q.get("effort")
-        configured_display = _human_model_display(fam, eff_model, eff_effort)
+        configured_display = _human_model_display(fam, eff_model, eff_effort, default_model=cat_def_model)
 
         auth_raw = str(primary.get("auth") or "unknown")
         agy_ready = bool((capabilities or {}).get("gemini", {}).get("installed"))
@@ -951,7 +1173,7 @@ def _build_services_and_routing_summary(settings, connections, capabilities=None
             active_display = "Claude Opus 5.5 · high (via agy fallback)"
             fallback_note = (
                 "Standalone Claude Code CLI sign-in is expired — routing Claude reviews via Antigravity (agy) "
-                "at Claude Opus 5.5 (High). Sign in to Claude CLI to restore Fable 5.1 (claude-fable-5-1 · max)."
+                "at Claude Opus 5.5 (High). Sign in to Claude CLI to restore Fable 5.2 (claude-fable-5-2 · max)."
             )
         elif fam == "gemini" and auth_raw == "unknown" and cap.get("installed"):
             auth_status = "ready_via_agy"
@@ -1047,25 +1269,88 @@ def _build_services_and_routing_summary(settings, connections, capabilities=None
     except Exception:
         comms_accounts = []
 
+    review_primary = by_family.get(review_fam) or {}
+    rev_cat = review_primary.get("catalog") or {}
+    rev_cat_state = str(rev_cat.get("state") or "unknown")
+    rev_cat_rows = rev_cat.get("rows") or []
+    rev_cat_sel = rev_cat.get("selection") or {}
+    rev_cap = (capabilities or {}).get(review_fam) or {}
+    rev_auth = str(review_primary.get("auth") or "unknown")
+    rev_fallback = bool(review_entry.get("fallback_active"))
+    rev_q = quality_map.get(review_fam) or {"model": "latest_supported", "effort": "highest_supported"}
+    rev_def_model = (cat_defaults.get(review_fam) or {}).get("frontier_model")
+
+    if rev_fallback:
+        rev_effective_model_id = "claude-opus-5-5"
+        rev_configured_model_id = model_policy.CANONICAL_CLAUDE_FABLE_MODEL
+        rev_configured_effort = "max"
+    elif (
+        rev_cat_state in ("unavailable", "error")
+        or rev_cap.get("installed") is False
+        or rev_auth in ("signed_out", "expired", "unavailable", "error")
+    ):
+        rev_effective_model_id = None
+        rev_configured_model_id = (
+            model_policy.CANONICAL_CLAUDE_FABLE_MODEL
+            if review_fam == "claude"
+            else (rev_def_model if rev_q.get("model") in (None, "", "latest_supported") else rev_q.get("model"))
+        )
+        rev_configured_effort = "max" if review_fam == "claude" else review_entry.get("configured_effort", "high")
+    elif rev_cat_rows:
+        if review_fam == "claude" and any(r.get("model") == model_policy.CANONICAL_CLAUDE_FABLE_MODEL for r in rev_cat_rows):
+            rev_effective_model_id = model_policy.CANONICAL_CLAUDE_FABLE_MODEL
+            rev_configured_model_id = model_policy.CANONICAL_CLAUDE_FABLE_MODEL
+            rev_configured_effort = "max"
+        else:
+            rev_effective_model_id = (
+                rev_cat_sel.get("model")
+                if rev_q.get("model") in (None, "", "latest_supported") or review_fam == "claude"
+                else rev_q.get("model")
+            ) or rev_cat_rows[0].get("model")
+            rev_configured_model_id = rev_effective_model_id
+            rev_configured_effort = rev_cat_sel.get("effort") or review_entry.get("configured_effort", "high")
+    else:
+        rev_effective_model_id = (
+            model_policy.CANONICAL_CLAUDE_FABLE_MODEL
+            if review_fam == "claude"
+            else (rev_def_model if rev_q.get("model") in (None, "", "latest_supported") else rev_q.get("model"))
+        )
+        rev_configured_model_id = rev_effective_model_id
+        rev_configured_effort = "max" if review_fam == "claude" else review_entry.get("configured_effort", "high")
+
+    rev_configured_disp = _human_model_display(review_fam, rev_configured_model_id, rev_configured_effort, default_model=rev_def_model)
+    rev_effective_disp = (
+        review_entry.get("effective_model_display", "")
+        if rev_fallback
+        else (
+            _human_model_display(review_fam, rev_effective_model_id, rev_configured_effort, default_model=rev_def_model)
+            if rev_effective_model_id
+            else "unavailable"
+        )
+    )
+
     review_routing_obj = {
         "family": review_fam,
         "label": review_entry.get("label", review_fam),
-        "configured_model": review_entry.get("configured_model", ""),
-        "configured_model_display": review_entry.get("configured_model_display", ""),
-        "configured_effort": review_entry.get("configured_effort", "max"),
-        "active_model": review_entry.get("active_model", ""),
-        "effective_model_display": review_entry.get("effective_model_display", ""),
-        "effective_effort": review_entry.get("effective_effort", "high"),
+        "effective_model_id": rev_effective_model_id,
+        "model_display": rev_configured_disp,
+        "configured_model": rev_configured_disp,
+        "configured_model_display": rev_configured_disp,
+        "configured_effort": rev_configured_effort,
+        "active_model": rev_effective_disp,
+        "effective_model_display": rev_effective_disp,
+        "effective_effort": "high" if rev_fallback else rev_configured_effort,
         "transport": review_entry.get("transport", ""),
         "auth_label": review_entry.get("auth_label", ""),
         "status_note": review_entry.get("status_note", ""),
-        "fallback_active": bool(review_entry.get("fallback_active")),
+        "fallback_active": rev_fallback,
         "fallback_note": review_entry.get("fallback_note", ""),
         "fallback_reason": review_entry.get("fallback_reason", ""),
     }
     return {
         "coding_family": coding_fam,
         "review_family": review_fam,
+        "review_routing": review_routing_obj,
         "active_routing": {
             "coding": {
                 "family": coding_fam,
@@ -1140,16 +1425,30 @@ def handle_get(handler, path, body):
     query = parse_qs(urlsplit(handler.path).query)
     try:
         # The dispatcher hands over the full URI (query included); route on the path alone.
-        if urlsplit(path).path == "/api/provider-setup/login":
+        req_path = urlsplit(path).path
+        if req_path == "/api/provider-setup/detail" or query.get("detail", ["0"])[0] == "1":
+            import provider_detail_view as _pdv
+            out, code = _pdv.get_provider_detail(SERVICE, query.get("family", [None])[0], is_local=local_request(handler))
+            handler._send_json(out, code)
+            return
+        if req_path == "/api/provider-setup/login":
             out = SERVICE.login_status(query.get("id", [None])[0])
+        elif query.get("surface_probe", ["0"])[0] == "1" or query.get("catalog_probe", [None])[0]:
+            probe_family = query.get("catalog_probe", [None])[0]
+            out = SERVICE.probe_catalog_surface(probe_family if probe_family not in ("1", "all") else None)
+            out["client_can_enter_api"] = local_request(handler)
         else:
-            out = SERVICE.snapshot(query.get("refresh", ["0"])[0] == "1", query.get("connection_id", [None])[0])
+            early = SERVICE._check_backing_store_state()
+            out = early if early is not None else SERVICE.snapshot(query.get("refresh", ["0"])[0] == "1", query.get("connection_id", [None])[0])
             out["client_can_enter_api"] = local_request(handler)
         if "connections" in out:
             out["client_can_enter_api"] = local_request(handler)
         if "snapshot" in out:
             out["snapshot"]["client_can_enter_api"] = local_request(handler)
         handler._send_json(out)
+    except ProviderSurfaceError as exc:
+        err_payload, status_code = exc.to_response()
+        handler._send_json(err_payload, status_code)
     except (ValueError, OSError, RuntimeError):
         handler._send_json({"ok": False, "error": "Host provider status is unavailable; existing setup is retained"}, 400)
 
@@ -1171,6 +1470,14 @@ def handle_post(handler, path, body):
     path = urlsplit(path).path
     if not handler._steward_same_origin():
         handler._send_json({"ok": False, "error": "Cross-origin provider action refused"}, 403)
+        return
+    if path.endswith(("/probe-mothership", "/adopt-mothership", "/billing-mode")) or (
+        path.endswith("/apply") and isinstance(body, dict) and body.get("detail_action")
+    ):
+        import provider_detail_view as _pdv
+        raw_len = int(getattr(handler, "_draft_raw_len", 0) or handler.headers.get("Content-Length") or 0)
+        out, code = _pdv.handle_detail_post(SERVICE, path, body, is_local=local_request(handler), raw_len=raw_len)
+        handler._send_json(out, code)
         return
     body = body or {}
     try:

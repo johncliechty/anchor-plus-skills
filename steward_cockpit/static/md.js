@@ -18,15 +18,49 @@ function mdFileHref(rawPath) {
     catch (_) { p = p.replace(/^file:\/\/\/+/i, ""); }
   }
   p = p.replace(/#L?\d+(?:-L?\d+)?$/i, "");
-  const dirRel = String(window.STEWARD_DIR || "");
+  const dirRel = String(window.STEWARD_DIR || window.STEWARD_EFFORT_DIR || "");
+  const dirClean = dirRel.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
   if (/^[A-Za-z]:\//.test(p)) {
-    // Extract relative path inside the project/effort if possible
-    const marker = p.match(/(?:\/|^)((?:\.ecgberht|deliverables|planning|lectures|homework|quiz|syllabus|ta-feedback|code-job-outputs|chapters|story-arc|editorial|Finished Deliverables|skills|foundry-tools|steward_cockpit|tools|docs|tests)\/.+)$/i);
-    if (marker) p = marker[1];
-    else {
-      const devMatch = p.match(/^[A-Za-z]:\/dev\/[^/]+\/(.+)$/i);
-      if (devMatch) p = devMatch[1];
-      else return null;
+    const projRoot = String(window.STEWARD_PROJECT_DIR || window.STEWARD_PROJECT_ROOT || "")
+      .trim().replace(/\\/g, "/").replace(/\/+$/, "");
+    if (projRoot) {
+      const pLow = p.toLowerCase();
+      const effRoot = dirClean ? (projRoot + "/" + dirClean) : projRoot;
+      if (pLow.startsWith(effRoot.toLowerCase() + "/")) {
+        p = p.slice(effRoot.length + 1);
+      } else if (pLow.startsWith(projRoot.toLowerCase() + "/")) {
+        p = p.slice(projRoot.length + 1);
+        if (dirClean && p.toLowerCase().startsWith(dirClean.toLowerCase() + "/")) {
+          p = p.slice(dirClean.length + 1);
+        }
+      } else {
+        return null;
+      }
+    } else {
+      const devMatch = p.match(/^[A-Za-z]:\/dev\/([^/]+)\/(.+)$/i);
+      if (devMatch) {
+        const repoFolder = devMatch[1];
+        const restAfterRepo = devMatch[2];
+        const normSlug = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+        const repoSlug = normSlug(repoFolder);
+        const pidSlug = normSlug(String(window.STEWARD_PID || "").replace(/^proj[-_]/i, ""));
+        const dirLeadSlug = dirClean ? normSlug(dirClean.split("/")[0]) : "";
+        const sameRepo = Boolean(
+          (pidSlug && (repoSlug === pidSlug || pidSlug.startsWith(repoSlug) || repoSlug.startsWith(pidSlug))) ||
+          (dirClean && restAfterRepo.toLowerCase().startsWith(dirClean.toLowerCase() + "/")) ||
+          (dirLeadSlug && dirLeadSlug === repoSlug)
+        );
+        if (!sameRepo) return null;
+        p = restAfterRepo;
+        if (dirClean && p.toLowerCase().startsWith(dirClean.toLowerCase() + "/")) {
+          p = p.slice(dirClean.length + 1);
+        }
+      } else {
+        // Extract relative path inside the project/effort if possible
+        const marker = p.match(/(?:\/|^)((?:\.ecgberht|deliverables|planning|lectures|homework|quiz|syllabus|ta-feedback|code-job-outputs|chapters|story-arc|editorial|Finished Deliverables|skills|foundry-tools|steward_cockpit|tools|docs|tests)\/.+)$/i);
+        if (marker) p = marker[1];
+        else return null;
+      }
     }
   }
   if (typeof window.__resolveDeliverablePath === "function") {
