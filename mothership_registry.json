@@ -1,44 +1,7 @@
 {
   "schema": "anchor.mothership.registry.v1",
-  "latest_version": "1.5.5",
-  "canonical_github_repo": "https://github.com/johncliechty/ghostworldlabs-anchor.git",
-  "updated_at": "2026-11-26T14:25:00Z",
-  "motherships": [
-    {
-      "id": "gwl-server-lead",
-      "owner": "John",
-      "pseudonym": "Samwise Gamgee",
-      "role": "lead",
-      "hostname": "gwl-server",
-      "tailscale_url": "https://gwl-server.tailb49f65.ts.net",
-      "github_repo": "https://github.com/johncliechty/ghostworldlabs-anchor.git",
-      "platform": "windows",
-      "install_dir": "C:/dev/Anchor",
-      "installed_version": "1.5.5",
-      "last_seen_at": "2026-11-26T14:25:00Z",
-      "last_push_at": "2026-11-26T14:25:00Z",
-      "pending_update": null
-    },
-    {
-      "id": "merrill-mothership",
-      "owner": "Merrill",
-      "pseudonym": "Aladdin",
-      "role": "collaborator",
-      "hostname": "oakley",
-      "tailscale_url": "https://oakley.tail30264f.ts.net",
-      "github_repo": "https://github.com/johncliechty/ghostworldlabs-anchor.git",
-      "platform": "windows",
-      "install_dir": "C:/dev/Anchor",
-      "installed_version": "1.5.1",
-      "last_seen_at": "2026-11-20T18:37:17Z",
-      "last_push_at": "2026-11-23T02:35:37Z",
-      "pending_update": {
-        "target_version": "1.5.4",
-        "pushed_by": "puter",
-        "pushed_at": "2026-11-23T02:35:37Z",
-        "notes": "Anchor v1.5.4: Fixes Windows [WinError 206] steward spawn overflow, zero-inbound Homebase auto-update heartbeats, self-bootstrapping updater, and Anchor.exe overlay version guard."
-      },
-      "version_installed": "1.5.1"
-    }
-  ]
+  "latest_version": "1.5.6",
+  "canonical_github_repo": "https://github.com/johncliechty/ghostworldlabs-anchor",
+  "updated_at": "2026-11-26T20:10:00Z",
+  "motherships": []
 }

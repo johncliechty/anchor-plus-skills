@@ -630,7 +630,20 @@ def test_one_click_missing_python_packages_install_and_autoresume(tmp_path: Path
 
     def _fake_pip_installer(pkgs: List[str], cancel_ev: Any = None) -> Path:
         installed_calls.append(list(pkgs))
-        (iso_sp / "anvil_synth_dep_pkg.py").write_text("def compute_rmse():\n    return 0.125\n", encoding="utf-8")
+        pth_sub = iso_sp / "_pth_pkg_sub"
+        pth_sub.mkdir(exist_ok=True)
+        (pth_sub / "anvil_pth_sub_helper.py").write_text("PTH_VAL = 0.125\n", encoding="utf-8")
+        (iso_sp / "anvil_synth_dep.pth").write_text("_pth_pkg_sub\n", encoding="utf-8")
+        # Plant a broken `pytest.py` in isolated venv to prove host site-packages are NEVER shadowed by extra_site_packages!
+        (iso_sp / "pytest.py").write_text("raise RuntimeError('isolated venv shadowed host pytest!')\n", encoding="utf-8")
+        (iso_sp / "anvil_synth_dep_pkg.py").write_text(
+            "import pytest as _host_pytest\n"
+            "import anvil_pth_sub_helper\n"
+            "def compute_rmse():\n"
+            "    assert hasattr(_host_pytest, 'approx')\n"
+            "    return anvil_pth_sub_helper.PTH_VAL\n",
+            encoding="utf-8",
+        )
         return iso_sp
 
     anvil_py_deps.set_pip_installer_for_tests(_fake_pip_installer, extra_allowed_packages=("anvil_synth_dep_pkg",))

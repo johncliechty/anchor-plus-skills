@@ -897,3 +897,71 @@ def extract_json_object(text: str) -> Optional[Dict[str, Any]]:
         except Exception:
             pass
     return None
+
+
+_DPAPI_ENTROPY = b"anchor-anvil-v6-hmac-v1"
+
+
+def dpapi_wrap_key(raw_32: bytes) -> str:
+    if os.name != "nt":
+        return "posix:" + raw_32.hex()
+    import ctypes
+    from ctypes import wintypes
+
+    class _BLOB(ctypes.Structure):
+        _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
+
+    c32 = ctypes.WinDLL("crypt32", use_last_error=True)
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    c32.CryptProtectData.argtypes = [ctypes.POINTER(_BLOB), wintypes.LPCWSTR, ctypes.POINTER(_BLOB), ctypes.c_void_p, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(_BLOB)]
+    c32.CryptProtectData.restype = wintypes.BOOL
+    k32.LocalFree.argtypes = [ctypes.c_void_p]
+    in_buf = ctypes.create_string_buffer(raw_32, len(raw_32))
+    ent_buf = ctypes.create_string_buffer(_DPAPI_ENTROPY, len(_DPAPI_ENTROPY))
+    in_b = _BLOB(len(raw_32), ctypes.cast(in_buf, ctypes.POINTER(ctypes.c_char)))
+    ent_b = _BLOB(len(_DPAPI_ENTROPY), ctypes.cast(ent_buf, ctypes.POINTER(ctypes.c_char)))
+    out_b = _BLOB()
+    if not c32.CryptProtectData(ctypes.byref(in_b), None, ctypes.byref(ent_b), None, None, 0x1, ctypes.byref(out_b)):
+        raise RuntimeError("CryptProtectData failed")
+    try:
+        enc = ctypes.string_at(out_b.pbData, out_b.cbData)
+        return "dpapi:" + enc.hex()
+    finally:
+        k32.LocalFree(ctypes.cast(out_b.pbData, ctypes.c_void_p))
+
+
+def dpapi_unwrap_key(stored_text: str) -> Optional[bytes]:
+    s = (stored_text or "").strip()
+    if os.name != "nt":
+        if s.startswith("posix:") and len(s) == 70 and re.fullmatch(r"[0-9a-fA-F]{64}", s[6:]):
+            return bytes.fromhex(s[6:])
+        return None
+    if not s.startswith("dpapi:") or len(s) < 20:
+        return None
+    try:
+        enc = bytes.fromhex(s[6:])
+    except ValueError:
+        return None
+    import ctypes
+    from ctypes import wintypes
+
+    class _BLOB(ctypes.Structure):
+        _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
+
+    c32 = ctypes.WinDLL("crypt32", use_last_error=True)
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    c32.CryptUnprotectData.argtypes = [ctypes.POINTER(_BLOB), ctypes.c_void_p, ctypes.POINTER(_BLOB), ctypes.c_void_p, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(_BLOB)]
+    c32.CryptUnprotectData.restype = wintypes.BOOL
+    k32.LocalFree.argtypes = [ctypes.c_void_p]
+    in_buf = ctypes.create_string_buffer(enc, len(enc))
+    ent_buf = ctypes.create_string_buffer(_DPAPI_ENTROPY, len(_DPAPI_ENTROPY))
+    in_b = _BLOB(len(enc), ctypes.cast(in_buf, ctypes.POINTER(ctypes.c_char)))
+    ent_b = _BLOB(len(_DPAPI_ENTROPY), ctypes.cast(ent_buf, ctypes.POINTER(ctypes.c_char)))
+    out_b = _BLOB()
+    if not c32.CryptUnprotectData(ctypes.byref(in_b), None, ctypes.byref(ent_b), None, None, 0x1, ctypes.byref(out_b)):
+        return None
+    try:
+        raw = ctypes.string_at(out_b.pbData, out_b.cbData)
+        return raw if len(raw) == 32 else None
+    finally:
+        k32.LocalFree(ctypes.cast(out_b.pbData, ctypes.c_void_p))

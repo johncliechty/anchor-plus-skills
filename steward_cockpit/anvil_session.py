@@ -8092,6 +8092,8 @@ def run_v4_cockpit_trace(
             )
 
         # Run subprocess outside lock so concurrent switches on index.json never block
+        from steward_cockpit import anvil_py_deps as _apd_tr
+        verified_sps = _apd_tr.read_verified_extra_site_packages(cdir, bound_store_root)
         trace_doc = v4_trace.run_consented_trace(
             sw_dir,
             clean_argv,
@@ -8105,6 +8107,7 @@ def run_v4_cockpit_trace(
             static_map=proc_map,
             cockpit_root=cdir,
             store_root=bound_store_root,
+            verified_extra_site_packages=verified_sps,
         )
         trace_doc["analysis_id"] = bound_aid
         trace_doc["repo_fingerprint"] = bound_repo_fp

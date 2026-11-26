@@ -46,7 +46,8 @@ REGISTRY_FILENAME = "mothership_registry.json"
 HOMEBASE_LINK_SCHEMA = "anchor.homebase.link.v1"
 HOMEBASE_LINK_FILENAME = "homebase_link.json"
 HOMEBASE_PEERS_CAP_FILENAME = "homebase_peer_capabilities.json"
-DEFAULT_HOMEBASE_URL = "https://gwl-server.tailb49f65.ts.net"
+DEFAULT_HOMEBASE_URL = ""
+CANONICAL_ANCHOR_GITHUB_URL = "https://github.com/johncliechty/ghostworldlabs-anchor"
 DEFAULT_GITHUB_REPO = "https://github.com/johncliechty/ghostworldlabs-anchor.git"
 ALLOWED_RELEASE_REPOS = (
     "https://github.com/johncliechty/ghostworldlabs-anchor.git",
@@ -529,6 +530,14 @@ def load_mothership_registry(anchor_root: Path | str | None = None) -> dict[str,
     }
     by_id: dict[str, dict[str, Any]] = {}
 
+    is_admin = True
+    try:
+        is_admin = bool(paths.is_anchor_admin_edition(anchor_root))
+    except Exception:
+        is_admin = False
+    local_host = (socket.gethostname() or "").strip().lower()
+    in_pytest = "PYTEST_CURRENT_TEST" in os.environ
+
     for cand in (repo_p, rt_p):
         if not cand.is_file():
             continue
@@ -542,12 +551,16 @@ def load_mothership_registry(anchor_root: Path | str | None = None) -> dict[str,
             for item in raw.get("motherships") or []:
                 if isinstance(item, dict) and item.get("id"):
                     mid = str(item["id"]).strip()
+                    item_host = str(item.get("hostname") or "").strip().lower()
+                    if not is_admin and not in_pytest and item_host != local_host:
+                        continue
                     merged = dict(by_id.get(mid) or {})
                     merged.update(item)
                     by_id[mid] = merged
         except Exception:
             continue
 
+    base_doc["canonical_github_repo"] = CANONICAL_ANCHOR_GITHUB_URL
     base_doc["motherships"] = list(by_id.values())
     return base_doc
 
@@ -581,10 +594,20 @@ def register_mothership_in_repo(
     entry: dict[str, Any],
     *,
     anchor_root: Path | str | None = None,
-    write_repo: bool = True,
+    write_repo: bool | None = None,
 ) -> dict[str, Any]:
-    """Register or update a Mother Ship entry in `mothership_registry.json` + `.anchor/mothership_registry.json`."""
-    owner = str(entry.get("owner") or entry.get("display_name") or "").strip() or _read_collaborator_display_name("Collaborator", base_dir=anchor_root)
+    """Register or update a Mother Ship entry in `.anchor/mothership_registry.json` (and `mothership_registry.json` when `write_repo=True`).
+    Always locks `github_repo` to the canonical `CANONICAL_ANCHOR_GITHUB_URL` (`https://github.com/johncliechty/ghostworldlabs-anchor`).
+    """
+    contact_email = str(entry.get("email") or entry.get("contact_email") or "").strip()
+    if entry.get("require_email") and (not contact_email or "@" not in contact_email or "." not in contact_email.split("@", 1)[-1]):
+        return {"ok": False, "error": "valid_email_required", "message": "Please enter a valid email address to register."}
+
+    email_local = contact_email.split("@", 1)[0].strip() if "@" in contact_email else ""
+    owner = (
+        str(entry.get("owner") or entry.get("display_name") or "").strip()
+        or _read_collaborator_display_name(email_local or "Local User", base_dir=anchor_root)
+    )
     pseudonym = str(entry.get("pseudonym") or "").strip() or owner
     hostname = str(entry.get("hostname") or socket.gethostname() or "mothership").strip()
     raw_id = str(entry.get("id") or "").strip()
@@ -595,11 +618,15 @@ def register_mothership_in_repo(
     tailscale_url = str(entry.get("tailscale_url") or entry.get("endpoint") or "").strip()
     if tailscale_url and not tailscale_url.startswith(("http://", "https://")):
         tailscale_url = "https://" + tailscale_url
-    github_repo = str(entry.get("github_repo") or DEFAULT_GITHUB_REPO).strip()
+    # Official Anchor GitHub Registry is locked / non-modifiable
+    github_repo = CANONICAL_ANCHOR_GITHUB_URL
     plat = str(entry.get("platform") or _detect_platform_tag()).strip().lower()
     ver = str(entry.get("installed_version") or entry.get("version_installed") or _read_version(anchor_root)).strip()
     role = str(entry.get("role") or "collaborator").strip().lower()
     install_dir = str(entry.get("install_dir") or ("C:/dev/Anchor" if os.name == "nt" else "~/dev/Anchor")).strip()
+    if write_repo is None:
+        # Never dirty git working trees on live collaborator installs; only temp-root pytest fixtures opt in implicitly
+        write_repo = bool(anchor_root is not None and "PYTEST_CURRENT_TEST" in os.environ)
 
     reg = load_mothership_registry(anchor_root)
     items: list[dict[str, Any]] = list(reg.get("motherships") or [])
@@ -610,6 +637,7 @@ def register_mothership_in_repo(
         "id": raw_id,
         "owner": owner,
         "pseudonym": pseudonym,
+        "contact_email": contact_email or str(record.get("contact_email") or ""),
         "role": role,
         "hostname": hostname,
         "tailscale_url": tailscale_url,
@@ -632,10 +660,47 @@ def register_mothership_in_repo(
     else:
         items.append(record)
 
+    reg["canonical_github_repo"] = CANONICAL_ANCHOR_GITHUB_URL
     reg["motherships"] = items
     if parse_version(ver) > parse_version(str(reg.get("latest_version") or "0.0.0")):
         reg["latest_version"] = ver
-    saved = save_mothership_registry(reg, anchor_root=anchor_root, write_repo=write_repo)
+    saved = save_mothership_registry(reg, anchor_root=anchor_root, write_repo=bool(write_repo))
+
+    # Persist local registration receipt + homebase_link so website-watched updates are active immediately
+    try:
+        reg_receipt_path = _data_dir(anchor_root) / ".anchor" / "registration.json"
+        reg_receipt_path.parent.mkdir(parents=True, exist_ok=True)
+        _atomic_write_text(
+            reg_receipt_path,
+            json.dumps(
+                {
+                    "schema": "anchor.registry.receipt.v1",
+                    "registered": True,
+                    "email": record.get("contact_email") or "",
+                    "owner": owner,
+                    "mothership_id": raw_id,
+                    "canonical_github_repo": CANONICAL_ANCHOR_GITHUB_URL,
+                    "installed_version": ver,
+                    "registered_at": _utc_now_iso(),
+                },
+                indent=2,
+            ) + "\n",
+        )
+        hb_doc = load_or_init_homebase_link(
+            anchor_root,
+            owner=owner,
+            hostname=hostname,
+            telemetry_enabled=bool(entry.get("telemetry_enabled", False)),
+            auto_pull_updates=True,
+        )
+        if contact_email:
+            hb_doc["contact_email"] = contact_email
+        hb_doc["registered"] = True
+        hb_doc["registered_at"] = hb_doc.get("registered_at") or _utc_now_iso()
+        hb_doc["canonical_github_repo"] = CANONICAL_ANCHOR_GITHUB_URL
+        save_homebase_link(hb_doc, anchor_root=anchor_root)
+    except Exception:
+        pass
 
     # Also mirror into mothership_collab peer list when available
     try:
@@ -654,7 +719,9 @@ def register_mothership_in_repo(
 
     return {
         "ok": True,
+        "entry": record,
         "registered": record,
+        "canonical_github_repo": CANONICAL_ANCHOR_GITHUB_URL,
         "registry": saved,
     }
 
@@ -672,11 +739,16 @@ def get_version_status(anchor_root: Path | str | None = None) -> dict[str, Any]:
     reg = load_mothership_registry(anchor_root)
     motherships = reg.get("motherships") or []
     hostname = (socket.gethostname() or "").strip().lower()
+    is_admin = False
+    try:
+        is_admin = bool(paths.is_anchor_admin_edition(anchor_root))
+    except Exception:
+        is_admin = False
     local_ms = next(
         (
             m for m in motherships
             if str(m.get("hostname") or "").lower() == hostname
-            or (hostname in ("puter", "gwl-server") and str(m.get("id")) == "gwl-server-lead")
+            or (is_admin and str(m.get("role") or "").lower() == "lead")
         ),
         None,
     )
@@ -692,6 +764,15 @@ def get_version_status(anchor_root: Path | str | None = None) -> dict[str, Any]:
         lic_status = _wp.get_local_license_status(store_dir=store_d)
     except Exception:
         pass
+    reg_receipt: dict[str, Any] = {"registered": bool(link.get("registered")), "email": str(link.get("contact_email") or "")}
+    try:
+        rp = _data_dir(anchor_root) / ".anchor" / "registration.json"
+        if rp.is_file():
+            rdoc = json.loads(rp.read_text(encoding="utf-8"))
+            if isinstance(rdoc, dict):
+                reg_receipt.update(rdoc)
+    except Exception:
+        pass
     return {
         "ok": True,
         "version": ver,
@@ -701,9 +782,12 @@ def get_version_status(anchor_root: Path | str | None = None) -> dict[str, Any]:
         "ecgberht_root": str(ecg_root),
         "platform": _detect_platform_tag(),
         "hostname": socket.gethostname() or "localhost",
-        "collaborator_name": _read_collaborator_display_name("John", base_dir=anchor_root),
-        "mothership_id": (local_ms or {}).get("id") or "",
+        "admin_edition": is_admin,
+        "canonical_github_repo": CANONICAL_ANCHOR_GITHUB_URL,
+        "collaborator_name": _read_collaborator_display_name("Lead Owner" if is_admin else "Local User", base_dir=anchor_root),
+        "mothership_id": (local_ms or {}).get("id") or str(link.get("mothership_id") or ""),
         "mothership": local_ms,
+        "registration": reg_receipt,
         "registered_motherships_count": len(motherships),
         "latest_known_version": str(reg.get("latest_version") or ver),
         "low_spec_mode": low_spec,
@@ -1156,7 +1240,6 @@ def push_update_to_motherships(
         m_host = str(m.get("hostname") or "").lower()
         is_self = (
             str(m.get("role") or "").lower() == "lead"
-            or mid == "gwl-server-lead"
             or (anchor_root is None and m_host == hostname)
         )
         m["last_push_at"] = now_iso
@@ -1191,7 +1274,7 @@ def push_update_to_motherships(
         if not pushed_live:
             m["pending_update"] = {
                 "target_version": local_ver,
-                "pushed_by": hostname or "gwl-server-lead",
+                "pushed_by": hostname or "lead-mothership",
                 "pushed_at": now_iso,
                 "notes": notes or f"Anchor v{local_ver} release pushed from Mother Ship.",
             }
@@ -1444,7 +1527,7 @@ def load_or_init_homebase_link(
         owner_val = str(owner or doc.get("owner") or _read_collaborator_display_name("Collaborator", base_dir=anchor_root)).strip()
         if not str(doc.get("mothership_id") or "").strip():
             slug = re.sub(r"[^a-z0-9]+", "-", f"{owner_val}-{host_val}".lower()).strip("-") or "mothership-node"
-            if slug == "gwl-server-lead" or slug.startswith("gwl-server-"):
+            if slug == "lead" or slug.endswith("-lead"):
                 slug = f"collab-{slug}"
             doc["mothership_id"] = slug
             changed = True
@@ -1575,19 +1658,18 @@ def register_with_homebase(
             "tailscale_url": eff_ts_url,
             "platform": plat,
             "installed_version": ver,
-            "role": "lead" if eff_host.lower() in ("puter", "gwl-server") else "collaborator",
+            "role": "lead" if paths.is_anchor_admin_edition(anchor_root) else "collaborator",
         },
         anchor_root=anchor_root,
         write_repo=False,
     )
 
     # If this node IS the Lead Homebase itself, mark self-registered immediately
-    configured_hb = str(link.get("homebase_url") or DEFAULT_HOMEBASE_URL).strip().rstrip("/")
     is_self_homebase = (
         anchor_root is None
-        and eff_host.lower() in ("puter", "gwl-server")
+        and paths.is_anchor_admin_edition()
         and opener_fn is None
-        and (not eff_hb_arg or "gwl-server" in configured_hb or "puter" in configured_hb)
+        and not eff_hb_arg
     )
     if is_self_homebase:
         link["registered"] = True
@@ -1726,8 +1808,8 @@ def receive_homebase_registration(
     raw_id = str(ms.get("id") or "").strip()
     safe_id = re.sub(r"[^a-z0-9_-]+", "-", (raw_id or f"{owner}-{hostname}").lower()).strip("-")[:80] or "collaborator-node"
     if (
-        safe_id in ("gwl-server-lead", "lead")
-        or safe_id.startswith("gwl-server-")
+        safe_id == "lead"
+        or safe_id.endswith("-lead")
         or str(ms.get("role") or "").strip().lower() == "lead"
     ):
         return {"ok": False, "status_code": 403, "error": "reserved_mothership_id"}
@@ -2546,8 +2628,7 @@ def start_background_homebase_telemetry_daemon(interval_seconds: int = 900) -> b
     2. Ships sanitized journal entries/errors and polls Homebase heartbeats when registered on Tailscale."""
     import random as _rnd_jitter
     import threading as _th
-    host = (socket.gethostname() or "").strip().lower()
-    if host in ("puter", "gwl-server") or "PYTEST_CURRENT_TEST" in os.environ:
+    if "PYTEST_CURRENT_TEST" in os.environ or paths.is_anchor_admin_edition():
         return False
 
     def _loop():

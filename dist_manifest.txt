@@ -567,6 +567,7 @@ mothership_collab.py
 mothership_updater.py
 mothership_registry.json
 install-mac-linux.sh
+Uninstall-Anchor.cmd
 Anchor.command
 website_portal.py
 onboard_wizard.py
@@ -613,6 +614,7 @@ tests/test_*.py
 !tests/test_w1_scribe_gmail_overhaul_2026_11_13.py
 !tests/test_speed_racer_edit_persistence_and_scribe_learning.py
 !tests/test_wave23_outlook_split_email_and_list_in_cos.py
+!tests/test_james_setup_feedback_v156_2026_11_26.py
 !vendor/bundled-skills/**/journal/**
 tests/fixtures/fake_stream.jsonl
 tests/fixtures/gate_stream.jsonl

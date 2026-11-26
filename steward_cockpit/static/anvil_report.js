@@ -102,8 +102,9 @@
 
     var jobBannerHtml = "";
     if (isRunning) {
+      var instPkgs = Array.isArray(job.installing_packages) ? job.installing_packages : [];
       var runLabel = isInstallingDeps
-        ? ("⏳ Installing Approved Python Packages (" + esc((job.installing_packages || []).join(", ") || "venv") + ") in Isolated Anvil Runtime:")
+        ? ("⏳ Installing Approved Python Packages (" + esc(instPkgs.join(", ") || "venv") + ") in Isolated Anvil Runtime:")
         : ("⏳ Running Isolated Scratch Replication (" + esc(job.phase ? "Phase " + job.phase : "Phase A") + "):");
       var stepMeta = isInstallingDeps ? ("Preparing verification · Job <code>" + esc(job.job_id || "") + "</code>") : ("Step " + Number(job.completed_steps || 0) + " / " + Math.max(1, Number(job.total_steps || 1)) + " · Job <code>" + esc(job.job_id || "") + "</code>");
       jobBannerHtml = '<div class="rep-run-banner running" data-rep-run-state="running"><div><strong>' + runLabel + "</strong> " + stepMeta + '</div><button type="button" class="danger-btn" id="btnCancelReplicationJob" data-cancel-rep-job="' + esc(job.job_id || "") + '">✕ Cancel &amp; Kill Tree</button></div>';
@@ -141,8 +142,8 @@
           var rStat = String(r.replication_status || "not yet run");
           var rowNotRun = rStat === "not yet run" || r.error_class === "NOT_YET_RUN";
           var rowAllowGreen = r.sem_row ? semVerified : receiptVerified;
-          var repPillCls = (receiptVerified && !rowNotRun && (r.error_class === "EXACT_REPLICATION" || r.error_class === "FLOAT_REDUCTION_TOLERANCE")) ? "p-green" : "p-amber";
           var rungTxt = String(r.ramanujan_rung || "CLAIMED");
+          var repPillCls = (receiptVerified && !rowNotRun && rungTxt.toUpperCase() === "OBSERVED" && (r.error_class === "EXACT_REPLICATION" || r.error_class === "FLOAT_REDUCTION_TOLERANCE")) ? "p-green" : "p-amber";
           return '<tr data-matrix-row-id="' + esc(r.row_id || "") + '"><td><strong>' + esc(stripDollars(r.paper_cell || "")) + "</strong></td>" +
             '<td><span class="mono">' + esc(stripDollars(r.code_cell || "")) + "</span></td>" +
             '<td><span class="pill ' + repPillCls + '">' + esc(rowNotRun ? "not yet run" : (r.error_class || "EXECUTED")) + '</span><div style="margin-top:4px;">' + esc(stripDollars(rStat)) + "</div></td>" +

@@ -94,6 +94,10 @@
   // definition of what a placement compares
   $$('.shelf.zone .grid > .tile').forEach(function (c) { c._record = c.outerHTML; });
   compactTiles(document);
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    $$('.tile.peeking').forEach(function (c) { hidePeek(c); c.classList.add('peek-dismissed'); });
+  });
   window.addEventListener('resize', function () { $$('.tile.peeking').forEach(positionPeek); });
   document.addEventListener('scroll', function () { $$('.tile.peeking').forEach(positionPeek); }, true);
   // Initiative dialogue and full cockpit bind the same project and effort. Older
@@ -2269,7 +2273,7 @@
         });
       return;
     }
-    var peerPresetBtn = e.target.closest('[data-collab-preset-merrill], [data-collab-preset-peer]');
+    var peerPresetBtn = e.target.closest('[data-collab-preset-peer]');
     if (peerPresetBtn) {
       e.preventDefault(); e.stopPropagation();
       var pIdIn = document.getElementById('collabPeerId');

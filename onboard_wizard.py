@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """7-Step Guided Onboarding & First-Run Setup Wizard (stdlib only).
 
-Addresses all 4 root causes from Merrill's diagnostic report (2026-10-22) and
+Addresses all root causes from collaborator diagnostic walkthroughs and
 provides a smooth, end-to-end interactive Web UI (`/onboard-wizard` &
 `/onboard-wizard?sandbox=1`) and CLI (`python onboard_wizard.py --sandbox`):
 
   Step 1 — Who Are You? (Display Name, Collaborator Pseudonym/Synonym & Steward Persona)
-  Step 2 — Mothership Topology & Tailscale Network Connection (Main Mothership vs. Remote Peer)
-  Step 3 — AI Services Menu, Credentials (Subscription vs. API Key), Model Tiers, CLI Updater & Live Probe
+  Step 2 — Mothership Topology, Optional Tailscale Prompt & 1-Click Official Anchor Registry
+  Step 3 — AI Services Menu, Auto-Install Agent CLIs, Browser Account Detection & Live Probe
   Step 4 — Start with Goals & Missions (Star Chart Steward) OR Start with Projects
   Step 5 — Smart Directory Scan (Gandalf Scanner), Orphaned Store Re-Adoption, Exclusion Filter,
            Virtual Project Groupings & Automatic Starter AI Cockpit Creation
-  Step 6 — Calendar & Email Integration (Gmail, Outlook, Custom IMAP/ICS via OS Vault)
+  Step 6 — Easy Calendar & Email Integration (1-Click Windows Outlook + Auto-Detected Email Providers)
   Step 7 — Complete Readiness Receipt & Launchpad (Direct links to Cave of Wonders & AI Cockpits)
 
 Includes First-Class Sandbox / Walkthrough Mode (`sandbox=True` / `?sandbox=1` / `--sandbox`)
@@ -32,10 +32,14 @@ import os
 from pathlib import Path
 import re
 import shutil
+import sqlite3
 import subprocess
+import sys
+import tempfile
 import time
 from typing import Any
 import uuid
+import webbrowser
 
 import anchor_agent_protocol as aap
 import comms_connector
@@ -48,6 +52,7 @@ import share_readiness as ready
 
 WIZARD_SCHEMA = "anchor.onboard.wizard.v1"
 DEFAULT_SANDBOX_ID = "desktop-walkthrough"
+CANONICAL_ANCHOR_GITHUB_URL = "https://github.com/johncliechty/ghostworldlabs-anchor"
 
 LIVE_PROBES_SKIPPED_NOTE = ready.LIVE_PROBES_SKIPPED_NOTE
 live_probes_skipped_note = LIVE_PROBES_SKIPPED_NOTE
@@ -226,7 +231,7 @@ FOUNDRY_SKILL_NAMES = frozenset({
 })
 
 _ANCHOR_INSTALL_NAME_RE = re.compile(
-    r"^anchor(?:\s+\d+|\d+|[-_\s]+(?:backup.*|old.*|copy.*|update.*|v?\d.*|plus.*|home.*|app.*|share.*|merrill.*|code-jobs.*))?$",
+    r"^anchor(?:\s+\d+|\d+|[-_\s]+(?:backup.*|old.*|copy.*|update.*|v?\d.*|plus.*|home.*|app.*|share.*|collab.*|code-jobs.*))?$",
     re.IGNORECASE,
 )
 
@@ -515,7 +520,7 @@ def get_active_user_profile(
 ) -> dict[str, Any]:
     """Return the active user's display name, collaborator pseudonym, aliases, and persona.
 
-    Ensures Anchor never calls a user (such as Merrill) ``"John"`` once their
+    Ensures Anchor never calls a collaborator someone else's name once their
     profile is configured in ``.anchor/user_profile.json``.
     """
     use_sandbox = bool(sandbox or (sandbox_id and str(sandbox_id).strip()))
@@ -641,7 +646,7 @@ def get_wizard_license_status(
 
 def save_user_identity(
     display_name: str,
-    pseudonym: str = aap.PSEUDONYM_DEFAULT,
+    pseudonym: str = "",
     pseudonym_aliases: list[str] | str | None = None,
     steward_persona: str = "Aladdin",
     username: str = "",
@@ -666,7 +671,8 @@ def save_user_identity(
             "error": "license_acceptance_required",
             "message": "Please check the Ghost World Labs License acknowledgement box (Free Use · No Resale or Commercialization) to continue.",
         }
-    clean_name = str(display_name or "").strip() or "John"
+    is_admin = paths.is_anchor_admin_edition(base_dir)
+    clean_name = str(display_name or "").strip() or ("John" if is_admin else "Collaborator")
     if isinstance(pseudonym_aliases, str):
         alias_list = [a.strip() for a in pseudonym_aliases.split(",") if a.strip()]
     elif isinstance(pseudonym_aliases, list):
@@ -674,7 +680,8 @@ def save_user_identity(
     else:
         alias_list = []
 
-    canon_pseudo, canon_aliases = aap.canonicalize_pseudonym(pseudonym, alias_list)
+    eff_pseudo = str(pseudonym or "").strip() or (aap.PSEUDONYM_DEFAULT if is_admin else clean_name)
+    canon_pseudo, canon_aliases = aap.canonicalize_pseudonym(eff_pseudo, alias_list)
     persona_key = str(steward_persona or "aladdin").strip().lower()
     if persona_key not in STEWARD_PERSONAS:
         persona_key = "aladdin"
@@ -828,7 +835,7 @@ def sync_applicant_signup_to_gwl_hub(
     sandbox_id: str = DEFAULT_SANDBOX_ID,
     base_dir: Path | str | None = None,
 ) -> dict[str, Any]:
-    """Record or update the onboarding individual in Puter's central Ghost World Labs applicant repository (`gwl-hub`)."""
+    """Record or update the onboarding individual in the local Ghost World Labs collaborator directory."""
     try:
         import gwl_clearinghouse as _gwl
     except Exception:
@@ -854,10 +861,10 @@ def sync_applicant_signup_to_gwl_hub(
     onboard_status = "ready" if len(completed_steps) >= 3 else f"step_{st_doc.get('current_step') or 1}"
     ts_ip = str(ts_info.get("tailscale_ip") or "").strip()
     record = {
-        "display_name": prof.get("display_name") or "Applicant",
+        "display_name": prof.get("display_name") or "Collaborator",
         "username": prof.get("username") or "",
         "contact_email": prof.get("contact_email") or "",
-        "pseudonym": prof.get("pseudonym") or aap.PSEUDONYM_DEFAULT,
+        "pseudonym": prof.get("pseudonym") or prof.get("display_name") or "Collaborator",
         "pseudonym_aliases": prof.get("pseudonym_aliases") or [],
         "steward_persona": prof.get("steward_persona") or "Aladdin",
         "hostname": str(ts_info.get("hostname") or os.environ.get("COMPUTERNAME") or "").strip(),
@@ -874,30 +881,22 @@ def sync_applicant_signup_to_gwl_hub(
     hub_root = _gwl_hub_root_for(sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)
     res = _gwl.register_applicant_signup(record, hub_root=hub_root)
 
-    # If running on a remote machine that connects to Puter as coordination_hub, also push over Tailscale HTTP
-    coord_hub = str(topo.get("coordination_hub") or topo.get("remote_mothership_url") or "").strip().rstrip("/")
-    local_host = str(os.environ.get("COMPUTERNAME") or "").strip().lower()
-    if not sandbox and base_dir is None and local_host not in ("puter", "gwl-server"):
-        candidate_hubs = []
-        if coord_hub.startswith(("http://", "https://")) and "127.0.0.1" not in coord_hub and "localhost" not in coord_hub:
-            candidate_hubs.append(coord_hub)
-        for default_hub in ("https://gwl-server.tailb49f65.ts.net", "http://puter:8777"):
-            if default_hub not in candidate_hubs:
-                candidate_hubs.append(default_hub)
+    # Only sync to an explicitly configured coordination_hub URL (never probe personal author endpoints)
+    coord_hub = str(topo.get("coordination_hub") or topo.get("remote_mothership_url") or os.environ.get("ANCHOR_HOMEBASE_URL") or "").strip().rstrip("/")
+    if not sandbox and base_dir is None and coord_hub.startswith(("http://", "https://")) and "127.0.0.1" not in coord_hub and "localhost" not in coord_hub:
         import urllib.request as _ureq
         payload = json.dumps({"action": "register_gwl_applicant", "applicant": res.get("applicant") or record}).encode("utf-8")
-        for hub_url in candidate_hubs:
-            try:
-                req = _ureq.Request(
-                    f"{hub_url}/api/onboard-wizard/action",
-                    data=payload,
-                    headers={"Content-Type": "application/json", "User-Agent": "Anchor-Onboard-ApplicantSync/1.0"},
-                    method="POST",
-                )
-                with paths.safe_urlopen(req, timeout=2.5):
-                    break
-            except Exception:
-                continue
+        try:
+            req = _ureq.Request(
+                f"{coord_hub}/api/onboard-wizard/action",
+                data=payload,
+                headers={"Content-Type": "application/json", "User-Agent": "Anchor-Onboard-ApplicantSync/1.0"},
+                method="POST",
+            )
+            with paths.safe_urlopen(req, timeout=2.5):
+                pass
+        except Exception:
+            pass
         try:
             import mothership_updater as _mu_sync
             _mu_sync.register_with_homebase(
@@ -907,7 +906,7 @@ def sync_applicant_signup_to_gwl_hub(
                 hostname=str(record.get("hostname") or ""),
                 tailscale_ip=ts_ip,
                 tailscale_url=str(ts_info.get("tailscale_url") or ""),
-                homebase_url=coord_hub or "https://gwl-server.tailb49f65.ts.net",
+                homebase_url=coord_hub,
                 telemetry_enabled=bool(topo.get("telemetry_enabled", True)),
             )
         except Exception:
@@ -937,11 +936,12 @@ def detect_or_install_tailscale(
             "installed": True if auto_install else False,
             "auto_installed": bool(auto_install),
             "running": True if auto_install else False,
+            "needs_setup": not bool(auto_install),
             "tailscale_ip": "100.101.102.103" if auto_install else "",
             "hostname": "sandbox-work-desktop",
             "install_command": install_cmd,
             "peers": [
-                {"hostname": "puter-mothership", "ip": "100.64.0.1", "online": True, "role": "Main Hub / Puter"},
+                {"hostname": "primary-mothership", "ip": "100.64.0.1", "online": True, "role": "Primary Mothership"},
                 {"hostname": "collaborator-node", "ip": "100.64.0.2", "online": True, "role": "Collaborator"},
             ],
             "note": (
@@ -1010,13 +1010,187 @@ def detect_or_install_tailscale(
         "executable": ts_exe or "",
         "auto_installed": auto_installed,
         "running": running,
+        "needs_setup": (not bool(ts_exe)) or (not running),
         "tailscale_ip": ts_ip,
         "dns_name": dns_name,
         "tailscale_url": ts_url,
         "hostname": hostname,
         "install_command": install_cmd,
         "peers": peers,
-        "note": "Tailscale detected." if ts_exe else "Tailscale not found — click 'Install Tailscale' or run winget.",
+        "note": (
+            "Tailscale connected and running."
+            if (ts_exe and running)
+            else ("Tailscale installed but not signed in — would you like to sign in now?" if ts_exe else "Tailscale is not installed — would you like to set up Tailscale?")
+        ),
+    }
+
+
+def setup_tailscale_interactive(
+    *,
+    sandbox: bool = False,
+    runner_fn=None,
+) -> dict[str, Any]:
+    """Install Tailscale if missing and launch interactive Tailscale sign-in."""
+    if sandbox:
+        return {
+            "ok": True,
+            "installed": True,
+            "launched_login": True,
+            "message": "Sandbox verified: Tailscale installed and browser login opened.",
+        }
+    ts_res = detect_or_install_tailscale(sandbox=False, auto_install=True, runner_fn=runner_fn)
+    ts_exe = str(ts_res.get("executable") or shutil.which("tailscale") or "")
+    if not ts_exe:
+        if runner_fn is None and "PYTEST_CURRENT_TEST" not in os.environ and paths.is_interactive_desktop_session():
+            try:
+                webbrowser.open("https://tailscale.com/download")
+            except Exception:
+                pass
+        return {
+            "ok": False,
+            "installed": False,
+            "launched_login": False,
+            "download_url": "https://tailscale.com/download",
+            "message": "Install Tailscale from https://tailscale.com/download, or skip to continue locally.",
+        }
+    if not ts_res.get("running"):
+        if runner_fn is not None:
+            runner_fn([ts_exe, "up"])
+        elif "PYTEST_CURRENT_TEST" not in os.environ and paths.is_interactive_desktop_session():
+            try:
+                if os.name == "nt":
+                    gui_exe = Path(ts_exe).with_name("tailscale-ipn.exe")
+                    if gui_exe.is_file():
+                        subprocess.Popen([str(gui_exe)], creationflags=paths.NO_WINDOW)
+                    subprocess.Popen([ts_exe, "login"], creationflags=paths.NO_WINDOW)
+                else:
+                    subprocess.Popen([ts_exe, "up"], start_new_session=True)
+            except Exception:
+                pass
+    return {
+        "ok": True,
+        "installed": True,
+        "running": bool(ts_res.get("running")),
+        "launched_login": not bool(ts_res.get("running")),
+        "message": (
+            "Tailscale is already connected and running!"
+            if ts_res.get("running")
+            else "Tailscale setup launched! Complete sign-in in the browser tab that opened."
+        ),
+    }
+
+
+def register_anchor_repository(
+    email: str,
+    *,
+    owner: str = "",
+    pseudonym: str = "",
+    tailscale_url: str = "",
+    sandbox: bool = False,
+    sandbox_id: str = DEFAULT_SANDBOX_ID,
+    base_dir: Path | str | None = None,
+) -> dict[str, Any]:
+    """1-click collaborator registration connecting email to the locked official Anchor GitHub repository."""
+    clean_email = str(email or "").strip()
+    if not clean_email or "@" not in clean_email:
+        return {
+            "ok": False,
+            "status_code": 400,
+            "error": "invalid_email",
+            "message": "Please enter a valid email address to register.",
+        }
+    prof = get_active_user_profile(sandbox_id if sandbox else "", sandbox=sandbox, base_dir=base_dir)
+    eff_owner = str(owner or prof.get("display_name") or "Collaborator").strip()
+    eff_pseudo = str(pseudonym or prof.get("pseudonym") or eff_owner).strip()
+    pfile = user_profile_path(sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)
+    if pfile.is_file():
+        try:
+            pdoc = json.loads(pfile.read_text(encoding="utf-8"))
+            if isinstance(pdoc, dict):
+                pdoc["contact_email"] = clean_email
+                with paths.WRITE_LOCK:
+                    paths.atomic_write_text(pfile, json.dumps(pdoc, indent=2, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+    else:
+        save_user_identity(
+            display_name=eff_owner,
+            pseudonym=eff_pseudo,
+            contact_email=clean_email,
+            sandbox=sandbox,
+            sandbox_id=sandbox_id,
+            base_dir=base_dir,
+        )
+
+    sdir = state_dir(sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)
+    receipt = {
+        "schema": "anchor.registry.receipt.v1",
+        "registered": True,
+        "email": clean_email,
+        "owner": eff_owner,
+        "pseudonym": eff_pseudo,
+        "canonical_github_repo": CANONICAL_ANCHOR_GITHUB_URL,
+        "auto_pull_updates": True,
+        "registered_at": _utc_now_iso(),
+    }
+    sdir.mkdir(parents=True, exist_ok=True)
+    with paths.WRITE_LOCK:
+        paths.atomic_write_text(sdir / "registration.json", json.dumps(receipt, indent=2) + "\n")
+
+    if not sandbox:
+        try:
+            import mothership_updater as _mu
+            eff_root = _resolve_base_dir(base_dir) if base_dir is not None else None
+            _mu.register_mothership_in_repo(
+                {
+                    "email": clean_email,
+                    "contact_email": clean_email,
+                    "owner": eff_owner,
+                    "pseudonym": eff_pseudo,
+                    "tailscale_url": tailscale_url,
+                    "github_repo": CANONICAL_ANCHOR_GITHUB_URL,
+                },
+                anchor_root=eff_root,
+                write_repo=False,
+            )
+        except Exception:
+            pass
+
+    st_doc = load_wizard_state(sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)
+    st_doc.setdefault("topology", {})["registration"] = receipt
+    if 2 not in st_doc["completed_steps"]:
+        st_doc["completed_steps"].append(2)
+    save_wizard_state(st_doc, sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)
+    return {
+        "ok": True,
+        "registered": True,
+        "email": clean_email,
+        "canonical_github_repo": CANONICAL_ANCHOR_GITHUB_URL,
+        "receipt": receipt,
+        "message": f"Registered {clean_email} with {CANONICAL_ANCHOR_GITHUB_URL} — automatic website-watched updates are active!",
+    }
+
+
+def _read_registration_receipt(
+    *,
+    sandbox: bool = False,
+    sandbox_id: str = DEFAULT_SANDBOX_ID,
+    base_dir: Path | str | None = None,
+) -> dict[str, Any]:
+    sdir = state_dir(sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)
+    rp = sdir / "registration.json"
+    if rp.is_file():
+        try:
+            doc = json.loads(rp.read_text(encoding="utf-8"))
+            if isinstance(doc, dict):
+                return doc
+        except Exception:
+            pass
+    hb = _homebase_link_summary(base_dir) if not sandbox else {}
+    return {
+        "registered": bool(hb.get("registered")),
+        "email": str(hb.get("contact_email") or ""),
+        "canonical_github_repo": CANONICAL_ANCHOR_GITHUB_URL,
     }
 
 
@@ -1030,7 +1204,8 @@ def _homebase_link_summary(base_dir: Path | str | None = None) -> dict[str, Any]
     except Exception:
         return {
             "registered": False,
-            "homebase_url": "https://gwl-server.tailb49f65.ts.net",
+            "homebase_url": "",
+            "canonical_github_repo": CANONICAL_ANCHOR_GITHUB_URL,
             "telemetry_enabled": True,
         }
 
@@ -1039,7 +1214,7 @@ def configure_mothership_topology(
     mode: str = "main_mothership",
     *,
     remote_address: str = "",
-    hub_endpoint: str = "https://gwl-server.tailb49f65.ts.net",
+    hub_endpoint: str = "",
     telemetry_enabled: bool = True,
     auto_pull_updates: bool = True,
     low_spec_mode: bool | None = None,
@@ -1064,7 +1239,7 @@ def configure_mothership_topology(
     ecg_path, ecg_checked = paths.resolve_ecgberht_root()
     bridge_file = ecg_path / "scripts" / "seal-chamber-bridge.mjs"
     ecg_ok = bridge_file.is_file() or (ecg_path / "bin" / "ecgberht.mjs").is_file()
-    eff_hub = str(remote_address or hub_endpoint or "https://gwl-server.tailb49f65.ts.net").strip()
+    eff_hub = str(remote_address or hub_endpoint or os.environ.get("ANCHOR_HOMEBASE_URL") or "").strip()
 
     if norm_mode == "main_mothership":
         topology_doc = {
@@ -1072,6 +1247,7 @@ def configure_mothership_topology(
             "mode_label": "This Computer IS a Main Mothership",
             "local_url": "http://127.0.0.1:8777",
             "coordination_hub": eff_hub,
+            "canonical_github_repo": CANONICAL_ANCHOR_GITHUB_URL,
             "telemetry_enabled": bool(telemetry_enabled),
             "tailscale": ts_info,
             "ecgberht_root": str(ecg_path),
@@ -1081,7 +1257,7 @@ def configure_mothership_topology(
             "updated_at": _utc_now_iso(),
         }
     else:
-        target = str(remote_address or hub_endpoint or "https://gwl-server.tailb49f65.ts.net").strip()
+        target = str(remote_address or hub_endpoint or "").strip()
         if target and not target.startswith(("http://", "https://")):
             target = "https://" + target
         topology_doc = {
@@ -1089,6 +1265,7 @@ def configure_mothership_topology(
             "mode_label": "Connected to Remote Mothership via Tailscale",
             "remote_mothership_url": target,
             "coordination_hub": str(hub_endpoint or target).strip(),
+            "canonical_github_repo": CANONICAL_ANCHOR_GITHUB_URL,
             "telemetry_enabled": bool(telemetry_enabled),
             "tailscale": ts_info,
             "ecgberht_root": str(ecg_path),
@@ -1097,7 +1274,7 @@ def configure_mothership_topology(
             "verified": True,
             "updated_at": _utc_now_iso(),
         }
-        if not sandbox and base_dir is None:
+        if not sandbox and base_dir is None and target:
             try:
                 mothership_collab.register_peer({
                     "id": "remote-mothership",
@@ -1138,7 +1315,7 @@ def configure_mothership_topology(
                 auto_pull_updates=bool(auto_pull_updates),
                 low_spec_mode=eff_low_spec,
             )
-            if base_dir is None and "PYTEST_CURRENT_TEST" not in os.environ:
+            if eff_hub and base_dir is None and "PYTEST_CURRENT_TEST" not in os.environ:
                 prof_cur = get_active_user_profile("", sandbox=False, base_dir=None)
                 _mu.register_with_homebase(
                     owner=str(prof_cur.get("display_name") or ""),
@@ -1456,7 +1633,7 @@ def launch_service_login(
                     note = f"Launched `{cmd_str}` for {meta['label']}."
                 except Exception as exc:
                     note = f"Could not launch `{cmd_str}` ({exc}). Run `{cmd_str}` in your terminal."
-            elif os.name == "nt":
+            elif os.name == "nt" and paths.is_interactive_desktop_session():
                 try:
                     CREATE_NEW_CONSOLE = 0x00000010
                     subprocess.Popen(
@@ -1482,6 +1659,541 @@ def launch_service_login(
         "launched": launched,
         "login_command": cmd_str,
         "message": note,
+    }
+
+
+PROVIDER_BROWSER_URLS: dict[str, dict[str, Any]] = {
+    "claude": {
+        "label": "Claude (Anthropic)",
+        "cli": "claude",
+        "npm_pkg": "@anthropic-ai/claude-code",
+        "login_url": "https://claude.ai/login",
+        "api_url": "https://console.anthropic.com/settings/keys",
+        "domains": ("claude.ai", "console.anthropic.com"),
+    },
+    "gemini": {
+        "label": "Antigravity / Gemini (Google)",
+        "cli": "agy",
+        "alt_cli": "gemini",
+        "npm_pkg": "@google/gemini-cli",
+        "login_url": "https://aistudio.google.com/app/apikey",
+        "web_url": "https://gemini.google.com",
+        "domains": ("gemini.google.com", "aistudio.google.com", "accounts.google.com"),
+    },
+    "chatgpt": {
+        "label": "ChatGPT / Codex (OpenAI)",
+        "cli": "codex",
+        "npm_pkg": "@openai/codex",
+        "login_url": "https://chatgpt.com/auth/login",
+        "api_url": "https://platform.openai.com/api-keys",
+        "domains": ("chatgpt.com", "chat.openai.com", "platform.openai.com"),
+    },
+    "grok": {
+        "label": "Grok (xAI)",
+        "cli": "grok",
+        "npm_pkg": "@vibe-kit/grok-cli",
+        "login_url": "https://accounts.x.ai/sign-in",
+        "api_url": "https://console.x.ai",
+        "domains": ("grok.com", "x.ai", "console.x.ai"),
+    },
+}
+
+_BROWSER_DETECT_CACHE: dict[str, Any] = {"ts": 0.0, "payload": None}
+
+
+def _find_cli_binary_for_family(fam: str, home_dir: Path | None = None, which_fn=None) -> str:
+    which = which_fn or shutil.which
+    meta = PROVIDER_BROWSER_URLS.get(fam) or {}
+    primary = str(meta.get("cli") or fam)
+    p = which(primary)
+    if p:
+        return str(p)
+    alt = str(meta.get("alt_cli") or "")
+    if alt:
+        p2 = which(alt)
+        if p2:
+            return str(p2)
+    if which_fn is not None and home_dir is None:
+        return ""
+    home = Path(home_dir) if home_dir else Path.home()
+    local_app = Path(os.environ.get("LOCALAPPDATA", str(home / "AppData" / "Local")))
+    app_data = Path(os.environ.get("APPDATA", str(home / "AppData" / "Roaming")))
+    candidates: list[Path] = []
+    if fam == "gemini":
+        candidates.extend([
+            local_app / "agy" / "bin" / "agy.exe",
+            local_app / "agy" / "bin" / "agy.cmd",
+            app_data / "npm" / "gemini.cmd",
+            home / ".local" / "bin" / "agy",
+            home / ".local" / "bin" / "gemini",
+        ])
+    elif fam == "claude":
+        candidates.extend([
+            app_data / "npm" / "claude.cmd",
+            local_app / "Programs" / "claude" / "claude.exe",
+            home / ".local" / "bin" / "claude",
+        ])
+    elif fam == "chatgpt":
+        candidates.extend([
+            app_data / "npm" / "codex.cmd",
+            home / ".codex" / "bin" / "codex.exe",
+            home / ".local" / "bin" / "codex",
+        ])
+    elif fam == "grok":
+        candidates.extend([
+            app_data / "npm" / "grok.cmd",
+            home / ".grok" / "bin" / "grok.exe",
+            home / ".local" / "bin" / "grok",
+        ])
+    for c in candidates:
+        if c.is_file():
+            return str(c)
+    return ""
+
+
+def _has_local_cli_credentials(fam: str, home_dir: Path | None = None) -> bool:
+    home = Path(home_dir) if home_dir else Path.home()
+    app_data = Path(os.environ.get("APPDATA", str(home / "AppData" / "Roaming")))
+    if home_dir is None:
+        try:
+            if provider_secrets.get(f"{fam}-default"):
+                return True
+        except Exception:
+            pass
+    if fam == "claude":
+        for p in (home / ".claude" / ".credentials.json", home / ".claude" / "credentials.json"):
+            if p.is_file() and p.stat().st_size > 10:
+                return True
+    elif fam == "gemini":
+        for p in (
+            home / ".gemini" / "oauth_creds.json",
+            home / ".gemini" / "google_accounts.json",
+            app_data / "Antigravity" / "User" / "globalStorage" / "state.vscdb",
+        ):
+            if p.is_file() and p.stat().st_size > 10:
+                return True
+    elif fam == "chatgpt":
+        for p in (home / ".codex" / "auth.json", home / ".openai" / "auth.json"):
+            if p.is_file() and p.stat().st_size > 10:
+                return True
+    elif fam == "grok":
+        for p in (home / ".grok" / "auth.json", home / ".grok" / "config.json"):
+            if p.is_file() and p.stat().st_size > 10:
+                return True
+    return False
+
+
+def _discover_browser_history_files() -> list[Path]:
+    local_app = Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local")))
+    home = Path.home()
+    roots: list[Path] = []
+    if os.name == "nt":
+        roots.extend([
+            local_app / "Google" / "Chrome" / "User Data",
+            local_app / "Microsoft" / "Edge" / "User Data",
+            local_app / "BraveSoftware" / "Brave-Browser" / "User Data",
+        ])
+    elif sys.platform == "darwin":
+        roots.extend([
+            home / "Library" / "Application Support" / "Google" / "Chrome",
+            home / "Library" / "Application Support" / "Microsoft Edge",
+        ])
+    else:
+        roots.extend([
+            home / ".config" / "google-chrome",
+            home / ".config" / "chromium",
+        ])
+    out: list[Path] = []
+    for r in roots:
+        for prof_name in ("Default", "Profile 1", "Profile 2"):
+            h = r / prof_name / "History"
+            if h.is_file():
+                out.append(h)
+    return out[:4]
+
+
+def detect_browser_and_cli_accounts(
+    *,
+    sandbox: bool = False,
+    include_browser_history: bool = False,
+    history_dbs: list[Path | str] | None = None,
+    home_dir: Path | str | None = None,
+    which_fn=None,
+) -> dict[str, Any]:
+    """Detect installed CLIs, local CLI sign-in files, and (when consented or explicitly passed) active browser provider domains."""
+    if sandbox:
+        return {
+            "ok": True,
+            "accounts": {
+                fam: {
+                    "family": fam,
+                    "label": meta["label"],
+                    "cli": meta["cli"],
+                    "cli_installed": fam in ("claude", "gemini", "chatgpt"),
+                    "cli_authenticated": False,
+                    "browser_session_detected": fam in ("gemini", "chatgpt"),
+                    "matched_domains": [meta["domains"][0]] if fam in ("gemini", "chatgpt") else [],
+                    "login_url": meta["login_url"],
+                    "status_summary": "Browser session ready — click Open Browser & Log In",
+                }
+                for fam, meta in PROVIDER_BROWSER_URLS.items()
+            },
+        }
+
+    use_cache = (history_dbs is None and home_dir is None and which_fn is None and not include_browser_history)
+    now_t = time.monotonic()
+    if use_cache and _BROWSER_DETECT_CACHE["payload"] is not None and (now_t - float(_BROWSER_DETECT_CACHE["ts"])) < 4.0:
+        return _BROWSER_DETECT_CACHE["payload"]
+
+    if history_dbs is not None:
+        dbs = [Path(p) for p in history_dbs if Path(p).is_file()]
+    elif not include_browser_history or "PYTEST_CURRENT_TEST" in os.environ:
+        dbs = []
+    else:
+        dbs = _discover_browser_history_files()
+
+    domain_hits: dict[str, list[str]] = {fam: [] for fam in PROVIDER_BROWSER_URLS}
+    for db_path in dbs:
+        try:
+            if db_path.stat().st_size > 80 * 1024 * 1024:
+                continue
+            with tempfile.TemporaryDirectory() as tmpd:
+                copied = Path(tmpd) / "History.sqlite"
+                shutil.copy2(db_path, copied)
+                conn = sqlite3.connect(str(copied))
+                try:
+                    cur = conn.cursor()
+                    for fam, meta in PROVIDER_BROWSER_URLS.items():
+                        for dom in meta["domains"]:
+                            if dom in domain_hits[fam]:
+                                continue
+                            cur.execute("SELECT 1 FROM urls WHERE url LIKE ? LIMIT 1", (f"%{dom}%",))
+                            if cur.fetchone():
+                                domain_hits[fam].append(dom)
+                finally:
+                    conn.close()
+        except Exception:
+            continue
+
+    eff_home = Path(home_dir) if home_dir is not None else None
+    accounts_out: dict[str, Any] = {}
+    for fam, meta in PROVIDER_BROWSER_URLS.items():
+        cli_bin = _find_cli_binary_for_family(fam, home_dir=eff_home, which_fn=which_fn)
+        cli_auth = _has_local_cli_credentials(fam, home_dir=eff_home)
+        b_hits = domain_hits.get(fam) or []
+        b_found = bool(b_hits)
+        if cli_auth:
+            summary = "Signed in locally ✓"
+        elif b_found:
+            summary = f"Active in browser ({b_hits[0]}) — click to connect"
+        elif cli_bin:
+            summary = "CLI installed — click Open Browser & Log In"
+        else:
+            summary = "Click Auto-Install CLIs or Open Browser & Log In"
+        accounts_out[fam] = {
+            "family": fam,
+            "label": meta["label"],
+            "cli": meta["cli"],
+            "cli_path": cli_bin,
+            "cli_installed": bool(cli_bin),
+            "cli_authenticated": cli_auth,
+            "browser_session_detected": b_found,
+            "matched_domains": b_hits,
+            "login_url": meta["login_url"],
+            "api_url": meta.get("api_url") or meta["login_url"],
+            "status_summary": summary,
+        }
+
+    result = {"ok": True, "accounts": accounts_out}
+    if use_cache:
+        _BROWSER_DETECT_CACHE["ts"] = now_t
+        _BROWSER_DETECT_CACHE["payload"] = result
+    return result
+
+
+def _ensure_gemini_agy_shim(gemini_exe: str, home_dir: Path | None = None) -> str:
+    """Create a user-local `agy` wrapper delegating to `gemini` when standalone Antigravity `agy` isn't installed."""
+    home = Path(home_dir) if home_dir else Path.home()
+    if os.name == "nt":
+        local_app = Path(os.environ.get("LOCALAPPDATA", str(home / "AppData" / "Local")))
+        shim_dir = local_app / "agy" / "bin"
+        shim_path = shim_dir / "agy.cmd"
+        if (shim_dir / "agy.exe").is_file():
+            return str(shim_dir / "agy.exe")
+        shim_dir.mkdir(parents=True, exist_ok=True)
+        shim_path.write_text(f'@echo off\r\n"{gemini_exe}" %*\r\n', encoding="utf-8")
+        return str(shim_path)
+    shim_dir = home / ".local" / "bin"
+    shim_path = shim_dir / "agy"
+    if not shim_path.exists():
+        shim_dir.mkdir(parents=True, exist_ok=True)
+        shim_path.write_text(f'#!/usr/bin/env sh\nexec "{gemini_exe}" "$@"\n', encoding="utf-8")
+        try:
+            shim_path.chmod(0o755)
+        except OSError:
+            pass
+    return str(shim_path)
+
+
+def auto_install_agent_clis(
+    *,
+    families: list[str] | None = None,
+    include_grok: bool = False,
+    sandbox: bool = False,
+    sandbox_id: str = DEFAULT_SANDBOX_ID,
+    base_dir: Path | str | None = None,
+    runner_fn=None,
+    which_fn=None,
+) -> dict[str, Any]:
+    """Automatically install Claude Code CLI (`claude`), Antigravity/Gemini CLI (`agy`/`gemini`), OpenAI Codex (`codex`), and optionally Grok (`grok`)."""
+    st_doc = load_wizard_state(sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)
+    grok_enabled = bool(include_grok or ((st_doc.get("services") or {}).get("grok") or {}).get("enabled"))
+    target_fams = list(families) if families else (["claude", "gemini", "chatgpt"] + (["grok"] if grok_enabled else []))
+    target_fams = [f for f in target_fams if f in PROVIDER_BROWSER_URLS]
+
+    if sandbox:
+        return {
+            "ok": True,
+            "installed": target_fams,
+            "already_present": [],
+            "failed": {},
+            "message": f"Sandbox verified auto-installation for {', '.join(target_fams)}.",
+        }
+
+    which = which_fn or shutil.which
+    run = runner_fn or (
+        lambda cmd: subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=180,
+            creationflags=paths.NO_WINDOW,
+        )
+    )
+
+    npm_cmd = which("npm.cmd" if os.name == "nt" else "npm") or which("npm")
+    if not npm_cmd and os.name == "nt":
+        cand_npm = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "nodejs" / "npm.cmd"
+        if cand_npm.is_file():
+            npm_cmd = str(cand_npm)
+        elif which("winget") and (runner_fn is not None or paths.is_interactive_desktop_session()):
+            try:
+                run([
+                    "winget", "install", "-e", "--id", "OpenJS.NodeJS.LTS",
+                    "--silent", "--accept-package-agreements", "--accept-source-agreements",
+                ])
+                if cand_npm.is_file():
+                    npm_cmd = str(cand_npm)
+                else:
+                    npm_cmd = which("npm.cmd") or which("npm")
+            except Exception:
+                npm_cmd = ""
+
+    installed_now: list[str] = []
+    already_present: list[str] = []
+    failed: dict[str, str] = {}
+
+    for fam in target_fams:
+        existing_bin = _find_cli_binary_for_family(fam, which_fn=which)
+        if existing_bin:
+            if fam == "gemini" and not which("agy"):
+                try:
+                    _ensure_gemini_agy_shim(existing_bin)
+                except Exception:
+                    pass
+            already_present.append(fam)
+            continue
+        if not npm_cmd:
+            failed[fam] = "Node.js / npm is required to auto-install CLI packages."
+            continue
+        pkg = PROVIDER_BROWSER_URLS[fam]["npm_pkg"]
+        try:
+            res = run([npm_cmd, "install", "-g", "--no-audit", "--no-fund", pkg])
+            if getattr(res, "returncode", 1) == 0:
+                installed_now.append(fam)
+                if fam == "gemini":
+                    gem_bin = _find_cli_binary_for_family("gemini", which_fn=which)
+                    if gem_bin and not which("agy"):
+                        _ensure_gemini_agy_shim(gem_bin)
+            else:
+                err_txt = (getattr(res, "stderr", "") or getattr(res, "stdout", "") or "npm install failed").strip()
+                failed[fam] = err_txt[:160]
+        except Exception as exc:
+            failed[fam] = str(exc)[:160]
+
+    _BROWSER_DETECT_CACHE["ts"] = 0.0
+    parts: list[str] = []
+    if installed_now:
+        parts.append(f"Installed: {', '.join(installed_now)}")
+    if already_present:
+        parts.append(f"Already installed: {', '.join(already_present)}")
+    if failed:
+        parts.append(f"Needs attention: {', '.join(f'{k} ({v})' for k, v in failed.items())}")
+    return {
+        "ok": len(failed) == 0 or len(installed_now) + len(already_present) > 0,
+        "installed": installed_now,
+        "already_present": already_present,
+        "failed": failed,
+        "accounts": detect_browser_and_cli_accounts(sandbox=False, which_fn=which).get("accounts", {}),
+        "message": " · ".join(parts) or "Agent CLI check complete.",
+    }
+
+
+def open_browser_provider_login(
+    family: str,
+    *,
+    sandbox: bool = False,
+    sandbox_id: str = DEFAULT_SANDBOX_ID,
+    base_dir: Path | str | None = None,
+    runner_fn=None,
+    browser_open_fn=None,
+) -> dict[str, Any]:
+    """Open the provider sign-in / key page in the user's browser AND launch CLI OAuth sign-in if the CLI is present."""
+    fam = str(family or "gemini").strip().lower()
+    if fam not in PROVIDER_BROWSER_URLS:
+        raise ValueError(f"Unsupported AI service family: {family}")
+    meta = PROVIDER_BROWSER_URLS[fam]
+    login_url = str(meta["login_url"])
+    opened_on_host = False
+
+    if sandbox:
+        return {
+            "ok": True,
+            "family": fam,
+            "login_url": login_url,
+            "opened_on_host": True,
+            "message": f"Sandbox verified: opened browser login for {meta['label']} ({login_url}).",
+        }
+
+    opener = browser_open_fn or webbrowser.open
+    if browser_open_fn is not None or ("PYTEST_CURRENT_TEST" not in os.environ and paths.is_interactive_desktop_session()):
+        try:
+            opened_on_host = bool(opener(login_url))
+        except Exception:
+            opened_on_host = False
+
+    cli_res = launch_service_login(
+        fam,
+        sandbox=False,
+        sandbox_id=sandbox_id,
+        base_dir=base_dir,
+        runner_fn=runner_fn,
+    )
+    return {
+        "ok": True,
+        "family": fam,
+        "login_url": login_url,
+        "opened_on_host": opened_on_host,
+        "cli_login_launched": bool(cli_res.get("launched")),
+        "message": f"Opened {meta['label']} in your browser ({login_url}). Complete sign-in there — Anchor will detect your account automatically.",
+    }
+
+
+EMAIL_DOMAIN_PRESETS: dict[str, dict[str, Any]] = {
+    "gmail.com": {
+        "family": "gmail",
+        "provider_name": "Google / Gmail",
+        "imap_host": "imap.gmail.com",
+        "imap_port": 993,
+        "app_password_url": "https://myaccount.google.com/apppasswords",
+    },
+    "googlemail.com": {
+        "family": "gmail",
+        "provider_name": "Google / Gmail",
+        "imap_host": "imap.gmail.com",
+        "imap_port": 993,
+        "app_password_url": "https://myaccount.google.com/apppasswords",
+    },
+    "outlook.com": {
+        "family": "outlook",
+        "provider_name": "Microsoft Outlook",
+        "imap_host": "outlook.office365.com",
+        "imap_port": 993,
+        "app_password_url": "https://account.live.com/proofs/AppPassword",
+    },
+    "hotmail.com": {
+        "family": "outlook",
+        "provider_name": "Microsoft Hotmail / Outlook",
+        "imap_host": "outlook.office365.com",
+        "imap_port": 993,
+        "app_password_url": "https://account.live.com/proofs/AppPassword",
+    },
+    "live.com": {
+        "family": "outlook",
+        "provider_name": "Microsoft Live / Outlook",
+        "imap_host": "outlook.office365.com",
+        "imap_port": 993,
+        "app_password_url": "https://account.live.com/proofs/AppPassword",
+    },
+    "msn.com": {
+        "family": "outlook",
+        "provider_name": "Microsoft MSN / Outlook",
+        "imap_host": "outlook.office365.com",
+        "imap_port": 993,
+        "app_password_url": "https://account.live.com/proofs/AppPassword",
+    },
+    "yahoo.com": {
+        "family": "custom",
+        "provider_name": "Yahoo Mail",
+        "imap_host": "imap.mail.yahoo.com",
+        "imap_port": 993,
+        "app_password_url": "https://login.yahoo.com/account/security",
+    },
+    "ymail.com": {
+        "family": "custom",
+        "provider_name": "Yahoo Mail",
+        "imap_host": "imap.mail.yahoo.com",
+        "imap_port": 993,
+        "app_password_url": "https://login.yahoo.com/account/security",
+    },
+    "icloud.com": {
+        "family": "custom",
+        "provider_name": "Apple iCloud Mail",
+        "imap_host": "imap.mail.me.com",
+        "imap_port": 993,
+        "app_password_url": "https://appleid.apple.com/account/manage",
+    },
+    "me.com": {
+        "family": "custom",
+        "provider_name": "Apple iCloud Mail",
+        "imap_host": "imap.mail.me.com",
+        "imap_port": 993,
+        "app_password_url": "https://appleid.apple.com/account/manage",
+    },
+}
+
+
+def auto_detect_email_provider(email_address: str) -> dict[str, Any]:
+    """Auto-detect IMAP host, port, family, and 1-click browser App Password URL from an email address."""
+    clean = str(email_address or "").strip().lower()
+    if "@" not in clean:
+        return {
+            "ok": False,
+            "family": "gmail",
+            "provider_name": "Email Provider",
+            "imap_host": "imap.gmail.com",
+            "imap_port": 993,
+            "app_password_url": "https://myaccount.google.com/apppasswords",
+        }
+    domain = clean.rsplit("@", 1)[-1].strip()
+    preset = EMAIL_DOMAIN_PRESETS.get(domain)
+    if preset:
+        auth_hint = (
+            "Tip: Click 1-Click Connect Running Windows Outlook or Microsoft 365 Sign-In if App Passwords are disabled on your Microsoft account."
+            if preset["family"] == "outlook"
+            else ""
+        )
+        return {"ok": True, "domain": domain, "verified_preset": True, "auth_hint": auth_hint, **preset}
+    return {
+        "ok": True,
+        "domain": domain,
+        "verified_preset": False,
+        "family": "custom",
+        "provider_name": domain,
+        "imap_host": f"imap.{domain}",
+        "imap_port": 993,
+        "app_password_url": "",
+        "auth_hint": f"Suggested IMAP host imap.{domain}:993 — verify with your mail provider or use 1-Click Local Outlook.",
     }
 
 
@@ -1897,7 +2609,7 @@ MISSION_STATEMENT_EXAMPLES: list[dict[str, str]] = [
     },
     {
         "id": "samwise",
-        "label": "Samwise Gamgee (John's Mission Statement)",
+        "label": "Personal Stewardship & Craft",
         "statement": (
             "Carry the work that matters to completion alongside the people I care about — "
             "advancing rigorous scholarship, teaching, and AI systems that empower human judgment "
@@ -1930,8 +2642,8 @@ GOAL_DOMAIN_EXAMPLES: list[dict[str, str]] = [
         "example": "Build and scale Ghost World Labs, Anchor AI Cockpits, and patent/venture portfolios",
     },
     {
-        "category": "Family, Trusts & Stewardship",
-        "example": "Keep family trusts, holding companies, finances, and youth mentorship organized with zero dropped balls",
+        "category": "Personal Operations & Stewardship",
+        "example": "Keep personal finances, legal planning, and community mentorship organized with zero dropped balls",
     },
     {
         "category": "Creative Writing, Fitness & Hobbies",
@@ -2003,7 +2715,7 @@ def brainstorm_mission_dialogue(
             "text": "Seek the truth, build enduring tools and scholarship, and empower the people we serve.",
         },
         {
-            "style": "Samwise Stewardship Style",
+            "style": "Personal Stewardship Style",
             "text": proposed,
         },
         {
@@ -2533,7 +3245,7 @@ def scan_and_propose_projects(
     # Also check sibling prior-install registries (e.g. anchor-plus-skills, Anchor2) for orphaned entries!
     sibling_prior_entries: dict[str, dict[str, Any]] = {}
     for root_dir in norm_roots:
-        for prior_name in ("anchor-plus-skills", "Anchor2", "Anchor-Merrill-Share", "anchor"):
+        for prior_name in ("anchor-plus-skills", "Anchor2", "anchor"):
             prior_reg = root_dir / prior_name / "rnd_registry.json"
             if prior_reg.is_file():
                 try:
@@ -3326,7 +4038,7 @@ def scaffold_starter_ai_cockpit(
     goal_name: str = "",
     group_folder: str = "",
     blurb: str = "",
-    user_display_name: str = "John",
+    user_display_name: str = "Collaborator",
     linked_material_paths: list[str] | None = None,
     mission_statement: str = "",
     initiatives_list: list[str] | None = None,
@@ -3531,7 +4243,7 @@ def provision_projects_and_cockpits(
     """
     st_doc = load_wizard_state(sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)
     prof = get_active_user_profile(sandbox_id if sandbox else "", sandbox=sandbox, base_dir=base_dir)
-    user_name = prof.get("display_name") or "John"
+    user_name = prof.get("display_name") or ("John" if paths.is_anchor_admin_edition(base_dir) else "Collaborator")
     if goals is None:
         goals = (st_doc.get("goals") or {}).get("items") or []
 
@@ -3997,10 +4709,13 @@ def get_full_wizard_bundle(
     ecg_path, ecg_checked = paths.resolve_ecgberht_root()
     receipt = build_readiness_receipt(sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)
     hub_root = _gwl_hub_root_for(sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)
+    is_admin_ed = paths.is_anchor_admin_edition(base_dir)
     try:
         import gwl_clearinghouse as _gwl
-        hub_catalog = _gwl.get_verified_model_catalog(hub_root=hub_root)
-        gwl_applicants = _gwl.list_applicant_signups(hub_root=hub_root)
+        hub_catalog = dict(_gwl.get_verified_model_catalog(hub_root=hub_root) or {})
+        if not is_admin_ed and str(hub_catalog.get("host") or "").lower() == "puter":
+            hub_catalog["host"] = "gwl-hub"
+        gwl_applicants = _gwl.list_applicant_signups(hub_root=hub_root) if is_admin_ed else []
     except Exception:
         hub_catalog = {}
         gwl_applicants = []
@@ -4012,7 +4727,8 @@ def get_full_wizard_bundle(
         {
             "registered": False,
             "sandbox": True,
-            "homebase_url": "https://gwl-server.tailb49f65.ts.net",
+            "homebase_url": "",
+            "canonical_github_repo": CANONICAL_ANCHOR_GITHUB_URL,
             "telemetry_enabled": True,
             "auto_pull_updates": bool((state.get("topology") or {}).get("auto_pull_updates", True)),
             "low_spec_mode": bool((state.get("topology") or {}).get("low_spec_mode", hw_prof["low_spec_recommended"])),
@@ -4020,9 +4736,14 @@ def get_full_wizard_bundle(
         if sandbox
         else _homebase_link_summary(base_dir)
     )
+    reg_view = _read_registration_receipt(sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)
+    browser_accts = detect_browser_and_cli_accounts(sandbox=sandbox)
     return {
         "ok": True,
         "admin_edition": paths.is_anchor_admin_edition(base_dir),
+        "canonical_github_repo": CANONICAL_ANCHOR_GITHUB_URL,
+        "registration": reg_view,
+        "browser_accounts": browser_accts,
         "sandbox": bool(sandbox),
         "sandbox_id": _safe_slug(sandbox_id or DEFAULT_SANDBOX_ID) if sandbox else "",
         "data_dir": str(state_dir(sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)),
@@ -4094,7 +4815,7 @@ def dispatch_wizard_action(
         req_lic = bool(body.get("require_license_ack") in (True, 1, "1", "true", "yes"))
         return save_user_identity(
             display_name=str(body.get("display_name") or ""),
-            pseudonym=str(body.get("pseudonym") or aap.PSEUDONYM_DEFAULT),
+            pseudonym=str(body.get("pseudonym") or ""),
             pseudonym_aliases=body.get("pseudonym_aliases"),
             steward_persona=str(body.get("steward_persona") or "Aladdin"),
             username=str(body.get("username") or ""),
@@ -4158,6 +4879,59 @@ def dispatch_wizard_action(
             sandbox_id=sid,
             base_dir=base_dir,
         )
+    if act == "auto_install_clis":
+        fams_raw = body.get("families")
+        fams_list = [str(x).strip().lower() for x in fams_raw] if isinstance(fams_raw, list) else None
+        return auto_install_agent_clis(
+            families=fams_list,
+            include_grok=bool(body.get("include_grok") in (True, 1, "1", "true", "yes")),
+            sandbox=use_sandbox,
+            sandbox_id=sid,
+            base_dir=base_dir,
+        )
+    if act == "detect_browser_accounts":
+        inc_hist = bool(body.get("include_browser_history") in (True, 1, "1", "true", "yes"))
+        return detect_browser_and_cli_accounts(sandbox=use_sandbox, include_browser_history=inc_hist)
+    if act == "open_browser_login":
+        return open_browser_provider_login(
+            family=str(body.get("family") or "gemini"),
+            sandbox=use_sandbox,
+            sandbox_id=sid,
+            base_dir=base_dir,
+        )
+    if act == "setup_tailscale_interactive":
+        return setup_tailscale_interactive(sandbox=use_sandbox)
+    if act == "register_anchor_repo":
+        return register_anchor_repository(
+            email=str(body.get("email") or body.get("contact_email") or ""),
+            owner=str(body.get("owner") or ""),
+            pseudonym=str(body.get("pseudonym") or ""),
+            tailscale_url=str(body.get("tailscale_url") or ""),
+            sandbox=use_sandbox,
+            sandbox_id=sid,
+            base_dir=base_dir,
+        )
+    if act == "detect_email_provider":
+        return auto_detect_email_provider(str(body.get("email") or body.get("email_address") or ""))
+    if act == "auto_connect_outlook":
+        if use_sandbox:
+            return {
+                "ok": True,
+                "outlook_running": True,
+                "message": "Sandbox verified: connected running Windows Outlook desktop app.",
+            }
+        res_out = comms_connector.auto_connect_local_outlook()
+        if res_out.get("outlook_running"):
+            st_doc = load_wizard_state(sandbox=False, sandbox_id=sid, base_dir=base_dir)
+            st_doc["comms"] = {
+                "configured": True,
+                "reconcile_summary": str(res_out.get("message") or "Connected local Windows Outlook desktop app."),
+                "updated_at": _utc_now_iso(),
+            }
+            if 6 not in st_doc["completed_steps"]:
+                st_doc["completed_steps"].append(6)
+            save_wizard_state(st_doc, sandbox=False, sandbox_id=sid, base_dir=base_dir)
+        return res_out
     if act == "configure_topology":
         if not use_sandbox and "_req_auth_ok" in body and not bool(body.get("_req_auth_ok")):
             return {"ok": False, "status_code": 401, "error": "unauthorized"}
@@ -4166,7 +4940,7 @@ def dispatch_wizard_action(
         return configure_mothership_topology(
             mode=str(body.get("mode") or "main_mothership"),
             remote_address=str(body.get("remote_address") or ""),
-            hub_endpoint=str(body.get("hub_endpoint") or "https://gwl-server.tailb49f65.ts.net"),
+            hub_endpoint=str(body.get("hub_endpoint") or ""),
             telemetry_enabled=bool(body.get("telemetry_enabled", True)),
             auto_pull_updates=bool(body.get("auto_pull_updates", True)),
             low_spec_mode=low_bool,
@@ -4204,7 +4978,7 @@ def dispatch_wizard_action(
             or body.get("remote_address")
             or os.environ.get("ANCHOR_HOMEBASE_URL")
             or topo_cur.get("coordination_hub")
-            or "https://gwl-server.tailb49f65.ts.net"
+            or ""
         ).strip()
         tel_en = bool(body.get("telemetry_enabled", topo_cur.get("telemetry_enabled", True)))
         if use_sandbox:
@@ -4557,13 +5331,24 @@ def build_or_resolve_exe_zip_package(
             "edition": edition,
             "hide_admin_and_download_links": (edition == "collaborator"),
         }, indent=2) + "\n"
+        clean_reg_json = json.dumps({
+            "schema": "anchor.mothership.registry.v1",
+            "updated_at": _utc_now_iso(),
+            "canonical_github_repo": CANONICAL_ANCHOR_GITHUB_URL,
+            "latest_version": paths.read_version(),
+            "motherships": [],
+        }, indent=2) + "\n"
         with _zf.ZipFile(base_ov, "r") as zin, _zf.ZipFile(buf, "w", compression=_zf.ZIP_DEFLATED) as zout:
             for item in zin.infolist():
-                if item.filename.replace("\\", "/") == "anchor-edition.json":
+                norm_fn = item.filename.replace("\\", "/")
+                if norm_fn == "anchor-edition.json":
+                    continue
+                if edition == "collaborator" and norm_fn == "mothership_registry.json":
                     continue
                 zout.writestr(item, zin.read(item.filename))
             zout.writestr("anchor-edition.json", ed_json)
             if edition == "collaborator":
+                zout.writestr("mothership_registry.json", clean_reg_json)
                 zout.writestr("DASHBOARD.md", "# Anchor Daily Dashboard\n\n## Focus Today\n\n## Active Priorities\n")
                 zout.writestr("PROJECTS.md", "# Projects\n")
                 zout.writestr("INBOX.md", "# Quick Capture Inbox\n")
@@ -4605,6 +5390,7 @@ def build_or_resolve_exe_zip_package(
                 repo_root = Path(__file__).resolve().parent
                 existing_names = set(zf.namelist())
                 for extra_name in (
+                    "Uninstall-Anchor.cmd",
                     "install-mac-linux.sh",
                     "Anchor.command",
                     "USER-ONBOARD.md",
@@ -5025,15 +5811,15 @@ def render_onboard_wizard_html(
           <div class="form-grid">
             <div>
               <label for="inpDisplayName">What is your name? (How your Steward addresses you locally)</label>
-              <input type="text" id="inpDisplayName" placeholder="e.g., Merrill, John">
+              <input type="text" id="inpDisplayName" placeholder="e.g., Alex, Jordan">
             </div>
             <div>
               <label for="inpPseudonym">Anchor Pseudonym / Synonym (Public Collaborator Identity)</label>
-              <input type="text" id="inpPseudonym" placeholder="e.g., Samwise Gamgee">
+              <input type="text" id="inpPseudonym" placeholder="e.g., Voyager, NorthStar">
             </div>
             <div>
               <label for="inpAliases">Optional Pseudonym Spelling Aliases (comma-separated)</label>
-              <input type="text" id="inpAliases" placeholder="e.g., Samwise Gamgi, Samwise">
+              <input type="text" id="inpAliases" placeholder="e.g., North Star">
             </div>
             <div>
               <label for="selPersona">Global Companion Steward Persona</label>
@@ -5053,7 +5839,7 @@ def render_onboard_wizard_html(
             <div class="form-grid">
               <div>
                 <label for="inpUsername">Mother Ship Username</label>
-                <input type="text" id="inpUsername" placeholder="e.g., john, merrill" autocomplete="username">
+                <input type="text" id="inpUsername" placeholder="e.g., alex" autocomplete="username">
               </div>
               <div>
                 <label for="inpContactEmail">Contact / Account Recovery Email (For Username &amp; Password Recovery Links)</label>
@@ -5098,7 +5884,7 @@ def render_onboard_wizard_html(
                   </div>
                 </div>
                 <div id="dualAuthBackupCodesList" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"></div>
-                <div class="muted" style="margin-top:6px">Standard 3-Layer 2FA Recovery: (1) 10 Single-Use Backup Codes above · (2) Verified Contact Email Recovery Link (<a href="/recover-account" style="color:var(--sky)">/recover-account</a>) · (3) System Admin Assisted Reset on the Puter Mothership.</div>
+                <div class="muted" style="margin-top:6px">Standard 3-Layer 2FA Recovery: (1) 10 Single-Use Backup Codes above · (2) Verified Contact Email Recovery Link (<a href="/recover-account" style="color:var(--sky)">/recover-account</a>) · (3) Local Mother Ship Assisted Reset.</div>
               </div>
             </div>
             <div style="margin-top:12px">
@@ -5147,39 +5933,80 @@ def render_onboard_wizard_html(
       <!-- STEP 2 -->
       <section class="wiz-step-pane" id="step-pane-2" hidden>
         <div class="wiz-card">
-          <h2>Step 2 · Mothership Topology, Automatic Website Updates, Laptop Mode &amp; Optional Tailscale</h2>
-          <p class="muted">Choose your Mothership role, confirm Automatic Website-Watched Version Updates (watches Ghost World Labs' signed <code>release-signal.json</code> online even without Tailscale), enable Low-Memory Saver Mode for older laptops, and optionally link Tailscale / Homebase.</p>
-          <div class="form-grid">
+          <h2>Step 2 · Optional Tailscale Setup, 1-Click Registry &amp; Automatic Updates</h2>
+          <p class="muted"><code>Anchor.exe</code> automatically installs Anchor and all 20 Ghost World Labs skills from the official Anchor repository below (no separate Skill Foundry repository needed).</p>
+
+          <div id="tsPromptBanner" class="proj-row" style="margin:12px 0;padding:14px 16px;border-color:#38bdf8;background:#0e1b2c" hidden>
             <div>
-              <label for="selTopologyMode">Mothership Role</label>
-              <select id="selTopologyMode">
-                <option value="main_mothership">Option A — This Computer IS a Main Mothership</option>
-                <option value="connect_remote_mothership">Option B — Connect to a Different Mothership (via Tailscale)</option>
-              </select>
+              <strong style="color:#7dd3fc">📡 Tailscale Is Not Set Up — Would You Like to Set Up Tailscale?</strong>
+              <div class="muted" style="margin-top:3px">Tailscale is optional and lets you reach your Mother Ship privately from a second laptop or phone. Automatic website-watched updates work without Tailscale.</div>
             </div>
-            <div>
-              <label for="inpRemoteMothership">Anchor Homebase / Coordination Hub URL (Optional Tailscale HTTPS or IP)</label>
-              <input type="text" id="inpRemoteMothership" value="https://gwl-server.tailb49f65.ts.net" placeholder="https://gwl-server.tailb49f65.ts.net">
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button type="button" class="btn primary" id="btnPromptInstallTailscale">📡 Yes — Install &amp; Sign In to Tailscale</button>
+              <button type="button" class="btn" id="btnPromptSkipTailscale">✓ No Thanks — Use Locally</button>
             </div>
           </div>
+
+          <div class="wiz-card" id="anchorRegistryCard" style="background:#101723;margin:12px 0;border-color:#10b981">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+              <h3 style="margin:0">📋 1-Click Official Anchor Registry (Connect Email for Automatic Updates)</h3>
+              <span class="pill" id="regReceiptBadge" style="background:#1e3a8a;color:#93c5fd">Ready to Register</span>
+            </div>
+            <div class="form-grid">
+              <div>
+                <label for="inpRegistryEmail">Email Address to Connect</label>
+                <input type="text" id="inpRegistryEmail" placeholder="you@example.com" autocomplete="email">
+              </div>
+              <div>
+                <label for="inpAnchorGithubRepo">Anchor GitHub Repository (Official Registry · Locked)</label>
+                <input type="text" id="inpAnchorGithubRepo" value="https://github.com/johncliechty/ghostworldlabs-anchor" readonly style="opacity:0.85;cursor:not-allowed;font-family:Consolas,monospace;color:#93c5fd">
+              </div>
+            </div>
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+              <button type="button" class="btn emerald" id="btnOneClickRegister">📌 Register with 1 Click</button>
+              <span class="muted" id="regReceiptDetail">Watches signed <code>release-signal.json</code> on the official Anchor GitHub repository for automatic updates.</span>
+            </div>
+          </div>
+
           <label style="display:flex;align-items:center;gap:8px;margin:10px 0 6px;font-size:13px;cursor:pointer">
             <input type="checkbox" id="chkAutoPullWebsiteUpdates" checked>
-            <span><strong>🌐 Automatic Website-Watched Future Updates (Recommended):</strong> Watch <code>release-signal.json</code> online (Ed25519-signed) and automatically pull new Anchor versions + all 20 Foundry skills in-place when idle (no Tailscale required)</span>
+            <span><strong>🌐 Automatic Website-Watched Future Updates (Recommended):</strong> Watch <code>release-signal.json</code> online (Ed25519-signed) and automatically pull new Anchor versions + all 20 skills in-place when idle</span>
           </label>
-          <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px;cursor:pointer">
+          <label style="display:flex;align-items:center;gap:8px;margin:6px 0 12px;font-size:13px;cursor:pointer">
             <input type="checkbox" id="chkLowSpecMode">
             <span><strong>💻 Older Windows Laptop / Low-Memory Mothership Mode:</strong> Cap hidden live panes to 2 and skip background Cave pre-warming (<span id="hwDetectSummary">checking RAM &amp; CPU…</span>)</span>
           </label>
-          <label style="display:flex;align-items:center;gap:8px;margin:6px 0 10px;font-size:13px;cursor:pointer">
-            <input type="checkbox" id="chkHomebaseTelemetry" checked>
-            <span><strong>Standard Homebase Link (Optional over Tailscale):</strong> Receive direct Homebase push updates and send sanitized journal entries &amp; error diagnostics</span>
-          </label>
+
           <div id="tsStatusBox" class="wiz-card" style="background:#101723"></div>
-          <div id="homebaseStatusBox" class="proj-row" style="margin-bottom:12px"></div>
+
+          <details style="margin-bottom:14px;padding:10px 14px;background:#101723;border:1px solid var(--border);border-radius:8px">
+            <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--sky)">Advanced (Optional): Connect to Another Mother Ship or Tailscale Coordination Hub</summary>
+            <div class="form-grid" style="margin-top:10px">
+              <div>
+                <label for="selTopologyMode">Mothership Role</label>
+                <select id="selTopologyMode">
+                  <option value="main_mothership">Option A — This Computer IS My Mother Ship (Default)</option>
+                  <option value="connect_remote_mothership">Option B — Connect to Another Mother Ship (via Tailscale)</option>
+                </select>
+              </div>
+              <div>
+                <label for="inpRemoteMothership">Optional Tailscale Peer / Coordination Hub HTTPS URL</label>
+                <input type="text" id="inpRemoteMothership" value="" placeholder="https://my-host.tailnet.ts.net (optional)">
+              </div>
+            </div>
+            <label style="display:flex;align-items:center;gap:8px;margin:6px 0 10px;font-size:13px;cursor:pointer">
+              <input type="checkbox" id="chkHomebaseTelemetry" checked>
+              <span>Share sanitized setup/error diagnostics when linked to a Tailscale Hub</span>
+            </label>
+            <div id="homebaseStatusBox" class="proj-row" style="margin-bottom:10px"></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button type="button" class="btn" id="btnInstallTailscale">📡 Install / Verify Tailscale</button>
+              <button type="button" class="btn" id="btnRegisterHomebase">🔗 Link Optional Tailscale Hub</button>
+            </div>
+          </details>
+
           <div style="display:flex;gap:10px;flex-wrap:wrap">
-            <button type="button" class="btn" id="btnInstallTailscale">📡 Auto-Install / Verify Tailscale</button>
-            <button type="button" class="btn emerald" id="btnRegisterHomebase">🔗 Register &amp; Sync with Anchor Homebase</button>
-            <button type="button" class="btn primary" id="btnSaveStep2">Save Topology, Register &amp; Continue to Step 3 →</button>
+            <button type="button" class="btn primary" id="btnSaveStep2">Save &amp; Continue to Step 3 (AI Agent CLIs &amp; Accounts) →</button>
           </div>
         </div>
       </section>
@@ -5188,8 +6015,22 @@ def render_onboard_wizard_html(
       <section class="wiz-step-pane" id="step-pane-3" hidden>
         <div class="wiz-card">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px">
-            <h2 style="margin:0">Step 3 · AI Services Menu, Credentials, Capability Tiers &amp; Live Verification</h2>
-            <button type="button" class="btn" id="btnRefreshLiveModels">🔄 Sync Live Models Now (Nightly + CLI Discovery)</button>
+            <h2 style="margin:0">Step 3 · Auto-Install AI Agent CLIs, Browser Account Sign-In &amp; Capability Tiers</h2>
+            <button type="button" class="btn" id="btnRefreshLiveModels">🔄 Sync Live Models Now</button>
+          </div>
+          <div id="autoInstallCliBanner" class="wiz-card" style="background:#101928;border-color:#38bdf8;margin-bottom:12px;padding:14px 18px">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+              <div>
+                <strong style="color:#7dd3fc;font-size:15px">⚡ 1-Click Auto-Install Agent CLIs &amp; Browser Account Detection</strong>
+                <div class="muted" style="margin-top:3px">Automatically install <strong>Claude Code CLI (`claude`)</strong>, <strong>Antigravity / Gemini CLI (`agy` / `gemini`)</strong>, <strong>OpenAI Codex CLI (`codex`)</strong>, and <strong>Grok (`grok`)</strong>, and check for open accounts in your browser so you can log in with 1 click!</div>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <button type="button" class="btn primary" id="btnAutoInstallClis">⬇ Auto-Install Agent CLIs</button>
+                <label style="display:inline-flex;align-items:center;gap:5px;margin:0;font-size:12.5px;cursor:pointer"><input type="checkbox" id="chkIncludeGrokCli"> Include Grok CLI</label>
+                <button type="button" class="btn" id="btnCheckBrowserAccounts">🌐 Check Open Browser Accounts</button>
+              </div>
+            </div>
+            <div id="browserAccountsBanner" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px;margin-top:10px"></div>
           </div>
           <div id="nightlyRefreshBanner" class="proj-row" style="margin-bottom:12px">
             <div>
@@ -5220,7 +6061,7 @@ def render_onboard_wizard_html(
           <h2>Step 4 · Interactive Brainstorming Dialogue: Mission Statement, Goals / Initiatives (Star Chart) &amp; Resource Discovery</h2>
           <p class="muted">
             <strong>How the Star Chart &amp; Cave of Wonders Work Together:</strong><br>
-            • <strong>Mission Statement &amp; Goals / Initiatives (What the Star Chart Charts):</strong> Start by brainstorming your overarching <strong>Mission Statement</strong> (with concise examples like <em>The New York Times</em> and <em>Samwise Gamgee</em>), iterate with your Steward until comfortable, then brainstorm your <strong>Goals / Initiatives</strong> (professional, teaching, ventures, creative, hobbies, family). <em>Goals</em> (longer-horizon outcomes &amp; directions) and <em>Initiatives</em> (concrete campaigns &amp; efforts) are similar though not identical — together they are what the <strong>Star Chart</strong> charts and what organizes the sections on the Projects page.<br>
+            • <strong>Mission Statement &amp; Goals / Initiatives (What the Star Chart Charts):</strong> Start by brainstorming your overarching <strong>Mission Statement</strong> (with concise examples like <em>The New York Times</em> and <em>Personal Stewardship</em>), iterate with your Steward until comfortable, then brainstorm your <strong>Goals / Initiatives</strong> (professional, teaching, ventures, creative, hobbies, family). <em>Goals</em> (longer-horizon outcomes &amp; directions) and <em>Initiatives</em> (concrete campaigns &amp; efforts) are similar though not identical — together they are what the <strong>Star Chart</strong> charts and what organizes the sections on the Projects page.<br>
             • <strong>Per-Goal / Initiative Resource Discovery (Steward + Gandalf + researchPrime):</strong> For each goal or initiative, describe any files/materials you have somewhere on disk (no exact path needed — Gandalf will find them!) plus websites or research topics for <code>researchPrime</code> &amp; <code>Gandalf</code> to organize.
           </p>
 
@@ -5238,9 +6079,9 @@ def render_onboard_wizard_html(
                 <button type="button" class="btn" data-use-mission="We seek the truth and help people understand the world.">Use / Adapt NY Times Style</button>
               </div>
               <div class="proj-row" style="flex-direction:column;align-items:flex-start;margin:0">
-                <div><strong>🪔 Samwise Gamgee (John's Mission Statement)</strong> <span class="pill">Personal Stewardship</span></div>
+                <div><strong>🪔 Personal Stewardship &amp; Craft</strong> <span class="pill">Personal Stewardship</span></div>
                 <div style="font-style:italic;color:#6ee7b7;margin:4px 0">"Carry the work that matters to completion alongside the people I care about — advancing rigorous scholarship, teaching, and AI systems that empower human judgment without ever dropping the ball on family, faith, or stewardship."</div>
-                <button type="button" class="btn" data-use-mission="Carry the work that matters to completion alongside the people I care about — advancing rigorous scholarship, teaching, and AI systems that empower human judgment without ever dropping the ball on family, faith, or stewardship.">Use / Adapt Samwise Mission</button>
+                <button type="button" class="btn" data-use-mission="Carry the work that matters to completion alongside the people I care about — advancing rigorous scholarship, teaching, and AI systems that empower human judgment without ever dropping the ball on family, faith, or stewardship.">Use / Adapt Stewardship Mission</button>
               </div>
               <div class="proj-row" style="flex-direction:column;align-items:flex-start;margin:0">
                 <div><strong>🧭 Scholar, Builder &amp; Mentor</strong> <span class="pill">Action-Oriented</span></div>
@@ -5275,7 +6116,7 @@ def render_onboard_wizard_html(
               <button type="button" class="btn" data-add-goal-example="Publish flagship empirical and mathematical papers in top journals (JCR, Management Science)">+ 📚 Flagship Research</button>
               <button type="button" class="btn" data-add-goal-example="Deliver AI-enhanced MBA &amp; undergraduate courses with interactive oral-exam and study tools">+ 🎓 Teaching &amp; Mentorship</button>
               <button type="button" class="btn" data-add-goal-example="Build and scale Ghost World Labs, Anchor AI Cockpits, and patent/venture portfolios">+ 💻 AI Systems &amp; Ventures</button>
-              <button type="button" class="btn" data-add-goal-example="Keep family trusts, holding companies, finances, and youth mentorship organized with zero dropped balls">+ 🏛 Family &amp; Trusts</button>
+              <button type="button" class="btn" data-add-goal-example="Keep personal finances, legal planning, and community mentorship organized with zero dropped balls">+ 🏛 Personal Operations &amp; Stewardship</button>
               <button type="button" class="btn" data-add-goal-example="Write novel chapters &amp; fables, train consistently for CrossFit, and build personal math/memory tools">+ 🎨 Creative Writing &amp; Hobbies</button>
             </div>
 
@@ -5294,7 +6135,7 @@ def render_onboard_wizard_html(
           </div>
 
           <label for="txtPriorityNow" style="margin-top:12px">Cave of Wonders · What are the most important goals / initiatives or main things you are working on right now? (Used to propose what goes ★ Active vs. ↳ On Deck)</label>
-          <textarea id="txtPriorityNow" placeholder="e.g., Finishing the Empirical Paper for JCR, preparing the Smeal AI Teaching Grant, and polishing Anchor Onboarding"></textarea>
+          <textarea id="txtPriorityNow" placeholder="e.g., Finishing the Q4 research manuscript, preparing upcoming course materials, and launching the new software prototype"></textarea>
           <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">
             <button type="button" class="btn emerald" id="btnOrganizeGoals">🧭 Set Goals / Initiatives &amp; Continue to Project Organization (Step 5) →</button>
             <button type="button" class="btn" id="btnSkipToProjects">Jump Straight to Scanning Projects (Natural Organization, Step 5) →</button>
@@ -5403,32 +6244,56 @@ def render_onboard_wizard_html(
       <!-- STEP 6 -->
       <section class="wiz-step-pane" id="step-pane-6" hidden>
         <div class="wiz-card">
-          <h2>Step 6 · Calendar &amp; Email Integration (Read-Only Chief-of-Staff Schedule Sync)</h2>
-          <p class="muted">Connect Google Workspace / Gmail, Microsoft 365 / Outlook, or Custom IMAP + ICS Calendar URLs. Credentials are stored exclusively in the OS Credential Vault.</p>
-          <div class="form-grid">
-            <div>
-              <label for="selCommsFamily">Provider Preset</label>
-              <select id="selCommsFamily">
-                <option value="gmail">Google Workspace / Gmail + Google Calendar</option>
-                <option value="outlook">Microsoft 365 / Outlook + Exchange Calendar</option>
-                <option value="custom">Custom / Institutional IMAP &amp; ICS</option>
-              </select>
-            </div>
-            <div>
-              <label for="inpCommsEmail">Email Address</label>
-              <input type="text" id="inpCommsEmail" placeholder="researcher@example.com">
-            </div>
-            <div>
-              <label for="inpCommsSecret">App Password / OAuth Token (Stored in OS Vault)</label>
-              <input type="password" id="inpCommsSecret" placeholder="••••••••••••••••">
-            </div>
-            <div>
-              <label for="inpCommsIcs">Private Calendar ICS URL</label>
-              <input type="text" id="inpCommsIcs" placeholder="https://calendar.google.com/calendar/ical/example/basic.ics">
+          <h2>Step 6 · Easy Email &amp; Calendar Linker (Read-Only Schedule &amp; Inbox Triage)</h2>
+          <p class="muted">Link your email in seconds: use <strong>1-Click Windows Outlook</strong> (if Outlook is open on this PC), OR simply type your email address below — Anchor automatically fills the server settings for Gmail, Outlook/Hotmail, Yahoo, iCloud, or university/work accounts and stores your App Password securely in the Windows OS Vault.</p>
+
+          <div class="wiz-card" style="background:#101928;border-color:#10b981;margin:12px 0;padding:14px 18px">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+              <div>
+                <strong style="color:#6ee7b7">📨 Option A (Zero Password): Running Windows Outlook Desktop App</strong>
+                <div class="muted">If you use Classic Outlook on Windows, click once to link your inbox &amp; calendar directly.</div>
+              </div>
+              <button type="button" class="btn emerald" id="btnWizAutoOutlook">⚡ 1-Click Connect Windows Outlook</button>
             </div>
           </div>
+
+          <div class="wiz-card" style="background:#101723;margin:12px 0;padding:16px 18px">
+            <h3 style="margin:0 0 6px">✉ Option B: Connect Gmail, Outlook.com, Yahoo, iCloud, or Any Email</h3>
+            <div class="form-grid">
+              <div>
+                <label for="inpCommsEmail">1. Enter Your Email Address (Auto-Detects Provider)</label>
+                <input type="text" id="inpCommsEmail" placeholder="you@example.com or faculty@example.org" autocomplete="email">
+                <div class="muted" id="wizDetectedEmailHint" style="margin-top:4px;color:#7dd3fc">Type your email to auto-configure server settings.</div>
+              </div>
+              <div>
+                <label for="inpCommsSecret">2. Paste App Password (Stored in Windows OS Vault)</label>
+                <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                  <input type="password" id="inpCommsSecret" placeholder="Paste 16-char App Password" style="flex:1;min-width:180px">
+                  <button type="button" class="btn" id="btnOpenEmailAppPwd">🔑 Get App Password in Browser ↗</button>
+                </div>
+              </div>
+            </div>
+            <details style="margin-top:8px">
+              <summary class="muted" style="cursor:pointer">Optional: Calendar ICS Feed URL &amp; Provider Preset</summary>
+              <div class="form-grid" style="margin-top:8px">
+                <div>
+                  <label for="selCommsFamily">Provider Preset</label>
+                  <select id="selCommsFamily">
+                    <option value="gmail">Google Workspace / Gmail + Google Calendar</option>
+                    <option value="outlook">Microsoft 365 / Outlook + Exchange Calendar</option>
+                    <option value="custom">Yahoo / iCloud / Custom IMAP &amp; ICS</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="inpCommsIcs">Optional Private Calendar ICS URL</label>
+                  <input type="text" id="inpCommsIcs" placeholder="https://calendar.google.com/calendar/ical/.../basic.ics">
+                </div>
+              </div>
+            </details>
+          </div>
+
           <div style="display:flex;gap:10px;flex-wrap:wrap">
-            <button type="button" class="btn primary" id="btnSaveComms">✓ Save &amp; Reconcile Schedule →</button>
+            <button type="button" class="btn primary" id="btnSaveComms">✓ Connect Email &amp; Continue →</button>
             <button type="button" class="btn" id="btnSkipComms">Skip for Now &amp; View Readiness Receipt (Step 7) →</button>
           </div>
         </div>
@@ -5440,8 +6305,10 @@ def render_onboard_wizard_html(
           <h2>Step 7 · Complete Readiness Receipt &amp; AI Cockpit Launchpad</h2>
           <p class="muted">Everything is verified and wired. Launch directly into the Cave of Wonders or open any of your newly provisioned AI Cockpits below.</p>
           <div id="receiptChecksBox" style="margin:14px 0"></div>
-          <h3>🏛 Ghost World Labs Central Applicant Repository (`puter` / `gwl-hub`)</h3>
-          <div id="gwlApplicantsBox" style="margin:14px 0"></div>
+          <div id="gwlApplicantsWrap" {"" if is_admin else "hidden"}>
+            <h3>🏛 Ghost World Labs Collaborator Directory</h3>
+            <div id="gwlApplicantsBox" style="margin:14px 0"></div>
+          </div>
           <h3>🚀 Your Provisioned AI Cockpits (Active · On Deck · Parked)</h3>
           <div id="receiptCockpitsBox" style="margin:14px 0"></div>
           <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:18px">
@@ -5610,8 +6477,9 @@ def render_onboard_wizard_html(
             <button type="button" class="btn" data-act-savekey="${{svc.family}}">🔑 Save Key</button>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
-            <button type="button" class="btn primary" data-act-login="${{svc.family}}">🔐 Sign In / Subscription</button>
-            <button type="button" class="btn" data-act-update="${{svc.family}}">Check / Update CLI</button>
+            <button type="button" class="btn primary" data-act-browser-login="${{svc.family}}">🌐 Open Browser &amp; Log In</button>
+            <button type="button" class="btn" data-act-login="${{svc.family}}">🔐 CLI Terminal Login</button>
+            <button type="button" class="btn" data-act-update="${{svc.family}}">Check CLI</button>
             <button type="button" class="btn emerald" data-act-test="${{svc.family}}">⚡ Verify &amp; Live Test Tier</button>
           </div>
         `;
@@ -5652,6 +6520,18 @@ def render_onboard_wizard_html(
           await saveServiceCardConfig(fam, {{ auth_mode: 'api_key', api_key_value: val, enabled: true }});
           document.getElementById('wizBanner').textContent = `Stored API key for ${{fam}} in the OS Credential Vault and enabled service!`;
           refreshBundle();
+        }});
+      }});
+
+      grid.querySelectorAll('[data-act-browser-login]').forEach((btn) => {{
+        btn.addEventListener('click', async () => {{
+          const fam = btn.getAttribute('data-act-browser-login');
+          const out = await callWizardAction('open_browser_login', {{ family: fam }});
+          if (out && out.login_url && !out.opened_on_host) {{
+            window.open(out.login_url, '_blank', 'noopener,noreferrer');
+          }}
+          document.getElementById('wizBanner').textContent = out.message || `Opened browser login for ${{fam}}.`;
+          startBrowserLoginPoll(fam);
         }});
       }});
 
@@ -5763,13 +6643,27 @@ def render_onboard_wizard_html(
     function hydrateFromBundle(b) {{
       const prof = b.profile || {{}};
       document.getElementById('inpDisplayName').value = prof.display_name || '';
-      document.getElementById('inpPseudonym').value = prof.pseudonym || 'Samwise Gamgee';
+      document.getElementById('inpPseudonym').value = prof.pseudonym || '';
       document.getElementById('inpAliases').value = (prof.pseudonym_aliases || []).join(', ');
       document.getElementById('selPersona').value = prof.steward_persona || 'Aladdin';
       const uEl = document.getElementById('inpUsername');
-      if (uEl) uEl.value = prof.username || (prof.display_name || 'john').toLowerCase().replace(/\\s+/g, '');
+      if (uEl) uEl.value = prof.username || (prof.display_name ? prof.display_name.toLowerCase().replace(/\\s+/g, '') : '');
       const emEl = document.getElementById('inpContactEmail');
       if (emEl) emEl.value = prof.contact_email || '';
+      const regView = b.registration || {{}};
+      const regEmEl = document.getElementById('inpRegistryEmail');
+      if (regEmEl && !regEmEl.value) regEmEl.value = regView.email || prof.contact_email || '';
+      const repoEl = document.getElementById('inpAnchorGithubRepo');
+      if (repoEl) {{
+        repoEl.value = b.canonical_github_repo || 'https://github.com/johncliechty/ghostworldlabs-anchor';
+        repoEl.readOnly = true;
+      }}
+      const regBadge = document.getElementById('regReceiptBadge');
+      if (regBadge) {{
+        regBadge.textContent = regView.registered ? `✓ REGISTERED (${{regView.email || 'Active'}})` : 'Ready to Register';
+        regBadge.style.background = regView.registered ? '#064e3b' : '#1e3a8a';
+        regBadge.style.color = regView.registered ? '#6ee7b7' : '#93c5fd';
+      }}
       const chk2fa = document.getElementById('chkDualAuth');
       if (chk2fa) chk2fa.checked = Boolean(prof.dual_auth_enabled);
       const sel2fa = document.getElementById('selDualAuthMethod');
@@ -5801,7 +6695,7 @@ def render_onboard_wizard_html(
       }}
       const topAuthPill = document.getElementById('topAuthStatusPill');
       if (topAuthPill) {{
-        topAuthPill.textContent = `🔐 User: ${{prof.username || 'john'}} · ${{prof.dual_auth_enabled ? '2FA ON' : 'Token Ready'}}`;
+        topAuthPill.textContent = `🔐 User: ${{prof.username || prof.display_name || 'local'}} · ${{prof.dual_auth_enabled ? '2FA ON' : 'Token Ready'}}`;
       }}
 
       const nr = b.nightly_refresh || {{}};
@@ -5815,10 +6709,15 @@ def render_onboard_wizard_html(
       }}
 
       const ts = b.tailscale || {{}};
+      const tsPrompt = document.getElementById('tsPromptBanner');
+      if (tsPrompt) {{
+        const skippedTs = window._skippedTailscalePrompt === true;
+        tsPrompt.hidden = Boolean((ts.installed && ts.running) || skippedTs);
+      }}
       document.getElementById('tsStatusBox').innerHTML = `
-        <strong>Tailscale Status:</strong> ${{ts.installed ? 'Installed ✓' : 'Not installed'}} ·
-        <strong>Node IP:</strong> ${{ts.tailscale_ip || 'pending'}} ·
-        <strong>Tailscale URL:</strong> <code>${{ts.tailscale_url || 'pending'}}</code> ·
+        <strong>Tailscale Status:</strong> ${{ts.installed ? (ts.running ? 'Connected ✓' : 'Installed · Not Signed In') : 'Not installed (Optional)'}} ·
+        <strong>Node IP:</strong> ${{ts.tailscale_ip || 'local-only'}} ·
+        <strong>Tailscale URL:</strong> <code>${{ts.tailscale_url || 'http://127.0.0.1:8777'}}</code> ·
         <strong>Ecgberht Engine:</strong> ${{b.ecgberht && b.ecgberht.ok ? 'Ready ✓ (' + b.ecgberht.root + ')' : 'Missing'}}
         <div class="muted">${{ts.note || ''}}</div>
       `;
@@ -5828,10 +6727,10 @@ def render_onboard_wizard_html(
         const hbReg = Boolean(hb.registered);
         hbBox.innerHTML = `
           <div>
-            <strong>🏠 Anchor Homebase Registration:</strong> ${{hbReg ? 'Registered ✓' : 'Pending Registration (Connect Tailscale &amp; Click Register)'}}
-            <div class="muted">Homebase: <code>${{hb.homebase_url || 'https://gwl-server.tailb49f65.ts.net'}}</code> · Node ID: <code>${{hb.mothership_id || 'pending'}}</code> · Journal/Error Sync: ${{hb.telemetry_enabled !== false ? 'Enabled' : 'Off'}}</div>
+            <strong>🏠 Optional Tailscale Hub Link:</strong> ${{hbReg ? 'Linked ✓' : 'Not Linked (Website Auto-Updates Active)'}}
+            <div class="muted">Hub: <code>${{hb.homebase_url || 'none (optional)'}}</code> · Node ID: <code>${{hb.mothership_id || 'local'}}</code></div>
           </div>
-          <span class="pill" style="background:${{hbReg ? '#064e3b' : '#451a03'}};color:${{hbReg ? '#6ee7b7' : '#fde68a'}}">${{hbReg ? 'LINKED ✓' : 'REGISTER IN STEP 2'}}</span>
+          <span class="pill" style="background:${{hbReg ? '#064e3b' : '#243247'}};color:${{hbReg ? '#6ee7b7' : '#93c5fd'}}">${{hbReg ? 'LINKED ✓' : 'OPTIONAL'}}</span>
         `;
       }}
       const chkHbTel = document.getElementById('chkHomebaseTelemetry');
@@ -5870,9 +6769,10 @@ def render_onboard_wizard_html(
         ).join('');
       }}
       const inpRem = document.getElementById('inpRemoteMothership');
-      if (inpRem && hb.homebase_url && inpRem.value === 'https://gwl-server.tailb49f65.ts.net') {{
+      if (inpRem && hb.homebase_url && !inpRem.value) {{
         inpRem.value = hb.homebase_url;
       }}
+      renderBrowserAccountsBanner((b.browser_accounts && b.browser_accounts.accounts) || {{}});
 
       document.getElementById('readinessNoteBox').textContent = b.readiness_explanation || '';
       renderServices(b.services || {{}});
@@ -5887,18 +6787,18 @@ def render_onboard_wizard_html(
       renderHierarchyTree(b.project_hierarchy || (b.state && b.state.projects && b.state.projects.hierarchy) || {{}});
       renderReceipt(b.receipt || {{}});
       const gwlBox = document.getElementById('gwlApplicantsBox');
-      if (gwlBox) {{
+      if (gwlBox && b.admin_edition) {{
         const apps = b.gwl_applicants || [];
         if (!apps.length) {{
-          gwlBox.innerHTML = '<p class="muted">Save Step 1 to register this individual in the Puter (`gwl-hub` + `C:\\dev\\GhostWorldLabs-Hub`) Central Applicant Repository.</p>';
+          gwlBox.innerHTML = '<p class="muted">No collaborator records registered yet.</p>';
         }} else {{
           gwlBox.innerHTML = apps.map((a) => `
             <div class="proj-row">
               <div>
                 <strong>${{a.display_name}}</strong> (<code>${{a.username}}</code>) · Pseudonym: <strong>${{a.pseudonym}}</strong> (<code>${{a.did}}</code>)
-                <div class="muted">Host: ${{a.hostname || 'local'}} (${{a.tailscale_ip || 'local'}}) · Topology: ${{a.topology_mode}} · 2FA: ${{a.dual_auth_enabled ? 'ON' : 'Off'}} · Services: ${{(a.enabled_services || []).join(', ') || 'pending'}} · Backed up in <code>C:\\dev\\GhostWorldLabs-Hub</code> &amp; <code>C:\\dev\\Anchor\\gwl_hub_repository</code></div>
+                <div class="muted">Host: ${{a.hostname || 'local'}} (${{a.tailscale_ip || 'local'}}) · Topology: ${{a.topology_mode}} · 2FA: ${{a.dual_auth_enabled ? 'ON' : 'Off'}} · Services: ${{(a.enabled_services || []).join(', ') || 'pending'}}</div>
               </div>
-              <span class="pill" style="background:#064e3b;color:#6ee7b7">REGISTERED ON PUTER ✓</span>
+              <span class="pill" style="background:#064e3b;color:#6ee7b7">REGISTERED ✓</span>
             </div>
           `).join('');
         }}
@@ -6338,11 +7238,122 @@ def render_onboard_wizard_html(
       showStep(2);
     }});
 
+    let _wizLoginPoll = null;
+    function renderBrowserAccountsBanner(accountsMap) {{
+      const box = document.getElementById('browserAccountsBanner');
+      if (!box) return;
+      box.innerHTML = '';
+      ['claude', 'gemini', 'chatgpt', 'grok'].forEach((fam) => {{
+        const info = accountsMap[fam];
+        if (!info) return;
+        const div = document.createElement('div');
+        div.style.cssText = 'padding:8px 10px;border-radius:7px;background:#0b111b;border:1px solid #263449;display:flex;flex-direction:column;gap:4px';
+        const pillBg = info.cli_authenticated ? '#064e3b' : (info.browser_session_detected ? '#1e3a8a' : '#451a03');
+        const pillFg = info.cli_authenticated ? '#6ee7b7' : (info.browser_session_detected ? '#93c5fd' : '#fde68a');
+        const pillTxt = info.cli_authenticated ? '✓ Signed In' : (info.browser_session_detected ? '🌐 Open in Browser' : 'Log In Ready');
+        div.innerHTML = `
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:4px">
+            <strong style="font-size:12.5px">${{info.label}}</strong>
+            <span class="pill" style="background:${{pillBg}};color:${{pillFg}}">${{pillTxt}}</span>
+          </div>
+          <div class="muted" style="font-size:11.5px">${{info.status_summary}}</div>
+          <button type="button" class="btn" style="font-size:11.5px;padding:5px 8px;margin-top:2px" data-banner-login="${{fam}}">🌐 Open Browser &amp; Log In</button>
+        `;
+        box.appendChild(div);
+      }});
+      box.querySelectorAll('[data-banner-login]').forEach((b) => {{
+        b.addEventListener('click', async () => {{
+          const fam = b.getAttribute('data-banner-login');
+          const out = await callWizardAction('open_browser_login', {{ family: fam }});
+          if (out && typeof out.login_url === 'string' && out.login_url.startsWith('https://') && !out.opened_on_host) {{
+            window.open(out.login_url, '_blank', 'noopener,noreferrer');
+          }}
+          document.getElementById('wizBanner').textContent = out.message || `Opened browser login for ${{fam}}.`;
+          startBrowserLoginPoll(fam);
+        }});
+      }});
+    }}
+
+    function startBrowserLoginPoll(fam) {{
+      clearInterval(_wizLoginPoll);
+      let n = 0;
+      _wizLoginPoll = setInterval(async () => {{
+        n += 1;
+        const det = await callWizardAction('detect_browser_accounts', {{ include_browser_history: false }});
+        if (det && det.accounts) {{
+          renderBrowserAccountsBanner(det.accounts);
+          if (det.accounts[fam] && det.accounts[fam].cli_authenticated) {{
+            clearInterval(_wizLoginPoll);
+            document.getElementById('wizBanner').textContent = `✓ ${{det.accounts[fam].label}} is now signed in!`;
+            await refreshBundle();
+            return;
+          }}
+        }}
+        if (n >= 60) {{
+          clearInterval(_wizLoginPoll);
+          document.getElementById('wizBanner').textContent = 'Still waiting for sign-in — click Check Open Browser Accounts & CLI Logins once signed in.';
+        }}
+      }}, 3000);
+    }}
+
+    const btnPromptTsYes = document.getElementById('btnPromptInstallTailscale');
+    if (btnPromptTsYes) {{
+      btnPromptTsYes.addEventListener('click', async () => {{
+        const out = await callWizardAction('setup_tailscale_interactive', {{}});
+        document.getElementById('wizBanner').textContent = out.message || 'Launched Tailscale setup!';
+        await refreshBundle();
+      }});
+    }}
+    const btnPromptTsSkip = document.getElementById('btnPromptSkipTailscale');
+    if (btnPromptTsSkip) {{
+      btnPromptTsSkip.addEventListener('click', () => {{
+        window._skippedTailscalePrompt = true;
+        const p = document.getElementById('tsPromptBanner');
+        if (p) p.hidden = true;
+        document.getElementById('wizBanner').textContent = 'Continuing locally without Tailscale (automatic website-watched updates are active).';
+      }});
+    }}
+
+    const btnOneClickReg = document.getElementById('btnOneClickRegister');
+    if (btnOneClickReg) {{
+      btnOneClickReg.addEventListener('click', async () => {{
+        const em = (document.getElementById('inpRegistryEmail') || {{}}).value || (document.getElementById('inpContactEmail') || {{}}).value || '';
+        const out = await callWizardAction('register_anchor_repo', {{ email: em }});
+        document.getElementById('wizBanner').textContent = out.message || (out.ok ? 'Registered!' : 'Please enter your email address first.');
+        await refreshBundle();
+      }});
+    }}
+
+    const btnAutoClis = document.getElementById('btnAutoInstallClis');
+    if (btnAutoClis) {{
+      btnAutoClis.addEventListener('click', async () => {{
+        btnAutoClis.disabled = true;
+        const incGrok = Boolean((document.getElementById('chkIncludeGrokCli') || {{}}).checked);
+        document.getElementById('wizBanner').textContent = 'Installing Claude Code CLI, Antigravity/Gemini CLI & OpenAI Codex CLI' + (incGrok ? ' + Grok CLI' : '') + '…';
+        try {{
+          const out = await callWizardAction('auto_install_clis', {{ include_grok: incGrok }});
+          document.getElementById('wizBanner').textContent = out.message || 'Agent CLI check & auto-install complete!';
+          await refreshBundle();
+        }} finally {{
+          btnAutoClis.disabled = false;
+        }}
+      }});
+    }}
+
+    const btnCheckBrowser = document.getElementById('btnCheckBrowserAccounts');
+    if (btnCheckBrowser) {{
+      btnCheckBrowser.addEventListener('click', async () => {{
+        const out = await callWizardAction('detect_browser_accounts', {{ include_browser_history: true }});
+        if (out && out.accounts) renderBrowserAccountsBanner(out.accounts);
+        document.getElementById('wizBanner').textContent = '✓ Checked open browser accounts (read-only domain check) and local CLI credentials!';
+      }});
+    }}
+
     document.getElementById('btnInstallTailscale').addEventListener('click', async () => {{
       const chkTel = document.getElementById('chkHomebaseTelemetry');
       const chkAuto = document.getElementById('chkAutoPullWebsiteUpdates');
       const chkLow = document.getElementById('chkLowSpecMode');
-      const out = await callWizardAction('configure_topology', {{
+      await callWizardAction('configure_topology', {{
         mode: document.getElementById('selTopologyMode').value,
         remote_address: document.getElementById('inpRemoteMothership').value,
         telemetry_enabled: chkTel ? chkTel.checked : true,
@@ -6363,28 +7374,35 @@ def render_onboard_wizard_html(
           telemetry_enabled: chkTel ? chkTel.checked : true,
         }});
         document.getElementById('wizBanner').textContent = out.registered
-          ? `Registered with Anchor Homebase (${{out.homebase_url}}) — push updates & journal/error sync active!`
-          : `Homebase link initialized locally (${{out.error || 'website auto-updates are active; connect Tailscale anytime to link Homebase'}}).`;
+          ? `Linked with Tailscale Hub (${{out.homebase_url}})!`
+          : `Saved local settings (${{out.error || 'website auto-updates are active'}}).`;
         await refreshBundle();
       }});
     }}
 
     document.getElementById('btnSaveStep2').addEventListener('click', async () => {{
+      const regEm = (document.getElementById('inpRegistryEmail') || {{}}).value || '';
+      if (regEm && regEm.includes('@')) {{
+        await callWizardAction('register_anchor_repo', {{ email: regEm }});
+      }}
       const chkTel = document.getElementById('chkHomebaseTelemetry');
       const chkAuto = document.getElementById('chkAutoPullWebsiteUpdates');
       const chkLow = document.getElementById('chkLowSpecMode');
       const telOn = chkTel ? chkTel.checked : true;
+      const remVal = (document.getElementById('inpRemoteMothership') || {{}}).value || '';
       await callWizardAction('configure_topology', {{
         mode: document.getElementById('selTopologyMode').value,
-        remote_address: document.getElementById('inpRemoteMothership').value,
+        remote_address: remVal,
         telemetry_enabled: telOn,
         auto_pull_updates: chkAuto ? chkAuto.checked : true,
         low_spec_mode: chkLow ? chkLow.checked : false,
       }});
-      await callWizardAction('register_with_homebase', {{
-        homebase_url: document.getElementById('inpRemoteMothership').value,
-        telemetry_enabled: telOn,
-      }});
+      if (remVal.trim()) {{
+        await callWizardAction('register_with_homebase', {{
+          homebase_url: remVal.trim(),
+          telemetry_enabled: telOn,
+        }});
+      }}
       await refreshBundle();
       showStep(3);
     }});
@@ -6463,12 +7481,60 @@ def render_onboard_wizard_html(
       showStep(6);
     }});
 
+    let _lastAppPwdUrl = 'https://myaccount.google.com/apppasswords';
+    let _lastDetectedImapHost = '';
+    const inpCommsEmailEl = document.getElementById('inpCommsEmail');
+    if (inpCommsEmailEl) {{
+      inpCommsEmailEl.addEventListener('change', async () => {{
+        const val = inpCommsEmailEl.value.trim();
+        if (!val.includes('@')) return;
+        const det = await callWizardAction('detect_email_provider', {{ email: val }});
+        if (det && det.ok) {{
+          const famSel = document.getElementById('selCommsFamily');
+          if (famSel && det.family) famSel.value = det.family;
+          _lastDetectedImapHost = det.imap_host || '';
+          _lastAppPwdUrl = det.app_password_url || '';
+          const btnPwd = document.getElementById('btnOpenEmailAppPwd');
+          if (btnPwd) btnPwd.disabled = !_lastAppPwdUrl;
+          const hint = document.getElementById('wizDetectedEmailHint');
+          if (hint) {{
+            const tag = det.verified_preset ? '✓ Auto-detected' : 'ℹ Suggested';
+            hint.textContent = `${{tag}} ${{det.provider_name}} (${{det.imap_host}}:${{det.imap_port}})` + (det.auth_hint ? ` · ${{det.auth_hint}}` : '');
+          }}
+        }}
+      }});
+    }}
+    const btnWizOutlook = document.getElementById('btnWizAutoOutlook');
+    if (btnWizOutlook) {{
+      btnWizOutlook.addEventListener('click', async () => {{
+        const out = await callWizardAction('auto_connect_outlook', {{}});
+        document.getElementById('wizBanner').textContent = out.message || 'Checked running Windows Outlook desktop app.';
+        if (out && out.outlook_running) {{
+          await refreshBundle();
+          showStep(7);
+        }}
+      }});
+    }}
+    const btnOpenEmailPwd = document.getElementById('btnOpenEmailAppPwd');
+    if (btnOpenEmailPwd) {{
+      btnOpenEmailPwd.addEventListener('click', () => {{
+        if (!_lastAppPwdUrl || !_lastAppPwdUrl.startsWith('https://')) {{
+          document.getElementById('wizBanner').textContent = 'Check your mail provider settings for an IMAP App Password, or click 1-Click Connect Running Windows Outlook.';
+          return;
+        }}
+        window.open(_lastAppPwdUrl, '_blank', 'noopener,noreferrer');
+        const sec = document.getElementById('inpCommsSecret');
+        if (sec) sec.focus();
+      }});
+    }}
+
     document.getElementById('btnSaveComms').addEventListener('click', async () => {{
       await callWizardAction('configure_comms', {{
         provider_family: document.getElementById('selCommsFamily').value,
         email_address: document.getElementById('inpCommsEmail').value,
         secret: document.getElementById('inpCommsSecret').value,
         ics_url: document.getElementById('inpCommsIcs').value,
+        imap_host: _lastDetectedImapHost,
       }});
       await refreshBundle();
       showStep(7);
@@ -6531,12 +7597,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--name",
         default="",
-        help="Set user display name (e.g., Merrill, John).",
+        help="Set user display name (e.g., Alex, Jordan).",
     )
     parser.add_argument(
         "--pseudonym",
         default="",
-        help="Set collaborator pseudonym (e.g., Samwise Gamgee).",
+        help="Set collaborator pseudonym (e.g., Voyager).",
     )
     parser.add_argument(
         "--persona",
@@ -6561,8 +7627,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.name or args.pseudonym or args.auto_provision:
         save_user_identity(
-            display_name=args.name or ("Walkthrough User" if args.sandbox else "John"),
-            pseudonym=args.pseudonym or aap.PSEUDONYM_DEFAULT,
+            display_name=args.name or ("Walkthrough User" if args.sandbox else "Collaborator"),
+            pseudonym=args.pseudonym or "",
             steward_persona=args.persona,
             sandbox=args.sandbox,
             sandbox_id=args.sandbox_id,

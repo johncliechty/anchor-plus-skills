@@ -556,11 +556,26 @@ def _card(e, f, cls, goal=None, step=None, light=None):
     xbtn = ('<button class="t-x" data-home="%s" title="back to its goal">&times;</button>' % esc(step["id"])) if step else ""
     goal_line = ('<div class="t-goal">in <b>%s</b> &middot; %s</div>' % (esc(goal["name"]), "a cockpit within the project" if step.get("kind") == "effort" else "the project&rsquo;s cockpit")) if (goal and step) else ""
     if not f.get("has_record"):
-        q_done = ('<button type="button" class="t-done-btn" data-mark-done="1" data-step="%s" data-tip="&#10003; Done" aria-label="Done" title="Done for now — move off the board"><span class="t-dot-ind green"></span><span class="t-btn-txt">&#10003; Done</span></button>' % esc(step["id"])) if step else ""
+        q_done = seat_btn + (
+            (
+                '<button type="button" class="t-done-btn" data-mark-done="1" data-step="%s" data-tip="&#10003; Done" aria-label="Done" title="Done for now — move off the board"><span class="t-dot-ind green"></span><span class="t-btn-txt">&#10003; Done</span></button>'
+                % esc(step["id"])
+            ) if step else ""
+        )
+        q_cockpit_href = "/steward/v1?pid=%s&amp;dir=%s" % (pid, esc(_quote(str(f.get("effort") or ""))))
+        q_proj_href = "/project/%s%s" % (pid, ("?dir=%s" % rel) if rel else "")
+        q_blurb = esc((e.get("blurb") or "").strip()[:220]) or "&mdash;"
         return (
-            '<article class="tile quiet%s" id="card-%s" data-tile="%s"%s><div class="t-top">%s<h3 class="t-name">%s</h3>%s%s%s</div>%s'
-            '<div class="t-desc">%s</div><div class="t-quiet">no steward record yet &middot; <a class="t-open" href="/project/%s" target="_blank" rel="noopener">Open cockpit</a></div></article>'
-        ) % (cls, cid, pid, attr, dot, name, seat_btn, q_done, xbtn, goal_line, esc((e.get("blurb") or "").strip()[:160]) or "&mdash;", pid)
+            '<article class="tile quiet%s" id="card-%s" data-tile="%s" data-dir="%s"%s><div class="t-top">%s<h3 class="t-name"><span class="t-nm">%s</span>%s</h3>'
+            '%s<a class="t-go" href="%s" data-project-href="%s" target="_blank" rel="noopener" data-tip="Open cockpit &#8599;" title="Open the cockpit"><span class="t-btn-txt">cockpit </span><span class="t-go-arr">&#8599;</span></a>%s</div>'
+            '<div class="t-face">%s<div class="t-line"><span class="k">Next</span>%s</div>'
+            '<div class="t-more"><div class="t-desc">%s</div><div class="t-quiet">no steward record yet &middot; <a class="t-open" href="%s" data-project-href="%s" target="_blank" rel="noopener">Open cockpit</a></div></div></div>'
+            '<div class="t-acts"></div>'
+            '<div class="t-body" hidden></div></article>'
+        ) % (
+            cls, cid, pid, rel, attr, dot, name, ('<span class="t-eff">&middot; %s</span>' % rel) if rel else "",
+            q_done, q_cockpit_href, q_proj_href, xbtn, goal_line, q_blurb, q_blurb, q_cockpit_href, q_proj_href,
+        )
     wait = " ".join(str(f.get("needs_you") or "").split())[:160]
     nxt = esc((f.get("next") or "")[:160]) or "not stated"
     # W1 (2026-09-28): EVERY effort's wait, each opening its own record (the Status part on that effort) — a
@@ -1632,7 +1647,7 @@ def _comms_pulse_html(ctx):
         '</div>'
         '</div>'
         '<div class="cal-body" id="calBody">'
-        + services_bar_html
+        + services_bar_html.replace("%", "%%")
         + '<!-- Unified Calm Top Toolbar: Source Filters + Sync + Layout -->'
         '<div class="comms-toolbar cave-elegance-toolbar" id="caveCommsPulse">'
         '<div style="display:inline-flex;align-items:center;flex-wrap:wrap;gap:6px">'
@@ -1821,7 +1836,7 @@ def _comms_pulse_html(ctx):
         '<button type="button" class="tw-btn cave-btab" id="btnCaveMailFolderActed" data-cave-mail-folder="acted" title="Emails answered, moved to Speed Racer, or marked Seen/Done">&#9745; Acted (<span id="caveActedCountBadge">%d</span>)</button>'
         '<button type="button" class="tw-btn cave-btab" id="btnCaveMailFolderSent" data-cave-mail-folder="sent" title="Sent emails">&#128228; Sent (<span id="caveSentCountBadge">%d</span>)</button>'
         '<button type="button" class="tw-btn cave-btab cave-btab-sr" id="btnCaveOpenSpeedRacer" data-cave-open-speed-racer="1" title="Toggle Speed Racer Scribe Draft Queue">&#127950;&#65039; Speed Racer (<span id="caveSrBtnCount">%d</span>)</button>'
-        + scribe_queue_pill_html +
+        + scribe_queue_pill_html.replace("%", "%%") +
         '</div>'
         '<div style="display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap">'
         '<button type="button" class="tw-btn" id="btnCaveCommsDraftNew" data-comms-draft-reply="1" data-comms-draft-subject="Update on next steps" data-comms-draft-to="" data-comms-draft-project="" data-comms-draft-step="" title="Compose a new email">&#9998; Compose</button>'
@@ -2039,14 +2054,24 @@ def _mothership_collab_html(ctx):
     """Wave 11 & Wave 15: Multi-Mothership Collaboration & Shared Cockpits strip on the Cave of Wonders
     with custom peer registration modal, .anchor-cockpit.json packet import/export, and 1-click step lease claim/release."""
     entries = ctx.get("entries") or []
-    try:
-        import mothership_collab as _mc
-        summary = _mc.collab_summary_for_cave(entries=entries, facts=ctx.get("facts"))
-    except Exception:
-        summary = {"mothership": {"id": "anchor-mothership", "label": "Mother Ship"}, "peers": [], "active_leases": [], "shared_cockpits": []}
+    is_admin_ed = bool(ctx["admin_edition"] if "admin_edition" in ctx else paths.is_anchor_admin_edition())
+    if isinstance(ctx.get("collab"), dict):
+        summary = ctx["collab"]
+    else:
+        try:
+            import mothership_collab as _mc
+            summary = _mc.collab_summary_for_cave(entries=entries, facts=ctx.get("facts"))
+        except Exception:
+            summary = {"mothership": {"id": "anchor-mothership", "label": "Mother Ship"}, "peers": [], "active_leases": [], "shared_cockpits": []}
 
-    ms = summary.get("mothership") or {}
-    peers = summary.get("peers") or []
+    ms = dict(summary.get("mothership") or {})
+    peers = list(summary.get("peers") or [])
+    if not is_admin_ed:
+        if "did:anchor:" in str(ms.get("did") or "") and ms.get("id", "").endswith("-mothership"):
+            ms["label"] = "Local Mother Ship"
+            ms["id"] = "local-mothership"
+        if "entries" not in ctx and "collab" not in ctx:
+            peers = []
     leases = summary.get("active_leases") or []
     shared = summary.get("shared_cockpits") or []
 
@@ -2137,7 +2162,7 @@ def _mothership_collab_html(ctx):
         '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px">'
         '<b>&#129309; Register Collaborator Mothership / Import Portable Cockpit Packet</b>'
         '<div style="display:flex;gap:6px;align-items:center">'
-        '<button type="button" class="mini comms-setup-btn" id="btnCollabPresetMerrill" data-collab-preset-merrill="1">&#9889; Pre-Fill Merrill Liechty</button>'
+        '<button type="button" class="mini comms-setup-btn" id="btnCollabPresetPeer" data-collab-preset-peer="1">&#9889; Pre-Fill Peer Template</button>'
         '<button type="button" class="mini" id="btnCollabModalClose">&times; Close</button></div></div>'
         '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 2fr auto;gap:6px;margin-bottom:10px">'
         '<input type="text" id="collabPeerId" placeholder="Peer ID (e.g. lab-peer-01)" style="padding:6px 8px;border-radius:6px;border:1px solid #2b3546;background:#0d1117;color:#e6edf3">'

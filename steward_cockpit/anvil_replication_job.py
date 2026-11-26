@@ -40,31 +40,11 @@ sign_gate_artifact = _apd.sign_gate_artifact
 verify_gate_artifact = _apd.verify_gate_artifact
 
 REPLICATION_FAILURE_STATE_TABLE: Dict[str, Dict[str, Any]] = {
-    "dependency-missing": {
-        "status_kind": "dependency-missing", "failure_state": "dependency-missing", "http_status": 503,
-        "state": "PIPELINE_DEPENDENCY_MISSING", "badge": "PIPELINE_DEPENDENCY_MISSING", "unknown_state": False,
-        "message": "PIPELINE_DEPENDENCY_MISSING: Required Python package or replication engine module unavailable",
-    },
-    "dependency-slow-or-killed": {
-        "status_kind": "dependency-slow-or-killed", "failure_state": "dependency-slow-or-killed", "http_status": 504,
-        "state": "TIMEOUT_OR_CANCELLED", "badge": "TIMEOUT_OR_CANCELLED", "unknown_state": False,
-        "message": "Replication audit timed out or was cancelled (process tree terminated)",
-    },
-    "dependency-returns-garbage": {
-        "status_kind": "dependency-returns-garbage", "failure_state": "dependency-returns-garbage", "http_status": 502,
-        "state": "INVALID_RECEIPT_OUTPUT", "badge": "INVALID_RECEIPT_OUTPUT", "unknown_state": False,
-        "message": "Invalid replication receipt, consent payload, or malformed table output",
-    },
-    "backing-store-unreadable": {
-        "status_kind": "backing-store-unreadable", "failure_state": "backing-store-unreadable", "http_status": 500,
-        "state": "UNKNOWN", "badge": "UNKNOWN", "unknown_state": True,
-        "message": "UNKNOWN: Replication backing store unreadable or corrupted",
-    },
-    "empty-but-valid": {
-        "status_kind": "empty-but-valid", "failure_state": "empty-but-valid", "http_status": 200,
-        "state": "NOT_YET_RUN", "badge": "NOT_YET_RUN", "unknown_state": False,
-        "message": "not yet run — confirm operator consent to execute paper table replication in isolated scratch",
-    },
+    "dependency-missing": {"status_kind": "dependency-missing", "failure_state": "dependency-missing", "http_status": 503, "state": "PIPELINE_DEPENDENCY_MISSING", "badge": "PIPELINE_DEPENDENCY_MISSING", "unknown_state": False, "message": "PIPELINE_DEPENDENCY_MISSING: Required Python package or replication engine module unavailable"},
+    "dependency-slow-or-killed": {"status_kind": "dependency-slow-or-killed", "failure_state": "dependency-slow-or-killed", "http_status": 504, "state": "TIMEOUT_OR_CANCELLED", "badge": "TIMEOUT_OR_CANCELLED", "unknown_state": False, "message": "Replication audit timed out or was cancelled (process tree terminated)"},
+    "dependency-returns-garbage": {"status_kind": "dependency-returns-garbage", "failure_state": "dependency-returns-garbage", "http_status": 502, "state": "INVALID_RECEIPT_OUTPUT", "badge": "INVALID_RECEIPT_OUTPUT", "unknown_state": False, "message": "Invalid replication receipt, consent payload, or malformed table output"},
+    "backing-store-unreadable": {"status_kind": "backing-store-unreadable", "failure_state": "backing-store-unreadable", "http_status": 500, "state": "UNKNOWN", "badge": "UNKNOWN", "unknown_state": True, "message": "UNKNOWN: Replication backing store unreadable or corrupted"},
+    "empty-but-valid": {"status_kind": "empty-but-valid", "failure_state": "empty-but-valid", "http_status": 200, "state": "NOT_YET_RUN", "badge": "NOT_YET_RUN", "unknown_state": False, "message": "not yet run — confirm operator consent to execute paper table replication in isolated scratch"},
 }
 
 _ACTIVE_PROCS_LOCK: threading.Lock = globals().setdefault("_ACTIVE_PROCS_LOCK", threading.Lock())
@@ -90,14 +70,13 @@ def build_replication_failure_response(
     code = int(http_status_override if http_status_override is not None else row["http_status"])
     is_empty = row_key == "empty-but-valid" and code == 200
     payload: Dict[str, Any] = {
-        "ok": is_empty, "anvil_v6_enabled": _as.is_anvil_v6_enabled(anchor_root),
-        "status_kind": row["status_kind"], "failure_state": row["failure_state"], "http_status": code,
-        "state": row["state"], "badge": row["badge"], "display_state": "NO_RECEIPT", "receipt_hmac_verified": False,
-        "unknown_state": bool(row["unknown_state"]), "message": row["message"], "surface_state": {**row, "http_status": code},
+        "ok": is_empty, "anvil_v6_enabled": _as.is_anvil_v6_enabled(anchor_root), "status_kind": row["status_kind"],
+        "failure_state": row["failure_state"], "http_status": code, "state": row["state"], "badge": row["badge"],
+        "display_state": "NO_RECEIPT", "receipt_hmac_verified": False, "unknown_state": bool(row["unknown_state"]),
+        "message": row["message"], "surface_state": {**row, "http_status": code},
     }
     if not is_empty:
-        payload["error_code"] = error_code or row["state"]
-        payload["error"] = row["message"]
+        payload.update({"error_code": error_code or row["state"], "error": row["message"]})
     if detail:
         payload["detail"] = detail
     if extra:
@@ -105,8 +84,11 @@ def build_replication_failure_response(
     return payload, code
 
 
-def _v4_subpath(raw_store_root: Path, rel: str) -> Path:
-    return _apd.checked_v4_subpath(raw_store_root, rel)
+_v4_subpath = _apd.checked_v4_subpath
+_snapshot_source_repo_sha256 = _apd.snapshot_source_repo_sha256
+_diff_source_snapshots = _apd.diff_source_snapshots
+_resolve_contained_paper_file = _apd.resolve_contained_paper_file
+_load_paper_sources_dict = _apd.load_paper_sources_dict
 
 
 def _write_json(path: Path, data: Mapping[str, Any]) -> None:
@@ -132,20 +114,12 @@ def _read_verified_receipt(cdir: Path, rec_path: Path, expected_scope_sha256: st
     doc = _read_strict_json(rec_path, REPLICATION_RECEIPT_FILE_SCHEMA)
     if doc is None:
         return None
-    if not _apd.verify_replication_receipt(cdir, doc, expected_scope_sha256):
+    if not _apd.verify_replication_receipt(cdir, doc, ""):
         raise ValueError("Unsigned or forged replication_audit_receipt.json refused.")
-    return doc
+    return doc if str(doc.get("scope_sha256") or "").lower() == expected_scope_sha256.lower() else None
 
 
-_snapshot_source_repo_sha256 = _apd.snapshot_source_repo_sha256
-_diff_source_snapshots = _apd.diff_source_snapshots
-_resolve_contained_paper_file = _apd.resolve_contained_paper_file
-_load_paper_sources_dict = _apd.load_paper_sources_dict
-
-
-def _resolve_locked_scope_context(
-    raw_cdir: Path, analysis_id: Optional[str], anchor_root: Path | str | None,
-) -> Tuple[Optional[Dict[str, Any]], Optional[Tuple[Dict[str, Any], int]]]:
+def _resolve_locked_scope_context(raw_cdir: Path, analysis_id: Optional[str], anchor_root: Path | str | None) -> Tuple[Optional[Dict[str, Any]], Optional[Tuple[Dict[str, Any], int]]]:
     if _as._is_symlink_or_junction(raw_cdir):
         return None, _refuse403("PATH_ESCAPE_REFUSED", "Symlink or junction refused on cockpit directory.")
     cdir = raw_cdir.resolve()
@@ -163,19 +137,11 @@ def _resolve_locked_scope_context(
     try:
         drift_info = _as.check_locked_scope_drift(cdir, store_root, v4_mods["anvil_v4_process"])
     except _as.AnvilAnalysisRefusalError as d_err:
-        if d_err.http_status == 500:
-            return None, build_replication_failure_response("backing-store-unreadable", detail=str(d_err), anchor_root=anchor_root)
-        return None, (d_err.payload, d_err.http_status)
+        return None, (build_replication_failure_response("backing-store-unreadable", detail=str(d_err), anchor_root=anchor_root) if d_err.http_status == 500 else (d_err.payload, d_err.http_status))
     if drift_info is None:
         return None, build_replication_failure_response("dependency-returns-garbage", http_status_override=400, error_code="SCOPE_NOT_LOCKED", anchor_root=anchor_root)
     if drift_info.get("drifted"):
-        return None, ({
-            "ok": False, "anvil_v6_enabled": True, "scope_drifted": True, "error_code": "SCOPE_DRIFTED_409",
-            "status_kind": "scope-drifted", "failure_state": "scope-drifted", "http_status": 409, "badge": "409_SCOPE_DRIFTED",
-            "locked_scope_sha256": drift_info.get("locked_scope_sha256", ""), "current_scope_sha256": drift_info.get("current_scope_sha256", ""),
-            "message": _as.ANVIL_SCOPE_DRIFTED_MESSAGE, "error": _as.ANVIL_SCOPE_DRIFTED_MESSAGE,
-        }, 409)
-
+        return None, ({"ok": False, "anvil_v6_enabled": True, "scope_drifted": True, "error_code": "SCOPE_DRIFTED_409", "status_kind": "scope-drifted", "failure_state": "scope-drifted", "http_status": 409, "badge": "409_SCOPE_DRIFTED", "locked_scope_sha256": drift_info.get("locked_scope_sha256", ""), "current_scope_sha256": drift_info.get("current_scope_sha256", ""), "message": _as.ANVIL_SCOPE_DRIFTED_MESSAGE, "error": _as.ANVIL_SCOPE_DRIFTED_MESSAGE}, 409)
     sm_path = store_root / ".anvil" / "scope_manifest.json"
     if _as._is_symlink_or_junction(store_root) or _as._is_symlink_or_junction(store_root / ".anvil") or _as._is_symlink_or_junction(sm_path):
         return None, _refuse403("PATH_ESCAPE_REFUSED", "Symlink or junction refused in scope_manifest path.")
@@ -185,12 +151,7 @@ def _resolve_locked_scope_context(
         return None, _refuse403("PATH_ESCAPE_REFUSED", "Analysis store_root cannot reside inside target software repo.")
     paper_spec = str(sm_doc.get("paper_spec") or "")
     paper_p = _as._resolve_scoping_v2_paper_path(cdir, sw_dir, paper_spec)[0] if paper_spec else None
-    return {
-        "analysis_id": resolved_aid, "store_root": store_root, "sw_dir": sw_dir, "sw_spec": sw_spec,
-        "paper_path": paper_p, "paper_spec": paper_spec, "scope_sha256": str(sm_doc["scope_sha256"]),
-        "scope_files": list(sm_doc.get("scope_files") or []), "entrypoints": list(sm_doc.get("entrypoints") or []),
-        "manifest": sm_doc.get("manifest") or {}, "v4_mods": v4_mods,
-    }, None
+    return {"analysis_id": resolved_aid, "store_root": store_root, "sw_dir": sw_dir, "sw_spec": sw_spec, "paper_path": paper_p, "paper_spec": paper_spec, "scope_sha256": str(sm_doc["scope_sha256"]), "scope_files": list(sm_doc.get("scope_files") or []), "entrypoints": list(sm_doc.get("entrypoints") or []), "manifest": sm_doc.get("manifest") or {}, "v4_mods": v4_mods}, None
 
 
 def issue_replication_consent(cockpit_dir: str | Path, body: Mapping[str, Any], *, anchor_root: Path | str | None = None) -> Tuple[Dict[str, Any], int]:
@@ -230,7 +191,12 @@ def issue_replication_consent(cockpit_dir: str | Path, body: Mapping[str, Any], 
         with contextlib.suppress(Exception):
             if c_file.is_file():
                 existing = _read_strict_json(c_file, REPLICATION_CONSENT_SCHEMA) or {}
-        tokens_map = {k: v for k, v in (existing.get("tokens") or {}).items() if isinstance(v, dict) and float(v.get("expires_at", 0)) > now_ts}
+        raw_map = existing.get("tokens") if isinstance(existing.get("tokens"), Mapping) else {}
+        tokens_map: Dict[str, Any] = {}
+        for k, v in raw_map.items():
+            with contextlib.suppress(TypeError, ValueError):
+                if isinstance(v, dict) and float(v.get("expires_at", 0)) > now_ts:
+                    tokens_map[str(k)] = v
         tokens_map[token] = {"scope_sha256": ctx["scope_sha256"], "phase": phase, "diff_sha256": diff_sha, "candidate_id": cand_id, "issued_at": now_ts, "expires_at": now_ts + 3600.0}
         _write_json(c_file, {"schema": REPLICATION_CONSENT_SCHEMA, "tokens": tokens_map})
     return ({
@@ -255,14 +221,46 @@ def _sanitize_client_claims(claims: Optional[List[Any]]) -> Optional[List[Dict[s
     return [{str(k): v for k, v in item.items() if str(k) in allowed_k} for item in claims if isinstance(item, Mapping)]
 
 
-def _is_singleflight_busy(sf_doc: Mapping[str, Any], scope_sha256: str) -> Tuple[bool, str]:
+def _write_sf(cdir: Path, sf_file: Path, payload: Mapping[str, Any]) -> None:
+    _write_json(sf_file, _apd.sign_gate_artifact(cdir, "repl-sf", payload))
+
+
+def _write_job(cdir: Path, job_path: Path, payload: Mapping[str, Any]) -> None:
+    _write_json(job_path, _apd.sign_gate_artifact(cdir, "repl-job", payload))
+
+
+def _read_verified_job(cdir: Path, job_path: Path, expected_scope_sha256: str = "") -> Optional[Dict[str, Any]]:
+    doc = _read_strict_json(job_path, REPLICATION_JOB_SCHEMA)
+    if doc is None:
+        return None
+    if not _apd.verify_gate_artifact(cdir, "repl-job", doc, expected_scope_sha256=expected_scope_sha256):
+        raise ValueError(f"Unsigned or forged {job_path.name} refused.")
+    return doc
+
+
+def _read_verified_sf_job_id(cdir: Path, sf_file: Path, scope_sha256: str) -> str:
+    if not sf_file.is_file():
+        return ""
+    with contextlib.suppress(Exception):
+        sf_doc = json.loads(sf_file.read_text(encoding="utf-8"))
+        if _apd.verify_gate_artifact(cdir, "repl-sf", sf_doc, expected_scope_sha256=scope_sha256):
+            return str(sf_doc.get("job_id") or "")
+    return ""
+
+
+def _is_singleflight_busy(cdir: Path, sf_doc: Any, scope_sha256: str) -> Tuple[bool, str]:
+    if not _apd.verify_gate_artifact(cdir, "repl-sf", sf_doc, expected_scope_sha256=scope_sha256):
+        return False, ""
     ex_jid = str(sf_doc.get("job_id") or "")
-    if not ex_jid or str(sf_doc.get("scope_sha256") or "") != scope_sha256 or str(sf_doc.get("status") or "") not in {"queued", "installing_deps", "running"}:
+    if not ex_jid or str(sf_doc.get("status") or "") not in {"queued", "installing_deps", "running"}:
         return False, ex_jid
     with _ACTIVE_PROCS_LOCK:
         th_live, in_sync = _LIVE_JOB_THREADS.get(ex_jid), ex_jid in _ACTIVE_SYNC_JOBS
-    alive = (th_live is not None and th_live.is_alive()) or in_sync or ((time.time() - float(sf_doc.get("heartbeat_ts", 0))) < 120.0 and sf_doc.get("pid") != os.getpid())
-    return alive, ex_jid
+    try:
+        dt = time.time() - float(sf_doc.get("heartbeat_ts", 0))
+    except (TypeError, ValueError):
+        dt = 9999.0
+    return ((th_live is not None and th_live.is_alive()) or in_sync or (0.0 <= dt < 120.0 and sf_doc.get("pid") != os.getpid())), ex_jid
 
 
 def start_replication_job(
@@ -300,10 +298,10 @@ def start_replication_job(
     raw_token_bytes = raw_token.encode("ascii")
 
     overrides = (
-        _sanitize_client_claims(body.get("claims") if isinstance(body.get("claims"), list) else None),
+        (_sanitize_client_claims(body["claims"]) if (_trusted_test_seed is True and isinstance(body.get("claims"), list)) else None),
         _strip_candidate_embedded_receipts(body.get("refactor_candidates") if isinstance(body.get("refactor_candidates"), list) else None),
-        (_apd.sign_gate_artifact(cdir, "xval-gate", dict(body["xval_receipt"])) if (_trusted_test_seed is True and isinstance(body.get("xval_receipt"), Mapping)) else None),
-        (_apd.sign_gate_artifact(cdir, "ram-gate", {"verdicts": dict(body["ramanujan_verdicts"])}) if (_trusted_test_seed is True and isinstance(body.get("ramanujan_verdicts"), Mapping)) else None),
+        (_apd.sign_gate_artifact(cdir, "xval-gate", {**dict(body["xval_receipt"]), "scope_sha256": ctx["scope_sha256"]}) if (_trusted_test_seed is True and isinstance(body.get("xval_receipt"), Mapping)) else None),
+        (_apd.sign_gate_artifact(cdir, "ram-gate", {"verdicts": dict(body["ramanujan_verdicts"]), "scope_sha256": ctx["scope_sha256"]}) if (_trusted_test_seed is True and isinstance(body.get("ramanujan_verdicts"), Mapping)) else None),
     )
 
     with _as.exclusive_file_lock(sf_file):
@@ -312,7 +310,7 @@ def start_replication_job(
                 sf_doc = json.loads(sf_file.read_text(encoding="utf-8"))
             except Exception as exc:
                 return build_replication_failure_response("backing-store-unreadable", detail=str(exc), anchor_root=anchor_root)
-            is_busy, ex_jid = _is_singleflight_busy(sf_doc, ctx["scope_sha256"])
+            is_busy, ex_jid = _is_singleflight_busy(cdir, sf_doc, ctx["scope_sha256"])
             if is_busy:
                 return ({
                     "ok": False, "anvil_v6_enabled": True, "error_code": "REPLICATION_JOB_ALREADY_RUNNING",
@@ -330,8 +328,15 @@ def start_replication_job(
             tok_entry: Optional[Dict[str, Any]] = None
             rem_tokens: Dict[str, Any] = {}
             now_ts = time.time()
-            for k, v in (c_doc.get("tokens") or {}).items():
-                if not isinstance(v, dict) or float(v.get("expires_at", 0)) < now_ts:
+            raw_tok_map = c_doc.get("tokens")
+            if not isinstance(raw_tok_map, Mapping) and raw_tok_map is not None:
+                return build_replication_failure_response("backing-store-unreadable", detail="Malformed tokens map", anchor_root=anchor_root)
+            for k, v in (raw_tok_map or {}).items():
+                try:
+                    exp_f = float(v.get("expires_at", 0)) if isinstance(v, dict) else 0.0
+                except (TypeError, ValueError):
+                    continue
+                if not isinstance(v, dict) or exp_f < now_ts:
                     continue
                 k_str = str(k).strip().lower()
                 if _TOKEN_HEX_RE.fullmatch(k_str) and hmac.compare_digest(k_str.encode("ascii"), raw_token_bytes):
@@ -367,17 +372,16 @@ def start_replication_job(
                 cand_diff = ""
 
             job_id, now_iso = f"repjob-{int(time.time() * 1000)}-{secrets.token_hex(4)}", _now_iso()
-            _write_json(_v4_subpath(store_root, f"replication_jobs/{job_id}.json"), {
+            _write_job(cdir, _v4_subpath(store_root, f"replication_jobs/{job_id}.json"), {
                 "schema": REPLICATION_JOB_SCHEMA, "job_id": job_id, "analysis_id": ctx["analysis_id"], "scope_sha256": ctx["scope_sha256"],
                 "phase": auth_phase, "candidate_id": auth_cand_id, "diff_sha256": auth_diff_sha, "status": "running", "pid": os.getpid(),
                 "created_at": now_iso, "updated_at": now_iso, "completed_steps": 0, "total_steps": max(1, len(ctx["entrypoints"])),
                 "step_receipts": {}, "source_repo_diff": [], "error_code": "", "http_status": 200, "message": f"Running Phase {auth_phase} replication in isolated scratch…",
             })
-            _write_json(sf_file, {"job_id": job_id, "scope_sha256": ctx["scope_sha256"], "status": "running", "pid": os.getpid(), "heartbeat_ts": time.time()})
+            _write_sf(cdir, sf_file, {"job_id": job_id, "scope_sha256": ctx["scope_sha256"], "status": "running", "pid": os.getpid(), "heartbeat_ts": time.time()})
             _write_json(c_file, {"schema": REPLICATION_CONSENT_SCHEMA, "tokens": rem_tokens})
 
-        cancel_ev = threading.Event()
-        is_sync = bool(body.get("sync", False)) and _apd._in_pytest_runtime()
+        cancel_ev, is_sync = threading.Event(), bool(body.get("sync", False))
         worker_fn = lambda: _run_job_worker(cdir, ctx, job_id, auth_phase, auth_cand_id, cand_diff, auth_diff_sha, table_timeout, cancel_ev, overrides)
         th = None if is_sync else threading.Thread(target=worker_fn, name=f"anvil-repl-{job_id}", daemon=True)
         with _ACTIVE_PROCS_LOCK:
@@ -398,14 +402,11 @@ def start_replication_job(
     return ({"ok": True, "anvil_v6_enabled": True, "job_id": job_id, "analysis_id": ctx["analysis_id"], "scope_sha256": ctx["scope_sha256"], "phase": auth_phase, "status": "running", "recommended_poll_ms": 1000, "message": f"Started Phase {auth_phase} replication job {job_id}."}, 202)
 
 
-def _evaluate_table_match_counts(
-    audit_mod: Any, pub_tables: List[Dict[str, Any]], receipts_map: Mapping[str, Any],
-) -> Tuple[int, int, Dict[str, bool]]:
+def _evaluate_table_match_counts(audit_mod: Any, pub_tables: List[Dict[str, Any]], receipts_map: Mapping[str, Any]) -> Tuple[int, int, Dict[str, bool]]:
     total_c = matched_c = 0
     cell_state: Dict[str, bool] = {}
     for tab in pub_tables:
-        tid = str(tab.get("table_id") or "")
-        pub_m = tab.get("metrics") if isinstance(tab.get("metrics"), Mapping) else {}
+        tid, pub_m = str(tab.get("table_id") or ""), (tab.get("metrics") if isinstance(tab.get("metrics"), Mapping) else {})
         if not pub_m:
             continue
         rec = receipts_map.get(tid)
@@ -419,8 +420,9 @@ def _evaluate_table_match_counts(
             rep_m = dict(rep_m[tid])
         raw_ec = rec.get("exit_code", 1)
         rec_ec = int(raw_ec) if isinstance(raw_ec, (int, float)) and not isinstance(raw_ec, bool) else 1
+        pub_decs = {str(c.get("metric_key")): c.get("decimals") for c in (tab.get("cells") or []) if isinstance(c, Mapping) and c.get("metric_key")}
         cmp_r = audit_mod.compare_metrics(
-            pub_m, rep_m, exit_code=rec_ec, missing_dependency=str(rec.get("missing_module") or ""),
+            pub_m, rep_m, published_decimals=pub_decs, exit_code=rec_ec, missing_dependency=str(rec.get("missing_module") or ""),
             runtime_error=str(rec.get("runtime_error") or ""), used_cached_baseline=bool(rec.get("used_cached_baseline")),
             has_unseeded_rng=bool(rec.get("has_unseeded_rng")), formula_mismatch=bool(rec.get("formula_mismatch")),
         )
@@ -480,8 +482,10 @@ def _run_job_worker(
 
     try:
         job_path, sf_file = _v4_subpath(store_root, f"replication_jobs/{job_id}.json"), _v4_subpath(store_root, "replication_singleflight.json")
+        _apd._ace._cache_hmac_key()
         if pre_snap is None:
             pre_snap = _snapshot_source_repo_sha256(sw_dir)
+        pre_store_snap = _apd.snapshot_protected_anvil_stores(store_root, job_id, cdir=cdir)
         job_start = time.monotonic()
         manifest = ctx["manifest"]
         data_roots_set = sorted({str(d.get("root") or "") for d in (manifest.get("allowlisted_data_files") or []) if d.get("root")})
@@ -496,6 +500,7 @@ def _run_job_worker(
             if ws.get("entrypoint"):
                 ep_to_targets.setdefault(str(ws["entrypoint"]), []).extend(str(t) for t in (ws.get("manuscript_targets") or []))
 
+        verified_extra_sps = _apd.read_verified_extra_site_packages(cdir, store_root)
         for idx, ep_rel in enumerate(eps, start=1):
             rem_total = v4_trace.MAX_REPLICATION_TOTAL_TIMEOUT_SEC - (time.monotonic() - job_start)
             if cancel_ev.is_set() or rem_total <= 0:
@@ -505,8 +510,9 @@ def _run_job_worker(
                 break
             raw_rec = v4_trace.run_replication_table_in_scratch(
                 sw_dir, ["python", ep_rel], approve_run=True, timeout_sec=table_timeout, remaining_total_sec=rem_total,
-                allowlisted_data_roots=data_roots_set, cockpit_root=cdir, candidate_diff=cand_diff if phase == "B" else "",
-                candidate_diff_sha256=exp_diff_sha if phase == "B" else "", scope_sha256=ctx["scope_sha256"], on_proc_spawn=_on_spawn,
+                allowlisted_data_roots=data_roots_set, cockpit_root=cdir, verified_extra_site_packages=verified_extra_sps,
+                candidate_diff=cand_diff if phase == "B" else "", candidate_diff_sha256=exp_diff_sha if phase == "B" else "",
+                scope_sha256=ctx["scope_sha256"], on_proc_spawn=_on_spawn,
             )
             rec = dict(raw_rec)
             rec["pinned_interpreter"] = Path(sys.executable).name
@@ -525,17 +531,15 @@ def _run_job_worker(
                 final_msg = scrub(f"PIPELINE_DEPENDENCY_MISSING: Missing package '{rec['missing_module']}'")
 
             with _as.exclusive_file_lock(sf_file):
-                if sf_file.is_file():
-                    with contextlib.suppress(Exception):
-                        cur_sf = json.loads(sf_file.read_text(encoding="utf-8"))
-                        if cur_sf.get("job_id") == job_id and cur_sf.get("status") == "running":
-                            cur_sf["heartbeat_ts"] = time.time()
-                            _write_json(sf_file, cur_sf)
+                if _read_verified_sf_job_id(cdir, sf_file, ctx["scope_sha256"]) == job_id:
+                    cur_sf = json.loads(sf_file.read_text(encoding="utf-8"))
+                    if cur_sf.get("status") == "running":
+                        _write_sf(cdir, sf_file, {**cur_sf, "heartbeat_ts": time.time()})
                 with _as.exclusive_file_lock(job_path):
-                    cur_j = _read_strict_json(job_path, REPLICATION_JOB_SCHEMA) or {}
+                    cur_j = _read_verified_job(cdir, job_path, ctx["scope_sha256"]) or {}
                     if cur_j.get("status") == "running":
                         cur_j.update({"completed_steps": idx, "total_steps": len(eps), "step_receipts": step_receipts, "updated_at": _now_iso()})
-                        _write_json(job_path, cur_j)
+                        _write_job(cdir, job_path, cur_j)
 
         if cancel_ev.is_set() and final_status != "cancelled":
             final_status, final_http, final_err_code = "cancelled", 504, "REPLICATION_CANCELLED"
@@ -545,6 +549,10 @@ def _run_job_worker(
             src_diff = _diff_source_snapshots(pre_snap, _snapshot_source_repo_sha256(sw_dir))
             if src_diff:
                 final_status, final_http, final_err_code, final_msg = "failed", 500, "SOURCE_REPO_MUTATED_VIOLATION", scrub(f"Unexpected source-tree modification: {src_diff[:3]}")
+        store_tamper = _diff_source_snapshots(pre_store_snap, _apd.snapshot_protected_anvil_stores(store_root, job_id, cdir=cdir))
+        if store_tamper and not src_diff:
+            src_diff = store_tamper
+            final_status, final_http, final_err_code, final_msg = "failed", 500, "ANVIL_STORE_TAMPERED_VIOLATION", scrub(f"Unexpected Anvil store modification during scratch run: {store_tamper[:3]}")
 
         if final_status in {"completed", "completed_with_missing_dep"} and not src_diff and not cancel_ev.is_set():
             claims_ov, cands_ov, xval_ov, ram_ov = overrides
@@ -578,10 +586,7 @@ def _run_job_worker(
                     _, pa_matched, pa_cells = _evaluate_table_match_counts(audit_mod, pub_tables, phase_a_map)
                     pb_total, pb_matched, pb_cells = _evaluate_table_match_counts(audit_mod, pub_tables, step_receipts)
                     regressed_cells = sum(1 for ck, was_ok in pa_cells.items() if was_ok and not pb_cells.get(ck, False))
-                    if pb_total > 0:
-                        metrics_ok = all_ok and patched_any and pb_matched > 0 and pb_matched >= pa_matched and regressed_cells == 0 and not bool(lead_r.get("metric_degraded"))
-                    else:
-                        metrics_ok = all_ok and patched_any and any(bool(r.get("metrics")) for r in step_receipts.values()) and not bool(lead_r.get("metric_degraded"))
+                    metrics_ok = all_ok and patched_any and pb_total > 0 and bool(phase_a_map) and pb_matched > 0 and pb_matched >= pa_matched and regressed_cells == 0 and not bool(lead_r.get("metric_degraded"))
                     phase_b_map[cand_id] = {
                         "scope_sha256": ctx["scope_sha256"], "candidate_id": cand_id, "diff_sha256": exp_diff_sha,
                         "exit_code": 0 if all_ok else int(lead_r.get("exit_code", 1)),
@@ -595,19 +600,18 @@ def _run_job_worker(
                     scope_sha256=ctx["scope_sha256"], repo_name=sw_dir.name, paper_title=paper_title, published_tables=pub_tables,
                     phase_a_receipts=phase_a_map, claims=st_claims or None, refactor_candidates=st_cands or None,
                     xval_receipt=st_xval, ramanujan_verdicts=st_ram_map, phase_b_receipts=phase_b_map, repo_root=str(sw_dir), cockpit_root=str(cdir),
+                    require_diff_bound_legs=True, trusted_claims_baseline=bool(st_claims),
                 )
                 if not cancel_ev.is_set():
                     with _as.exclusive_file_lock(job_path):
-                        j_chk = _read_strict_json(job_path, REPLICATION_JOB_SCHEMA) if job_path.is_file() else None
+                        j_chk = _read_verified_job(cdir, job_path, ctx["scope_sha256"]) if job_path.is_file() else None
                     if not (isinstance(j_chk, dict) and j_chk.get("status") == "cancelled"):
-                        signed_rec = _apd.sign_replication_receipt(cdir, {
+                        _write_json(rec_path, _apd.sign_replication_receipt(cdir, {
                             "schema": REPLICATION_RECEIPT_FILE_SCHEMA, "analysis_id": ctx["analysis_id"], "scope_sha256": ctx["scope_sha256"],
-                            "last_job_id": job_id, "updated_at": _now_iso(), "source_repo_diff": src_diff,
-                            "phase_a_receipts": phase_a_map, "phase_b_receipts": phase_b_map, "claims": st_claims,
-                            "refactor_candidates": st_cands, "xval_receipt": st_xval, "ramanujan_verdicts_signed": st_ram_env,
-                            "ramanujan_verdicts": st_ram_map, "report": report_bundle,
-                        })
-                        _write_json(rec_path, signed_rec)
+                            "last_job_id": job_id, "updated_at": _now_iso(), "source_repo_diff": src_diff, "phase_a_receipts": phase_a_map,
+                            "phase_b_receipts": phase_b_map, "claims": st_claims, "refactor_candidates": st_cands, "xval_receipt": st_xval,
+                            "ramanujan_verdicts_signed": st_ram_env, "ramanujan_verdicts": st_ram_map, "report": report_bundle,
+                        }))
 
             if not cancel_ev.is_set():
                 idx_file = _as._analyses_index_file(cdir)
@@ -643,16 +647,14 @@ def _run_job_worker(
             with contextlib.suppress(Exception):
                 with _as.exclusive_file_lock(sf_file):
                     with _as.exclusive_file_lock(job_path):
-                        fin_j = _read_strict_json(job_path, REPLICATION_JOB_SCHEMA) if job_path.is_file() else None
+                        fin_j = _read_verified_job(cdir, job_path, ctx["scope_sha256"]) if job_path.is_file() else None
                         if isinstance(fin_j, dict) and fin_j.get("status") not in {"completed", "completed_with_missing_dep", "failed", "cancelled"}:
                             fin_j.update({"status": final_status, "http_status": final_http, "error_code": final_err_code, "message": scrub(final_msg), "source_repo_diff": src_diff, "step_receipts": step_receipts, "updated_at": _now_iso()})
-                            _write_json(job_path, fin_j)
+                            _write_job(cdir, job_path, fin_j)
                         elif isinstance(fin_j, dict) and fin_j.get("status") == "cancelled":
                             final_status = "cancelled"
-                    if sf_file.is_file():
-                        cur_sf_end = json.loads(sf_file.read_text(encoding="utf-8"))
-                        if cur_sf_end.get("job_id") == job_id:
-                            _write_json(sf_file, {"job_id": job_id, "scope_sha256": ctx["scope_sha256"], "status": final_status, "pid": os.getpid(), "heartbeat_ts": time.time()})
+                    if _read_verified_sf_job_id(cdir, sf_file, ctx["scope_sha256"]) == job_id:
+                        _write_sf(cdir, sf_file, {"job_id": job_id, "scope_sha256": ctx["scope_sha256"], "status": final_status, "pid": os.getpid(), "heartbeat_ts": time.time()})
         with _ACTIVE_PROCS_LOCK:
             _CANCEL_FLAGS.pop(job_id, None)
             _LIVE_JOB_THREADS.pop(job_id, None)
@@ -665,17 +667,23 @@ def cancel_replication_job(cockpit_dir: str | Path, body: Mapping[str, Any], *, 
     ctx, err = _resolve_locked_scope_context(raw_cdir, body.get("analysis_id"), anchor_root)
     if err is not None or ctx is None:
         return err  # type: ignore[return-value]
-    store_root = ctx["store_root"]
+    cdir, store_root = raw_cdir.resolve(), ctx["store_root"]
     try:
         sf_file = _v4_subpath(store_root, "replication_singleflight.json")
     except PermissionError as pe:
         return _refuse403("PATH_ESCAPE_REFUSED", str(pe))
-    target_jid = str(body.get("job_id") or "").strip()
-    if not target_jid and sf_file.is_file():
-        with contextlib.suppress(Exception):
-            target_jid = str(json.loads(sf_file.read_text(encoding="utf-8")).get("job_id") or "")
+    target_jid = str(body.get("job_id") or "").strip() or _read_verified_sf_job_id(cdir, sf_file, ctx["scope_sha256"])
     if not target_jid or not re.fullmatch(r"[a-zA-Z0-9_-]{4,80}", target_jid):
         return build_replication_failure_response("dependency-returns-garbage", http_status_override=400, error_code="UNKNOWN_JOB_ID", anchor_root=anchor_root)
+    try:
+        job_path = _v4_subpath(store_root, f"replication_jobs/{target_jid}.json")
+    except PermissionError as pe:
+        return _refuse403("PATH_ESCAPE_REFUSED", str(pe))
+    if not job_path.is_file():
+        with _as.exclusive_file_lock(sf_file):
+            if _read_verified_sf_job_id(cdir, sf_file, ctx["scope_sha256"]) == target_jid:
+                _write_sf(cdir, sf_file, {"job_id": target_jid, "scope_sha256": ctx["scope_sha256"], "status": "cancelled", "pid": os.getpid(), "heartbeat_ts": time.time()})
+        return build_replication_failure_response("dependency-returns-garbage", http_status_override=404, error_code="JOB_NOT_FOUND", anchor_root=anchor_root)
 
     with _ACTIVE_PROCS_LOCK:
         if target_jid in _CANCEL_FLAGS:
@@ -684,26 +692,20 @@ def cancel_replication_job(cockpit_dir: str | Path, body: Mapping[str, Any], *, 
     if proc is not None:
         ctx["v4_mods"]["anvil_v4_trace"]._kill_process_tree(proc)
 
-    try:
-        job_path = _v4_subpath(store_root, f"replication_jobs/{target_jid}.json")
-    except PermissionError as pe:
-        return _refuse403("PATH_ESCAPE_REFUSED", str(pe))
-    if not job_path.is_file():
-        return build_replication_failure_response("dependency-returns-garbage", http_status_override=404, error_code="JOB_NOT_FOUND", anchor_root=anchor_root)
-
     with _as.exclusive_file_lock(sf_file):
         with _as.exclusive_file_lock(job_path):
-            jdoc = _read_strict_json(job_path, REPLICATION_JOB_SCHEMA) or {}
+            try:
+                jdoc = _read_verified_job(cdir, job_path, ctx["scope_sha256"]) or {}
+            except Exception as exc:
+                return build_replication_failure_response("backing-store-unreadable", detail=str(exc), anchor_root=anchor_root)
             cur_st = str(jdoc.get("status") or "")
             if cur_st in {"completed", "completed_with_missing_dep", "failed"}:
                 return ({"ok": False, "anvil_v6_enabled": True, "error_code": "JOB_ALREADY_TERMINAL", "http_status": 409, "job_id": target_jid, "status": cur_st, "message": f"Job '{target_jid}' already finished with status '{cur_st}'.", "error": "JOB_ALREADY_TERMINAL"}, 409)
             if cur_st != "cancelled":
                 jdoc.update({"status": "cancelled", "http_status": 504, "error_code": "REPLICATION_CANCELLED", "message": REPLICATION_FAILURE_STATE_TABLE["dependency-slow-or-killed"]["message"], "updated_at": _now_iso()})
-                _write_json(job_path, jdoc)
-        if sf_file.is_file():
-            with contextlib.suppress(Exception):
-                if json.loads(sf_file.read_text(encoding="utf-8")).get("job_id") == target_jid:
-                    _write_json(sf_file, {"job_id": target_jid, "scope_sha256": ctx["scope_sha256"], "status": "cancelled", "pid": os.getpid(), "heartbeat_ts": time.time()})
+                _write_job(cdir, job_path, jdoc)
+        if _read_verified_sf_job_id(cdir, sf_file, ctx["scope_sha256"]) == target_jid:
+            _write_sf(cdir, sf_file, {"job_id": target_jid, "scope_sha256": ctx["scope_sha256"], "status": "cancelled", "pid": os.getpid(), "heartbeat_ts": time.time()})
 
     return build_replication_failure_response("dependency-slow-or-killed", error_code="REPLICATION_CANCELLED", extra={"job_id": target_jid, "cancelled": True, "analysis_id": ctx["analysis_id"], "scope_sha256": ctx["scope_sha256"]}, anchor_root=anchor_root)
 
@@ -713,22 +715,19 @@ def get_replication_state(cockpit_dir: str | Path, *, analysis_id: Optional[str]
     ctx, err = _resolve_locked_scope_context(raw_cdir, analysis_id, anchor_root)
     if err is not None or ctx is None:
         return err  # type: ignore[return-value]
-    cdir = raw_cdir.resolve()
-    store_root, sw_dir, audit_mod = ctx["store_root"], ctx["sw_dir"], ctx["v4_mods"]["anvil_replication_audit"]
+    cdir, store_root, sw_dir, audit_mod = raw_cdir.resolve(), ctx["store_root"], ctx["sw_dir"], ctx["v4_mods"]["anvil_replication_audit"]
     scrub = lambda s: audit_mod.scrub_host_paths_and_secrets(s, repo_root=str(sw_dir), cockpit_root=str(cdir))
     job_doc: Optional[Dict[str, Any]] = None
     eff_jid = str(job_id or "").strip()
     try:
         if not eff_jid:
-            sf_file = _v4_subpath(store_root, "replication_singleflight.json")
-            if sf_file.exists():
-                eff_jid = str(json.loads(sf_file.read_text(encoding="utf-8")).get("job_id") or "")
+            eff_jid = _read_verified_sf_job_id(cdir, _v4_subpath(store_root, "replication_singleflight.json"), ctx["scope_sha256"])
         if eff_jid:
             if not re.fullmatch(r"[a-zA-Z0-9_-]{4,80}", eff_jid):
                 return build_replication_failure_response("dependency-returns-garbage", http_status_override=400, anchor_root=anchor_root)
             jp = _v4_subpath(store_root, f"replication_jobs/{eff_jid}.json")
             if jp.exists():
-                job_doc = _read_strict_json(jp, REPLICATION_JOB_SCHEMA)
+                job_doc = _read_verified_job(cdir, jp, ctx["scope_sha256"])
         rec_path = _v4_subpath(store_root, "replication_audit_receipt.json")
         saved_rec = _read_verified_receipt(cdir, rec_path, ctx["scope_sha256"]) if rec_path.exists() else None
     except PermissionError as pe:
@@ -762,7 +761,8 @@ def get_replication_state(cockpit_dir: str | Path, *, analysis_id: Optional[str]
             queued_file = _v4_subpath(store_root, "queued_refactorings.json")
             if queued_file.is_file():
                 qdoc = _read_strict_json(queued_file, REPLICATION_QUEUED_REFACTOR_SCHEMA) or {}
-                queued_ids = [str(x.get("candidate_id") or "") for x in (qdoc.get("items") or []) if isinstance(x, dict)]
+                if _apd.verify_gate_artifact(cdir, "refactor-queue", qdoc, expected_scope_sha256=ctx["scope_sha256"]):
+                    queued_ids = [str(x.get("candidate_id") or "") for x in (qdoc.get("items") or []) if isinstance(x, dict)]
         if job_doc and int(job_doc.get("http_status") or 200) == 503:
             rt_mods = [str(r.get("missing_module") or "") for r in ((job_doc.get("step_receipts") or {}).values()) if isinstance(r, Mapping) and r.get("missing_module")]
             miss_pkgs = _apd.discover_missing_scope_packages(sw_dir, cdir, store_root, ctx["scope_files"], rt_mods)
@@ -820,7 +820,7 @@ def approve_install_and_run_replication(cockpit_dir: str | Path, body: Mapping[s
     with _as.exclusive_file_lock(sf_file):
         if sf_file.is_file():
             try:
-                is_busy, ex_jid = _is_singleflight_busy(json.loads(sf_file.read_text(encoding="utf-8")), ctx["scope_sha256"])
+                is_busy, ex_jid = _is_singleflight_busy(cdir, json.loads(sf_file.read_text(encoding="utf-8")), ctx["scope_sha256"])
             except Exception as exc:
                 return build_replication_failure_response("backing-store-unreadable", detail=str(exc), anchor_root=anchor_root)
             if is_busy:
@@ -837,27 +837,23 @@ def approve_install_and_run_replication(cockpit_dir: str | Path, body: Mapping[s
 
         job_id, now_iso = f"repjob-{int(time.time() * 1000)}-{secrets.token_hex(4)}", _now_iso()
         job_path = _v4_subpath(store_root, f"replication_jobs/{job_id}.json")
-        _write_json(job_path, {
+        _write_job(cdir, job_path, {
             "schema": REPLICATION_JOB_SCHEMA, "job_id": job_id, "analysis_id": ctx["analysis_id"], "scope_sha256": ctx["scope_sha256"],
             "phase": "A", "candidate_id": "", "diff_sha256": "", "status": "installing_deps", "installing_packages": approved_pkgs, "pid": os.getpid(),
             "created_at": now_iso, "updated_at": now_iso, "completed_steps": 0, "total_steps": max(1, len(ctx["entrypoints"])),
             "step_receipts": {}, "source_repo_diff": [], "error_code": "", "http_status": 200, "message": f"Installing approved Python packages ({', '.join(approved_pkgs)}) in isolated Anvil runtime…",
         })
-        _write_json(sf_file, {"job_id": job_id, "scope_sha256": ctx["scope_sha256"], "status": "installing_deps", "pid": os.getpid(), "heartbeat_ts": time.time()})
-        cancel_ev = threading.Event()
-        is_sync = bool(body.get("sync", False)) and _apd._in_pytest_runtime()
+        _write_sf(cdir, sf_file, {"job_id": job_id, "scope_sha256": ctx["scope_sha256"], "status": "installing_deps", "pid": os.getpid(), "heartbeat_ts": time.time()})
+        cancel_ev, is_sync = threading.Event(), (bool(body.get("sync", False)) and _apd._in_pytest_runtime())
 
         def _hb() -> None:
             with _as.exclusive_file_lock(sf_file):
-                if sf_file.is_file():
+                if _read_verified_sf_job_id(cdir, sf_file, ctx["scope_sha256"]) == job_id:
                     cur_d = json.loads(sf_file.read_text(encoding="utf-8"))
-                    if cur_d.get("job_id") == job_id:
-                        cur_d["heartbeat_ts"] = time.time()
-                        _write_json(sf_file, cur_d)
+                    _write_sf(cdir, sf_file, {**cur_d, "heartbeat_ts": time.time()})
 
         def _install_then_run() -> None:
-            audit_mod = ctx["v4_mods"]["anvil_replication_audit"]
-            scrub = lambda s: audit_mod.scrub_host_paths_and_secrets(s, repo_root=str(ctx["sw_dir"]), cockpit_root=str(cdir))
+            scrub = lambda s: ctx["v4_mods"]["anvil_replication_audit"].scrub_host_paths_and_secrets(s, repo_root=str(ctx["sw_dir"]), cockpit_root=str(cdir))
             pre_install_snap: Optional[Dict[str, str]] = None
             proceed_to_run = False
             try:
@@ -865,25 +861,24 @@ def approve_install_and_run_replication(cockpit_dir: str | Path, body: Mapping[s
                 _apd.install_approved_packages(raw_cdir, store_root, approved_pkgs, cancel_ev=cancel_ev, heartbeat_cb=_hb)
                 with _as.exclusive_file_lock(sf_file):
                     with _as.exclusive_file_lock(job_path):
-                        cur_j = _read_strict_json(job_path, REPLICATION_JOB_SCHEMA) or {}
+                        cur_j = _read_verified_job(cdir, job_path, ctx["scope_sha256"]) or {}
                         if cur_j.get("status") == "cancelled" or cancel_ev.is_set():
                             return
                         cur_j.update({"status": "running", "message": "Running Phase A replication in isolated scratch…", "updated_at": _now_iso()})
-                        _write_json(job_path, cur_j)
-                    _write_json(sf_file, {"job_id": job_id, "scope_sha256": ctx["scope_sha256"], "status": "running", "pid": os.getpid(), "heartbeat_ts": time.time()})
+                        _write_job(cdir, job_path, cur_j)
+                    _write_sf(cdir, sf_file, {"job_id": job_id, "scope_sha256": ctx["scope_sha256"], "status": "running", "pid": os.getpid(), "heartbeat_ts": time.time()})
                 proceed_to_run = True
             except Exception as inst_exc:
                 is_to = isinstance(inst_exc, TimeoutError)
                 st_end = "cancelled" if str(inst_exc) == "REPLICATION_CANCELLED" else "failed"
-                hc = 504 if is_to else 503
-                ec = "REPLICATION_CANCELLED" if st_end == "cancelled" else ("PIP_INSTALL_TIMEOUT" if is_to else "PIPELINE_DEPENDENCY_MISSING")
+                hc, ec = (504 if is_to else 503), ("REPLICATION_CANCELLED" if st_end == "cancelled" else ("PIP_INSTALL_TIMEOUT" if is_to else "PIPELINE_DEPENDENCY_MISSING"))
                 with contextlib.suppress(Exception):
                     with _as.exclusive_file_lock(sf_file):
                         with _as.exclusive_file_lock(job_path):
-                            cur_j = _read_strict_json(job_path, REPLICATION_JOB_SCHEMA) or {}
+                            cur_j = _read_verified_job(cdir, job_path, ctx["scope_sha256"]) or {}
                             cur_j.update({"status": st_end, "http_status": hc, "error_code": ec, "message": scrub(str(inst_exc)), "updated_at": _now_iso()})
-                            _write_json(job_path, cur_j)
-                        _write_json(sf_file, {"job_id": job_id, "scope_sha256": ctx["scope_sha256"], "status": st_end, "pid": os.getpid(), "heartbeat_ts": time.time()})
+                            _write_job(cdir, job_path, cur_j)
+                        _write_sf(cdir, sf_file, {"job_id": job_id, "scope_sha256": ctx["scope_sha256"], "status": st_end, "pid": os.getpid(), "heartbeat_ts": time.time()})
             finally:
                 if not proceed_to_run:
                     with _ACTIVE_PROCS_LOCK:
@@ -939,19 +934,29 @@ def queue_vetted_refactoring(cockpit_dir: str | Path, body: Mapping[str, Any], *
 
     matched = next((fx for fx in (((saved_rec.get("report") or {}).get("approved_fixes")) or []) if str(fx.get("id") or "") in {raw_cand_id, norm_cand_id}), None)
     cand_id = str(matched.get("id") or norm_cand_id or raw_cand_id) if matched else raw_cand_id
+    cand_dsha = str((matched or {}).get("diff_sha256") or "").strip().lower()
     pb_rec = (saved_rec.get("phase_b_receipts") or {}).get(cand_id) or (saved_rec.get("phase_b_receipts") or {}).get(raw_cand_id)
-    xv_ok = _apd.verify_gate_artifact(cdir, "xval-gate", saved_rec.get("xval_receipt"), expected_scope_sha256=ctx["scope_sha256"])
+    xv_doc = saved_rec.get("xval_receipt")
+    xv_ok = _apd.verify_gate_artifact(cdir, "xval-gate", xv_doc, expected_scope_sha256=ctx["scope_sha256"])
+    xv_cmap = xv_doc.get("candidate_diff_sha256") if isinstance(xv_doc, Mapping) and isinstance(xv_doc.get("candidate_diff_sha256"), Mapping) else {}
+    xv_dsha = str(xv_cmap.get(cand_id) or xv_cmap.get(raw_cand_id) or (xv_doc.get("diff_sha256") if isinstance(xv_doc, Mapping) else "") or "").strip().lower()
     ram_map = _extract_verified_ram_map(cdir, saved_rec.get("ramanujan_verdicts_signed"), ctx["scope_sha256"])
-    ram_ok = bool(ram_map.get(cand_id) or ram_map.get(raw_cand_id))
-    pb_ok = isinstance(pb_rec, Mapping) and pb_rec.get("table_replay_passed") is True and str(pb_rec.get("diff_sha256") or "") == str((matched or {}).get("diff_sha256") or "") and bool((matched or {}).get("diff_sha256"))
-    if matched is None or not (xv_ok and ram_ok and pb_ok):
-        return _refuse403("UNAPPROVED_REFACTORING_REFUSED", f"Candidate '{cand_id}' has not passed all 3 signed verification legs.")
+    ram_entry = ram_map.get(cand_id) or ram_map.get(raw_cand_id)
+    ram_ok = isinstance(ram_entry, Mapping) and bool(cand_dsha) and str(ram_entry.get("diff_sha256") or "").strip().lower() == cand_dsha
+    pb_ok = isinstance(pb_rec, Mapping) and pb_rec.get("table_replay_passed") is True and bool(cand_dsha) and str(pb_rec.get("diff_sha256") or "").strip().lower() == cand_dsha
+    if matched is None or not (xv_ok and xv_dsha == cand_dsha and ram_ok and pb_ok):
+        return _refuse403("UNAPPROVED_REFACTORING_REFUSED", f"Candidate '{cand_id}' has not passed all 3 diff-bound signed verification legs.")
     with _as.exclusive_file_lock(q_path):
-        qdoc = _read_strict_json(q_path, REPLICATION_QUEUED_REFACTOR_SCHEMA) if q_path.is_file() else None
-        items = [x for x in ((qdoc or {}).get("items") or []) if isinstance(x, dict) and x.get("candidate_id") != cand_id]
+        qdoc: Dict[str, Any] = {}
+        with contextlib.suppress(Exception):
+            if q_path.is_file():
+                cand_q = _read_strict_json(q_path, REPLICATION_QUEUED_REFACTOR_SCHEMA) or {}
+                if _apd.verify_gate_artifact(cdir, "refactor-queue", cand_q, expected_scope_sha256=ctx["scope_sha256"]):
+                    qdoc = cand_q
+        items = [x for x in (qdoc.get("items") or []) if isinstance(x, dict) and x.get("candidate_id") != cand_id]
         entry = {"candidate_id": cand_id, "scope_sha256": ctx["scope_sha256"], "title": matched["title"], "where": matched["where"], "diff_sha256": matched.get("diff_sha256", ""), "operator_note": str(body.get("operator_note") or "").strip()[:1024], "queued_at": _now_iso()}
         items.append(entry)
-        _write_json(q_path, {"schema": REPLICATION_QUEUED_REFACTOR_SCHEMA, "items": items})
+        _write_json(q_path, _apd.sign_gate_artifact(cdir, "refactor-queue", {"schema": REPLICATION_QUEUED_REFACTOR_SCHEMA, "scope_sha256": ctx["scope_sha256"], "items": items}))
     return ({"ok": True, "queued": entry, "queued_refactoring_ids": [str(x["candidate_id"]) for x in items], "message": f"Queued approved surgical refactoring '{matched['title']}' (0 source files edited)."}, 200)
 
 

@@ -1,9 +1,9 @@
 """Isolated Python Dependency Discovery, 1-Click HMAC Approval, Venv Installer & Signed Store Guards (`anvil_py_deps.py`).
 
-100% Python stdlib; zero `urllib`/`http`/`socket`; zero `shell=True`; Win32 kill-on-close Job Objects;
-wheel-only `--only-binary=:all:` pip installs (zero sdist `setup.py`/PEP-517 host build execution);
-curated scientific PyPI allowlist on both runtime and AST-scanned imports; component-by-component
-`os.lstat` reparse refusal; HMAC-signed `runtime_env.json`, replication receipts, and 3-leg gate artifacts.
+Trust boundary (`consented_local_subprocess`): executes operator-approved local research code as the same OS user
+(NOT a kernel/VM sandbox against same-UID memory inspection). Protects against pre-baked repository files,
+untrusted HTTP inputs, symlink/UNC escapes, sdist build execution (`--only-binary=:all:`), and store tampering
+(DPAPI-sealed `.hmac_key` + pre/post SHA-256 snapshots of `.anvil/v4` and `.anchor/anvil_cache`).
 """
 from __future__ import annotations
 
@@ -196,6 +196,26 @@ def diff_source_snapshots(before: Mapping[str, str], after: Mapping[str, str]) -
     return [k for k in sorted(set(before.keys()) | set(after.keys())) if before.get(k) != after.get(k)]
 
 
+def snapshot_protected_anvil_stores(store_root: Path, active_job_id: str, *, include_runtime_env: bool = True, cdir: Optional[Path] = None) -> Dict[str, str]:
+    """Hash only integrity-critical gate/receipt/key artifacts (excluding concurrent UI/cache/nonce files)."""
+    _ = active_job_id
+    snap: Dict[str, str] = {}
+    v4_d = store_root.resolve() / ".anvil" / "v4"
+    for fn in ("replication_audit_receipt.json", "xval_receipt.json", "ramanujan_verdicts.json"):
+        fp = v4_d / fn
+        if fp.is_file() and not _ace._is_lstat_reparse(fp):
+            snap[f"v4:{fn}"] = hashlib.sha256(fp.read_bytes()).hexdigest()
+    key_f = _ace._anvil_cache_root() / ".hmac_key"
+    if key_f.is_file() and not _ace._is_lstat_reparse(key_f):
+        snap["hmac_key"] = hashlib.sha256(key_f.read_bytes()).hexdigest()
+    if include_runtime_env:
+        for tag, anc in (("store_rt", store_root), ("cdir_rt", cdir or store_root)):
+            rt_f = anc.resolve() / ".anvil" / "runtime_env.json"
+            if rt_f.is_file() and not _ace._is_lstat_reparse(rt_f):
+                snap[tag] = hashlib.sha256(rt_f.read_bytes()).hexdigest()
+    return snap
+
+
 def resolve_contained_paper_file(base_root: Path, rel_expr: str) -> Path:
     clean_s = str(rel_expr or "").strip()
     if not clean_s or "\x00" in clean_s or clean_s.startswith(("/", "\\")) or ":" in clean_s or Path(clean_s).is_absolute():
@@ -267,11 +287,50 @@ def verify_gate_artifact(cdir: Path, domain: str, doc: Any, expected_scope_sha25
     exp_slug = _ace._project_slug(cdir.resolve())
     if str(doc.get("proj_slug") or "") != exp_slug:
         return False
-    if expected_scope_sha256 and doc.get("scope_sha256") and str(doc.get("scope_sha256")).lower() != expected_scope_sha256.lower():
+    if expected_scope_sha256 and str(doc.get("scope_sha256") or "").lower() != expected_scope_sha256.lower():
         return False
     body = {str(k): v for k, v in doc.items() if str(k) != "hmac"}
     exp_sig = _ace.sign_state_record(domain, {"proj_slug": exp_slug, "body_sha256": _canonical_sha256(body)})
     return hmac.compare_digest(raw_sig, exp_sig)
+
+
+def read_verified_extra_site_packages(cdir: Path, store_root: Path) -> List[str]:
+    """Return HMAC-verified `extra_site_packages`, rejecting UNC/relative paths and confining to `anvil_py_env`."""
+    out: List[str] = []
+    seen: Set[str] = set()
+    allow_test_sp = _in_pytest_runtime() and (_INJECTED_PIP_INSTALLER is not None)
+    env_root = _anvil_py_env_root()
+    for trusted_anc in (store_root, cdir):
+        if _ace._is_lstat_reparse(trusted_anc) or not trusted_anc.is_dir():
+            continue
+        with contextlib.suppress(PermissionError):
+            _ace._ensure_no_reparse_chain(trusted_anc, (".anvil",))
+        if _ace._is_lstat_reparse(trusted_anc / ".anvil"):
+            continue
+        hint_f = trusted_anc / ".anvil" / "runtime_env.json"
+        if _ace._is_lstat_reparse(hint_f) or not hint_f.is_file():
+            continue
+        with contextlib.suppress(Exception):
+            doc = json.loads(hint_f.read_text(encoding="utf-8"))
+            if not verify_gate_artifact(cdir, "runtime-env", doc):
+                continue
+            for ex_sp in (doc.get("extra_site_packages") or []):
+                if not isinstance(ex_sp, str):
+                    continue
+                s_sp = ex_sp.strip()
+                if not s_sp or s_sp.startswith(("//", "\\\\")):
+                    continue
+                sp_p = Path(s_sp)
+                if not sp_p.is_absolute() or _ace._is_lstat_reparse(sp_p) or not sp_p.is_dir():
+                    continue
+                sp_res = sp_p.resolve()
+                if not allow_test_sp and not sp_res.is_relative_to(env_root):
+                    continue
+                sp_str = str(sp_res)
+                if sp_str not in seen:
+                    seen.add(sp_str)
+                    out.append(sp_str)
+    return out
 
 
 def sign_replication_receipt(cdir: Path, receipt_doc: Mapping[str, Any]) -> Dict[str, Any]:
@@ -319,31 +378,11 @@ def _collect_python_search_paths(sw_dir: Path, cdir: Path, store_root: Path) -> 
                 seen.add(r_str)
                 paths_out.append(r_str)
 
-    # Only honor HMAC-verified runtime_env.json written by Anchor in cdir/store_root (never untrusted repo dirs)
-    for trusted_anc in (store_root, cdir):
-        if _ace._is_lstat_reparse(trusted_anc) or not trusted_anc.is_dir():
-            continue
-        hint_f = trusted_anc / ".anvil" / "runtime_env.json"
-        if not _ace._is_lstat_reparse(hint_f) and hint_f.is_file():
-            with contextlib.suppress(Exception):
-                doc = json.loads(hint_f.read_text(encoding="utf-8"))
-                if verify_gate_artifact(cdir, "runtime-env", doc):
-                    for ex_sp in (doc.get("extra_site_packages") or []):
-                        if isinstance(ex_sp, str) and ex_sp.strip():
-                            _add(Path(ex_sp))
-
-    for anc in (cdir, sw_dir):
-        if _ace._is_lstat_reparse(anc) or not anc.is_dir():
-            continue
-        for vname in (".venv", "venv"):
-            _add(anc / vname / "Lib" / "site-packages")
-            lib_d = anc / vname / "lib"
-            if not _ace._is_lstat_reparse(lib_d) and lib_d.is_dir():
-                for pos_sp in lib_d.glob("python*/site-packages"):
-                    _add(pos_sp)
+    for v_sp in read_verified_extra_site_packages(cdir, store_root):
+        _add(Path(v_sp))
 
     for p in sys.path:
-        if isinstance(p, str) and p.strip():
+        if isinstance(p, str) and "site-packages" in p:
             _add(Path(p))
     with contextlib.suppress(Exception):
         import site as _site_mod
@@ -535,21 +574,26 @@ def validate_dep_token_without_consuming(
 
 
 def consume_dep_token_nonce(raw_store_root: Path, nonce: str) -> Optional[str]:
-    nonce_file = checked_v4_subpath(raw_store_root, "consumed_dep_nonces.json")
-    nonce_file.parent.mkdir(parents=True, exist_ok=True)
+    if _ace._is_lstat_reparse(raw_store_root):
+        raise PermissionError("Symlink or junction refused on store_root.")
+    cache_dir = _ace._anvil_cache_root()
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    nonce_file = cache_dir / "consumed_dep_nonces.json"
+    if _ace._is_lstat_reparse(nonce_file) or _ace._is_lstat_reparse(Path(f"{nonce_file}.lock")):
+        raise PermissionError("Symlink or junction refused on consumed_dep_nonces.json.")
     now_ts = int(time.time())
     with _as.exclusive_file_lock(nonce_file):
         if _ace._is_lstat_reparse(nonce_file):
             raise PermissionError("Symlink swap refused on consumed_dep_nonces.json.")
         existing_nonces: Dict[str, int] = {}
         if nonce_file.is_file():
-            with contextlib.suppress(Exception):
-                ndoc = json.loads(nonce_file.read_text(encoding="utf-8"))
-                if isinstance(ndoc, dict) and ndoc.get("schema") == CONSUMED_DEP_NONCES_SCHEMA:
-                    existing_nonces = {
-                        str(k): int(v) for k, v in (ndoc.get("nonces") or {}).items()
-                        if isinstance(v, int) and not isinstance(v, bool) and (now_ts - v) <= DEP_TOKEN_TTL_SEC * 2
-                    }
+            ndoc = json.loads(nonce_file.read_text(encoding="utf-8"))
+            if not isinstance(ndoc, dict) or ndoc.get("schema") != CONSUMED_DEP_NONCES_SCHEMA or not isinstance(ndoc.get("nonces"), dict):
+                raise RuntimeError("Corrupt consumed_dep_nonces.json schema; refusing fail-closed.")
+            existing_nonces = {
+                str(k): int(v) for k, v in ndoc["nonces"].items()
+                if isinstance(v, int) and not isinstance(v, bool) and (now_ts - v) <= DEP_TOKEN_TTL_SEC * 2
+            }
         if any(hmac.compare_digest(k, nonce) for k in existing_nonces):
             return "dep_install_token has already been used."
         existing_nonces[nonce] = now_ts
@@ -657,6 +701,28 @@ def _persist_runtime_env_site_packages(cdir: Path, raw_target_root: Path, site_p
         _as._atomic_write_text(rt_file, json.dumps(signed, separators=(",", ":"), sort_keys=True))
 
 
+_HOST_ABI_LOCK_PACKAGES: Set[str] = {
+    "numpy", "scipy", "pandas", "pyarrow", "scikit-learn", "statsmodels",
+    "numba", "llvmlite", "h5py", "matplotlib", "pillow", "cffi", "torch", "jax", "jaxlib",
+}
+
+
+def _write_host_abi_constraints(constraints_file: Path, requested_pkgs: Sequence[str]) -> None:
+    req_norm = {re.sub(r"[-_.]+", "-", p.strip().lower()) for p in requested_pkgs}
+    lines: List[str] = []
+    seen_c: Set[str] = set()
+    with contextlib.suppress(Exception):
+        import importlib.metadata as _im
+        for dist in _im.distributions():
+            d_name = str(dist.metadata.get("Name") or "").strip()
+            d_ver = str(dist.version or "").strip()
+            norm_n = re.sub(r"[-_.]+", "-", d_name.lower())
+            if norm_n and d_ver and norm_n in _HOST_ABI_LOCK_PACKAGES and norm_n not in req_norm and norm_n not in seen_c and _SAFE_PKG_RE.fullmatch(norm_n):
+                seen_c.add(norm_n)
+                lines.append(f"{norm_n}=={d_ver}")
+    constraints_file.write_text("\n".join(sorted(lines)) + ("\n" if lines else ""), encoding="utf-8")
+
+
 def install_approved_packages(
     raw_cdir: Path,
     raw_store_root: Path,
@@ -686,13 +752,24 @@ def install_approved_packages(
                 pv = os.environ.get(pk)
                 if isinstance(pv, str) and pv.strip() and not any(c in pv for c in ("\x00", "\r", "\n")):
                     clean_env[pk] = pv.strip()
+            constraints_f = scratch_cwd / "host_abi_constraints.txt"
+            _write_host_abi_constraints(constraints_f, clean_pkgs)
             with _as.exclusive_file_lock(env_lock):
                 venv_py = (venv_dir / "Scripts" / "python.exe") if os.name == "nt" else (venv_dir / "bin" / "python")
+                pyvenv_cfg = venv_dir / "pyvenv.cfg"
                 if not venv_py.is_file():
-                    rc_v, _, err_v = _run_managed_cmd([sys.executable, "-E", "-m", "venv", str(venv_dir)], cwd=scratch_cwd, env=clean_env, timeout_sec=180.0, cancel_ev=cancel_ev, heartbeat_cb=heartbeat_cb)
+                    rc_v, _, err_v = _run_managed_cmd([sys.executable, "-E", "-m", "venv", "--system-site-packages", str(venv_dir)], cwd=scratch_cwd, env=clean_env, timeout_sec=180.0, cancel_ev=cancel_ev, heartbeat_cb=heartbeat_cb)
                     if rc_v != 0 or not venv_py.is_file():
                         raise RuntimeError(f"Failed to initialize isolated Anvil venv (exit={rc_v}): {err_v[:300]}")
-                pip_argv = [str(venv_py), "-E", "-s", "-m", "pip", "install", "--disable-pip-version-check", "--no-input", "--only-binary=:all:", "--", *clean_pkgs]
+                elif pyvenv_cfg.is_file() and not _ace._is_lstat_reparse(pyvenv_cfg):
+                    cfg_txt = pyvenv_cfg.read_text(encoding="utf-8", errors="replace")
+                    if "include-system-site-packages = false" in cfg_txt.lower():
+                        pyvenv_cfg.write_text(re.sub(r"(?im)^include-system-site-packages\s*=\s*false\s*$", "include-system-site-packages = true", cfg_txt), encoding="utf-8")
+                pip_argv = [
+                    str(venv_py), "-E", "-s", "-m", "pip", "install",
+                    "--disable-pip-version-check", "--no-input", "--only-binary=:all:",
+                    "--upgrade-strategy", "only-if-needed", "-c", str(constraints_f), "--", *clean_pkgs,
+                ]
                 rc_p, out_p, err_p = _run_managed_cmd(pip_argv, cwd=scratch_cwd, env=clean_env, timeout_sec=PIP_INSTALL_TIMEOUT_SEC, cancel_ev=cancel_ev, heartbeat_cb=heartbeat_cb)
                 if rc_p != 0:
                     tail = (err_p or out_p).strip()[-400:]

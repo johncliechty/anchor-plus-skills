@@ -136,6 +136,13 @@ def project_facts(entry, today=None):
             out["repair_proposals"] = [{"proposal_id": str(p.get("proposal_id") or ""), "count": int(p.get("count") or 0)} for p in props]
         except Exception:
             out["repair_proposals"] = []
+    ov = _read_json(root / ".ecgberht" / "overview.json")
+    if isinstance(ov, dict):
+        out["has_record"] = True
+        if not out["next"]:
+            out["next"] = str(ov.get("todo_summary") or ov.get("headline") or ov.get("doing_now") or "").strip()
+    if not out["has_record"] and (root / "ECGBERHT.md").is_file():
+        out["has_record"] = True
     # W2 (2026-09-28): the age of the wait — from the record, never the strip's last touch: the earliest instrument
     # that set the current wait, else the status summary's own time when it carries it; None when unknown
     out["wait_age_days"] = _wait_age_days(root, out["needs_you"], strip, summ, sfile, today) if out["needs_you"] else None

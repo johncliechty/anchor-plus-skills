@@ -296,8 +296,9 @@ def test_onboard_wizard_step2_html_receipt_and_distro_gate(tmp_path: Path):
     html = onboard_wizard.render_onboard_wizard_html(sandbox=True, base_dir=tmp_path)
     assert "btnRegisterHomebase" in html
     assert "chkHomebaseTelemetry" in html
-    assert "https://gwl-server.tailb49f65.ts.net" in html
-    assert "Anchor Homebase Registration" in html
+    assert "https://gwl-server.tailb49f65.ts.net" not in html
+    assert "https://github.com/johncliechty/ghostworldlabs-anchor" in html
+    assert "Anchor GitHub Repository" in html
 
     receipt = onboard_wizard.build_readiness_receipt(sandbox=False, base_dir=tmp_path)
     chk_ids = [c["id"] for c in receipt["checks"]]

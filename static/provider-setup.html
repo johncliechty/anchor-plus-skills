@@ -16,7 +16,7 @@
 <body class="provider-setup">
   <header class="setup-top">
     <span class="setup-brand">⚓ Anchor · Cave of Wonders</span>
-    <span class="w3-badge" id="setup-version-pill" style="font-family:Consolas,monospace;color:#f0b866;border:1px solid rgba(240,184,102,0.45);background:rgba(240,184,102,0.12);padding:4px 10px;border-radius:999px;font-weight:700;">v1.5.5</span>
+    <span class="w3-badge" id="setup-version-pill" style="font-family:Consolas,monospace;color:#f0b866;border:1px solid rgba(240,184,102,0.45);background:rgba(240,184,102,0.12);padding:4px 10px;border-radius:999px;font-weight:700;">v1.5.6</span>
     <span id="setup-host" class="muted"></span>
     <a href="/onboard-wizard" id="open-onboard-wizard-btn" style="background:linear-gradient(135deg,#f0b866,#d89638);color:#11131a;font-weight:700;padding:7px 14px;border-radius:8px;text-decoration:none;font-size:13px;margin-right:8px;">🧭 Onboarding &amp; Setup Wizard (or Sandbox Test Walkthrough)</a>
     <a href="/onboard-wizard?sandbox=1" id="open-onboard-sandbox-btn" style="background:rgba(240,184,102,0.14);border:1px solid rgba(240,184,102,0.45);color:#f0b866;font-weight:600;padding:7px 12px;border-radius:8px;text-decoration:none;font-size:12px;margin-right:8px;">🧪 Sandbox Walkthrough</a>
@@ -114,59 +114,87 @@
           </article>
         </div>
 
+        <article class="setup-card" id="setup-tailscale-prompt-card" style="margin:12px 0;border-color:rgba(56,189,248,0.45);background:rgba(16,25,39,0.9)" hidden>
+          <div class="wave2-matrix-top">
+            <h3 style="margin:0;color:#7dd3fc">📡 Tailscale Not Set Up — Would You Like to Set Up Tailscale?</h3>
+            <span class="w3-badge w3-badge-amber" id="setup-ts-prompt-badge">Optional</span>
+          </div>
+          <p class="muted small" id="setup-ts-prompt-desc" style="margin:6px 0 10px">Tailscale lets you connect privately to this Mother Ship from a phone or second laptop. You can set it up with one click now, or skip it and run locally (automatic website-watched updates work without Tailscale).</p>
+          <div class="setup-actions" style="display:flex;gap:10px;flex-wrap:wrap">
+            <button type="button" class="primary" id="btn-setup-ts-yes">📡 Yes — Install &amp; Sign In to Tailscale</button>
+            <button type="button" id="btn-setup-ts-skip">✓ No Thanks — Use Locally Without Tailscale</button>
+            <span id="setup-ts-prompt-msg" class="muted small"></span>
+          </div>
+        </article>
+
         <article class="setup-card" id="mothership-update-registry-card" style="margin:14px 0">
           <div class="wave2-matrix-top">
-            <h2>🚀 Anchor Version, Self-Update &amp; Mother Ship Registry (Push / Pull Updates)</h2>
-            <span class="w3-badge w3-badge-emerald" id="ms-current-version-label" style="font-family:Consolas,monospace;">v1.5.5</span>
+            <h2>🚀 Anchor Version, Automatic Updates &amp; 1-Click Registry</h2>
+            <span class="w3-badge w3-badge-emerald" id="ms-current-version-label" style="font-family:Consolas,monospace;">v1.5.6</span>
           </div>
-          <p class="muted small">Check for or pull the latest Anchor release + 20 bundled Foundry skills on this machine, watch the signed Ghost World Labs website signal automatically in the background (no Tailscale needed), or enable Low-Memory Saver Mode for older laptops.</p>
+          <p class="muted small"><code>Anchor.exe</code> automatically installs and updates Anchor plus all 20 Ghost World Labs skills from the official Anchor repository below (no separate Skill Foundry repository needed).</p>
           <div class="setup-actions" style="margin:10px 0;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
             <button type="button" id="btn-ms-check-update">🔍 Check for Updates</button>
-            <button type="button" id="btn-ms-pull-update" style="background:linear-gradient(135deg,#4ade80,#22c55e);color:#09140e;font-weight:700;">⬆ Pull &amp; Update to Latest Version</button>
-            <span id="ms-update-status-msg" class="muted small">Installed version: v1.5.5</span>
+            <button type="button" id="btn-ms-pull-update" style="background:linear-gradient(135deg,#4ade80,#22c55e);color:#09140e;font-weight:700;">⬆ Pull &amp; Update Anchor + 20 Skills</button>
+            <span id="ms-update-status-msg" class="muted small">Installed version: v1.5.6</span>
           </div>
           <div style="margin:10px 0;padding:10px 12px;border:1px solid rgba(255,255,255,0.08);border-radius:8px;display:flex;flex-direction:column;gap:8px;">
-            <label class="w3-checkbox-label" style="cursor:pointer;"><input type="checkbox" id="chk-ms-auto-pull-updates" checked> <strong>🌐 Automatic Website-Watched Version Updates:</strong> Watch <code>release-signal.json</code> online (Ed25519-signed) and automatically update Anchor + all 20 Foundry skills when idle</label>
+            <label class="w3-checkbox-label" style="cursor:pointer;"><input type="checkbox" id="chk-ms-auto-pull-updates" checked> <strong>🌐 Automatic Website-Watched Version Updates:</strong> Watch <code>release-signal.json</code> online (Ed25519-signed) and automatically update Anchor + all 20 skills when idle</label>
             <label class="w3-checkbox-label" style="cursor:pointer;"><input type="checkbox" id="chk-ms-low-spec-mode"> <strong>💻 Older Laptop / Low-Memory Mothership Mode:</strong> Cap hidden live panes to 2 and skip background Cave pre-warming (<span id="ms-hw-summary">detecting RAM &amp; cores…</span>)</label>
           </div>
           <hr style="border:0;border-top:1px solid rgba(255,255,255,0.08);margin:14px 0;">
-          <h3 style="margin:6px 0 8px;">📋 Register Mother Ship in Anchor Repository (<code>mothership_registry.json</code>)</h3>
+          <div class="wave2-matrix-top" style="margin-bottom:6px">
+            <h3 style="margin:0;">📋 Connect Email &amp; Register with Official Anchor Repository</h3>
+            <span class="w3-badge" id="ms-reg-status-badge">Ready to Register</span>
+          </div>
           <div class="quality-grid">
             <div>
-              <label for="ms-reg-owner">Owner / Collaborator Name</label>
-              <input id="ms-reg-owner" type="text" placeholder="e.g., Merrill, Collaborator">
+              <label for="ms-reg-email">Email Address to Connect</label>
+              <input id="ms-reg-email" type="email" placeholder="you@example.com" autocomplete="email">
             </div>
             <div>
-              <label for="ms-reg-pseudonym">Steward Pseudonym</label>
-              <input id="ms-reg-pseudonym" type="text" placeholder="e.g., Aladdin, Ecgberht">
-            </div>
-            <div>
-              <label for="ms-reg-tailscale-url">Tailscale / Mother Ship URL</label>
-              <input id="ms-reg-tailscale-url" type="text" placeholder="e.g., https://merrill-pc.tailnet.ts.net or http://127.0.0.1:8777">
-            </div>
-            <div>
-              <label for="ms-reg-platform">Operating System / Platform</label>
-              <select id="ms-reg-platform">
-                <option value="windows">Windows (Anchor.exe / NSSM)</option>
-                <option value="macos-arm64">Apple Mac / MacBook Air (Apple Silicon M1–M4)</option>
-                <option value="macos-x64">Apple Mac (Intel x86_64)</option>
-                <option value="linux">Linux (Ubuntu / Debian / Fedora)</option>
-              </select>
-            </div>
-            <div>
-              <label for="ms-reg-github-repo">Anchor GitHub Repository</label>
-              <input id="ms-reg-github-repo" type="text" value="GWL-John/Anchor">
+              <label for="ms-reg-github-repo">Anchor GitHub Repository (Official Registry · Locked)</label>
+              <input id="ms-reg-github-repo" type="text" value="https://github.com/johncliechty/ghostworldlabs-anchor" readonly style="opacity:0.82;cursor:not-allowed;font-family:Consolas,monospace">
             </div>
             <div style="display:flex;align-items:flex-end;">
-              <button type="button" id="btn-ms-register">📌 Register Mother Ship in Repo</button>
+              <button type="button" class="primary" id="btn-ms-register">📌 Register with 1 Click</button>
             </div>
           </div>
-          <div style="margin-top:14px;">
+          <details style="margin-top:10px">
+            <summary class="muted small" style="cursor:pointer">Optional: Display Name, Steward Pseudonym, Tailscale URL &amp; Clean Uninstall</summary>
+            <div class="quality-grid" style="margin-top:8px">
+              <div>
+                <label for="ms-reg-owner">Display Name (Optional)</label>
+                <input id="ms-reg-owner" type="text" placeholder="e.g., Alex, Jordan">
+              </div>
+              <div>
+                <label for="ms-reg-pseudonym">Steward Pseudonym (Optional)</label>
+                <input id="ms-reg-pseudonym" type="text" placeholder="e.g., Voyager, Aladdin">
+              </div>
+              <div>
+                <label for="ms-reg-tailscale-url">Tailscale URL (Optional)</label>
+                <input id="ms-reg-tailscale-url" type="text" placeholder="e.g., https://my-host.tailnet.ts.net">
+              </div>
+              <div>
+                <label for="ms-reg-platform">Operating System / Platform</label>
+                <select id="ms-reg-platform">
+                  <option value="windows">Windows (Anchor.exe / NSSM)</option>
+                  <option value="macos-arm64">Apple Mac / MacBook Air (Apple Silicon M1–M4)</option>
+                  <option value="macos-x64">Apple Mac (Intel x86_64)</option>
+                  <option value="linux">Linux (Ubuntu / Debian / Fedora)</option>
+                </select>
+              </div>
+            </div>
+            <div id="setup-uninstall-helper-box" style="margin-top:10px;padding:8px 12px;border:1px solid rgba(244,63,94,0.3);border-radius:8px;font-size:12.5px">
+              <strong>🧹 Need to Cleanly Uninstall Anchor?</strong> Run <code>Uninstall-Anchor.cmd</code> inside your Anchor folder (or <code>Anchor.exe --uninstall</code>, or Windows <em>Settings → Installed Apps → Anchor</em>). Your non-Anchor project folders are never deleted.
+            </div>
+          </details>
+          <div id="ms-admin-registry-list-wrap" style="margin-top:14px;">
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
-              <h3 style="margin:0;">🌐 Registered Mother Ships</h3>
+              <h3 style="margin:0;">🌐 Registered Mother Ship Status</h3>
               <button type="button" id="btn-ms-push-update">🚀 Push Latest Anchor to Registered Mother Ships</button>
             </div>
-            <div id="ms-registry-list" class="muted small" style="margin-top:8px;">Loading registered Mother Ships…</div>
+            <div id="ms-registry-list" class="muted small" style="margin-top:8px;">Loading registration status…</div>
           </div>
         </article>
 
@@ -192,7 +220,7 @@
           <div class="quality-grid">
             <div>
               <label for="host-sec-username">Mother Ship Username</label>
-              <input id="host-sec-username" type="text" placeholder="e.g., john, merrill" autocomplete="username">
+              <input id="host-sec-username" type="text" placeholder="e.g., alex" autocomplete="username">
             </div>
             <div>
               <label for="host-sec-contact-email">Contact / Recovery Email</label>
@@ -288,6 +316,21 @@
           <button type="button" id="provider-sync-live-models" class="btn-amber">🔄 Sync Live CLI &amp; Nightly 02:00 Models</button>
           <span id="refresh-message" role="status"></span>
         </div>
+
+        <article class="setup-card" id="provider-auto-cli-browser-card" style="margin:12px 0;border-color:rgba(56,189,248,0.4)">
+          <div class="wave2-matrix-top">
+            <h2 style="margin:0">⚡ 1-Click Auto-Install Agent CLIs &amp; Browser Account Sign-In</h2>
+            <span class="w3-badge w3-badge-sky" id="cli-browser-summary-badge">Claude · Antigravity · Codex · Grok</span>
+          </div>
+          <p class="muted small" style="margin:6px 0 10px">Automatically install missing AI agent CLIs (<strong>Claude Code</strong>, <strong>Antigravity / Gemini</strong>, <strong>OpenAI Codex</strong>, and <strong>Grok</strong> when enabled), detect active accounts open in your browser, or click any service below to open a browser and log in immediately.</p>
+          <div class="setup-actions" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+            <button type="button" class="primary" id="btn-setup-auto-install-clis">⬇ Auto-Install Agent CLIs</button>
+            <label class="w3-checkbox-label" style="cursor:pointer;font-size:12.5px"><input type="checkbox" id="chk-setup-install-grok"> Include Grok CLI</label>
+            <button type="button" id="btn-setup-check-browser-accounts">🌐 Check Open Browser Accounts</button>
+            <span id="setup-cli-browser-msg" class="muted small"></span>
+          </div>
+          <div id="setup-browser-accounts-strip" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:10px"></div>
+        </article>
 
         <!-- Logged-In Services & Active Model Routing Overview -->
         <article class="logged-in-services-card" id="logged-in-services-card" aria-label="Logged-in services and active model routing">
@@ -672,8 +715,20 @@
         </div>
 
         <p id="comms-status-banner" class="setup-notice" role="status" aria-live="polite">
-          🛡 <strong>Read-Only &amp; OS Vault Guardrail:</strong> Anchor reads envelope headers and ICS calendar windows to reconcile project milestones (e.g. Family Trusts, MBA Teaching AI, Campaign). It never sends email or modifies external calendar events without your explicit approval.
+          🛡 <strong>Easy Read-Only Email &amp; Calendar Linker:</strong> Connect local Windows Outlook in 1 click, or simply enter your email address below — Anchor auto-detects Gmail, Outlook, Yahoo, iCloud, or institutional IMAP and stores your App Password/OAuth token in the Windows OS Vault (never in JSON files on disk).
         </p>
+
+        <article class="setup-card" id="comms-easy-quick-bar" style="margin:12px 0;border-color:rgba(74,222,128,0.4)">
+          <div class="wave2-matrix-top">
+            <h2 style="margin:0">⚡ Fastest Ways to Link Your Email</h2>
+            <span class="w3-badge w3-badge-emerald">1-Click Setup</span>
+          </div>
+          <div class="setup-actions" style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+            <button type="button" class="primary" id="btn-comms-quick-outlook">📨 Option 1: 1-Click Connect Running Windows Outlook (No Password Needed)</button>
+            <button type="button" id="btn-comms-open-provider-app-pwd">🔑 Option 2: Open App Password Page in Browser for Typed Email ↗</button>
+            <span id="comms-detected-provider-hint" class="muted small">Type your email below to auto-fill server settings.</span>
+          </div>
+        </article>
 
         <!-- Provider Preset Cards -->
         <div class="wave1-cards-grid" id="comms-provider-cards" aria-label="Calendar and Email Provider Presets">
@@ -780,7 +835,7 @@
             <div id="comms-accounts-list" style="margin-bottom:14px;"></div>
 
             <h3>Reconciled Correspondence &amp; Deadlines Preview</h3>
-            <p class="muted small">Items below are automatically matched between your Calendar/Email pulse and project roadmaps (e.g. Family Trusts, MBA Teaching AI, Campaign, and Desk).</p>
+            <p class="muted small">Items below are automatically matched between your Calendar/Email pulse and active project roadmaps.</p>
             <div id="comms-reconciled-preview"></div>
           </article>
         </div>
@@ -793,5 +848,6 @@
   <script src="/static/provider-controls.js"></script>
   <script src="/static/provider-detail-page.js"></script>
   <script src="/static/provider-setup.js"></script>
+  <script src="/static/setup-easy-onboard.js"></script>
 </body>
 </html>

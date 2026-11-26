@@ -218,18 +218,23 @@ def _cache_hmac_key() -> bytes:
         return cached_k
     root.mkdir(parents=True, exist_ok=True)
     key_f, lock_f = root / ".hmac_key", root / ".hmac_key.lock"
+    if _is_lstat_reparse(key_f) or _is_lstat_reparse(lock_f):
+        raise AnvilPathEscapeError("Symlink or junction refused on .hmac_key.")
     with _as.exclusive_file_lock(lock_f):
+        if _is_lstat_reparse(key_f):
+            raise AnvilPathEscapeError("Symlink swap refused on .hmac_key.")
         if key_f.is_file():
-            raw_h = key_f.read_text(encoding="utf-8", errors="replace").strip()
-            if len(raw_h) >= 64 and re.fullmatch(r"[0-9a-fA-F]{64}", raw_h[:64]):
-                kb = bytes.fromhex(raw_h[:64])
-                _HMAC_KEY_MEMO[k_str] = kb
-                return kb
+            kb = _avg.dpapi_unwrap_key(key_f.read_text(encoding="utf-8", errors="replace"))
+            if kb is None:
+                raise RuntimeError("Planted plaintext or corrupt .hmac_key refused; DPAPI-sealed key required.")
+            _HMAC_KEY_MEMO[k_str] = kb
+            return kb
         fresh = os.urandom(32)
+        sealed = _avg.dpapi_wrap_key(fresh).encode("ascii")
         tmp_f = root / f".hmac_key.tmp.{os.getpid()}"
         fd = os.open(str(tmp_f), os.O_CREAT | os.O_TRUNC | os.O_WRONLY, 0o600)
         try:
-            os.write(fd, fresh.hex().encode("ascii"))
+            os.write(fd, sealed)
         finally:
             os.close(fd)
         os.replace(str(tmp_f), str(key_f))

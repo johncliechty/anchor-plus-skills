@@ -756,14 +756,13 @@ code{font-family:ui-monospace,Consolas,"Cascadia Mono",monospace}
 /* W5: the undo on the home's receipt line */
 .receipt .mini{border:1px solid var(--border);background:var(--surface2);border-radius:999px;padding:0 8px;font:inherit;font-size:10.5px;color:var(--accent-t);cursor:pointer;margin-left:6px}
 
-/* John's look, 2026-09-27: a quiet card for a project with no record */
-.tile.quiet{background:#13161e;border-color:#252a36;padding:6px 9px 7px}
-.tile.quiet .t-name{color:#b9bdc6;font-size:12.5px}
+/* Uniform AI Cockpit tiles (2026-11-26): record-less (.tile.quiet) and active-record tiles share the exact same compact size and outline */
 .tile.quiet .t-desc{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10.5px;margin-top:2px}
 
 /* Initiative tiles: a third-height identity view; details float without moving the grid. */
-.tile[data-tile]:not(.quiet):not(.open){height:40px;padding:3px 9px;display:flex;align-items:center;position:relative}
-.tile[data-tile]:not(.quiet):not(.open)>.t-top{width:100%;align-items:center}
+.tile[data-tile]:not(.open){height:40px;padding:3px 9px;display:flex;align-items:center;position:relative}
+.tile[data-tile]:not(.open)>.t-top{width:100%;align-items:center}
+.tile[data-tile]:not(.open)>.t-face,.tile[data-tile]:not(.open)>.t-acts{display:none}
 .tile[data-tile]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .t-peek{display:none;position:fixed;z-index:40;padding:9px;background:var(--surface);border:1px solid #536174;border-radius:7px;box-shadow:0 12px 35px rgba(0,0,0,.5);overflow:auto;cursor:default}
 .tile.peeking>.t-peek{display:block}
@@ -778,7 +777,7 @@ code{font-family:ui-monospace,Consolas,"Cascadia Mono",monospace}
 .tile.open>.t-peek>.t-face{grid-area:face}
 .tile.open>.t-peek>.t-acts{grid-area:acts;align-self:end}
 .tile.open .t-peek-head,.tile.open .t-peek-detail{display:none}
-@media (hover:none){.tile[data-tile]:not(.quiet):not(.open){height:56px}.tile[data-tile]:not(.open) .t-go{font-size:12px}.tile[data-tile]:not(.open) .t-peek-open{display:block;background:transparent;border:1px solid var(--border);border-radius:5px;font-size:17px;padding:0 5px}.tile[data-tile]:not(.open) .t-peek{width:calc(100% - 16px)!important;left:8px!important}}
+@media (hover:none){.tile[data-tile]:not(.open){height:56px}.tile[data-tile]:not(.open) .t-go{font-size:12px}.tile[data-tile]:not(.open) .t-peek-open{display:block;background:transparent;border:1px solid var(--border);border-radius:5px;font-size:17px;padding:0 5px}.tile[data-tile]:not(.open) .t-peek{width:calc(100% - 16px)!important;left:8px!important}}
 .t-quiet{font-size:10.5px;color:var(--text-dim2);margin-top:4px}
 .t-quiet .t-open{color:var(--accent-t)}
 

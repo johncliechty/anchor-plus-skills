@@ -24642,8 +24642,11 @@ class AnchorHandler(BaseHTTPRequestHandler):
                     release_watch_url=_b.get("release_watch_url"),
                 )
             elif _path_only == "/api/mothership/register":
-                _out = _mu.register_mothership_in_repo(_b)
+                _out = _mu.register_mothership_in_repo(_b, write_repo=False)
             else:
+                if not _paths.is_anchor_admin_edition():
+                    self._send_json({"ok": False, "error": "admin_edition_required"}, 403)
+                    return
                 _out = _mu.push_update_to_motherships(
                     target_id=str(_b.get("target_id") or "").strip(),
                     notes=str(_b.get("notes") or "").strip(),

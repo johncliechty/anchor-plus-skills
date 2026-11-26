@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Anchor.command — Double-clickable Standalone Native GUI Launcher for macOS & Linux (Anchor v1.5.2)
-# Connects to a remote Mother Ship (e.g. https://gwl-server.tailb49f65.ts.net) when configured in
+# Anchor.command — Double-clickable Standalone Native GUI Launcher for macOS & Linux (Anchor v1.5.6)
+# Connects to a remote Mother Ship (e.g. https://your-mothership.your-tailnet.ts.net) when configured in
 # settings.json (or via --mothership <url>), or starts the local background Mother Ship service with
 # --no-browser, then opens the standalone native Anchor desktop GUI window (never a web browser).
 

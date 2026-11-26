@@ -1,13 +1,13 @@
 {
   "schema": "anchor.release.signal.v1",
   "channel": "stable",
-  "version": "1.5.5",
+  "version": "1.5.6",
   "min_auto_update_version": "1.5.0",
-  "published_at": "2026-11-26T14:53:01Z",
+  "published_at": "2026-11-26T21:10:23Z",
   "repo_url": "https://github.com/johncliechty/ghostworldlabs-anchor.git",
-  "exe_zip_url": "https://github.com/johncliechty/ghostworldlabs-anchor/releases/download/v1.5.5/Anchor.zip",
-  "core_sha256": "2e:27:6e:af:f1:bd:6d:5d:28:82:a4:68:81:b6:55:2f:56:da:73:a0:70:65:cf:09:31:28:52:7f:bd:81:0d:d3",
-  "notes": "Anchor v1.5.5: Ghost World Labs License setup acknowledgement, Ed25519-signed website-watched automatic updates (no Tailscale needed), Free-Tier AI Provider preset, Older Laptop Low-Memory Mode, and Cave/Cockpit oscillator performance fix.",
+  "exe_zip_url": "https://github.com/johncliechty/ghostworldlabs-anchor/releases/download/v1.5.6/Anchor.zip",
+  "core_sha256": "0b:44:c6:68:65:f1:57:58:95:8e:a2:e3:6b:b3:1d:c4:49:64:db:31:46:bc:0c:42:c9:9a:8d:2a:d6:91:7c:15",
+  "notes": "Anchor v1.5.6: zero-PII collaborator setup, optional Tailscale setup prompt, 1-click locked GitHub registry, auto-installed AI CLIs & browser sign-in, easy email linking, and clean 1-click uninstaller.",
   "key_id": "gwl-homebase-2026-v1",
-  "signature": "d5:6b:0f:c0:e8:ef:e4:7a:36:f0:e4:bd:10:48:ef:bc:59:49:82:17:09:f0:5d:b4:e3:fc:63:f0:70:04:2d:73:ce:34:45:20:97:11:57:18:84:cc:ab:ad:15:fe:37:1b:6e:84:21:25:7e:f0:c1:cb:a7:63:2a:62:cd:23:1b:01"
+  "signature": "86:d3:d0:8d:20:69:5f:8e:64:7a:cc:b6:66:f6:9e:f5:f3:e9:44:10:5f:e9:1b:a3:e2:bc:63:73:1f:2a:a0:60:d7:81:df:ef:79:3e:d1:47:67:86:25:59:b1:cb:5b:b7:92:59:21:ed:97:2e:d3:92:db:10:74:95:2b:a8:ed:0a"
 }

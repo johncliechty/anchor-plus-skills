@@ -6398,6 +6398,8 @@ def handle_post(cdir, verb, body):
             if act in ("replication_start", "replication_phase_b", "run_replication"):
                 from steward_cockpit import anvil_replication_job as _arj
                 eff_body = dict(body)
+                if "pytest" not in sys.modules:
+                    eff_body.pop("sync", None)
                 if act == "replication_phase_b" and "phase" not in eff_body:
                     eff_body["phase"] = "B"
                 out = _run_with_cockpit_usage_attribution(
@@ -6406,8 +6408,11 @@ def handle_post(cdir, verb, body):
                 return out if (isinstance(out, tuple) and len(out) == 2) else (out, 200)
             if act in ("replication_install_deps", "approve_replication_deps"):
                 from steward_cockpit import anvil_replication_job as _arj
+                eff_dep_body = dict(body)
+                if "pytest" not in sys.modules:
+                    eff_dep_body.pop("sync", None)
                 out = _run_with_cockpit_usage_attribution(
-                    "anvil", act, cdir, body, lambda: _arj.approve_install_and_run_replication(cdir, body)
+                    "anvil", act, cdir, eff_dep_body, lambda: _arj.approve_install_and_run_replication(cdir, eff_dep_body)
                 )
                 return out if (isinstance(out, tuple) and len(out) == 2) else (out, 200)
             if act in ("replication_cancel", "cancel_replication"):

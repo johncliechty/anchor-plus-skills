@@ -1228,6 +1228,12 @@ def emit_share_docs(staging: Path, root: Path | None = None) -> list:
         p = Path(staging) / rel
         p.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
         out.append((rel, p))
+    ed_path = Path(staging) / "anchor-edition.json"
+    ed_path.write_text(
+        json.dumps({"edition": "collaborator", "hide_admin_and_download_links": True}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    out.append(("anchor-edition.json", ed_path))
     return out
 
 

@@ -830,10 +830,12 @@ def test_w3_job_concurrency_singleflight_409_repeat_idempotence_and_5row_failure
         "cross_family_attested": True,
         "families": ["claude", "gemini"],
         "verdict": "PASS",
+        "candidate_diff_sha256": {"fix-seed-tie": seed_diff_sha},
     }
     ram_verdicts = {
         "fix-seed-tie": {
             "scope_sha256": scope_sha,
+            "diff_sha256": seed_diff_sha,
             "code_defect_confirmed": True,
             "wrong_side": False,
             "verdict": "APPROVED",
@@ -1006,6 +1008,7 @@ def test_w3_playwright_report_v2_ui_states_drawer_export_and_ft_look(
                             "cross_family_attested": True,
                             "families": ["claude", "gemini"],
                             "verdict": "PASS",
+                            "candidate_diff_sha256": {"fix-ui-app-1": hashlib.sha256(seed_fix_diff.encode("utf-8")).hexdigest()},
                         },
                     )
                 ),
@@ -1019,7 +1022,7 @@ def test_w3_playwright_report_v2_ui_states_drawer_export_and_ft_look(
                         {
                             "scope_sha256": scope_sha,
                             "verdicts": {
-                                "fix-ui-app-1": {"scope_sha256": scope_sha, "code_defect_confirmed": True, "verdict": "APPROVED"},
+                                "fix-ui-app-1": {"scope_sha256": scope_sha, "diff_sha256": hashlib.sha256(seed_fix_diff.encode("utf-8")).hexdigest(), "code_defect_confirmed": True, "verdict": "APPROVED"},
                                 "fix-ui-blk-1": {"scope_sha256": scope_sha, "wrong_side": True, "target_side": "paper", "verdict": "BLOCKED", "reason": "Wrong side."},
                             },
                         },
