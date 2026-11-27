@@ -17902,7 +17902,7 @@ def _doctor_sync_live_code():
                          "model_policy", "provider_setup", "gwl_admin_gui", "onboard_wizard",
                          "terminal_session", "comms_connector", "doctor_plain", "poincare_state_map"):
             if mod_name in sys.modules:
-                if os.environ.get("PYTEST_CURRENT_TEST") and mod_name in ("model_policy", "provider_setup", "steward_cockpit.dictation_engine", "comms_connector", "steward_cockpit.steward_routes"):
+                if os.environ.get("PYTEST_CURRENT_TEST") and mod_name in ("model_policy", "provider_setup", "onboard_wizard", "steward_cockpit.dictation_engine", "comms_connector", "steward_cockpit.steward_routes"):
                     continue
                 try:
                     _m_obj = sys.modules[mod_name]
@@ -23808,6 +23808,10 @@ class AnchorHandler(BaseHTTPRequestHandler):
             elif _path_only in ("/download/Anchor.zip", "/download/Anchor-Test-Onboard.zip", "/download/Anchor-Admin.zip"):
                 import onboard_wizard as _ow
                 pkg_kind = "test" if "Test" in _path_only else ("admin" if "Admin" in _path_only else "prod")
+                if pkg_kind in ("admin", "test"):
+                    if not ((_paths.auth_ok(provided) or _local_browser(self)) and _paths.is_anchor_admin_edition()):
+                        self._send_json({"ok": False, "error": "admin_auth_required"}, 403)
+                        return
                 zpath, fname = _ow.build_or_resolve_exe_zip_package(pkg_kind)
                 data_bytes = zpath.read_bytes()
                 self.send_response(200)
@@ -24598,6 +24602,11 @@ class AnchorHandler(BaseHTTPRequestHandler):
             return
         if _path_only == "/api/onboard-wizard/action":
             import onboard_wizard as _ow
+            _orig_hdr = str(self.headers.get("Origin") or "").strip()
+            _host_hdr = str(self.headers.get("Host") or "").strip()
+            if _orig_hdr and _host_hdr and urlparse(_orig_hdr).netloc.lower() != _host_hdr.lower():
+                self._send_json({"ok": False, "error": "cross_origin_forbidden"}, 403)
+                return
             _b = dict(body) if isinstance(body, dict) else {}
             for _rk in list(_b.keys()):
                 if str(_rk).startswith("_req_"):
@@ -24607,6 +24616,9 @@ class AnchorHandler(BaseHTTPRequestHandler):
             q = parse_qs(urlparse(self.path).query)
             is_sb = bool(_b.get("sandbox")) or str((q.get("sandbox") or [""])[0]).strip().lower() in ("1", "true", "yes")
             _act = str(_b.get("action") or "").strip()
+            if _act.lower() not in ("register_homebase", "submit_homebase_telemetry") and not _b["_req_auth_ok"]:
+                self._send_json({"ok": False, "error": "unauthorized"}, 401)
+                return
             _out = _ow.dispatch_wizard_action(_act, _b, sandbox=is_sb)
             _code_ow = int(_out.get("status_code") or (200 if _out.get("ok") else 400))
             self._send_json(_out, _code_ow)

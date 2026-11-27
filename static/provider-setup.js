@@ -1400,7 +1400,7 @@
   };
   if($('btn-ms-check-update'))$('btn-ms-check-update').onclick=async()=>{
     const msg=$('ms-update-status-msg');if(msg)msg.textContent='Checking GitHub & Mother Ship registry for updates…';
-    try{const res=await fetch('/api/system/check_update',{credentials:'same-origin'}).then(r=>r.json());if(msg)msg.textContent=res.update_available?'⬆ Update available: '+(res.remote_version||res.remote_head||'latest')+' (installed: '+(res.display_version||'v1.5.6')+'). Click Pull & Update to install.':'✓ Up to date ('+(res.display_version||'v1.5.6')+').';}catch(e){if(msg)msg.textContent='Check failed: '+e.message;}
+    try{const res=await fetch('/api/system/check_update',{credentials:'same-origin'}).then(r=>r.json());if(msg)msg.textContent=res.update_available?'⬆ Update available: '+(res.remote_version||res.remote_head||'latest')+' (installed: '+(res.display_version||'v1.5.7')+'). Click Pull & Update to install.':'✓ Up to date ('+(res.display_version||'v1.5.7')+').';}catch(e){if(msg)msg.textContent='Check failed: '+e.message;}
   };
   if($('btn-ms-pull-update'))$('btn-ms-pull-update').onclick=async()=>{
     const msg=$('ms-update-status-msg');if(msg)msg.textContent='Pulling latest Anchor update & syncing 20 bundled Foundry skills…';
@@ -1412,15 +1412,17 @@
   };
   if($('btn-ms-push-update'))$('btn-ms-push-update').onclick=async()=>{
     const msg=$('ms-update-status-msg');if(msg)msg.textContent='Pushing latest Anchor release to registered Mother Ships…';
-    try{const res=await api.request('/api/mothership/push_update',{push_git_first:true});const count=Array.isArray(res.notified)?res.notified.length:0;if(msg)msg.textContent='✓ Push completed (v'+(res.version||'1.5.6')+') · Processed '+count+' registered Mother Ship(s).';loadMothershipUpdateAndRegistry();}catch(e){if(msg)msg.textContent='Push failed: '+e.message;}
+    try{const res=await api.request('/api/mothership/push_update',{push_git_first:true});const count=Array.isArray(res.notified)?res.notified.length:0;if(msg)msg.textContent='✓ Push completed (v'+(res.version||'1.5.7')+') · Processed '+count+' registered Mother Ship(s).';loadMothershipUpdateAndRegistry();}catch(e){if(msg)msg.textContent='Push failed: '+e.message;}
   };
+  let collabForceHost=false;
+  window._anchorSetupBridge={showSection:s=>{if(s==='host')collabForceHost=true;if(!userPickedSection)section(s);},clearCollabDemo:()=>{if(!w3Synced){w3State.folders=[];w3State.groups=[];w3State.goals=[];w3State.pull_history=[];renderWave3All();}}};
   renderWave3All();
   const reqSec=new URLSearchParams(location.search).get('section') || (location.hash?location.hash.replace('#',''):'');
   api.request('/api/provider-setup').then(value=>{
     render(value);
     if(!userPickedSection){
       if(reqSec && ['host','providers','provider-detail','chart','comms'].includes(reqSec))section(reqSec);
-      else section(value.host.configured?'providers':'host');
+      else section((!collabForceHost && value.host.configured)?'providers':'host');
     }
     const conns=Array.isArray(value && value.connections)?value.connections:[];
     if(!coldAutoRefreshDone && conns.length>0 && conns.every(c=>!c.observed_at && c.auth==='unknown')){

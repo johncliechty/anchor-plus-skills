@@ -1701,8 +1701,53 @@ PROVIDER_BROWSER_URLS: dict[str, dict[str, Any]] = {
 _BROWSER_DETECT_CACHE: dict[str, Any] = {"ts": 0.0, "payload": None}
 
 
+def _cli_augmented_env(home_dir: Path | None = None) -> dict[str, str]:
+    """Build an environment dict with all standard Windows/macOS/Linux Node & AI CLI bin dirs on PATH."""
+    env = dict(os.environ)
+    home = Path(home_dir) if home_dir else Path.home()
+    local_app = Path(env.get("LOCALAPPDATA", str(home / "AppData" / "Local")))
+    app_data = Path(env.get("APPDATA", str(home / "AppData" / "Roaming")))
+    prog_files = Path(env.get("ProgramFiles", r"C:\Program Files"))
+    extra_dirs: list[Path] = []
+    if os.name == "nt":
+        extra_dirs.extend([
+            prog_files / "nodejs",
+            app_data / "npm",
+            local_app / "Programs" / "claude",
+            local_app / "AnthropicClaude",
+            home / ".local" / "bin",
+            home / ".claude" / "local",
+            local_app / "agy" / "bin",
+            local_app / "grok" / "bin",
+            home / ".codex" / "bin",
+            home / ".grok" / "bin",
+        ])
+    else:
+        extra_dirs.extend([
+            home / ".local" / "bin",
+            home / ".claude" / "local",
+            home / ".npm-global" / "bin",
+            Path("/opt/homebrew/bin"),
+            Path("/usr/local/bin"),
+        ])
+    cur_path = env.get("PATH", "")
+    cur_parts = [p.strip() for p in cur_path.split(os.pathsep) if p.strip()]
+    cur_norm = {p.lower() if os.name == "nt" else p for p in cur_parts}
+    prepend: list[str] = []
+    for d in extra_dirs:
+        ds = str(d)
+        dk = ds.lower() if os.name == "nt" else ds
+        if dk not in cur_norm and d.is_dir():
+            prepend.append(ds)
+            cur_norm.add(dk)
+    if prepend:
+        env["PATH"] = os.pathsep.join(prepend + cur_parts)
+    return env
+
+
 def _find_cli_binary_for_family(fam: str, home_dir: Path | None = None, which_fn=None) -> str:
-    which = which_fn or shutil.which
+    aug_path = _cli_augmented_env(home_dir).get("PATH") if which_fn is None else None
+    which = which_fn or (lambda name: shutil.which(name, path=aug_path))
     meta = PROVIDER_BROWSER_URLS.get(fam) or {}
     primary = str(meta.get("cli") or fam)
     p = which(primary)
@@ -1724,24 +1769,33 @@ def _find_cli_binary_for_family(fam: str, home_dir: Path | None = None, which_fn
             local_app / "agy" / "bin" / "agy.exe",
             local_app / "agy" / "bin" / "agy.cmd",
             app_data / "npm" / "gemini.cmd",
+            app_data / "npm" / "gemini",
             home / ".local" / "bin" / "agy",
             home / ".local" / "bin" / "gemini",
         ])
     elif fam == "claude":
         candidates.extend([
             app_data / "npm" / "claude.cmd",
+            app_data / "npm" / "claude",
             local_app / "Programs" / "claude" / "claude.exe",
+            local_app / "AnthropicClaude" / "claude.exe",
+            home / ".local" / "bin" / "claude.exe",
             home / ".local" / "bin" / "claude",
+            home / ".claude" / "local" / "claude.exe",
+            home / ".claude" / "local" / "claude",
         ])
     elif fam == "chatgpt":
         candidates.extend([
             app_data / "npm" / "codex.cmd",
+            app_data / "npm" / "codex",
             home / ".codex" / "bin" / "codex.exe",
             home / ".local" / "bin" / "codex",
         ])
     elif fam == "grok":
         candidates.extend([
             app_data / "npm" / "grok.cmd",
+            app_data / "npm" / "grok",
+            local_app / "grok" / "bin" / "grok.cmd",
             home / ".grok" / "bin" / "grok.exe",
             home / ".local" / "bin" / "grok",
         ])
@@ -1764,20 +1818,35 @@ def _has_local_cli_credentials(fam: str, home_dir: Path | None = None) -> bool:
         for p in (home / ".claude" / ".credentials.json", home / ".claude" / "credentials.json"):
             if p.is_file() and p.stat().st_size > 10:
                 return True
+        claude_json = home / ".claude.json"
+        if claude_json.is_file():
+            try:
+                cj = json.loads(claude_json.read_text(encoding="utf-8", errors="ignore"))
+                if isinstance(cj, dict) and (cj.get("oauthAccount") or cj.get("primaryApiKey")):
+                    return True
+            except Exception:
+                pass
     elif fam == "gemini":
-        for p in (
-            home / ".gemini" / "oauth_creds.json",
-            home / ".gemini" / "google_accounts.json",
-            app_data / "Antigravity" / "User" / "globalStorage" / "state.vscdb",
-        ):
-            if p.is_file() and p.stat().st_size > 10:
-                return True
+        oauth_p = home / ".gemini" / "oauth_creds.json"
+        if oauth_p.is_file() and oauth_p.stat().st_size > 10:
+            return True
+        g_acct = home / ".gemini" / "google_accounts.json"
+        if g_acct.is_file():
+            try:
+                ga = json.loads(g_acct.read_text(encoding="utf-8", errors="ignore"))
+                if isinstance(ga, dict) and ga.get("active"):
+                    return True
+            except Exception:
+                pass
+        gem_env = home / ".gemini" / ".env"
+        if gem_env.is_file() and "GEMINI_API_KEY=" in gem_env.read_text(encoding="utf-8", errors="ignore"):
+            return True
     elif fam == "chatgpt":
         for p in (home / ".codex" / "auth.json", home / ".openai" / "auth.json"):
             if p.is_file() and p.stat().st_size > 10:
                 return True
     elif fam == "grok":
-        for p in (home / ".grok" / "auth.json", home / ".grok" / "config.json"):
+        for p in (home / ".grok" / "user-settings.json", home / ".grok" / "auth.json", home / ".grok" / "config.json"):
             if p.is_file() and p.stat().st_size > 10:
                 return True
     return False
@@ -1883,13 +1952,13 @@ def detect_browser_and_cli_accounts(
         b_hits = domain_hits.get(fam) or []
         b_found = bool(b_hits)
         if cli_auth:
-            summary = "Signed in locally ✓"
+            summary = "Connected ✓"
         elif b_found:
-            summary = f"Active in browser ({b_hits[0]}) — click to connect"
+            summary = f"CLI ready — click Connect ({b_hits[0]} open)"
         elif cli_bin:
-            summary = "CLI installed — click Open Browser & Log In"
+            summary = "CLI installed — click Connect to sign in"
         else:
-            summary = "Click Auto-Install CLIs or Open Browser & Log In"
+            summary = "Click Install All 4 CLIs, then Connect"
         accounts_out[fam] = {
             "family": fam,
             "label": meta["label"],
@@ -1897,6 +1966,8 @@ def detect_browser_and_cli_accounts(
             "cli_path": cli_bin,
             "cli_installed": bool(cli_bin),
             "cli_authenticated": cli_auth,
+            "connected": cli_auth,
+            "status_label": "Connected" if cli_auth else "Not Connected",
             "browser_session_detected": b_found,
             "matched_domains": b_hits,
             "login_url": meta["login_url"],
@@ -1935,17 +2006,69 @@ def _ensure_gemini_agy_shim(gemini_exe: str, home_dir: Path | None = None) -> st
     return str(shim_path)
 
 
+def _ensure_grok_cli_shim(home_dir: Path | None = None) -> str:
+    """Create a reliable standalone Python-backed `grok` CLI wrapper when npm `@vibe-kit/grok-cli` is unavailable."""
+    home = Path(home_dir) if home_dir else Path.home()
+    py_exe = sys.executable or "python"
+    driver_body = (
+        "import json, os, pathlib, sys, urllib.request\n"
+        "if '--version' in sys.argv or '-v' in sys.argv:\n"
+        "    print('grok-cli 1.5.7 (Anchor xAI bridge)')\n"
+        "    raise SystemExit(0)\n"
+        "cfg = pathlib.Path.home() / '.grok' / 'user-settings.json'\n"
+        "key = os.environ.get('XAI_API_KEY', '')\n"
+        "if not key and cfg.is_file():\n"
+        "    try: key = json.loads(cfg.read_text(encoding='utf-8')).get('apiKey', '')\n"
+        "    except Exception: key = ''\n"
+        "if not key:\n"
+        "    print('Grok CLI not connected yet. Open Anchor Setup -> Connect Grok.', file=sys.stderr)\n"
+        "    raise SystemExit(1)\n"
+        "prompt = ' '.join(a for a in sys.argv[1:] if not a.startswith('-')).strip() or sys.stdin.read().strip()\n"
+        "if not prompt:\n"
+        "    print('grok-cli ready (connected)')\n"
+        "    raise SystemExit(0)\n"
+        "req = urllib.request.Request(\n"
+        "    'https://api.x.ai/v1/chat/completions',\n"
+        "    data=json.dumps({'model': os.environ.get('GROK_MODEL', 'grok-3'), 'messages': [{'role': 'user', 'content': prompt}]}).encode('utf-8'),\n"
+        "    headers={'Authorization': f'Bearer {key}', 'Content-Type': 'application/json', 'User-Agent': 'Anchor-Grok-CLI/1.5.7'},\n"
+        ")\n"
+        "with urllib.request.urlopen(req, timeout=90) as resp:\n"
+        "    doc = json.loads(resp.read().decode('utf-8'))\n"
+        "    print(doc['choices'][0]['message']['content'])\n"
+    )
+    if os.name == "nt":
+        local_app = Path(os.environ.get("LOCALAPPDATA", str(home / "AppData" / "Local")))
+        shim_dir = local_app / "grok" / "bin"
+        shim_dir.mkdir(parents=True, exist_ok=True)
+        py_script = shim_dir / "grok_driver.py"
+        py_script.write_text(driver_body, encoding="utf-8")
+        shim_path = shim_dir / "grok.cmd"
+        shim_path.write_text(f'@echo off\r\n"{py_exe}" "{py_script}" %*\r\n', encoding="utf-8")
+        return str(shim_path)
+    shim_dir = home / ".local" / "bin"
+    shim_dir.mkdir(parents=True, exist_ok=True)
+    py_script = shim_dir / "grok_driver.py"
+    py_script.write_text(driver_body, encoding="utf-8")
+    shim_path = shim_dir / "grok"
+    shim_path.write_text(f'#!/usr/bin/env sh\nexec "{py_exe}" "{py_script}" "$@"\n', encoding="utf-8")
+    try:
+        shim_path.chmod(0o755)
+    except OSError:
+        pass
+    return str(shim_path)
+
+
 def auto_install_agent_clis(
     *,
     families: list[str] | None = None,
-    include_grok: bool = False,
+    include_grok: bool = True,
     sandbox: bool = False,
     sandbox_id: str = DEFAULT_SANDBOX_ID,
     base_dir: Path | str | None = None,
     runner_fn=None,
     which_fn=None,
 ) -> dict[str, Any]:
-    """Automatically install Claude Code CLI (`claude`), Antigravity/Gemini CLI (`agy`/`gemini`), OpenAI Codex (`codex`), and optionally Grok (`grok`)."""
+    """Automatically install all 4 AI agent CLIs: Claude Code (`claude`), Gemini/Antigravity (`gemini`+`agy`), OpenAI Codex (`codex`), and Grok (`grok`)."""
     st_doc = load_wizard_state(sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)
     grok_enabled = bool(include_grok or ((st_doc.get("services") or {}).get("grok") or {}).get("enabled"))
     target_fams = list(families) if families else (["claude", "gemini", "chatgpt"] + (["grok"] if grok_enabled else []))
@@ -1960,10 +2083,18 @@ def auto_install_agent_clis(
             "message": f"Sandbox verified auto-installation for {', '.join(target_fams)}.",
         }
 
-    which = which_fn or shutil.which
+    aug_env = _cli_augmented_env()
+    if os.name != "nt" and runner_fn is None:
+        user_npm_prefix = Path.home() / ".npm-global"
+        if not os.access("/usr/local/lib", os.W_OK):
+            user_npm_prefix.mkdir(parents=True, exist_ok=True)
+            aug_env["NPM_CONFIG_PREFIX"] = str(user_npm_prefix)
+            aug_env["PATH"] = str(user_npm_prefix / "bin") + os.pathsep + aug_env.get("PATH", "")
+    which = which_fn or (lambda name: shutil.which(name, path=aug_env.get("PATH")))
     run = runner_fn or (
         lambda cmd: subprocess.run(
             cmd,
+            env=aug_env,
             capture_output=True,
             text=True,
             timeout=180,
@@ -1982,10 +2113,11 @@ def auto_install_agent_clis(
                     "winget", "install", "-e", "--id", "OpenJS.NodeJS.LTS",
                     "--silent", "--accept-package-agreements", "--accept-source-agreements",
                 ])
+                aug_env = _cli_augmented_env()
                 if cand_npm.is_file():
                     npm_cmd = str(cand_npm)
                 else:
-                    npm_cmd = which("npm.cmd") or which("npm")
+                    npm_cmd = shutil.which("npm.cmd", path=aug_env.get("PATH")) or shutil.which("npm", path=aug_env.get("PATH")) or ""
             except Exception:
                 npm_cmd = ""
 
@@ -1994,7 +2126,7 @@ def auto_install_agent_clis(
     failed: dict[str, str] = {}
 
     for fam in target_fams:
-        existing_bin = _find_cli_binary_for_family(fam, which_fn=which)
+        existing_bin = _find_cli_binary_for_family(fam, which_fn=which_fn)
         if existing_bin:
             if fam == "gemini" and not which("agy"):
                 try:
@@ -2003,30 +2135,61 @@ def auto_install_agent_clis(
                     pass
             already_present.append(fam)
             continue
-        if not npm_cmd:
-            failed[fam] = "Node.js / npm is required to auto-install CLI packages."
-            continue
+
         pkg = PROVIDER_BROWSER_URLS[fam]["npm_pkg"]
-        try:
-            res = run([npm_cmd, "install", "-g", "--no-audit", "--no-fund", pkg])
-            if getattr(res, "returncode", 1) == 0:
-                installed_now.append(fam)
-                if fam == "gemini":
-                    gem_bin = _find_cli_binary_for_family("gemini", which_fn=which)
-                    if gem_bin and not which("agy"):
+        fam_ok = False
+        last_err = ""
+        if npm_cmd:
+            try:
+                res = run([npm_cmd, "install", "-g", "--no-audit", "--no-fund", pkg])
+                if getattr(res, "returncode", 1) == 0:
+                    fam_ok = True
+                else:
+                    last_err = (getattr(res, "stderr", "") or getattr(res, "stdout", "") or "npm install failed").strip()
+            except Exception as exc:
+                last_err = str(exc)
+
+        # Native fallback for Claude Code (`winget install Anthropic.ClaudeCode`) when npm fails or is absent
+        if not fam_ok and fam == "claude" and runner_fn is None and os.name == "nt":
+            winget_exe = shutil.which("winget", path=aug_env.get("PATH"))
+            if winget_exe:
+                try:
+                    w_res = run([
+                        winget_exe, "install", "-e", "--id", "Anthropic.ClaudeCode",
+                        "--silent", "--accept-package-agreements", "--accept-source-agreements",
+                    ])
+                    if getattr(w_res, "returncode", 1) == 0 or _find_cli_binary_for_family("claude"):
+                        fam_ok = True
+                except Exception as exc:
+                    last_err = last_err or str(exc)
+
+        # Standalone Python xAI shim fallback for Grok CLI when npm fails or is absent
+        if not fam_ok and fam == "grok" and runner_fn is None:
+            try:
+                shim_g = _ensure_grok_cli_shim()
+                if shim_g and Path(shim_g).is_file():
+                    fam_ok = True
+            except Exception as exc:
+                last_err = last_err or str(exc)
+
+        if fam_ok:
+            installed_now.append(fam)
+            if fam == "gemini":
+                gem_bin = _find_cli_binary_for_family("gemini", which_fn=which_fn)
+                if gem_bin and not which("agy"):
+                    try:
                         _ensure_gemini_agy_shim(gem_bin)
-            else:
-                err_txt = (getattr(res, "stderr", "") or getattr(res, "stdout", "") or "npm install failed").strip()
-                failed[fam] = err_txt[:160]
-        except Exception as exc:
-            failed[fam] = str(exc)[:160]
+                    except Exception:
+                        pass
+        else:
+            failed[fam] = (last_err or "Node.js / npm is required to auto-install CLI packages.")[:160]
 
     _BROWSER_DETECT_CACHE["ts"] = 0.0
     parts: list[str] = []
     if installed_now:
         parts.append(f"Installed: {', '.join(installed_now)}")
     if already_present:
-        parts.append(f"Already installed: {', '.join(already_present)}")
+        parts.append(f"Ready: {', '.join(already_present)}")
     if failed:
         parts.append(f"Needs attention: {', '.join(f'{k} ({v})' for k, v in failed.items())}")
     return {
@@ -2034,8 +2197,8 @@ def auto_install_agent_clis(
         "installed": installed_now,
         "already_present": already_present,
         "failed": failed,
-        "accounts": detect_browser_and_cli_accounts(sandbox=False, which_fn=which).get("accounts", {}),
-        "message": " · ".join(parts) or "Agent CLI check complete.",
+        "accounts": detect_browser_and_cli_accounts(sandbox=False, which_fn=which_fn).get("accounts", {}),
+        "message": " · ".join(parts) or "All 4 Agent CLIs checked.",
     }
 
 
@@ -2086,6 +2249,204 @@ def open_browser_provider_login(
         "opened_on_host": opened_on_host,
         "cli_login_launched": bool(cli_res.get("launched")),
         "message": f"Opened {meta['label']} in your browser ({login_url}). Complete sign-in there — Anchor will detect your account automatically.",
+    }
+
+
+def connect_provider_simple(
+    family: str,
+    *,
+    api_key: str = "",
+    home_dir: Path | str | None = None,
+    sandbox: bool = False,
+    sandbox_id: str = DEFAULT_SANDBOX_ID,
+    base_dir: Path | str | None = None,
+    runner_fn=None,
+    browser_open_fn=None,
+) -> dict[str, Any]:
+    """Dead-simple 1-step CLI connection: installs CLI if missing, goes strictly to the exact auth flow needed for that CLI, and marks Connected."""
+    fam = str(family or "gemini").strip().lower()
+    if fam not in PROVIDER_BROWSER_URLS:
+        raise ValueError(f"Unsupported AI service family: {family}")
+    meta = PROVIDER_BROWSER_URLS[fam]
+    eff_home = Path(home_dir) if home_dir is not None else Path.home()
+
+    if sandbox:
+        configure_service_connection(fam, enabled=True, auth_mode="subscription", sandbox=True, sandbox_id=sandbox_id, base_dir=base_dir)
+        run_service_live_test(fam, sandbox=True, sandbox_id=sandbox_id, base_dir=base_dir)
+        return {
+            "ok": True,
+            "family": fam,
+            "connected": True,
+            "status_label": "Connected",
+            "message": f"Connected ✓ ({meta['label']})",
+        }
+
+    # 1. Ensure the CLI binary is installed first
+    cli_bin = _find_cli_binary_for_family(fam, home_dir=eff_home if home_dir is not None else None)
+    if not cli_bin and runner_fn is None and home_dir is None:
+        auto_install_agent_clis(families=[fam], include_grok=(fam == "grok"), base_dir=base_dir)
+        cli_bin = _find_cli_binary_for_family(fam)
+
+    k_val = str(api_key or "").strip()
+    if k_val:
+        if "\r" in k_val or "\n" in k_val or len(k_val) < 6:
+            return {
+                "ok": False,
+                "family": fam,
+                "connected": False,
+                "status_label": "Invalid Key",
+                "message": "Invalid API key format (must be single-line and non-empty).",
+            }
+        configure_service_connection(
+            fam,
+            enabled=True,
+            auth_mode="api_key",
+            **{"api_key": k_val},
+            sandbox=False,
+            sandbox_id=sandbox_id,
+            base_dir=base_dir,
+        )
+        if fam == "gemini":
+            gem_dir = eff_home / ".gemini"
+            gem_dir.mkdir(parents=True, exist_ok=True)
+            env_p = gem_dir / ".env"
+            existing_lines = [
+                ln for ln in (env_p.read_text(encoding="utf-8", errors="ignore").splitlines() if env_p.is_file() else [])
+                if not ln.strip().startswith("GEMINI_API_KEY=")
+            ]
+            existing_lines.append(f"GEMINI_API_KEY={k_val}")
+            env_p.write_text("\n".join(existing_lines) + "\n", encoding="utf-8")
+            if os.name != "nt":
+                try:
+                    env_p.chmod(0o600)
+                except OSError:
+                    pass
+        elif fam == "grok":
+            grok_dir = eff_home / ".grok"
+            grok_dir.mkdir(parents=True, exist_ok=True)
+            cfg_p = grok_dir / "user-settings.json"
+            cur_g: dict[str, Any] = {}
+            if cfg_p.is_file():
+                try:
+                    cur_g = json.loads(cfg_p.read_text(encoding="utf-8"))
+                    if not isinstance(cur_g, dict):
+                        cur_g = {}
+                except Exception:
+                    cur_g = {}
+            cur_g["apiKey"] = k_val
+            cfg_p.write_text(json.dumps(cur_g, indent=2) + "\n", encoding="utf-8")
+            if os.name != "nt":
+                try:
+                    cfg_p.chmod(0o600)
+                except OSError:
+                    pass
+        _BROWSER_DETECT_CACHE["ts"] = 0.0
+        probe_res = run_service_live_test(fam, sandbox=False, sandbox_id=sandbox_id, base_dir=base_dir)
+        is_ok = bool(probe_res.get("ok", True))
+        return {
+            "ok": is_ok,
+            "family": fam,
+            "connected": is_ok,
+            "status_label": "Connected" if is_ok else "Verify Failed",
+            "cli_installed": bool(cli_bin),
+            "message": f"Connected ✓ — {meta['label']} is ready!" if is_ok else f"Could not verify {meta['label']} CLI.",
+        }
+
+    # Check if already authenticated on disk right now
+    if _has_local_cli_credentials(fam, home_dir=eff_home if home_dir is not None else None):
+        configure_service_connection(fam, enabled=True, auth_mode="subscription", sandbox=False, sandbox_id=sandbox_id, base_dir=base_dir)
+        run_service_live_test(fam, sandbox=False, sandbox_id=sandbox_id, base_dir=base_dir)
+        _BROWSER_DETECT_CACHE["ts"] = 0.0
+        return {
+            "ok": True,
+            "family": fam,
+            "connected": True,
+            "status_label": "Connected",
+            "cli_installed": bool(cli_bin),
+            "message": f"Connected ✓ — {meta['label']} is already signed in and ready!",
+        }
+
+    # 2. Launch ONLY the exact CLI sign-in flow needed to make that CLI work (no redundant generic chat login pages)
+    aug_env = _cli_augmented_env(eff_home if home_dir is not None else None)
+    opener = browser_open_fn or webbrowser.open
+
+    if fam == "grok":
+        key_url = "https://console.x.ai"
+        opened_host = False
+        if browser_open_fn is not None or ("PYTEST_CURRENT_TEST" not in os.environ and paths.is_interactive_desktop_session()):
+            try:
+                opened_host = bool(opener(key_url))
+            except Exception:
+                opened_host = False
+        return {
+            "ok": True,
+            "family": "grok",
+            "connected": False,
+            "needs_api_key": True,
+            "opened_on_host": opened_host,
+            "login_url": key_url,
+            "status_label": "Paste Key to Connect",
+            "message": "Opened console.x.ai — copy your xAI API key, paste it in the Grok box, and click Connect.",
+        }
+
+    if fam == "gemini":
+        # Pre-set Google OAuth in ~/.gemini/settings.json so Gemini CLI goes straight to browser OAuth without asking a terminal menu question
+        gem_dir = eff_home / ".gemini"
+        gem_dir.mkdir(parents=True, exist_ok=True)
+        g_settings = gem_dir / "settings.json"
+        cur_gs: dict[str, Any] = {}
+        if g_settings.is_file():
+            try:
+                cur_gs = json.loads(g_settings.read_text(encoding="utf-8"))
+            except Exception:
+                cur_gs = {}
+        if not cur_gs.get("selectedAuthType"):
+            cur_gs["selectedAuthType"] = "oauth-personal"
+        sec_auth = cur_gs.setdefault("security", {})
+        if isinstance(sec_auth, dict):
+            auth_sub = sec_auth.setdefault("auth", {})
+            if isinstance(auth_sub, dict) and not auth_sub.get("selectedType"):
+                auth_sub["selectedType"] = "oauth-personal"
+        g_settings.write_text(json.dumps(cur_gs, indent=2) + "\n", encoding="utf-8")
+        gem_exe = shutil.which("gemini.cmd" if os.name == "nt" else "gemini", path=aug_env.get("PATH")) or shutil.which("gemini", path=aug_env.get("PATH")) or cli_bin
+        login_argv = [gem_exe] if gem_exe else ["gemini"]
+    elif fam == "claude":
+        login_argv = [cli_bin or "claude", "auth", "login"]
+    else:  # chatgpt -> codex login
+        login_argv = [cli_bin or "codex", "login"]
+
+    launched = False
+    if runner_fn is not None:
+        runner_fn(login_argv)
+        launched = True
+    elif os.name == "nt" and "PYTEST_CURRENT_TEST" not in os.environ and paths.is_interactive_desktop_session():
+        try:
+            CREATE_NEW_CONSOLE = 0x00000010
+            subprocess.Popen(
+                ["cmd.exe", "/c"] + login_argv,
+                env=aug_env,
+                creationflags=CREATE_NEW_CONSOLE,
+            )
+            launched = True
+        except Exception:
+            launched = False
+    elif "PYTEST_CURRENT_TEST" not in os.environ:
+        try:
+            subprocess.Popen(login_argv, env=aug_env, start_new_session=True)
+            launched = True
+        except Exception:
+            launched = False
+
+    configure_service_connection(fam, enabled=True, auth_mode="subscription", sandbox=False, sandbox_id=sandbox_id, base_dir=base_dir)
+    _BROWSER_DETECT_CACHE["ts"] = 0.0
+    return {
+        "ok": True,
+        "family": fam,
+        "connected": False,
+        "launched": launched,
+        "command": " ".join(Path(login_argv[0]).name if i == 0 else a for i, a in enumerate(login_argv)),
+        "status_label": "Waiting for Browser Approval…",
+        "message": f"Approve {meta['label']} in the browser window that just opened — this badge will automatically flip to Connected!",
     }
 
 
@@ -4505,6 +4866,632 @@ def configure_wizard_comms(
     return {"ok": True, "comms": comms_state}
 
 
+def get_simple_email_status(
+    *,
+    sandbox: bool = False,
+    sandbox_id: str = DEFAULT_SANDBOX_ID,
+    base_dir: Path | str | None = None,
+) -> dict[str, Any]:
+    """Return a clean Connected / Not Connected status summary for Email & Calendar."""
+    st_doc = load_wizard_state(sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)
+    w_comms = st_doc.get("comms") if isinstance(st_doc.get("comms"), dict) else {}
+    accounts: list[dict[str, Any]] = []
+    if not sandbox and base_dir is None:
+        try:
+            cfg = comms_connector.load_comms_config()
+            for a in (cfg.get("accounts") or []):
+                if isinstance(a, dict) and a.get("enabled", True) and a.get("email"):
+                    accounts.append({
+                        "id": a.get("id", ""),
+                        "email": a.get("email", ""),
+                        "label": a.get("label", ""),
+                        "family": a.get("family", ""),
+                    })
+        except Exception:
+            pass
+    if not accounts and w_comms.get("configured"):
+        acc = w_comms.get("account") if isinstance(w_comms.get("account"), dict) else {}
+        accounts.append({
+            "id": acc.get("id", "wizard-email"),
+            "email": acc.get("email") or "Windows Outlook Desktop",
+            "label": acc.get("label") or "Connected Email & Calendar",
+            "family": acc.get("family") or "outlook",
+        })
+    connected = len(accounts) > 0
+    primary = accounts[0]["email"] if accounts else ""
+    return {
+        "ok": True,
+        "connected": connected,
+        "status_label": f"Connected ({primary})" if connected else "Not Connected",
+        "primary_email": primary,
+        "accounts": accounts,
+    }
+
+
+def connect_email_simple(
+    *,
+    email_address: str = "",
+    secret: str = "",
+    ics_url: str = "",
+    use_outlook: bool = False,
+    imap_verify_fn=None,
+    sandbox: bool = False,
+    sandbox_id: str = DEFAULT_SANDBOX_ID,
+    base_dir: Path | str | None = None,
+) -> dict[str, Any]:
+    """Simple 1-step Email & Calendar connect with live SSL IMAP verification and clear Connected badge state."""
+    if use_outlook:
+        if sandbox:
+            st_doc = load_wizard_state(sandbox=True, sandbox_id=sandbox_id, base_dir=base_dir)
+            st_doc["comms"] = {"configured": True, "account": {"email": "Windows Outlook", "label": "Windows Outlook"}, "updated_at": _utc_now_iso()}
+            save_wizard_state(st_doc, sandbox=True, sandbox_id=sandbox_id, base_dir=base_dir)
+            return {"ok": True, "connected": True, "status_label": "Connected (Windows Outlook)", "email": "Windows Outlook", "message": "Connected ✓ (Windows Outlook Desktop)"}
+        res_out = comms_connector.auto_connect_local_outlook()
+        ok_out = bool(res_out.get("ok") and res_out.get("outlook_running"))
+        if ok_out:
+            em = str(res_out.get("email") or "Windows Outlook")
+            st_doc = load_wizard_state(sandbox=False, sandbox_id=sandbox_id, base_dir=base_dir)
+            st_doc["comms"] = {"configured": True, "account": {"email": em, "label": "Windows Outlook"}, "updated_at": _utc_now_iso()}
+            if 6 not in st_doc["completed_steps"]:
+                st_doc["completed_steps"].append(6)
+            save_wizard_state(st_doc, sandbox=False, sandbox_id=sandbox_id, base_dir=base_dir)
+            return {
+                "ok": True,
+                "connected": True,
+                "status_label": f"Connected ({em})",
+                "email": em,
+                "message": f"Connected ✓ ({em})",
+            }
+        return {
+            "ok": False,
+            "connected": False,
+            "status_label": "Not Connected",
+            "message": str(res_out.get("message") or "Classic Windows Outlook is not currently open — enter your email address below instead."),
+        }
+
+    clean_email = str(email_address or "").strip()
+    if "@" not in clean_email:
+        return {"ok": False, "connected": False, "status_label": "Not Connected", "message": "Please enter a valid email address first."}
+    det = auto_detect_email_provider(clean_email)
+    imap_host = str(det.get("imap_host") or "imap.gmail.com")
+    imap_port = int(det.get("imap_port") or 993)
+    # Strip spaces from 16-char Google/Microsoft App Passwords (e.g. 'abcd efgh ijkl mnop')
+    s_val = re.sub(r"\s+", "", str(secret or ""))
+    if not s_val and not ics_url:
+        return {
+            "ok": False,
+            "connected": False,
+            "needs_password": True,
+            "app_password_url": det.get("app_password_url") or "",
+            "provider_name": det.get("provider_name") or "",
+            "status_label": "Password Needed",
+            "message": f"Click 'Open {det.get('provider_name') or 'Provider'} Password Page', paste the App Password, and click Connect.",
+        }
+
+    if not s_val and ics_url and not sandbox:
+        clean_ics = str(ics_url).strip()
+        if not clean_ics.lower().startswith("https://"):
+            return {"ok": False, "connected": False, "status_label": "Invalid ICS URL", "message": "Calendar ICS URL must start with https://"}
+        try:
+            req_ics = urllib.request.Request(clean_ics, headers={"User-Agent": "Anchor-Calendar/1.5.7"})
+            with urllib.request.urlopen(req_ics, timeout=8) as r_ics:
+                head_ics = r_ics.read(512).decode("utf-8", errors="ignore")
+            if "BEGIN:VCALENDAR" not in head_ics.upper():
+                return {"ok": False, "connected": False, "status_label": "Invalid Calendar Feed", "message": "URL did not return a valid VCALENDAR (.ics) feed."}
+        except Exception as exc:
+            return {"ok": False, "connected": False, "status_label": "Feed Unreachable", "message": f"Could not reach calendar ICS URL ({str(exc)[:100]})."}
+
+    if s_val and not sandbox:
+        verifier = imap_verify_fn
+        if verifier is None:
+            import imaplib
+            def _default_imap_verify(host: str, port: int, user: str, pwd: str) -> tuple[bool, str]:
+                ctx = ssl.create_default_context()
+                conn = imaplib.IMAP4_SSL(host, port, ssl_context=ctx, timeout=8)
+                try:
+                    conn.login(user, pwd)
+                    conn.logout()
+                    return True, ""
+                except Exception as exc:
+                    return False, str(exc)
+            verifier = _default_imap_verify
+        try:
+            v_ok, v_err = verifier(imap_host, imap_port, clean_email, s_val)
+        except Exception as exc:
+            v_ok, v_err = False, str(exc)
+        if not v_ok:
+            return {
+                "ok": False,
+                "connected": False,
+                "status_label": "Sign-In Failed",
+                "app_password_url": det.get("app_password_url") or "",
+                "message": f"Could not sign in to {det.get('provider_name') or imap_host} ({v_err[:120]}). Use an App Password from your email provider (or 1-Click Windows Outlook).",
+            }
+
+    configure_wizard_comms(
+        provider_family=str(det.get("family") or "custom"),
+        email_address=clean_email,
+        auth_mode="app_password" if s_val else "ics_only",
+        **{"secret": s_val},
+        ics_url=str(ics_url or "").strip(),
+        imap_host=imap_host,
+        sandbox=sandbox,
+        sandbox_id=sandbox_id,
+        base_dir=base_dir,
+    )
+    return {
+        "ok": True,
+        "connected": True,
+        "status_label": f"Connected ({clean_email})",
+        "email": clean_email,
+        "provider_name": det.get("provider_name") or "",
+        "message": f"Connected ✓ ({clean_email})",
+    }
+
+
+DRIVE_SKIP_DIR_NAMES: frozenset[str] = frozenset({
+    "windows", "program files", "program files (x86)", "programdata",
+    "$recycle.bin", "system volume information", "recovery", "perflogs",
+    "msocache", "intel", "amd", "nvidia", "drivers", "appdata",
+    "node_modules", "__pycache__", ".git", ".hg", ".svn", ".venv", "venv",
+    ".tox", ".mypy_cache", ".pytest_cache",
+    ".anchor", ".ecgberht", "anchor-plus-skills", "skills",
+    "anchor-code-jobs", "anchor-onboard-test", "onedrivetemp",
+})
+
+
+def _is_unc_or_forbidden_scan_path(raw_path: str | Path) -> bool:
+    s = str(raw_path or "").strip()
+    if s.startswith("\\\\") or s.startswith("//"):
+        return True
+    return False
+
+
+def ensure_standing_foundry_skills_loaded(base_dir: Path | str | None = None, *, sync_if_missing: bool = False) -> dict[str, Any]:
+    """Inspect (and optionally sync) the 20 standing Foundry skills without asking the user."""
+    b_root = _resolve_base_dir(base_dir)
+    bundled = b_root / "vendor" / "bundled-skills"
+    if not bundled.is_dir():
+        bundled = paths.CODE_DIR / "vendor" / "bundled-skills"
+    ws_skills = b_root.parent / "skills"
+    bundled_names = sorted(
+        p.name for p in bundled.iterdir() if p.is_dir() and (p / "SKILL.md").is_file()
+    ) if bundled.is_dir() else []
+    sync_error = ""
+    if sync_if_missing and bundled.is_dir() and "PYTEST_CURRENT_TEST" not in os.environ:
+        try:
+            import onboard as _ob
+            _ob.install_skills(skills_src=bundled, dest_dir=ws_skills, overwrite=False)
+            for cli_home in (Path.home() / ".claude" / "skills", Path.home() / ".agents" / "skills", Path.home() / ".gemini" / "antigravity" / "skills"):
+                _ob.install_skills(skills_src=bundled, dest_dir=cli_home, overwrite=False)
+        except Exception as exc:
+            sync_error = str(exc)[:120]
+    count = len(bundled_names)
+    loaded_ok = count > 0 and not sync_error
+    return {
+        "ok": loaded_ok,
+        "loaded": loaded_ok,
+        "count": count,
+        "error": sync_error,
+        "label": f"{count} Standing Foundry Skills Loaded Automatically" if loaded_ok else "Standing Foundry Skills Pending Sync",
+    }
+
+
+def _folder_quick_hint(folder: Path) -> tuple[bool, str]:
+    """Fast (<5ms) check whether ``folder`` has expandable subfolders and a short content badge."""
+    has_sub = False
+    code_cnt = 0
+    doc_cnt = 0
+    has_git = (folder / ".git").exists()
+    try:
+        with os.scandir(folder) as it:
+            seen = 0
+            for entry in it:
+                seen += 1
+                nm = entry.name
+                low = nm.lower()
+                if nm.startswith("."):
+                    continue
+                if entry.is_dir(follow_symlinks=False):
+                    if low not in DRIVE_SKIP_DIR_NAMES:
+                        has_sub = True
+                elif entry.is_file(follow_symlinks=False):
+                    if low.endswith((".py", ".js", ".ts", ".rs", ".go", ".r", ".ipynb", ".java", ".cpp")):
+                        code_cnt += 1
+                    elif low.endswith((".md", ".tex", ".docx", ".pdf", ".pptx", ".xlsx", ".csv")):
+                        doc_cnt += 1
+                if seen >= 60 and has_sub:
+                    break
+    except OSError:
+        return False, ""
+    badges: list[str] = []
+    if has_git:
+        badges.append("git")
+    if code_cnt:
+        badges.append("code")
+    if doc_cnt:
+        badges.append("docs")
+    return has_sub, (" · ".join(badges) if badges else "")
+
+
+def _list_clean_subdirs(parent: Path, anchor_root: Path, limit: int = 120) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    try:
+        entries = sorted(
+            (e for e in os.scandir(parent) if e.is_dir(follow_symlinks=False)),
+            key=lambda e: e.name.lower(),
+        )
+    except OSError:
+        return out
+    for entry in entries:
+        nm = entry.name
+        low = nm.lower()
+        if nm.startswith(".") or nm.startswith("$") or low in DRIVE_SKIP_DIR_NAMES:
+            continue
+        p = Path(entry.path)
+        if is_excluded_non_project_dir(p, anchor_root=anchor_root)[0]:
+            continue
+        has_children, badge = _folder_quick_hint(p)
+        out.append({
+            "name": nm,
+            "path": str(p),
+            "has_children": has_children,
+            "badge": badge,
+        })
+        if len(out) >= limit:
+            break
+    return out
+
+
+def scan_hard_drive_tree(
+    parent_path: str = "",
+    *,
+    custom_drives: list[str | Path] | None = None,
+    sandbox: bool = False,
+    base_dir: Path | str | None = None,
+) -> dict[str, Any]:
+    """Scan local hard drives and return proposed work areas + lazy-expandable folder tree nodes."""
+    anchor_root = _resolve_base_dir(base_dir)
+    skills_info = ensure_standing_foundry_skills_loaded(base_dir, sync_if_missing=(not sandbox and not parent_path))
+
+    if parent_path and str(parent_path).strip():
+        if _is_unc_or_forbidden_scan_path(parent_path):
+            return {"ok": False, "parent_path": "", "children": [], "message": "Network / UNC paths are not allowed."}
+        target = Path(str(parent_path).strip()).expanduser()
+        if not target.is_dir():
+            return {"ok": False, "parent_path": str(target), "children": [], "message": "Folder not found."}
+        return {
+            "ok": True,
+            "parent_path": str(target),
+            "children": _list_clean_subdirs(target, anchor_root),
+            "standing_skills": skills_info,
+        }
+
+    # Root scan: discover drives + smart Proposed Work Areas
+    if custom_drives is None and os.environ.get("ANCHOR_TEST_DRIVE_ROOTS"):
+        custom_drives = [p for p in os.environ["ANCHOR_TEST_DRIVE_ROOTS"].split(os.pathsep) if p.strip()]
+    drives: list[Path] = []
+    if custom_drives is not None:
+        drives = [Path(d) for d in custom_drives if Path(d).is_dir()]
+    elif os.name == "nt":
+        listdrives = getattr(os, "listdrives", None)
+        if callable(listdrives):
+            for drv in listdrives():
+                dp = Path(drv)
+                if dp.is_dir():
+                    drives.append(dp)
+        else:
+            for ch in "CDEFGHIJKLMNOPQRSTUVWXYZ":
+                dp = Path(f"{ch}:\\")
+                if dp.is_dir():
+                    drives.append(dp)
+    else:
+        drives = [Path.home()]
+
+    home = Path.home() if custom_drives is None else drives[0]
+    candidate_areas: list[tuple[Path, str, bool]] = []
+    for drv in drives:
+        for sub_nm in ("dev", "Projects", "Research", "Work", "Code", "Repos"):
+            cand = drv / sub_nm
+            if cand.is_dir():
+                candidate_areas.append((cand, f"{cand} (Work & Code)", True))
+    if custom_drives is None:
+        for rel_p, lbl, rec_chk in (
+            (home / "dev", "Home dev folder", True),
+            (home / "Projects", "Projects folder", True),
+            (home / "Research", "Research folder", True),
+            (home / "Documents", "Documents", False),
+            (home / "OneDrive" / "Documents", "OneDrive Documents", False),
+            (home / "Desktop", "Desktop", False),
+        ):
+            if rel_p.is_dir():
+                candidate_areas.append((rel_p, lbl, rec_chk))
+
+    proposed_areas: list[dict[str, Any]] = []
+    seen_area: set[str] = set()
+    for area_p, area_lbl, rec_chk in candidate_areas:
+        try:
+            rk = str(area_p.resolve()).lower() if os.name == "nt" else str(area_p.resolve())
+        except OSError:
+            rk = str(area_p)
+        if rk in seen_area:
+            continue
+        seen_area.add(rk)
+        children = _list_clean_subdirs(area_p, anchor_root, limit=60)
+        if not children and not rec_chk:
+            continue
+        proposed_areas.append({
+            "name": area_p.name or str(area_p),
+            "label": area_lbl,
+            "path": str(area_p),
+            "recommended": rec_chk,
+            "has_children": len(children) > 0,
+            "children": children,
+        })
+
+    drive_nodes: list[dict[str, Any]] = []
+    for drv in drives:
+        drive_nodes.append({
+            "name": str(drv),
+            "path": str(drv),
+            "has_children": True,
+            "children": _list_clean_subdirs(drv, anchor_root, limit=60),
+        })
+
+    return {
+        "ok": True,
+        "standing_skills": skills_info,
+        "proposed_areas": proposed_areas,
+        "drives": drive_nodes,
+    }
+
+
+BROAD_CONTAINER_NAMES: frozenset[str] = frozenset({
+    "dev", "documents", "desktop", "downloads", "projects", "research", "work", "repos", "code", "onedrive",
+})
+
+
+def _stem_key_for_clustering(name: str) -> str:
+    tokens = [t for t in re.split(r"[\s_\-\.]+", name.lower()) if t and t not in {"draft", "drafts", "notes", "data", "code", "v1", "v2", "v3", "final", "old", "app", "repo", "docs", "paper"}]
+    if not tokens:
+        return name.lower()[:8]
+    first = tokens[0]
+    return first if len(first) >= 4 else "_".join(tokens[:2])
+
+
+def analyze_checked_folders_with_gandalf(
+    selected_paths: list[str | Path],
+    *,
+    use_live_gandalf: bool = False,
+    runner_fn=None,
+    sandbox: bool = False,
+    sandbox_id: str = DEFAULT_SANDBOX_ID,
+    base_dir: Path | str | None = None,
+) -> dict[str, Any]:
+    """Inspect user-checked folders/subfolders and have Gandalf propose an intuitive mergeable/splittable project structure."""
+    anchor_root = _resolve_base_dir(base_dir)
+    skills_info = ensure_standing_foundry_skills_loaded(base_dir, sync_if_missing=(not sandbox))
+
+    raw_dirs: list[Path] = []
+    for sp in (selected_paths or []):
+        if not sp or not str(sp).strip() or _is_unc_or_forbidden_scan_path(sp):
+            continue
+        p = Path(str(sp).strip()).expanduser()
+        if p.is_dir():
+            raw_dirs.append(p)
+
+    if not raw_dirs:
+        return {"ok": False, "proposed_projects": [], "standing_skills": skills_info, "message": "Check at least one folder or subfolder in the tree first."}
+
+    # Resolve broad containers: if user checked e.g. C:\dev without checking specific children, expand its direct clean subfolders
+    resolved_set = {str(p.resolve()).lower() if os.name == "nt" else str(p.resolve()): p.resolve() for p in raw_dirs}
+    candidate_folders: list[Path] = []
+    seen_cand: set[str] = set()
+
+    for key_str, rp in list(resolved_set.items()):
+        has_explicit_child = any(
+            ok != key_str and (ok.startswith(key_str.rstrip("\\/") + ("\\" if os.name == "nt" else "/")))
+            for ok in resolved_set
+        )
+        if has_explicit_child:
+            continue
+        is_drive_root = (rp.parent == rp)
+        is_broad = is_drive_root or (rp.name.lower() in BROAD_CONTAINER_NAMES and not (rp / ".git").exists() and not (rp / "README.md").is_file())
+        if is_broad:
+            subs = _list_clean_subdirs(rp, anchor_root, limit=60)
+            if subs:
+                for s in subs:
+                    sp_res = Path(s["path"]).resolve()
+                    sk = str(sp_res).lower() if os.name == "nt" else str(sp_res)
+                    if sk not in seen_cand:
+                        seen_cand.add(sk)
+                        candidate_folders.append(sp_res)
+                continue
+        if rp.name.lower() not in DRIVE_SKIP_DIR_NAMES and rp != anchor_root.resolve():
+            if key_str not in seen_cand:
+                seen_cand.add(key_str)
+                candidate_folders.append(rp)
+
+    folder_records: list[dict[str, Any]] = []
+    for fp in candidate_folders:
+        blurb, signals, has_cockpit = _read_folder_blurb_and_signals(fp)
+        arena = _classify_arena(f"{fp.name} {blurb}")
+        folder_records.append({
+            "name": fp.name,
+            "path": str(fp),
+            "blurb": blurb,
+            "signals": signals,
+            "has_cockpit": has_cockpit,
+            "arena": arena,
+            "parent": str(fp.parent),
+            "stem": _stem_key_for_clustering(fp.name),
+        })
+
+    # Deterministic Gandalf baseline clustering: group sibling folders sharing a meaningful >=4-char stem
+    buckets: list[list[dict[str, Any]]] = []
+    by_parent_stem: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for rec in folder_records:
+        pk = (rec["parent"].lower() if os.name == "nt" else rec["parent"], rec["stem"])
+        by_parent_stem.setdefault(pk, []).append(rec)
+    for (_par, stem), members in by_parent_stem.items():
+        if len(members) > 1 and len(stem) >= 4:
+            buckets.append(members)
+        else:
+            for m in members:
+                buckets.append([m])
+
+    proposed: list[dict[str, Any]] = []
+    for idx, grp in enumerate(buckets):
+        lead = grp[0]
+        if len(grp) == 1:
+            pname = lead["name"]
+            rationale = f"Gandalf identified {lead['name']} ({', '.join(lead['signals']) or 'workspace folder'}) as a standalone project."
+        else:
+            pretty_stem = lead["stem"].replace("_", " ").title()
+            pname = f"{pretty_stem} ({len(grp)} Folders)"
+            rationale = f"Gandalf grouped {len(grp)} related '{pretty_stem}' folders together — drag or click Split Apart anytime."
+        seat = "active" if idx < 4 else ("deck" if idx < 8 else "parked")
+        proposed.append({
+            "id": f"gandalf-proj-{idx + 1}-{_safe_slug(pname)[:20]}",
+            "name": pname,
+            "group_folder": lead["arena"],
+            "seat": seat,
+            "blurb": lead["blurb"],
+            "gandalf_rationale": rationale,
+            "folders": [
+                {"name": m["name"], "path": m["path"], "blurb": m["blurb"], "signals": m["signals"]}
+                for m in grp
+            ],
+        })
+
+    engine_used = "gandalf-structural-analyzer"
+    # Optional bounded live Gandalf CLI pass when a connected CLI is available (or runner_fn supplied)
+    if use_live_gandalf and len(folder_records) >= 2 and (runner_fn is not None or ("PYTEST_CURRENT_TEST" not in os.environ and not sandbox)):
+        prompt_items = [{"path": r["path"], "name": r["name"], "blurb": r["blurb"][:120], "signals": r["signals"]} for r in folder_records[:40]]
+        g_prompt = (
+            "You are Gandalf advising on Anchor project structure. Given these user-selected folders JSON:\n"
+            + json.dumps(prompt_items, ensure_ascii=False)
+            + "\nReturn ONLY raw JSON `{\"projects\": [{\"name\": \"...\", \"group_folder\": \"...\", \"rationale\": \"...\", \"paths\": [\"...\"]}]}` "
+            "partitioning EVERY input `path` into intuitive projects (merging closely related sibling folders and keeping distinct efforts separate)."
+        )
+        raw_out = ""
+        try:
+            if runner_fn is not None:
+                raw_out = str(runner_fn(g_prompt) or "")
+                engine_used = "gandalf-live-cli"
+            else:
+                aug_env = _cli_augmented_env()
+                with tempfile.TemporaryDirectory() as empty_cwd:
+                    for fam, args_fn in (
+                        ("claude", lambda b: [b, "-p", g_prompt, "--tools", ""]),
+                        ("gemini", lambda b: [b, "-p", g_prompt, "--approval-mode", "default"]),
+                    ):
+                        if _has_local_cli_credentials(fam):
+                            b_exe = _find_cli_binary_for_family(fam)
+                            if b_exe:
+                                proc = subprocess.run(
+                                    args_fn(b_exe),
+                                    cwd=empty_cwd,
+                                    env=aug_env,
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=45,
+                                    creationflags=paths.NO_WINDOW,
+                                )
+                                if proc.returncode == 0 and (proc.stdout or "").strip():
+                                    raw_out = proc.stdout.strip()
+                                    engine_used = f"gandalf-{fam}-cli"
+                                    break
+        except Exception:
+            raw_out = ""
+
+        if raw_out:
+            try:
+                m_json = re.search(r"\{[\s\S]*\}", raw_out)
+                parsed = json.loads(m_json.group(0) if m_json else raw_out)
+                rec_by_norm = {
+                    (r["path"].lower() if os.name == "nt" else r["path"]): r
+                    for r in folder_records
+                }
+                used_norms: set[str] = set()
+                refined: list[dict[str, Any]] = []
+                for idx, item in enumerate(parsed.get("projects") or []):
+                    if not isinstance(item, dict):
+                        continue
+                    matched_recs: list[dict[str, Any]] = []
+                    for p_str in (item.get("paths") or []):
+                        pk = str(p_str).lower() if os.name == "nt" else str(p_str)
+                        if pk in rec_by_norm and pk not in used_norms:
+                            used_norms.add(pk)
+                            matched_recs.append(rec_by_norm[pk])
+                    if not matched_recs:
+                        continue
+                    nm = str(item.get("name") or matched_recs[0]["name"]).strip()
+                    refined.append({
+                        "id": f"gandalf-proj-{idx + 1}-{_safe_slug(nm)[:20]}",
+                        "name": nm,
+                        "group_folder": str(item.get("group_folder") or matched_recs[0]["arena"]).strip(),
+                        "seat": "active" if len(refined) < 4 else ("deck" if len(refined) < 8 else "parked"),
+                        "blurb": matched_recs[0]["blurb"],
+                        "gandalf_rationale": str(item.get("rationale") or "Proposed by Gandalf.").strip(),
+                        "folders": [
+                            {"name": m["name"], "path": m["path"], "blurb": m["blurb"], "signals": m["signals"]}
+                            for m in matched_recs
+                        ],
+                    })
+                # Never drop any checked folder omitted by LLM output
+                for nk, rec in rec_by_norm.items():
+                    if nk not in used_norms:
+                        refined.append({
+                            "id": f"gandalf-proj-{len(refined) + 1}-{_safe_slug(rec['name'])[:20]}",
+                            "name": rec["name"],
+                            "group_folder": rec["arena"],
+                            "seat": "active" if len(refined) < 4 else "deck",
+                            "blurb": rec["blurb"],
+                            "gandalf_rationale": "Included from your checked folders.",
+                            "folders": [{"name": rec["name"], "path": rec["path"], "blurb": rec["blurb"], "signals": rec["signals"]}],
+                        })
+                if refined:
+                    proposed = refined
+            except Exception:
+                pass
+
+    # Persist into wizard state discovered list so Create Projects works seamlessly
+    disc_rows: list[dict[str, Any]] = []
+    for p in proposed:
+        f_list = p["folders"]
+        primary_path = f_list[0]["path"]
+        disc_rows.append({
+            "id": p["id"],
+            "name": p["name"],
+            "folder_path": primary_path,
+            "linked_material_paths": [x["path"] for x in f_list],
+            "blurb": p["blurb"],
+            "group_folder": p["group_folder"],
+            "seat": p["seat"],
+            "included": True,
+            "excluded": False,
+            "source": engine_used,
+            "gandalf_rationale": p["gandalf_rationale"],
+            "signals": f_list[0].get("signals") or [],
+        })
+    st_doc = load_wizard_state(sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)
+    proj_sec = dict(st_doc.get("projects") or {})
+    proj_sec["discovered"] = disc_rows
+    proj_sec["gandalf_proposals"] = proposed
+    st_doc["projects"] = proj_sec
+    save_wizard_state(st_doc, sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)
+
+    return {
+        "ok": True,
+        "engine_used": engine_used,
+        "standing_skills": skills_info,
+        "folder_count": len(folder_records),
+        "proposed_projects": proposed,
+        "message": f"Gandalf analyzed {len(folder_records)} folder(s) and proposed {len(proposed)} project(s). Drag cards together to merge, or click Split Apart!",
+    }
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # STEP 7: Readiness Receipt, Sandbox Reset & Apply Sandbox to Live
 # ═════════════════════════════════════════════════════════════════════════════
@@ -4738,12 +5725,22 @@ def get_full_wizard_bundle(
     )
     reg_view = _read_registration_receipt(sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)
     browser_accts = detect_browser_and_cli_accounts(sandbox=sandbox)
+    email_stat = get_simple_email_status(sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)
+    standing_sk = ensure_standing_foundry_skills_loaded(base_dir, sync_if_missing=False)
+    drive_tree_boot = (
+        scan_hard_drive_tree(sandbox=False, base_dir=base_dir)
+        if (not sandbox and "PYTEST_CURRENT_TEST" not in os.environ)
+        else {"ok": True, "standing_skills": standing_sk, "proposed_areas": [], "drives": []}
+    )
     return {
         "ok": True,
         "admin_edition": paths.is_anchor_admin_edition(base_dir),
         "canonical_github_repo": CANONICAL_ANCHOR_GITHUB_URL,
         "registration": reg_view,
         "browser_accounts": browser_accts,
+        "email_status": email_stat,
+        "standing_skills": standing_sk,
+        "drive_tree": drive_tree_boot,
         "sandbox": bool(sandbox),
         "sandbox_id": _safe_slug(sandbox_id or DEFAULT_SANDBOX_ID) if sandbox else "",
         "data_dir": str(state_dir(sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)),
@@ -4882,9 +5879,47 @@ def dispatch_wizard_action(
     if act == "auto_install_clis":
         fams_raw = body.get("families")
         fams_list = [str(x).strip().lower() for x in fams_raw] if isinstance(fams_raw, list) else None
+        inc_grok = True if "include_grok" not in body else bool(body.get("include_grok") in (True, 1, "1", "true", "yes"))
         return auto_install_agent_clis(
             families=fams_list,
-            include_grok=bool(body.get("include_grok") in (True, 1, "1", "true", "yes")),
+            include_grok=inc_grok,
+            sandbox=use_sandbox,
+            sandbox_id=sid,
+            base_dir=base_dir,
+        )
+    if act == "connect_provider_simple":
+        return connect_provider_simple(
+            family=str(body.get("family") or "gemini"),
+            api_key=str(body.get("api_key") or ""),
+            sandbox=use_sandbox,
+            sandbox_id=sid,
+            base_dir=base_dir,
+        )
+    if act == "connect_email_simple":
+        return connect_email_simple(
+            email_address=str(body.get("email") or body.get("email_address") or ""),
+            secret=str(body.get("secret") or body.get("password") or ""),
+            ics_url=str(body.get("ics_url") or ""),
+            use_outlook=bool(body.get("use_outlook") in (True, 1, "1", "true", "yes")),
+            sandbox=use_sandbox,
+            sandbox_id=sid,
+            base_dir=base_dir,
+        )
+    if act == "get_email_status":
+        return get_simple_email_status(sandbox=use_sandbox, sandbox_id=sid, base_dir=base_dir)
+    if act == "scan_drive_tree":
+        return scan_hard_drive_tree(
+            parent_path=str(body.get("parent_path") or ""),
+            sandbox=use_sandbox,
+            base_dir=base_dir,
+        )
+    if act == "gandalf_propose_projects":
+        sel_raw = body.get("selected_paths") or []
+        if isinstance(sel_raw, str):
+            sel_raw = [s.strip() for s in sel_raw.split(";") if s.strip()]
+        return analyze_checked_folders_with_gandalf(
+            selected_paths=[str(x) for x in sel_raw if str(x).strip()],
+            use_live_gandalf=bool(body.get("use_live_gandalf") in (True, 1, "1", "true", "yes")),
             sandbox=use_sandbox,
             sandbox_id=sid,
             base_dir=base_dir,
@@ -5361,31 +6396,37 @@ def build_or_resolve_exe_zip_package(
     base_ov_path = Path(__file__).resolve().parent / "shell" / "anchor-core-overlay.zip"
     ov_mtime = base_ov_path.stat().st_mtime if base_ov_path.is_file() else 0.0
 
+    repo_ver_path = Path(__file__).resolve().parent / "VERSION"
+    ver_mtime = repo_ver_path.stat().st_mtime if repo_ver_path.is_file() else 0.0
+    exe_mtime = (anchor_onedir / "Anchor.exe").stat().st_mtime if (anchor_onedir / "Anchor.exe").is_file() else 0.0
+    latest_src_mtime = max(ov_mtime, ver_mtime, exe_mtime)
+
     if package_kind == "prod":
-        need_prod = (not prod_zip.is_file()) or (ov_mtime > prod_zip.stat().st_mtime)
+        # Collaborator Anchor.zip intentionally omits anchor-core-overlay.zip and loose server/skill sources
+        # so nothing can be copied before the user agrees to the Ghost World Labs License in Step 1!
+        has_stale_overlay = False
+        if prod_zip.is_file():
+            try:
+                with _zf.ZipFile(prod_zip, "r") as zchk:
+                    has_stale_overlay = "Anchor/anchor-core-overlay.zip" in zchk.namelist()
+            except Exception:
+                has_stale_overlay = True
+        need_prod = (not prod_zip.is_file()) or has_stale_overlay or (latest_src_mtime > prod_zip.stat().st_mtime)
         if need_prod:
             collab_ed_json = json.dumps({
                 "edition": "collaborator",
                 "hide_admin_and_download_links": True,
             }, indent=2) + "\n"
-            collab_ov = _overlay_bytes_with_edition("collaborator")
             with _zf.ZipFile(prod_zip, "w", compression=_zf.ZIP_DEFLATED) as zf:
                 zf.writestr("Anchor/anchor-edition.json", collab_ed_json)
                 if anchor_onedir.is_dir():
                     for f in anchor_onedir.rglob("*"):
                         if f.is_file():
                             rel = str(Path("Anchor") / f.relative_to(anchor_onedir)).replace("\\", "/")
-                            if rel == "Anchor/anchor-edition.json":
+                            if rel in ("Anchor/anchor-edition.json", "Anchor/anchor-core-overlay.zip"):
                                 continue
-                            if rel == "Anchor/anchor-core-overlay.zip" and collab_ov is not None:
-                                zf.writestr(rel, collab_ov)
-                            else:
-                                zf.write(f, rel)
-                    if collab_ov is not None and not (anchor_onedir / "anchor-core-overlay.zip").is_file():
-                        zf.writestr("Anchor/anchor-core-overlay.zip", collab_ov)
+                            zf.write(f, rel)
                 else:
-                    if collab_ov is not None:
-                        zf.writestr("Anchor/anchor-core-overlay.zip", collab_ov)
                     zf.writestr("Anchor/README.txt", "Run shell/build_exe.ps1 on Mothership to populate Anchor.exe.\n")
                 repo_root = Path(__file__).resolve().parent
                 existing_names = set(zf.namelist())
@@ -5789,12 +6830,12 @@ def render_onboard_wizard_html(
 
   <div class="wiz-layout">
     <aside class="wiz-stepper" aria-label="Onboarding steps">
-      <button type="button" class="step-btn active" data-step="1"><span class="step-num">1</span><span>Who Are You? (Name &amp; Pseudonym)</span></button>
-      <button type="button" class="step-btn" data-step="2"><span class="step-num">2</span><span>Mothership &amp; Tailscale Network</span></button>
-      <button type="button" class="step-btn" data-step="3"><span class="step-num">3</span><span>AI Services, Tiers &amp; Live Verify</span></button>
-      <button type="button" class="step-btn" data-step="4"><span class="step-num">4</span><span>Mission &amp; Goals / Initiatives (Star Chart)</span></button>
-      <button type="button" class="step-btn" data-step="5"><span class="step-num">5</span><span>Project Scan &amp; AI Cockpits</span></button>
-      <button type="button" class="step-btn" data-step="6"><span class="step-num">6</span><span>Calendar &amp; Email Integration</span></button>
+      <button type="button" class="step-btn active" data-step="1"><span class="step-num">1</span><span>Mother Ship &amp; Remote + License</span></button>
+      <button type="button" class="step-btn" data-step="2"><span class="step-num">2</span><span>Registry &amp; Optional Tailscale</span></button>
+      <button type="button" class="step-btn" data-step="3"><span class="step-num">3</span><span>4 AI Agent CLIs &amp; Connect</span></button>
+      <button type="button" class="step-btn" data-step="4"><span class="step-num">4</span><span>Mission &amp; Goals (Optional)</span></button>
+      <button type="button" class="step-btn" data-step="5"><span class="step-num">5</span><span>Hard-Drive Tree &amp; Gandalf Projects</span></button>
+      <button type="button" class="step-btn" data-step="6"><span class="step-num">6</span><span>Email &amp; Calendar Connect</span></button>
       <button type="button" class="step-btn" data-step="7"><span class="step-num">7</span><span>Readiness Receipt &amp; Launchpad</span></button>
     </aside>
 
@@ -5806,8 +6847,8 @@ def render_onboard_wizard_html(
       <!-- STEP 1 -->
       <section class="wiz-step-pane" id="step-pane-1">
         <div class="wiz-card">
-          <h2>Step 1 · Who Are You? (Real Name, Anchor Pseudonym/Synonym &amp; Steward Persona)</h2>
-          <p class="muted">Your Steward addresses you locally by your Display Name (so it never calls you someone else's name!), while your Pseudonym protects your privacy on the Ghost World Lab collaboration network.</p>
+          <h2>Step 1 · Mother Ship &amp; Remote, Ghost World Labs License &amp; Identity</h2>
+          <p class="muted">Agree to the Ghost World Labs License first (required before anything is downloaded or shared). All <strong>20 Standing Foundry Skills</strong> are loaded automatically on your Mother Ship.</p>
           <div class="form-grid">
             <div>
               <label for="inpDisplayName">What is your name? (How your Steward addresses you locally)</label>
@@ -6146,8 +7187,15 @@ def render_onboard_wizard_html(
       <!-- STEP 5 -->
       <section class="wiz-step-pane" id="step-pane-5" hidden>
         <div class="wiz-card">
-          <h2>Step 5 · Project Discovery Dialogue, Graphical Hierarchical Organization, Verbal Revision &amp; Top Priorities</h2>
-          <p class="muted">Identify the types of files and sources on your computer, review the Graphical Hierarchical Organization (aligned to your Goals / Initiatives first, or Natural Domain Organization if no goals / initiatives were proposed), revise verbally until happy, confirm your Top Priorities, and create your AI Cockpits.</p>
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+            <h2 style="margin:0">Step 5 · Hard-Drive Folder Tree, Gandalf Analysis &amp; Drag-to-Merge / Split-Apart Projects</h2>
+            <span class="pill" style="background:#064e3b;color:#6ee7b7">✓ 20 Standing Foundry Skills Loaded Automatically</span>
+          </div>
+          <p class="muted">Expand any hard drive or proposed work area below and check (<code>☑</code>) the folders or subfolders you want included. Then click <strong>Analyze with Gandalf &amp; Propose Projects</strong> — drag project cards onto each other to merge them, or click <strong>Split Apart</strong> to separate subfolders into their own projects!</p>
+          <div id="wiz-gandalf-drive-mount" data-gandalf-workbench="1" style="margin:12px 0"></div>
+
+          <details style="margin-top:14px;padding:10px 14px;background:#0e141f;border:1px solid var(--border);border-radius:8px">
+            <summary style="cursor:pointer;font-weight:600;color:var(--muted)">Optional Advanced: Verbal Hierarchy Revision &amp; Top Priorities Dialogue</summary>
 
           <!-- 5A: PROJECT & FILE-SOURCE DISCOVERY DIALOGUE -->
           <div class="wiz-card" style="background:#101723;margin-top:12px">
@@ -6238,6 +7286,7 @@ def render_onboard_wizard_html(
           </details>
           <div id="discoveredList" style="margin:14px 0"></div>
           <button type="button" class="btn emerald" id="btnProvisionCockpits" style="font-size:15px;padding:11px 18px">🚀 Create Final Projects &amp; Provision Starter AI Cockpits →</button>
+          </details>
         </div>
       </section>
 
@@ -7566,6 +8615,7 @@ def render_onboard_wizard_html(
 
     hydrateFromBundle(window.ONBOARD_WIZARD_BOOT);
   </script>
+  <script src="/static/setup-easy-onboard.js"></script>
 </body>
 </html>
 """

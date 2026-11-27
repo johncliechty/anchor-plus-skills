@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Anchor v1.5.2 — Turnkey Standalone Native GUI Installer & Updater for Apple macOS (MacBook Air / Pro) & Linux
+# Anchor v1.5.7 — Turnkey Standalone Native GUI Installer & Updater for Apple macOS (MacBook Air / Pro) & Linux
 # Note: Windows Anchor.exe is a PE32+ x86_64 Windows binary and will not run directly on macOS or Linux.
 # On macOS (Apple Silicon M1/M2/M3/M4 or Intel) and Linux, Anchor builds and runs as a standalone native
 # desktop GUI application (Anchor.app on macOS via Cocoa/WebKit; Anchor desktop app on Linux via WebKitGTK)
@@ -12,10 +12,33 @@ ANCHOR_INSTALL_DIR="${ANCHOR_INSTALL_DIR:-$HOME/dev/Anchor}"
 OS_NAME="$(uname -s)"
 
 echo "=================================================================="
-echo "  Anchor v1.5.2 — macOS (MacBook Air / Pro) & Linux Native GUI"
+echo "  Anchor v1.5.7 — Step 1: Mother Ship & Ghost World Labs License"
 echo "=================================================================="
 echo "Platform: $OS_NAME ($(uname -m))"
 echo "Target folder: $ANCHOR_INSTALL_DIR"
+echo ""
+echo "Ghost World Labs License (GHOST-WORLD-LAB-NON-RESALE-v1):"
+echo "  Free personal, academic/research, and internal use + voluntary free sharing."
+echo "  All rights reserved (not open source): software resale, paid bundling,"
+echo "  recurring version fees, or paid hosted access requires written permission."
+echo ""
+if [ "${ANCHOR_ACCEPT_GWL_LICENSE:-0}" != "1" ]; then
+  if [ -t 0 ]; then
+    printf "Do you acknowledge and agree to the Ghost World Labs License before downloading? [y/N]: "
+    read -r GWL_ANS
+    case "$GWL_ANS" in
+      [yY]|[yY][eE][sS]) ;;
+      *)
+        echo "[!] License agreement is required before downloading Anchor & Skills. Exiting."
+        exit 1
+        ;;
+    esac
+  else
+    echo "[!] Non-interactive shell requires ANCHOR_ACCEPT_GWL_LICENSE=1 to acknowledge the Ghost World Labs License."
+    exit 1
+  fi
+fi
+echo "[*] Ghost World Labs License acknowledged."
 echo ""
 
 # 1. Check prerequisites (git, python3, node)
@@ -101,6 +124,12 @@ if skills_src.is_dir():
 onboard.scaffold_anchor(data_dir=root)
 tok = onboard.generate_token()
 print(f"    Token ready at: {tok.get('token_file')}")
+try:
+    import onboard_wizard
+    cli_res = onboard_wizard.auto_install_agent_clis(include_grok=True)
+    print(f"    Agent CLIs: {cli_res.get('message')}")
+except Exception as exc:
+    print(f"    Agent CLI bootstrap note: {exc}")
 PY
 
 # 4. Provision the standalone Native Desktop GUI Shell (pywebview — never runs in a browser)

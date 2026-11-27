@@ -1,53 +1,46 @@
-# Install & Setup Guide — Anchor (`v1.5.6` · Windows, Apple Mac / MacBook Air, & Linux)
+# Install & Setup Guide — Anchor (`v1.5.7` · Windows, Apple Mac / MacBook Air, & Linux)
 
 ## Ghost World Labs License (`GHOST-WORLD-LAB-NON-RESALE-v1` · Version 1, Refinement 2)
 
-**All rights reserved.** Not open source. Use and voluntary free sharing are governed by the **Ghost World Labs Non-Resale License**:
+**All rights reserved.** Not open source. Nothing is downloaded until you acknowledge and agree to the **Ghost World Labs Non-Resale License** in Step 1:
 - **Free Use & Free Sharing Permitted:** Worldwide, royalty-free permission for personal, academic/research, and internal business use, private modification, and voluntary free sharing without a fee. Your own independent papers, data, analyses, and outputs created with Anchor belong 100% to you.
 - **No Resale or Commercialization:** Selling copies of Anchor or its bundled skills, bundling them into a paid product, charging recurring version-use/subscription fees, or offering Paid Hosted Access requires **Separate Written Permission** from Ghost World Labs.
-- **Setup Acknowledgement:** During first-run setup (`Anchor.exe`, `/onboard-wizard` Step 1, or `/setup`), check the Ghost World Labs License box to record a local signed receipt in `.anchor/license_acceptances.json`.
+- **License-First Setup Gate:** `Anchor.zip` contains only the launcher shell; acknowledging the Ghost World Labs License in **Step 1 (`Mother Ship & Remote`)** unlocks downloading Anchor + all 20 standing Foundry skills and records a signed receipt in `.anchor/license_acceptances.json`.
 
 ---
 
-## Single-Download Setup (`Anchor.zip` -> `Anchor.exe` Automatically Pulls All 20 Skills & Agent CLIs)
+## Single-Download Setup (`Anchor.zip` -> Step 1 License & Mother Ship -> All 4 CLIs + 20 Skills)
 
-You **only** need the single `Anchor.zip` download from the official Anchor repository (`https://github.com/johncliechty/ghostworldlabs-anchor/releases/latest/download/Anchor.zip`) — **no separate Skill Foundry download or second repository is needed!**
+You **only** need the single `Anchor.zip` download from the official Anchor repository (`https://github.com/johncliechty/ghostworldlabs-anchor/releases/latest/download/Anchor.zip`):
 
-1. **Unzip `Anchor.zip`** to a clean folder on your PC (for example `C:\Anchor-App` or your Desktop) and double-click **`Anchor\Anchor.exe`** (uses `anchor.ico` for the desktop shortcut and Anchor favicon in embedded views).
-2. **Automatic Tailscale Check (Optional):** `Anchor.exe` checks whether Tailscale is installed and signed in. If not, it asks whether you would like to set up Tailscale (1-click install & sign-in for private access from a second laptop or phone) or skip it and run the local background service without Tailscale.
-3. **1-Click Registry & Automatic Future Updates (`release-signal.json`):**
-   - Enter your **Email Address** to connect.
-   - The **Anchor GitHub Repository (`https://github.com/johncliechty/ghostworldlabs-anchor` / `mothership_registry.json`)** is pre-filled and locked as the official registry.
-   - Click **Register & Install** — Anchor installs/updates `<workspace>\Anchor`, automatically syncs all **20 Ghost World Labs skills** into `<workspace>\skills` and your agent CLI homes (`~/.claude/skills`, `~/.agents/skills`, `~/.gemini/antigravity/skills`), and watches Ghost World Labs' Ed25519-signed `https://raw.githubusercontent.com/johncliechty/ghostworldlabs-anchor/main/release-signal.json` online for future automatic updates (no Tailscale required).
-4. **Auto-Install AI Agent CLIs, Free-Tier Preset & Browser Sign-In:**
-   - Setup automatically installs **Claude Code CLI (`claude`)**, **Antigravity / Gemini CLI (`agy` / `gemini`)**, **OpenAI Codex CLI (`codex`)**, and **Grok (`grok`, when enabled)**.
-   - Setup checks whether you already have provider accounts open in your browser (`claude.ai`, `gemini.google.com` / `aistudio.google.com`, `chatgpt.com`, `grok.com`) and gives you a **1-click "Open Browser & Log In"** button.
-   - **Free-Tier AI Provider Accounts & Older Laptops:** Click **Apply Free-Account Preset** in Step 3 for single-seat paced Free-Tier accounts (such as a free Google account or free Google AI Studio key at `aistudio.google.com`), and keep **Low-Memory Mothership Mode** enabled on older laptops (`< 12 GB` RAM or `<= 4` CPU cores).
-5. **Straightforward Email Linking:**
-   - Click **1-Click Connect Running Windows Outlook** (zero password needed if Windows Outlook is open), OR simply type your email address — Anchor auto-detects Gmail, Outlook, Yahoo, iCloud, or institutional IMAP settings and opens your provider's App Password / sign-in page in your browser with 1 click.
+1. **Unzip `Anchor.zip`** to any folder (e.g. `C:\Anchor-App` or Desktop) and double-click **`Anchor\Anchor.exe`**.
+2. **Step 1 — Mother Ship & Remote + Ghost World Labs License:**
+   - Check the **Ghost World Labs License** box first (required before anything is downloaded).
+   - Optional: 1-click **Tailscale** setup if you want private remote access from a phone or second laptop (or click **No Thanks — Use Locally**).
+   - Enter your **Email Address** and click **Register** against the locked official Anchor GitHub repository (`https://github.com/johncliechty/ghostworldlabs-anchor`) so signed `release-signal.json` updates pull automatically.
+   - All **20 Standing Foundry Skills** load automatically into `<workspace>\skills` and your CLI homes (`~/.claude/skills`, `~/.agents/skills`, `~/.gemini/antigravity/skills`) — no questions needed.
+3. **Step 2 — All 4 AI Agent CLIs + Simple 1-Button Connect (`🟢 Connected`):**
+   - Anchor automatically installs all 4 CLIs: **Claude Code (`claude`)**, **Gemini / Antigravity (`gemini` & `agy`)**, **OpenAI Codex (`codex`)**, and **Grok (`grok`)**.
+   - Click **Connect** on any provider card to jump straight to the exact login/key screen needed for that CLI (`claude auth login`, Google OAuth / free AI Studio key, `codex login`, or `console.x.ai`). As soon as connected, the card turns **`🟢 Connected`**!
+4. **Step 3 — Hard-Drive Folder Tree + Gandalf Project Proposal (Drag to Merge · Split Apart):**
+   - Expand any hard drive (`C:\`, `D:\`) or smart **Proposed Work Area** (`C:\dev`, `Documents`, `Desktop`) and check (`☑`) the folders or subfolders you want included.
+   - Click **Analyze with Gandalf & Propose Projects** — Gandalf inspects your checked folders and proposes clean **Project Cards**.
+   - **Drag one project card onto another to merge them**, drag individual folder chips (`📁`) between projects, or click **Split Apart** to separate subfolders into individual projects, then click **Create Selected Projects**.
+5. **Step 4 — Simple Email & Calendar Connect (`🟢 Connected`):**
+   - Click **1-Click Connect Windows Outlook** (zero password if Windows Outlook is open), OR enter your email address → click **Open Provider Password Page** → paste password & click **Connect** to verify live IMAP SSL and show **`🟢 Connected`**.
 
 ---
 
 ## Clean Uninstall (Windows)
 
-If an earlier setup did not finish or you ever want to remove Anchor cleanly while keeping all of your own documents and non-Anchor project folders untouched:
-- Double-click **`Uninstall-Anchor.cmd`** inside `Anchor\` (from `Anchor.zip`), **OR**
-- Run `Anchor.exe --uninstall`, **OR**
-- Open Windows **Settings → Apps → Installed Apps → Anchor (Ghost World Labs) → Uninstall**.
+To remove Anchor cleanly while keeping all of your own documents and non-Anchor project folders untouched:
+- Double-click **`Uninstall-Anchor.cmd`** inside `Anchor\`, **OR** run `Anchor.exe --uninstall`, **OR** open Windows **Settings → Apps → Installed Apps → Anchor (Ghost World Labs) → Uninstall**.
 
 ---
 
 ## Apple Mac / MacBook Air (macOS) & Linux Install
 
-Unzip `Anchor.zip` (or clone `https://github.com/johncliechty/ghostworldlabs-anchor.git`) and run `bash ./install-mac-linux.sh` to build the native standalone **`Anchor.app`** (macOS) or Linux desktop app, place a double-clickable **`Anchor.command`** launcher on your Desktop, start the local service (`--no-browser`), and sync all 20 bundled skills.
-
----
-
-## CLI Onboarding & Package Reference (`Package B` vs `Package A`)
-
-- **Package B — Anchor + skills**: Full local Anchor service, Cave of Wonders, AI Cockpits, desktop icon (`anchor.ico`) + browser favicon, and all 20 bundled skills (`Anchor.zip` / `.\onboard.cmd` / `python -m share_onboard`).
-- **Package A — skills only**: Skills + governance pack without running the Anchor server (`python -m share_onboard`).
-- **Diagnostics & Optional Feedback:** Run `python doctor.py` for a zero-AI local health check, or opt in to sanitized setup feedback (default is No; coarse metadata only, never your files or prompts).
+Run `bash ./install-mac-linux.sh`, acknowledge the Ghost World Labs License prompt, and Anchor builds the native standalone **`Anchor.app`** (macOS) or Linux desktop app, places **`Anchor.command`** on your Desktop, and loads all 20 standing Foundry skills.
 
 ---
 

@@ -16,7 +16,7 @@
 <body class="provider-setup">
   <header class="setup-top">
     <span class="setup-brand">⚓ Anchor · Cave of Wonders</span>
-    <span class="w3-badge" id="setup-version-pill" style="font-family:Consolas,monospace;color:#f0b866;border:1px solid rgba(240,184,102,0.45);background:rgba(240,184,102,0.12);padding:4px 10px;border-radius:999px;font-weight:700;">v1.5.6</span>
+    <span class="w3-badge" id="setup-version-pill" style="font-family:Consolas,monospace;color:#f0b866;border:1px solid rgba(240,184,102,0.45);background:rgba(240,184,102,0.12);padding:4px 10px;border-radius:999px;font-weight:700;">v1.5.7</span>
     <span id="setup-host" class="muted"></span>
     <a href="/onboard-wizard" id="open-onboard-wizard-btn" style="background:linear-gradient(135deg,#f0b866,#d89638);color:#11131a;font-weight:700;padding:7px 14px;border-radius:8px;text-decoration:none;font-size:13px;margin-right:8px;">🧭 Onboarding &amp; Setup Wizard (or Sandbox Test Walkthrough)</a>
     <a href="/onboard-wizard?sandbox=1" id="open-onboard-sandbox-btn" style="background:rgba(240,184,102,0.14);border:1px solid rgba(240,184,102,0.45);color:#f0b866;font-weight:600;padding:7px 12px;border-radius:8px;text-decoration:none;font-size:12px;margin-right:8px;">🧪 Sandbox Walkthrough</a>
@@ -45,22 +45,22 @@
         <a class="cave-rail-item" href="/recover-account">🔑 Account &amp; 2FA Recovery</a>
       </div>
       <div class="cave-rail-section">
-        <div class="cave-rail-label">3-STAGE ONBOARDING</div>
-        <button type="button" class="cave-rail-stage" data-rail-section="host">
+        <div class="cave-rail-label">4-STAGE ONBOARDING</div>
+        <button type="button" class="cave-rail-stage is-active" data-rail-section="host">
           <span class="stage-num">1</span>
-          <span class="stage-meta"><strong>Mother Ship &amp; Remote</strong><small>Host, Tailscale &amp; GitHub</small></span>
+          <span class="stage-meta"><strong>Mother Ship &amp; Remote</strong><small>License · Tailscale · GitHub</small></span>
         </button>
-        <button type="button" class="cave-rail-stage is-active" data-rail-section="providers">
+        <button type="button" class="cave-rail-stage" data-rail-section="providers">
           <span class="stage-num">2</span>
-          <span class="stage-meta"><strong>AI Engines &amp; Tiers</strong><small>4 Providers · Native CLI</small></span>
+          <span class="stage-meta"><strong>AI Engines &amp; Tiers</strong><small>4 CLIs · Simple Connect</small></span>
         </button>
         <button type="button" class="cave-rail-stage" data-rail-section="chart">
           <span class="stage-num">3</span>
-          <span class="stage-meta"><strong>Star Chart &amp; Roots</strong><small id="rail-status-chart">Workspace &amp; Goal Tiles</small></span>
+          <span class="stage-meta"><strong>Projects &amp; Gandalf</strong><small id="rail-status-chart">Drive Tree · Merge &amp; Split</small></span>
         </button>
         <button type="button" class="cave-rail-stage" data-rail-section="comms">
           <span class="stage-num">4</span>
-          <span class="stage-meta"><strong>Calendar &amp; Email</strong><small id="rail-status-comms">Gmail · Outlook · IMAP/ICS</small></span>
+          <span class="stage-meta"><strong>Calendar &amp; Email</strong><small id="rail-status-comms">1-Click Connect</small></span>
         </button>
       </div>
     </aside>
@@ -78,9 +78,25 @@
       <!-- WAVE 1: MOTHER SHIP, TAILSCALE & GITHUB                             -->
       <!-- =================================================================== -->
       <section id="setup-section-host">
-        <p class="eyebrow">One personal home for your work</p>
-        <h1>Your mother ship</h1>
-        <p>Anchor runs on the mother ship. Other computers and phones connect to its existing projects, provider accounts and Aladdin.</p>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+          <p class="eyebrow" style="margin:0">Step 1 · Mother Ship &amp; Remote</p>
+          <span class="w3-badge w3-badge-emerald" id="standing-skills-host-badge">✓ 20 Standing Foundry Skills Loaded Automatically</span>
+        </div>
+        <h1>Your mother ship &amp; license</h1>
+        <p>Agree to the Ghost World Labs License first. Anchor runs on your mother ship, automatically loads all 20 standing Foundry skills, and installs all 4 AI agent CLIs.</p>
+
+        <article class="setup-card" id="setup-gwl-license-card" style="margin:12px 0;border-color:rgba(240,184,102,0.55)">
+          <div class="wave2-matrix-top">
+            <h2>📜 Step 1A · Ghost World Labs License Agreement (Required Before Download)</h2>
+            <span class="w3-badge" id="setup-gwl-license-badge">Checking…</span>
+          </div>
+          <p class="muted small"><strong>Ghost World Lab License — Version 1, Refinement 2 (<code>GHOST-WORLD-LAB-NON-RESALE-v1</code>):</strong> Free worldwide personal, academic/research, and internal use, private modification, and voluntary free sharing. <strong>All rights reserved — not open source:</strong> software resale, paid bundling, recurring version-use fees, or paid hosted commercialization requires Separate Written Permission from Ghost World Labs.</p>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px">
+            <label class="w3-checkbox-label" style="cursor:pointer;"><input type="checkbox" id="chk-setup-gwl-license"> I have read and agree to the Ghost World Labs License (Free Use · No Resale or Commercialization)</label>
+            <button type="button" class="btn-mini primary" id="btn-setup-accept-license">✓ Agree &amp; Save License</button>
+            <span id="setup-gwl-license-msg" class="muted small"></span>
+          </div>
+        </article>
         <div class="setup-grid">
           <article class="setup-card">
             <h2>This computer is my mother ship</h2>
@@ -130,13 +146,13 @@
         <article class="setup-card" id="mothership-update-registry-card" style="margin:14px 0">
           <div class="wave2-matrix-top">
             <h2>🚀 Anchor Version, Automatic Updates &amp; 1-Click Registry</h2>
-            <span class="w3-badge w3-badge-emerald" id="ms-current-version-label" style="font-family:Consolas,monospace;">v1.5.6</span>
+            <span class="w3-badge w3-badge-emerald" id="ms-current-version-label" style="font-family:Consolas,monospace;">v1.5.7</span>
           </div>
           <p class="muted small"><code>Anchor.exe</code> automatically installs and updates Anchor plus all 20 Ghost World Labs skills from the official Anchor repository below (no separate Skill Foundry repository needed).</p>
           <div class="setup-actions" style="margin:10px 0;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
             <button type="button" id="btn-ms-check-update">🔍 Check for Updates</button>
             <button type="button" id="btn-ms-pull-update" style="background:linear-gradient(135deg,#4ade80,#22c55e);color:#09140e;font-weight:700;">⬆ Pull &amp; Update Anchor + 20 Skills</button>
-            <span id="ms-update-status-msg" class="muted small">Installed version: v1.5.6</span>
+            <span id="ms-update-status-msg" class="muted small">Installed version: v1.5.7</span>
           </div>
           <div style="margin:10px 0;padding:10px 12px;border:1px solid rgba(255,255,255,0.08);border-radius:8px;display:flex;flex-direction:column;gap:8px;">
             <label class="w3-checkbox-label" style="cursor:pointer;"><input type="checkbox" id="chk-ms-auto-pull-updates" checked> <strong>🌐 Automatic Website-Watched Version Updates:</strong> Watch <code>release-signal.json</code> online (Ed25519-signed) and automatically update Anchor + all 20 skills when idle</label>
@@ -195,19 +211,6 @@
               <button type="button" id="btn-ms-push-update">🚀 Push Latest Anchor to Registered Mother Ships</button>
             </div>
             <div id="ms-registry-list" class="muted small" style="margin-top:8px;">Loading registration status…</div>
-          </div>
-        </article>
-
-        <article class="setup-card" id="setup-gwl-license-card" style="margin:14px 0">
-          <div class="wave2-matrix-top">
-            <h2>📜 Ghost World Labs License Acknowledgement (Free Use · No Resale or Commercialization)</h2>
-            <span class="w3-badge" id="setup-gwl-license-badge">Checking…</span>
-          </div>
-          <p class="muted small"><strong>Ghost World Lab License — Version 1, Refinement 2 (<code>GHOST-WORLD-LAB-NON-RESALE-v1</code>):</strong> Free worldwide personal, academic/research, and internal use, private modification, and voluntary free sharing. <strong>All rights reserved — not open source:</strong> software resale, paid bundling, recurring version-use fees, or paid hosted commercialization requires Separate Written Permission from Ghost World Labs.</p>
-          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px">
-            <label class="w3-checkbox-label" style="cursor:pointer;"><input type="checkbox" id="chk-setup-gwl-license"> I have read and agree to the Ghost World Labs License (Free Use · No Resale or Commercialization)</label>
-            <button type="button" class="btn-mini primary" id="btn-setup-accept-license">✓ Save License Acknowledgement</button>
-            <span id="setup-gwl-license-msg" class="muted small"></span>
           </div>
         </article>
 
@@ -317,19 +320,18 @@
           <span id="refresh-message" role="status"></span>
         </div>
 
-        <article class="setup-card" id="provider-auto-cli-browser-card" style="margin:12px 0;border-color:rgba(56,189,248,0.4)">
+        <article class="setup-card" id="provider-auto-cli-browser-card" style="margin:12px 0;border-color:rgba(74,222,128,0.45)">
           <div class="wave2-matrix-top">
-            <h2 style="margin:0">⚡ 1-Click Auto-Install Agent CLIs &amp; Browser Account Sign-In</h2>
-            <span class="w3-badge w3-badge-sky" id="cli-browser-summary-badge">Claude · Antigravity · Codex · Grok</span>
+            <h2 style="margin:0">⚡ Simple 1-Step Connect · All 4 AI Agent CLIs</h2>
+            <span class="w3-badge w3-badge-emerald" id="cli-browser-summary-badge">Claude Code · Gemini / AGY · Codex · Grok</span>
           </div>
-          <p class="muted small" style="margin:6px 0 10px">Automatically install missing AI agent CLIs (<strong>Claude Code</strong>, <strong>Antigravity / Gemini</strong>, <strong>OpenAI Codex</strong>, and <strong>Grok</strong> when enabled), detect active accounts open in your browser, or click any service below to open a browser and log in immediately.</p>
+          <p class="muted small" style="margin:6px 0 10px">Anchor installs all 4 agent CLIs automatically (<strong>Claude Code</strong>, <strong>Gemini / Antigravity</strong>, <strong>OpenAI Codex</strong>, and <strong>Grok</strong>). Click <strong>Connect</strong> on any provider below to open the exact login screen needed for that CLI — as soon as you finish, its badge turns <strong>🟢 Connected</strong>.</p>
           <div class="setup-actions" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-            <button type="button" class="primary" id="btn-setup-auto-install-clis">⬇ Auto-Install Agent CLIs</button>
-            <label class="w3-checkbox-label" style="cursor:pointer;font-size:12.5px"><input type="checkbox" id="chk-setup-install-grok"> Include Grok CLI</label>
-            <button type="button" id="btn-setup-check-browser-accounts">🌐 Check Open Browser Accounts</button>
+            <button type="button" class="primary" id="btn-setup-auto-install-clis">⬇ Install / Repair All 4 Agent CLIs (Claude · Gemini/AGY · Codex · Grok)</button>
+            <button type="button" id="btn-setup-check-browser-accounts">🔄 Refresh Connection Status</button>
             <span id="setup-cli-browser-msg" class="muted small"></span>
           </div>
-          <div id="setup-browser-accounts-strip" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:10px"></div>
+          <div id="setup-browser-accounts-strip" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:10px;margin-top:10px"></div>
         </article>
 
         <!-- Logged-In Services & Active Model Routing Overview -->
@@ -419,6 +421,9 @@
             <button id="chart-return" type="button">Return to Cave</button>
           </div>
         </div>
+
+        <!-- Gandalf Hard-Drive Checkmark Tree & Drag-to-Merge / Split-Apart Project Workbench -->
+        <article class="setup-card" id="gandalf-drive-workbench-card" data-gandalf-workbench="1" style="margin:12px 0 18px;border-color:rgba(240,184,102,0.5)"></article>
 
         <!-- 4-Stage Pipeline Status Strip -->
         <div class="w3-pipeline-strip" role="region" aria-label="Workspace onboarding pipeline">
@@ -718,16 +723,32 @@
           🛡 <strong>Easy Read-Only Email &amp; Calendar Linker:</strong> Connect local Windows Outlook in 1 click, or simply enter your email address below — Anchor auto-detects Gmail, Outlook, Yahoo, iCloud, or institutional IMAP and stores your App Password/OAuth token in the Windows OS Vault (never in JSON files on disk).
         </p>
 
-        <article class="setup-card" id="comms-easy-quick-bar" style="margin:12px 0;border-color:rgba(74,222,128,0.4)">
+        <article class="setup-card" id="comms-easy-quick-bar" style="margin:12px 0;border-color:rgba(74,222,128,0.45)">
           <div class="wave2-matrix-top">
-            <h2 style="margin:0">⚡ Fastest Ways to Link Your Email</h2>
-            <span class="w3-badge w3-badge-emerald">1-Click Setup</span>
+            <h2 style="margin:0">⚡ Simple Email &amp; Calendar Connect</h2>
+            <span class="w3-badge w3-badge-amber" id="simple-comms-status-badge">⚪ Not Connected</span>
           </div>
-          <div class="setup-actions" style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-            <button type="button" class="primary" id="btn-comms-quick-outlook">📨 Option 1: 1-Click Connect Running Windows Outlook (No Password Needed)</button>
-            <button type="button" id="btn-comms-open-provider-app-pwd">🔑 Option 2: Open App Password Page in Browser for Typed Email ↗</button>
-            <span id="comms-detected-provider-hint" class="muted small">Type your email below to auto-fill server settings.</span>
+          <p class="muted small" style="margin:6px 0 10px">Connect in one step — as soon as your email verifies, the badge above turns <strong>🟢 Connected</strong>.</p>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;margin-top:8px">
+            <div style="padding:10px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:#0c111b">
+              <strong>Option 1 · Windows Outlook Desktop</strong>
+              <p class="muted small" style="margin:4px 0 8px">Using classic Windows Outlook on this PC? Click once — no password needed.</p>
+              <button type="button" class="primary" id="btn-comms-quick-outlook">📨 Connect Windows Outlook</button>
+            </div>
+            <div style="padding:10px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:#0c111b;display:flex;flex-direction:column;gap:6px">
+              <strong>Option 2 · Gmail, Outlook.com, Yahoo, iCloud, or Work Email</strong>
+              <input type="email" id="simple-comms-email" placeholder="1. Enter your email (e.g. you@example.com)" autocomplete="email">
+              <div style="display:flex;gap:6px;flex-wrap:wrap">
+                <button type="button" class="btn-mini" id="btn-comms-open-provider-app-pwd">🔑 2. Open Provider Password Page ↗</button>
+                <span id="comms-detected-provider-hint" class="muted small">Auto-detects server settings.</span>
+              </div>
+              <div style="display:flex;gap:6px;flex-wrap:wrap">
+                <input type="password" id="simple-comms-secret" placeholder="3. Paste App Password" autocomplete="off" style="flex:1;min-width:150px">
+                <button type="button" class="primary" id="btn-simple-comms-connect">Connect</button>
+              </div>
+            </div>
           </div>
+          <p id="simple-comms-msg" class="small" role="status" style="margin:8px 0 0"></p>
         </article>
 
         <!-- Provider Preset Cards -->
