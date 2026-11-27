@@ -1404,7 +1404,7 @@
   };
   if($('btn-ms-pull-update'))$('btn-ms-pull-update').onclick=async()=>{
     const msg=$('ms-update-status-msg');if(msg)msg.textContent='Pulling latest Anchor update & syncing 20 bundled Foundry skills…';
-    try{const res=await api.request('/api/system/pull_update',{restart_service:false});if(res&&res.display_version){if($('setup-version-pill'))$('setup-version-pill').textContent=res.display_version;if($('ms-current-version-label'))$('ms-current-version-label').textContent=res.display_version;}if(msg)msg.textContent=(res&&res.ok?'✓ Updated to '+(res.display_version||'latest')+' ('+(res.method||'git')+') · Skills synced: '+((res.skills_synced||[]).length):'⚠ Update status: '+((res&&res.errors||[]).join('; ')||'check logs'));}catch(e){if(msg)msg.textContent='Update failed: '+e.message;}
+    try{const res=await api.request('/api/system/pull_update',{restart_service:false});if(res&&res.display_version){if($('setup-version-pill'))$('setup-version-pill').textContent=res.display_version;if($('ms-current-version-label'))$('ms-current-version-label').textContent=res.display_version;}if(msg)msg.textContent=(res&&res.ok?'✓ Updated to '+(res.display_version||'latest')+' ('+(res.method||'git')+') · Skills synced: '+((res.skills_synced||[]).length):'⚠ Update status: '+((res&&res.errors||[]).join('; ')||'check logs'));if(res&&res.ok&&res.before_version&&res.after_version&&res.before_version!==res.after_version)setTimeout(()=>location.reload(),900);}catch(e){if(msg)msg.textContent='Update failed: '+e.message;}
   };
   if($('btn-ms-register'))$('btn-ms-register').onclick=async()=>{
     const msg=$('ms-update-status-msg'),em=$('ms-reg-email')?$('ms-reg-email').value.trim():'';

@@ -942,6 +942,70 @@ def _sync_bundled_skills_for_root(root: Path) -> tuple[list[str], str]:
     return installed, f"skills_synced:{len(installed)}"
 
 
+def _download_github_zip_update(root: Path, *, zip_url: str = "https://github.com/johncliechty/ghostworldlabs-anchor/archive/refs/heads/main.zip") -> bool:
+    """Pure-HTTPS zip fallback for Mother Ships installed without `git` / `.git`."""
+    import tempfile
+    import zipfile
+    parsed = urllib.parse.urlsplit(zip_url)
+    if parsed.scheme != "https" or (parsed.hostname or "").lower() not in ("github.com", "codeload.github.com"):
+        return False
+    preserve_rels = {
+        "DASHBOARD.md", "PROJECTS.md", "INBOX.md", "CANCELLED.md", "SAVED_FOR_LATER.md",
+        "WEEKLY_REVIEW.md", "rnd_registry.json", "projects.json", "settings.json",
+        "anchor-edition.json", "domains/academic.md", "domains/commercial.md",
+        "domains/family.md", "domains/writing.md",
+    }
+    raw_bytes = b""
+    for attempt in range(2):
+        try:
+            req = urllib.request.Request(
+                zip_url,
+                headers={"User-Agent": "Anchor-Updater/1.5.7", "Connection": "close"},
+            )
+            with urllib.request.urlopen(req, timeout=90) as resp:
+                raw_bytes = resp.read()
+            if raw_bytes:
+                break
+        except Exception:
+            if attempt == 0:
+                time.sleep(0.6)
+    if not raw_bytes:
+        return False
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir).resolve()
+            zpath = tmp_root / "repo.zip"
+            zpath.write_bytes(raw_bytes)
+            with zipfile.ZipFile(zpath, "r") as zf:
+                for member in zf.infolist():
+                    rel_parts = Path(member.filename).parts
+                    if not rel_parts or ".." in rel_parts or member.filename.startswith(("/", "\\")):
+                        continue
+                    dest_member = (tmp_root / member.filename).resolve()
+                    if tmp_root not in dest_member.parents and dest_member != tmp_root:
+                        continue
+                    zf.extract(member, tmp_root)
+            extracted_dirs = [p for p in tmp_root.iterdir() if p.is_dir()]
+            if not extracted_dirs:
+                return False
+            src_root = extracted_dirs[0]
+            for src_file in src_root.rglob("*"):
+                if not src_file.is_file():
+                    continue
+                rel = src_file.relative_to(src_root).as_posix()
+                if rel.startswith((".anchor/", ".ecgberht/", ".git/")):
+                    continue
+                dst_file = root / rel
+                if rel in preserve_rels and dst_file.exists():
+                    continue
+                dst_file.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src_file, dst_file)
+        return True
+    except Exception:
+        return False
+
+
 def pull_latest_update(
     anchor_root: Path | str | None = None,
     *,
@@ -959,7 +1023,7 @@ def pull_latest_update(
     overlay_extracted = False
     details: list[str] = []
 
-    core_files = ("mothership_updater.py", "paths.py", "onboard.py")
+    core_files = ("mothership_updater.py", "paths.py", "onboard.py", "onboard_wizard.py")
     before_core_digests = {fn: _file_sha256(root / fn) for fn in core_files}
 
     if (root / ".git").is_dir():
@@ -998,7 +1062,7 @@ def pull_latest_update(
                             details.append("git_restored_user_edits")
         except Exception as exc:
             details.append(f"git_skipped:{exc}")
-    elif bootstrap_git and (runner_fn is not None or shutil.which("git")):
+    elif (bootstrap_git or (runner_fn is None and "PYTEST_CURRENT_TEST" not in os.environ)) and (runner_fn is not None if bootstrap_git else bool(shutil.which("git"))):
         # Convert an overlay-extracted C:\dev\Anchor install into a git-tracked install
         # while preserving all user markdown and .anchor / .ecgberht directories.
         user_md_rels = (
@@ -1049,7 +1113,13 @@ def pull_latest_update(
                 except OSError:
                     pass
 
-    # Apply bundled overlay only when git did not already update the tree
+    # Pure-HTTPS GitHub zip fallback when neither `.git` nor `git` CLI is present on the laptop
+    if not git_updated and runner_fn is None and "PYTEST_CURRENT_TEST" not in os.environ:
+        if _download_github_zip_update(root):
+            git_updated = True
+            details.append("https_zip_pull_main")
+
+    # Apply bundled overlay only when git/HTTPS did not already update the tree
     if not git_updated:
         try:
             import importlib.util as _ilu
@@ -1078,6 +1148,11 @@ def pull_latest_update(
                         onboard = reloaded
             except Exception:
                 pass
+        for extra_mod_name in ("onboard_wizard", "provider_setup", "high_seat_page"):
+            ex_mod = sys.modules.get(extra_mod_name)
+            if ex_mod is not None and getattr(ex_mod, "__spec__", None) is not None:
+                with contextlib.suppress(Exception):
+                    importlib.reload(ex_mod)
         details.append("reloaded_core_updater_modules")
 
     clean_tv = str(target_version or "").strip()

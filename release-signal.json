@@ -3,11 +3,11 @@
   "channel": "stable",
   "version": "1.5.7",
   "min_auto_update_version": "1.5.0",
-  "published_at": "2026-11-27T00:44:03Z",
+  "published_at": "2026-11-27T00:58:08Z",
   "repo_url": "https://github.com/johncliechty/ghostworldlabs-anchor.git",
   "exe_zip_url": "https://github.com/johncliechty/ghostworldlabs-anchor/releases/download/v1.5.7/Anchor.zip",
-  "core_sha256": "6c:1b:9c:67:7a:75:67:b2:3a:ed:65:80:73:67:f0:72:f5:22:ce:a8:19:45:7b:0d:b6:3d:14:c0:cb:57:fd:2a",
-  "notes": "Anchor v1.5.7: Step-1 Mother Ship & mandatory Ghost World Labs License before download, auto-installed 4 agent CLIs (Claude Code, Gemini/AGY, Codex, Grok), dead-simple 1-step CLI & Email Connect with Connected badges, silent 20-skill bootstrap, and expandable hard-drive checkmark tree + Gandalf drag-to-merge / split-apart project organizer.",
+  "core_sha256": "c7:a7:2d:ca:6a:bc:28:8c:77:79:7b:89:3c:c8:5c:4f:f8:52:7e:8e:18:ea:13:6c:b5:9d:22:2e:fd:ae:10:d3",
+  "notes": "Anchor v1.5.7 Round-2 collaborator release: Step-1 license gate, all 4 CLIs auto-installed + simple Connected flow, Gandalf checkmark folder tree + drag-merge/split, and pure-HTTPS git-free in-place updater.",
   "key_id": "gwl-homebase-2026-v1",
-  "signature": "f1:10:d6:5a:13:b8:40:d7:c8:a0:45:9a:59:73:94:26:c9:62:54:dd:a8:fd:f4:66:32:09:e9:e6:01:d3:d3:3e:08:6b:6e:e2:7e:60:3d:7c:4d:aa:7b:2f:bb:e1:bc:ca:71:bc:91:04:50:3a:75:07:93:d3:28:a1:ae:71:75:09"
+  "signature": "89:66:d8:ce:25:d4:2a:ff:d4:fd:54:32:1d:42:4b:dd:e9:2a:b3:f9:2e:c7:bb:98:86:74:15:6e:4d:36:8f:27:a6:ab:0e:47:54:f0:27:26:1c:98:ae:24:6d:d2:2a:15:39:f2:cc:a8:f6:d5:b1:83:ca:31:b2:7e:2a:22:2c:05"
 }

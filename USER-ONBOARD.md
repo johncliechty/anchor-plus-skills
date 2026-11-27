@@ -17,7 +17,7 @@ You **only** need the single `Anchor.zip` download from the official Anchor repo
 2. **Step 1 — Mother Ship & Remote + Ghost World Labs License:**
    - Check the **Ghost World Labs License** box first (required before anything is downloaded).
    - Optional: 1-click **Tailscale** setup if you want private remote access from a phone or second laptop (or click **No Thanks — Use Locally**).
-   - Enter your **Email Address** and click **Register** against the locked official Anchor GitHub repository (`https://github.com/johncliechty/ghostworldlabs-anchor`) so signed `release-signal.json` updates pull automatically.
+   - Enter your **Email Address** and click **Register** against the locked official Anchor GitHub repository (`https://github.com/johncliechty/ghostworldlabs-anchor` · `mothership_registry.json`) so signed `release-signal.json` updates pull automatically.
    - All **20 Standing Foundry Skills** load automatically into `<workspace>\skills` and your CLI homes (`~/.claude/skills`, `~/.agents/skills`, `~/.gemini/antigravity/skills`) — no questions needed.
 3. **Step 2 — All 4 AI Agent CLIs + Simple 1-Button Connect (`🟢 Connected`):**
    - Anchor automatically installs all 4 CLIs: **Claude Code (`claude`)**, **Gemini / Antigravity (`gemini` & `agy`)**, **OpenAI Codex (`codex`)**, and **Grok (`grok`)**.
