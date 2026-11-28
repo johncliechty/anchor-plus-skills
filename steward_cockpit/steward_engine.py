@@ -848,8 +848,8 @@ _LIST_PRICES_MTIME_NS = None
 
 _BEST_FAMILY_DEFAULTS = {
     "claude": "claude-fable-5-2",
-    "chatgpt": "gpt-6-astra",
-    "gemini": "gemini-4-argon-high",
+    "chatgpt": "gpt-6-luna",
+    "gemini": "gemini-4-hydrogen-high",
     "grok": "grok-4.20",
 }
 
@@ -2377,6 +2377,7 @@ class Engine:
             "selected_cli": selected["default_cli"],
             "pending_switch": selected["default_cli"] if pending else None,
             "model_policy": self.model_selection,
+            "cockpit_strength": read_cockpit_strength(self.dir),
             "settings_error": selected.get("settings_error"),
             "john_msgs": self.john_msgs,
             "open_question": question,
@@ -2397,6 +2398,15 @@ class Engine:
             self._emit({"t": "sys", "text": "drive armed - the steward continues without asking; it stops only for a decision that is yours, a pause, or the cap"})
         else:
             self._emit({"t": "sys", "text": "drive paused - the steward waits for you"})
+
+    def set_strength(self, strength):
+        norm = write_cockpit_strength(self.dir, strength)
+        with self._lock:
+            if not self.busy:
+                self.model_selection = None
+        label_txt = "⚡ Heavy (frontier @ max)" if norm == "heavy" else "Standard (one below frontier @ medium)"
+        self._emit({"t": "sys", "text": f"Cockpit Variable Strength set to {label_txt} (applies on next turn / launched effort)"})
+        return norm
 
     def skey(self):
         if not self.general:
@@ -2621,10 +2631,18 @@ class Engine:
         thread.start()
 
     def _account_policy_kwargs(self, family):
+        kwargs = {}
         if self.provider_connection["family"] == family:
             import provider_native
-            return {"env": provider_native.account_env(self.provider_connection)}
-        return {}
+            kwargs["env"] = provider_native.account_env(self.provider_connection)
+        cj = getattr(self, "code_job", None)
+        if isinstance(cj, dict) and cj.get("strength") in ("standard", "heavy", "light"):
+            kwargs["tier"] = cj["strength"]
+        elif cj is None:
+            ckp_raw = _read_cockpit_strength_raw(self.dir)
+            if ckp_raw in ("heavy", "light"):
+                kwargs["tier"] = ckp_raw
+        return kwargs
 
     def _journal_routing(self, **event):
         entry = _read_state_entry(self.skey())
@@ -5296,6 +5314,25 @@ class Engine:
         env.pop("ANCHOR_FENCE_ROOT", None)
         if self.code_job is not None:
             env.pop("ANCHOR_TOKEN", None)     # a code job's coder never carries Anchor's key (stewards need it to start jobs)
+            cj_str = (self.code_job or {}).get("strength")
+            if cj_str in ("standard", "heavy", "light"):
+                env["TRIO_TIER"] = cj_str
+                env["ANCHOR_STRENGTH"] = cj_str
+                env["ANCHOR_ALLOW_HEAVY_QUOTA_STEPDOWN"] = "1"
+        else:
+            ckp_raw = _read_cockpit_strength_raw(self.dir)
+            if ckp_raw in ("standard", "heavy"):
+                env["ANCHOR_COCKPIT_STRENGTH"] = ckp_raw
+                env["ANCHOR_ALLOW_HEAVY_QUOTA_STEPDOWN"] = "1"
+            else:
+                try:
+                    import anchor_settings as _aset_s
+                    import model_policy as _mp_s
+                    if _mp_s.is_variable_strength_active(settings=_aset_s.get_launch_settings()):
+                        env["ANCHOR_COCKPIT_STRENGTH"] = "standard"
+                        env["ANCHOR_ALLOW_HEAVY_QUOTA_STEPDOWN"] = "1"
+                except Exception:
+                    pass
         env.update(getattr(self, "_fence_env", None) or {})   # W1a: what the fence guard enforces for THIS launch
         return env
 
@@ -6832,3 +6869,42 @@ def _receipt_line(cdir, group, pid, rel, registered):
     if dl:
         bits.append("[Download](%s)" % dl)
     return "**Anchor** · " + " · ".join(bits)
+
+
+def _read_cockpit_strength_raw(cdir) -> str | None:
+    """Return persisted cockpit strength ('heavy'|'standard') if .ecgberht/strength.json exists, else None."""
+    if not cdir:
+        return None
+    try:
+        p = Path(str(cdir)) / ".ecgberht" / "strength.json"
+        if p.is_file():
+            data = json.loads(p.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                raw = str(data.get("strength") or "").strip().lower()
+                if raw in ("heavy", "standard"):
+                    return raw
+    except Exception:
+        pass
+    return None
+
+
+def read_cockpit_strength(cdir) -> str:
+    """Return effective cockpit Variable Strength ('heavy' or 'standard', defaulting to 'standard')."""
+    return _read_cockpit_strength_raw(cdir) or "standard"
+
+
+def write_cockpit_strength(cdir, strength) -> str:
+    """Persist cockpit Variable Strength ('heavy' or 'standard') to .ecgberht/strength.json."""
+    norm = "heavy" if str(strength or "").strip().lower() == "heavy" else "standard"
+    if cdir:
+        try:
+            import paths as _paths
+            p = Path(str(cdir)) / ".ecgberht" / "strength.json"
+            p.parent.mkdir(parents=True, exist_ok=True)
+            _paths.atomic_write_json(
+                p,
+                {"strength": norm, "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())},
+            )
+        except Exception:
+            pass
+    return norm

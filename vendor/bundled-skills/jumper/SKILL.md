@@ -1,6 +1,6 @@
 ---
 name: jumper
-description: Jumper is the high-order Ideation and Brainstorming Engine of the portfolio. It composes the Gandalf deep-think skill to generate novel, out-of-the-box solutions, architecture extensions, and creative pivots using SCAMPER, Analogical Transfer, and TRIZ, with a 3-gate kill-filter and Grounding Execution Protocol.
+description: Jumper is the high-order Ideation and Brainstorming Engine of the portfolio. It composes the Gandalf deep-think skill to generate novel, out-of-the-box solutions, architecture extensions, and creative pivots using SCAMPER, Analogical Transfer, and TRIZ, with a 3-gate kill-filter and Grounding Execution Protocol. Variable Strength: Light / Standard by default (1-step-below-frontier model at medium effort; call 'Jumper Heavy' for top-tier frontier model at highest effort on high-stakes runs, configurable in Anchor Setup).
 ---
 
 <!-- ELEGANCE-LAW v2 -->
@@ -81,10 +81,10 @@ something else" — options are a convenience, never a cage).
 
 Jumper is the dedicated, high-order Ideation and Brainstorming Engine of the portfolio. It strictly composes the Gandalf deep-think skill to force divergent, structured, and vetted lateral thinking.
 
-> **Tier definition (Heavy vs regular · stakes-gated cross-model · seat mapping) + invocation discipline
+> **Variable Strength (`Standard` default · `Jumper Heavy` override · stakes-gated cross-model · seat mapping) + invocation discipline
 > (zero deliberation · the LOCKED global status table · run capture):** canonical in
 > `AGENTS.md` (Foundry root on the author host; your install root in a distributed bundle) → "Skill tiers" / "Invocation discipline" / "Run capture".
-> Jumper-Heavy runs the composed Gandalf at the MATCHING tier. Do not re-define or deliberate any of it.
+> Plain `Jumper` defaults to **`Standard`** (one generalist model below frontier at `medium` effort on generation and review seats); **`Jumper Heavy`** (`TRIO_TIER=heavy` / `ANCHOR_STRENGTH=heavy`) runs every Jumper seat and its composed Gandalf pass at frontier model + highest supported effort. Do not re-define or deliberate any of it.
 
 ## How to run (operator manual — a real invocation runs THE ENGINE, never an improvised pipeline)
 

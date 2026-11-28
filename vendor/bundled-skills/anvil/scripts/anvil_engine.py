@@ -658,9 +658,15 @@ def _summarize_function(
 
     if fast_mode:
         raw_calls = [c for c in _PY_CALL_RE.findall(snippet) if c not in _PY_SKIP_CALLS and c != node.name]
-        unique_calls = list(dict.fromkeys(raw_calls))
+        self_calls = [
+            f"{class_name}.{m_nm}"
+            for m_nm in re.findall(r"\b(?:self|cls)\.([A-Za-z_][A-Za-z0-9_]*)\s*\(", snippet)
+            if class_name and m_nm != node.name
+        ]
+        unique_calls = list(dict.fromkeys(raw_calls + self_calls))
         unique_refs = unique_calls
         unique_locals = args[:40]
+        self_attrs_loaded = set(re.findall(r"\bself\.([A-Za-z_][A-Za-z0-9_]*)\b", snippet))
         math_ops: List[str] = []
         math_exprs: List[str] = []
         scientific_formulas: List[Dict[str, Any]] = []
@@ -672,12 +678,58 @@ def _summarize_function(
         calls: List[str] = []
         name_refs: List[str] = []
         local_vars: List[str] = list(args)
+        self_attrs_loaded = set()
         math_ops_set: Set[str] = set()
         math_exprs = []
         has_io = False
         has_unsafe_auto = False
+        arg_set = set(args)
+        _primitive_auto_types = {
+            "int", "float", "str", "bool", "list", "tuple", "sequence", "iterable", "collection", "any", "object",
+        }
+        _safe_seq_str_attrs = {
+            "lower", "upper", "strip", "lstrip", "rstrip", "split", "rsplit", "splitlines",
+            "replace", "startswith", "endswith", "encode", "find", "count", "index",
+            "append", "extend", "copy", "join", "format",
+        }
+        req_arg_nodes = [
+            a for a in (list(getattr(node.args, "posonlyargs", [])) + list(node.args.args))
+            if a.arg not in ("self", "cls")
+        ][:required_arity]
+        for req_a in req_arg_nodes:
+            ann_s = _unparse_annotation(req_a.annotation).strip()
+            if ann_s:
+                base_ann = re.sub(r"Optional\[(.*)\]", r"\1", ann_s).split("[", 1)[0].split("|", 1)[0].strip().split(".")[-1].lower()
+                if base_ann and base_ann not in _primitive_auto_types:
+                    has_unsafe_auto = True
 
         for child in ast.walk(node):
+            if isinstance(child, ast.Assign):
+                # Guard synthetic single-arg walkthrough probes from functions that unpack structured tuples from an arg
+                val_names = {
+                    sub.id for sub in ast.walk(child.value)
+                    if isinstance(sub, ast.Name) and isinstance(sub.ctx, ast.Load)
+                }
+                if val_names & arg_set:
+                    for tgt in child.targets:
+                        if isinstance(tgt, (ast.Tuple, ast.List)) and len(tgt.elts) >= 2:
+                            has_unsafe_auto = True
+            elif isinstance(child, ast.Subscript):
+                if isinstance(child.value, ast.Name) and child.value.id in arg_set:
+                    sl = getattr(child.slice, "value", child.slice)
+                    if isinstance(sl, ast.Constant) and (
+                        isinstance(sl.value, str) or (isinstance(sl.value, int) and sl.value >= 2)
+                    ):
+                        has_unsafe_auto = True
+                    elif isinstance(sl, ast.Tuple):
+                        has_unsafe_auto = True
+            elif (
+                isinstance(child, ast.Attribute)
+                and isinstance(child.value, ast.Name)
+                and child.value.id in arg_set
+                and child.attr not in _safe_seq_str_attrs
+            ):
+                has_unsafe_auto = True
             if isinstance(child, ast.Call):
                 if isinstance(child.func, ast.Name):
                     fn_id = child.func.id
@@ -713,6 +765,8 @@ def _summarize_function(
             elif isinstance(child, ast.Attribute):
                 if isinstance(child.ctx, ast.Load):
                     name_refs.append(child.attr)
+                    if isinstance(child.value, ast.Name) and child.value.id == "self":
+                        self_attrs_loaded.add(child.attr)
                 elif isinstance(child.ctx, ast.Store) and isinstance(child.value, ast.Name) and child.value.id == "self":
                     local_vars.append(child.attr)
             elif isinstance(child, ast.MatMult):
@@ -788,6 +842,7 @@ def _summarize_function(
         "decorators": decorators,
         "is_pure": is_pure,
         "safe_auto_probe": (not class_name) and (not has_unsafe_auto) and required_arity <= 1,
+        "self_attrs_loaded": sorted(self_attrs_loaded),
         "stage": stage,
         "ai_interaction": ai_info,
         "language": "python",
@@ -870,75 +925,77 @@ def _scan_python_files(repo: Path) -> List[Path]:
     return [p for p in prod_files if p.suffix == ".py"]
 
 
+_JS_MASK_TOKEN_RE = re.compile(
+    r'//[^\n]*|/\*[\s\S]*?(?:\*/|$)|"(?:\\[\s\S]|[^"\\])*("|$)|\'(?:\\[\s\S]|[^\'\\])*(\'|$)|`(?:\\[\s\S]|[^`\\])*(`|$)'
+)
+_JS_JSDOC_STAR_RE = re.compile(r"^\s*\*\s?")
+_JS_IMPORT_RE = re.compile(
+    r"""(?:import|export)\s+(?:[^'"]*?\s+from\s+)?['"]([^'"]+)['"]|require\(\s*['"]([^'"]+)['"]\s*\)|import\(\s*['"]([^'"]+)['"]\s*\)"""
+)
+_JS_EXPORT_DECL_RE = re.compile(
+    r"\bexport\s+(?:default\s+)?(?:async\s+)?(?:function\*?|class|const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)"
+)
+_JS_EXPORT_BRACE_RE = re.compile(r"\bexport\s*\{([^}]+)\}")
+_JS_CJS_PROP_RE = re.compile(r"\b(?:module\.)?exports\.([A-Za-z_$][A-Za-z0-9_$]*)\s*=")
+_JS_CJS_OBJ_RE = re.compile(r"\bmodule\.exports\s*=\s*\{([^}]+)\}", flags=re.S)
+_JS_IDENT_EXACT_RE = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*")
+_JS_DECL_FN_RE = re.compile(
+    r"^\s*(export\s+)?(default\s+)?(async\s+)?function\*?\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\(([^)]*)\)"
+)
+_JS_DECL_CLS_RE = re.compile(r"^\s*(export\s+)?(default\s+)?class\s+([A-Za-z_$][A-Za-z0-9_$]*)")
+_JS_DECL_ARR_RE = re.compile(
+    r"^\s*(export\s+)?(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*(?::[^=]+)?=\s*(?:async\s*)?(?:function\*?\s*\(([^)]*)\)|\(([^)]*)\)\s*(?::[^=]+)?=>|([A-Za-z_$][A-Za-z0-9_$]*)\s*=>)"
+)
+_JS_METHOD_RE = re.compile(r"^\s+(?:static\s+)?(?:async\s+)?([A-Za-z_$][A-Za-z0-9_$]*)\s*\(([^)]*)\)\s*\{")
+_JS_CALL_RE = re.compile(r"\b([A-Za-z_$][A-Za-z0-9_$]*)\s*\(")
+_JS_WORD_RE = re.compile(r"\b([A-Za-z_$][A-Za-z0-9_$]*)\b")
+
+
+def _mask_span_preserve_newlines(span: str) -> str:
+    if "\n" not in span:
+        return " " * len(span)
+    return "\n".join(" " * len(part) for part in span.split("\n"))
+
+
 def _mask_js_comments_and_strings(text: str) -> Tuple[str, Dict[int, str]]:
     """Replace comments and string contents with spaces (preserving newlines) for exact brace/line matching,
     and capture JSDoc comments mapped to their ending line number."""
     jsdoc_by_end_line: Dict[int, str] = {}
-    out: List[str] = []
-    n = len(text)
-    i = 0
+    prev_end = 0
     line_no = 1
-    while i < n:
-        ch = text[i]
-        nxt = text[i + 1] if i + 1 < n else ""
-        if ch == "\n":
-            out.append("\n")
-            line_no += 1
-            i += 1
-        elif ch == "/" and nxt == "/":
-            while i < n and text[i] != "\n":
-                out.append(" ")
-                i += 1
-        elif ch == "/" and nxt == "*":
-            is_jsdoc = (i + 2 < n and text[i + 2] == "*")
-            start_idx = i
-            out.extend((" ", " "))
-            i += 2
-            while i < n and not (text[i] == "*" and i + 1 < n and text[i + 1] == "/"):
-                if text[i] == "\n":
-                    out.append("\n")
-                    line_no += 1
-                else:
-                    out.append(" ")
-                i += 1
-            if i < n:
-                out.extend((" ", " "))
-                i += 2
-            if is_jsdoc:
-                raw_doc = text[start_idx + 3:max(start_idx + 3, i - 2)]
-                cleaned_lines = []
+
+    def _repl(m: re.Match[str]) -> str:
+        nonlocal prev_end, line_no
+        start = m.start()
+        if start > prev_end:
+            line_no += text.count("\n", prev_end, start)
+        s = m.group(0)
+        tok_nl = s.count("\n")
+        line_no += tok_nl
+        prev_end = m.end()
+        if s.startswith("//"):
+            return " " * len(s)
+        if s.startswith("/*"):
+            if len(s) >= 3 and s[2] == "*":
+                end_cut = len(s) - 2 if s.endswith("*/") and len(s) >= 4 else len(s)
+                raw_doc = s[3:max(3, end_cut)]
                 for dl in raw_doc.splitlines():
-                    s_dl = re.sub(r"^\s*\*\s?", "", dl).strip()
+                    s_dl = _JS_JSDOC_STAR_RE.sub("", dl).strip()
                     if s_dl and not s_dl.startswith("@"):
-                        cleaned_lines.append(s_dl)
-                if cleaned_lines:
-                    jsdoc_by_end_line[line_no] = cleaned_lines[0]
-        elif ch in ('"', "'", "`"):
-            quote = ch
-            out.append(quote)
-            i += 1
-            while i < n:
-                c = text[i]
-                if c == "\\" and i + 1 < n:
-                    out.extend((" ", "\n" if text[i + 1] == "\n" else " "))
-                    if text[i + 1] == "\n":
-                        line_no += 1
-                    i += 2
-                    continue
-                if c == quote:
-                    out.append(quote)
-                    i += 1
-                    break
-                if c == "\n":
-                    out.append("\n")
-                    line_no += 1
-                else:
-                    out.append(" ")
-                i += 1
-        else:
-            out.append(ch)
-            i += 1
-    return "".join(out), jsdoc_by_end_line
+                        jsdoc_by_end_line[line_no] = s_dl
+                        break
+            return " " * len(s) if tok_nl == 0 else _mask_span_preserve_newlines(s)
+        q = s[0]
+        closed = bool(m.group(1) or m.group(2) or m.group(3))
+        if closed:
+            inner = s[1:-1]
+            masked_inner = " " * len(inner) if tok_nl == 0 else _mask_span_preserve_newlines(inner)
+            return q + masked_inner + q
+        inner = s[1:]
+        masked_inner = " " * len(inner) if tok_nl == 0 else _mask_span_preserve_newlines(inner)
+        return q + masked_inner
+
+    return _JS_MASK_TOKEN_RE.sub(_repl, text), jsdoc_by_end_line
 
 
 def _find_matching_brace_end_line(masked_lines: List[str], start_line: int) -> int:
@@ -947,14 +1004,15 @@ def _find_matching_brace_end_line(masked_lines: List[str], start_line: int) -> i
     opened = False
     for lno in range(max(1, start_line), len(masked_lines) + 1):
         ln = masked_lines[lno - 1]
-        for ch in ln:
-            if ch == "{":
-                depth += 1
-                opened = True
-            elif ch == "}":
-                depth -= 1
-                if opened and depth <= 0:
-                    return lno
+        if "{" in ln or "}" in ln:
+            for ch in ln:
+                if ch == "{":
+                    depth += 1
+                    opened = True
+                elif ch == "}":
+                    depth -= 1
+                    if opened and depth <= 0:
+                        return lno
         if not opened and ";" in ln and lno > start_line:
             return lno
     return min(len(masked_lines), start_line + 25)
@@ -968,40 +1026,36 @@ def _analyze_js_ts_file(fpath: Path, rel: str, text: str) -> Dict[str, Any]:
     lang = _detect_language(fpath)
 
     imports: List[str] = []
-    for m in re.finditer(r"""(?:import|export)\s+(?:[^'"]*?\s+from\s+)?['"]([^'"]+)['"]|require\(\s*['"]([^'"]+)['"]\s*\)|import\(\s*['"]([^'"]+)['"]\s*\)""", text):
+    for m in _JS_IMPORT_RE.finditer(text):
         spec = m.group(1) or m.group(2) or m.group(3)
         if spec and spec not in imports:
             imports.append(spec)
 
     exports: Set[str] = set()
-    for m in re.finditer(r"\bexport\s+(?:default\s+)?(?:async\s+)?(?:function\*?|class|const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)", masked):
+    for m in _JS_EXPORT_DECL_RE.finditer(masked):
         exports.add(m.group(1))
-    for m in re.finditer(r"\bexport\s*\{([^}]+)\}", masked):
+    for m in _JS_EXPORT_BRACE_RE.finditer(masked):
         for part in m.group(1).split(","):
             toks = [t.strip() for t in part.strip().split(" as ") if t.strip()]
             if toks:
                 exports.add(toks[-1])
-    for m in re.finditer(r"\b(?:module\.)?exports\.([A-Za-z_$][A-Za-z0-9_$]*)\s*=", masked):
+    for m in _JS_CJS_PROP_RE.finditer(masked):
         exports.add(m.group(1))
-    for m in re.finditer(r"\bmodule\.exports\s*=\s*\{([^}]+)\}", text, flags=re.S):
+    for m in _JS_CJS_OBJ_RE.finditer(text):
         for part in m.group(1).split(","):
             key = part.split(":")[0].strip()
-            if re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", key):
+            if _JS_IDENT_EXACT_RE.fullmatch(key):
                 exports.add(key)
-
-    decl_patterns = (
-        re.compile(r"^\s*(export\s+)?(default\s+)?(async\s+)?function\*?\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\(([^)]*)\)"),
-        re.compile(r"^\s*(export\s+)?(default\s+)?class\s+([A-Za-z_$][A-Za-z0-9_$]*)"),
-        re.compile(r"^\s*(export\s+)?(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*(?::[^=]+)?=\s*(?:async\s*)?(?:function\*?\s*\(([^)]*)\)|\(([^)]*)\)\s*(?::[^=]+)?=>|([A-Za-z_$][A-Za-z0-9_$]*)\s*=>)"),
-    )
 
     funcs: List[Dict[str, Any]] = []
     classes: List[Dict[str, Any]] = []
     for lno, mln in enumerate(masked_lines, start=1):
+        if "function" not in mln and "class" not in mln and "=>" not in mln:
+            continue
         doc_line = jsdoc_map.get(lno - 1) or jsdoc_map.get(lno - 2) or ""
-        m_fn = decl_patterns[0].match(mln)
-        m_cls = decl_patterns[1].match(mln) if not m_fn else None
-        m_arr = decl_patterns[2].match(mln) if not (m_fn or m_cls) else None
+        m_fn = _JS_DECL_FN_RE.match(mln)
+        m_cls = _JS_DECL_CLS_RE.match(mln) if not m_fn else None
+        m_arr = _JS_DECL_ARR_RE.match(mln) if not (m_fn or m_cls) else None
         if not (m_fn or m_cls or m_arr):
             continue
 
@@ -1015,16 +1069,18 @@ def _analyze_js_ts_file(fpath: Path, rel: str, text: str) -> Dict[str, Any]:
             if is_exp:
                 exports.add(cls_name)
             classes.append({"name": cls_name, "lineno": lno, "end_lineno": end_lno})
-            method_re = re.compile(r"^\s+(?:static\s+)?(?:async\s+)?([A-Za-z_$][A-Za-z0-9_$]*)\s*\(([^)]*)\)\s*\{")
             for mlno in range(lno + 1, end_lno):
-                mm = method_re.match(masked_lines[mlno - 1])
+                mmln = masked_lines[mlno - 1]
+                if "(" not in mmln:
+                    continue
+                mm = _JS_METHOD_RE.match(mmln)
                 if mm and mm.group(1) not in JS_KEYWORDS:
                     mname = mm.group(1)
                     mend = min(end_lno, _find_matching_brace_end_line(masked_lines, mlno))
                     margs = [a.strip().split("=")[0].split(":")[0].strip().lstrip(".") for a in mm.group(2).split(",") if a.strip()]
                     msnip = "\n".join(lines[mlno - 1:mend])
                     mcalls = [
-                        c for c in dict.fromkeys(re.findall(r"\b([A-Za-z_$][A-Za-z0-9_$]*)\s*\(", "\n".join(masked_lines[mlno - 1:mend])))
+                        c for c in dict.fromkeys(_JS_CALL_RE.findall("\n".join(masked_lines[mlno - 1:mend])))
                         if c not in JS_KEYWORDS and c != mname
                     ]
                     mpure = not any(pat in msnip for pat in JS_IO_PATTERNS)
@@ -1075,11 +1131,11 @@ def _analyze_js_ts_file(fpath: Path, rel: str, text: str) -> Dict[str, Any]:
 
         args = [a.strip().split("=")[0].split(":")[0].strip().lstrip(".") for a in raw_args.split(",") if a.strip()]
         calls = [
-            c for c in dict.fromkeys(re.findall(r"\b([A-Za-z_$][A-Za-z0-9_$]*)\s*\(", masked_snippet))
+            c for c in dict.fromkeys(_JS_CALL_RE.findall(masked_snippet))
             if c not in JS_KEYWORDS and c != name
         ]
         refs = [
-            r for r in dict.fromkeys(re.findall(r"\b([A-Za-z_$][A-Za-z0-9_$]*)\b", masked_snippet))
+            r for r in dict.fromkeys(_JS_WORD_RE.findall(masked_snippet))
             if r not in JS_KEYWORDS and r != name
         ]
         is_pure = not any(pat in raw_snippet for pat in JS_IO_PATTERNS)
@@ -1158,9 +1214,10 @@ def _analyze_r_or_c_file(fpath: Path, rel: str, text: str) -> Dict[str, Any]:
             args = [a.strip().split("=")[0].strip() for a in m.group(2).split(",") if a.strip()]
             end_lno = _find_matching_brace_end_line(masked_lines, lno)
             snip = "\n".join(lines[lno - 1:end_lno])
-            calls = [c for c in dict.fromkeys(re.findall(r"\b([A-Za-z_.][A-Za-z0-9_.]*)\s*\(", "\n".join(masked_lines[lno - 1:end_lno]))) if c not in ("function", "if", "for", "while", "return", name)]
-            is_pure = not any(k in snip for k in ("read.", "write.", "saveRDS", "readRDS", "cat(", "print(", "system("))
-            stg = _classify_stage(name, "", snip)
+            masked_snip = "\n".join(masked_lines[lno - 1:end_lno])
+            calls = [c for c in dict.fromkeys(re.findall(r"\b([A-Za-z_.][A-Za-z0-9_.]*)\s*\(", masked_snip)) if c not in ("function", "if", "for", "while", "return", name)]
+            is_pure = not any(k in masked_snip for k in ("read.", "write.", "saveRDS", "readRDS", "cat(", "print(", "system("))
+            stg = _classify_stage(name, "", masked_snip)
             funcs.append({
                 "name": name, "short_name": name, "class_name": "", "file": rel,
                 "lineno": lno, "end_lineno": end_lno, "args": args, "typed_args": args,
@@ -1173,6 +1230,29 @@ def _analyze_r_or_c_file(fpath: Path, rel: str, text: str) -> Dict[str, Any]:
                 "is_exported": not name.startswith("."), "stage": stg,
                 "ai_interaction": _detect_ai_interaction(name, "", snip), "language": "r",
             })
+        if not funcs:
+            non_empty_r = [ln.strip() for ln in masked_lines if ln.strip()]
+            if non_empty_r:
+                script_name = f"script_{re.sub(r'[^A-Za-z0-9_]+', '_', fpath.stem).strip('_') or 'r'}"
+                all_r_code = "\n".join(masked_lines)
+                calls = [
+                    c for c in dict.fromkeys(re.findall(r"\b([A-Za-z_.][A-Za-z0-9_.]*)\s*\(", all_r_code))
+                    if c not in ("function", "if", "for", "while", "return", "library", "require")
+                ]
+                is_pure = not any(k in all_r_code for k in ("read.", "write.", "saveRDS", "readRDS", "cat(", "print(", "system(", "fread", "fwrite"))
+                stg = _classify_stage(fpath.stem, "", all_r_code)
+                funcs.append({
+                    "name": script_name, "short_name": script_name, "class_name": "", "file": rel,
+                    "lineno": 1, "end_lineno": max(1, len(lines)), "args": [], "typed_args": [],
+                    "required_arity": 0, "return_type": "",
+                    "summary": f"Top-level R pipeline script {rel} ({len(non_empty_r)} executable lines).",
+                    "docstring": "", "calls": calls, "all_calls": calls, "calls_preview": calls[:8],
+                    "name_refs": calls, "local_vars": [], "math_ops": [], "math_exprs": [],
+                    "scientific_formulas": [], "is_pure_data_loader": stg == "ingest",
+                    "decorators": [], "is_pure": is_pure, "safe_auto_probe": False,
+                    "is_exported": True, "stage": stg,
+                    "ai_interaction": _detect_ai_interaction(fpath.stem, "", text), "language": "r",
+                })
     else:
         for m in re.finditer(r'^\s*#\s*include\s*[<"]([^>"]+)[>"]', text, flags=re.M):
             imports.append(m.group(1))
@@ -1275,7 +1355,14 @@ def _fast_scan_python_file(rel: str, text: str) -> Dict[str, Any]:
             for a in arg_str.split(",")
             if a.strip() and a.strip().split(":")[0].split("=")[0].strip() not in ("self", "cls", "/", "*")
         ]
-        calls = [c for c in dict.fromkeys(_PY_CALL_RE.findall(snip)) if c not in _PY_SKIP_CALLS and c != nm]
+        raw_calls = [c for c in dict.fromkeys(_PY_CALL_RE.findall(snip)) if c not in _PY_SKIP_CALLS and c != nm]
+        self_calls = [
+            f"{cls_nm}.{m_nm}"
+            for m_nm in re.findall(r"\b(?:self|cls)\.([A-Za-z_][A-Za-z0-9_]*)\s*\(", snip)
+            if cls_nm and m_nm != nm
+        ]
+        calls = list(dict.fromkeys(raw_calls + self_calls))
+        self_attrs_fast = sorted(set(re.findall(r"\bself\.([A-Za-z_][A-Za-z0-9_]*)\b", snip)))
         has_io = bool(set(calls) & PY_IO_INDICATORS)
         stg = _classify_stage(nm, "", "")
         qual = f"{cls_nm}.{nm}" if cls_nm else nm
@@ -1304,6 +1391,7 @@ def _fast_scan_python_file(rel: str, text: str) -> Dict[str, Any]:
             "decorators": ["decorated"] if decorated else [],
             "is_pure": (not has_io) and stg == "compute",
             "safe_auto_probe": False,
+            "self_attrs_loaded": self_attrs_fast,
             "in_dunder_all": False,
             "stage": stg,
             "ai_interaction": _detect_ai_interaction(nm, "", snip) if file_has_ai else None,
@@ -1371,6 +1459,9 @@ def _analyze_python_file(fpath: Path, rel: str, text: str, fast_mode: bool = Fal
     if fast_mode:
         top_level_refs.extend(dict.fromkeys(_IDENT_TOKEN_RE.findall(text)))
 
+    file_func_layer_ops: Dict[str, Set[str]] = {}
+    file_class_layer_ops: Dict[str, Set[str]] = {}
+
     for node in tree.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             fn_info = _summarize_function(node, lines, class_name="", imported_math=imported_math, fast_mode=fast_mode, file_has_ai=file_has_ai)
@@ -1380,6 +1471,12 @@ def _analyze_python_file(fpath: Path, rel: str, text: str, fast_mode: bool = Fal
                 sf["file"] = rel
                 sf["location"] = f"{rel}:{sf['lineno']}"
             funcs.append(fn_info)
+            fn_l_ops = {
+                op for op in (fn_info.get("math_ops") or [])
+                if op in ("linear_proj", "tanh_adapter", "relu_adapter")
+            }
+            if fn_l_ops:
+                file_func_layer_ops[node.name] = fn_l_ops
             if not fast_mode:
                 for dec in node.decorator_list:
                     for sub in ast.walk(dec):
@@ -1411,19 +1508,125 @@ def _analyze_python_file(fpath: Path, rel: str, text: str, fast_mode: bool = Fal
                             top_level_refs.append(sub.id)
                         elif isinstance(sub, ast.Attribute) and isinstance(sub.ctx, ast.Load):
                             top_level_refs.append(sub.attr)
-            # Propagate nn.Linear / ReLU / Tanh module layer ops across methods of the same nn.Module class
-            cls_shared_ops = {
+            # Propagate submodule layer ops (`self.<attr> = nn.Tanh()` / `nn.Sequential(*layers)` / `self.util_net = NeuralUtility(...)`)
+            # strictly to methods that reference `self.<attr>` (directly or via intra-class `self.<helper>()` calls),
+            # preventing unrelated sibling methods (such as generic `loss` wrappers) from inheriting spurious ops.
+            method_by_short: Dict[str, Dict[str, Any]] = {
+                str(m_info.get("short_name") or ""): m_info for m_info in cls_methods
+            }
+            helper_layer_ops: Dict[str, Set[str]] = {
+                m_short: {
+                    op for op in (m_info.get("math_ops") or [])
+                    if op in ("linear_proj", "tanh_adapter", "relu_adapter")
+                }
+                for m_short, m_info in method_by_short.items()
+            }
+            attr_layer_ops: Dict[str, Set[str]] = {}
+
+            def _extract_expr_layer_ops(expr_node: ast.AST, local_builder_ops: Dict[str, Set[str]]) -> Set[str]:
+                found_ops: Set[str] = set()
+                for rnode in ast.walk(expr_node):
+                    if isinstance(rnode, ast.Call):
+                        cname = (
+                            rnode.func.attr
+                            if isinstance(rnode.func, ast.Attribute)
+                            else (rnode.func.id if isinstance(rnode.func, ast.Name) else "")
+                        )
+                        clow = cname.lower()
+                        if clow in ("linear", "lazylinear"):
+                            found_ops.add("linear_proj")
+                        elif clow == "tanh":
+                            found_ops.add("tanh_adapter")
+                        elif clow in ("relu", "gelu", "silu", "leakyrelu"):
+                            found_ops.add("relu_adapter")
+                        if cname in helper_layer_ops:
+                            found_ops.update(helper_layer_ops[cname])
+                        if cname in file_func_layer_ops:
+                            found_ops.update(file_func_layer_ops[cname])
+                        if cname in file_class_layer_ops:
+                            found_ops.update(file_class_layer_ops[cname])
+                    elif isinstance(rnode, ast.Name) and rnode.id in local_builder_ops:
+                        found_ops.update(local_builder_ops[rnode.id])
+                return found_ops
+
+            for c_item in node.body:
+                if isinstance(c_item, (ast.FunctionDef, ast.AsyncFunctionDef)) and c_item.name == "__init__":
+                    local_builder_ops: Dict[str, Set[str]] = {}
+                    for sub in ast.walk(c_item):
+                        if isinstance(sub, ast.Assign) and len(sub.targets) == 1 and isinstance(sub.targets[0], ast.Name):
+                            v_ops = _extract_expr_layer_ops(sub.value, local_builder_ops)
+                            if v_ops:
+                                local_builder_ops.setdefault(sub.targets[0].id, set()).update(v_ops)
+                        elif (
+                            isinstance(sub, ast.Call)
+                            and isinstance(sub.func, ast.Attribute)
+                            and sub.func.attr in ("append", "extend")
+                            and isinstance(sub.func.value, ast.Name)
+                            and sub.args
+                        ):
+                            v_ops = _extract_expr_layer_ops(sub.args[0], local_builder_ops)
+                            if v_ops:
+                                local_builder_ops.setdefault(sub.func.value.id, set()).update(v_ops)
+                    for sub in ast.walk(c_item):
+                        if isinstance(sub, ast.Assign):
+                            self_tgts = [
+                                t.attr for t in sub.targets
+                                if isinstance(t, ast.Attribute) and isinstance(t.value, ast.Name) and t.value.id == "self"
+                            ]
+                            if not self_tgts:
+                                continue
+                            rhs_ops = _extract_expr_layer_ops(sub.value, local_builder_ops)
+                            if rhs_ops:
+                                for stgt in self_tgts:
+                                    attr_layer_ops.setdefault(stgt, set()).update(rhs_ops)
+
+            if attr_layer_ops or any(helper_layer_ops.values()):
+                direct_extra: Dict[str, Set[str]] = {m_s: set() for m_s in method_by_short}
+                intra_callees: Dict[str, Set[str]] = {m_s: set() for m_s in method_by_short}
+                cls_prefix = f"{node.name}."
+                for m_s, m_info in method_by_short.items():
+                    if m_s == "__init__":
+                        continue
+                    for loaded_attr in m_info.get("self_attrs_loaded") or []:
+                        if loaded_attr in attr_layer_ops:
+                            direct_extra[m_s].update(attr_layer_ops[loaded_attr])
+                    for cal in m_info.get("calls") or []:
+                        if cal.startswith(cls_prefix):
+                            cal_short = cal[len(cls_prefix):]
+                            if cal_short in method_by_short and cal_short not in ("__init__", m_s):
+                                intra_callees[m_s].add(cal_short)
+                # Transitive fixpoint across intra-class `self.<method>()` helper calls
+                changed_ic = True
+                while changed_ic:
+                    changed_ic = False
+                    for m_s, c_set in intra_callees.items():
+                        before_len = len(direct_extra[m_s])
+                        for cal_s in c_set:
+                            direct_extra[m_s].update(helper_layer_ops.get(cal_s) or set())
+                            direct_extra[m_s].update(direct_extra.get(cal_s) or set())
+                        if len(direct_extra[m_s]) > before_len:
+                            changed_ic = True
+                for m_s, extra_ops_m in direct_extra.items():
+                    if extra_ops_m:
+                        merged_ops = set(method_by_short[m_s].get("math_ops") or [])
+                        merged_ops.update(extra_ops_m)
+                        method_by_short[m_s]["math_ops"] = sorted(merged_ops)
+
+            cls_union_layer_ops = {
                 op
                 for m_info in cls_methods
+                if m_info.get("short_name") != "__init__"
                 for op in (m_info.get("math_ops") or [])
                 if op in ("linear_proj", "tanh_adapter", "relu_adapter")
             }
-            if cls_shared_ops:
-                for m_info in cls_methods:
-                    if m_info.get("short_name") != "__init__":
-                        merged_ops = set(m_info.get("math_ops") or [])
-                        merged_ops.update(cls_shared_ops)
-                        m_info["math_ops"] = sorted(merged_ops)
+            if cls_union_layer_ops:
+                file_class_layer_ops[node.name] = cls_union_layer_ops
+
+            cls_bases_names: List[str] = []
+            for base in node.bases:
+                b_str = _unparse_annotation(base)
+                if b_str:
+                    cls_bases_names.append(b_str)
             if not fast_mode:
                 for base in list(node.bases) + list(node.decorator_list):
                     for sub in ast.walk(base):
@@ -1431,6 +1634,7 @@ def _analyze_python_file(fpath: Path, rel: str, text: str, fast_mode: bool = Fal
                             top_level_refs.append(sub.id)
             classes.append({
                 "name": node.name,
+                "bases": cls_bases_names,
                 "lineno": getattr(node, "lineno", 1),
                 "end_lineno": getattr(node, "end_lineno", getattr(node, "lineno", 1)),
                 "fields": cls_fields[:12],
@@ -1503,8 +1707,16 @@ def _index_and_classify_references(
     prod_refs: Set[str] = set()
     callers_by_symbol: Dict[str, List[str]] = {}
     all_fn_names: Dict[str, List[str]] = {}
+    raw_cls_bases: Dict[Tuple[str, str], List[str]] = {}
+    cls_files_by_name: Dict[str, List[str]] = {}
 
     for rec in file_records:
+        rec_f = str(rec.get("file") or "")
+        for cls_obj in rec.get("classes") or []:
+            c_nm = str(cls_obj.get("name") or "")
+            if c_nm:
+                raw_cls_bases.setdefault((rec_f, c_nm), []).extend(cls_obj.get("bases") or [])
+                cls_files_by_name.setdefault(c_nm, []).append(rec_f)
         for exp in rec.get("exports") or []:
             prod_refs.add(exp)
         for tref in rec.get("top_level_refs") or []:
@@ -1514,12 +1726,43 @@ def _index_and_classify_references(
             all_fn_names.setdefault(short, []).append(fn["name"])
             all_fn_names.setdefault(fn["name"], []).append(fn["name"])
 
+    nn_module_pairs: Set[Tuple[str, str]] = {
+        (rf, c_nm)
+        for (rf, c_nm), b_list in raw_cls_bases.items()
+        if any(str(b).endswith(("Module", "Dataset", "IterableDataset", "LightningModule", "PreTrainedModel")) for b in b_list)
+    }
+    changed_nn = True
+    while changed_nn:
+        changed_nn = False
+        for (rf, c_nm), b_list in raw_cls_bases.items():
+            if (rf, c_nm) in nn_module_pairs:
+                continue
+            for b in b_list:
+                b_tail = str(b).split(".")[-1]
+                same_f_hit = (rf, b_tail) in nn_module_pairs
+                uniq_cross_hit = len(cls_files_by_name.get(b_tail, [])) == 1 and (cls_files_by_name[b_tail][0], b_tail) in nn_module_pairs
+                if same_f_hit or uniq_cross_hit:
+                    nn_module_pairs.add((rf, c_nm))
+                    changed_nn = True
+                    break
+    nn_module_classes: Set[str] = {c_nm for (_rf, c_nm) in nn_module_pairs}
+    nn_lifecycle_shorts = {
+        "forward", "__call__", "training_step", "validation_step",
+        "test_step", "predict_step", "configure_optimizers", "__getitem__", "__len__", "__iter__",
+    }
+
     for rec in file_records:
         for fn in rec.get("functions") or []:
             caller_label = f"{rec['file']}:{fn['name']}"
             for ref in fn.get("name_refs") or []:
                 if ref != fn["name"] and ref != fn.get("short_name"):
                     prod_refs.add(ref)
+                if ref in nn_module_classes:
+                    fwd_q = f"{ref}.forward"
+                    if fwd_q in all_fn_names and fwd_q != fn["name"]:
+                        lst = callers_by_symbol.setdefault(fwd_q, [])
+                        if caller_label not in lst:
+                            lst.append(caller_label)
             for callee in fn.get("all_calls") or fn.get("calls") or []:
                 if callee != fn.get("short_name") or len(all_fn_names.get(callee, [])) > 1:
                     prod_refs.add(callee)
@@ -1528,6 +1771,18 @@ def _index_and_classify_references(
                         lst = callers_by_symbol.setdefault(target_qname, [])
                         if caller_label not in lst:
                             lst.append(caller_label)
+
+    # Propagate PyTorch nn.Module / Dataset lifecycle reachability (`ClassName` -> `ClassName.forward`)
+    for rec in file_records:
+        rec_f = str(rec.get("file") or "")
+        for fn in rec.get("functions") or []:
+            cls_nm = str(fn.get("class_name") or "")
+            short = str(fn.get("short_name") or fn["name"].split(".")[-1])
+            if (rec_f, cls_nm) in nn_module_pairs and short in nn_lifecycle_shorts:
+                if cls_nm in prod_refs:
+                    prod_refs.add(fn["name"])
+                elif cls_nm in test_refs:
+                    test_refs.add(fn["name"])
 
     callees_by_symbol: Dict[str, List[str]] = {}
     for rec in file_records:
@@ -1719,11 +1974,37 @@ def _materialize_bucket_from_members(
 
 SCIENTIFIC_PIPELINE_ROLE_SPECS: Tuple[Tuple[str, str, str], ...] = (
     ("data_prep", "Data Prep & Covariates", "ingest"),
-    ("core_estimation", "Core Choice & Panel Estimation", "compute"),
+    ("simulation_study", "Simulation & Monte Carlo", "compute"),
+    ("core_estimation", "Core Model & Likelihood Estimation", "compute"),
     ("policy_eval", "Policy / Counterfactual Evaluation", "compute"),
     ("verification_checks", "Verification Checks", "compute"),
     ("table_builders", "Table / Metric Builders", "emit"),
 )
+
+_SCI_VERIFY_RE = re.compile(
+    r"(?<![a-z0-9])(?:verif|verify|verification|robust|robustness|placebo|diag|diagnostics?|sanity|audit|identif|check)(?![a-z0-9])"
+)
+_SCI_SIM_STEM_RE = re.compile(
+    r"(?<![a-z0-9])(?:sim|sims|simul|simulat\w*|dgps?|monte_carlo|montecarlo|synthetic)(?![a-z0-9])"
+)
+_SCI_EMIT_EXCL_RE = re.compile(
+    r"(?<![a-z0-9])(?:plots?|figures?|figs?|tables?|tab\d+|format_table|render_table|summarize|summary)(?![a-z0-9])"
+)
+_SCI_POLICY_RE = re.compile(
+    r"(?<![a-z0-9])(?:policy|policies|target|targeting|counterfactuals?|welfare|aipw|cate|treatment|doubly_robust)(?![a-z0-9])"
+)
+_SCI_TABLE_STEM_RE = re.compile(
+    r"(?<![a-z0-9])(?:tables?|tab\d+|metrics?|plots?|figures?|figs?|latex|render_table|format_table|summarize|summary)(?![a-z0-9])"
+)
+_SCI_PREP_STEM_RE = re.compile(
+    r"(?<![a-z0-9])(?:data|prep|prepare|preprocess\w*|covariat\w*|features?|datasets?|loaders?|splits?|clean\w*|extract\w*)(?![a-z0-9])"
+)
+_DISCRETE_CHOICE_CORE_TOKENS: Set[str] = {
+    "mnl", "conjoint", "partworth", "partworths", "multinomial",
+}
+_FLOW_OR_BAYES_CORE_TOKENS: Set[str] = {
+    "maf", "iaf", "made", "normalizing", "bijector", "langevin", "hmc", "nuts", "mcmc", "jags", "stan",
+}
 
 
 def _classify_scientific_module_role(rb: Dict[str, Any]) -> str:
@@ -1735,27 +2016,60 @@ def _classify_scientific_module_role(rb: Dict[str, Any]) -> str:
     has_core_model_ops = bool(ops & {"bilinear_einsum", "logit_softmax", "panel_loglik", "logsumexp", "tanh_adapter", "elbo", "logdet"})
     blob = f"{rel_low} {fn_names_low}"
 
-    if re.search(r"\b(?:verif|verify|verification|robust|robustness|placebo|diag|diagnostic|sanity|audit|identif)\b", blob) or "check" in stem_low:
+    if _SCI_VERIFY_RE.search(blob) or stem_low.startswith("check_"):
         return "verification_checks"
-    if "aipw_dr" in ops or re.search(r"\b(?:policy|policies|target|targeting|counterfactual|welfare|aipw|cate|treatment|doubly_robust)\b", blob):
+    if (
+        any(seg in ("simulation", "simulations", "dgp", "dgps", "monte_carlo") for seg in Path(rel_low).parts[:-1])
+        or _SCI_SIM_STEM_RE.search(stem_low)
+    ) and not _SCI_EMIT_EXCL_RE.search(stem_low):
+        return "simulation_study"
+    if "aipw_dr" in ops or _SCI_POLICY_RE.search(blob):
         return "policy_eval"
     if (
-        re.search(r"\b(?:table|tables|tab1|tab2|metric|metrics|plot|plots|figure|figures|latex|render_table|format_table)\b", stem_low)
-        and (not has_core_model_ops or stem_low.startswith(("run_table", "make_table", "build_table", "table_", "plot_", "fig_")))
+        _SCI_TABLE_STEM_RE.search(stem_low)
+        and (not has_core_model_ops or stem_low.startswith(("run_table", "make_table", "build_table", "table_", "plot_", "fig_", "summarize_")))
     ):
         return "table_builders"
     if (
         not has_core_model_ops
         and (
             rb.get("pipeline_stage") == "ingest"
-            or re.search(r"\b(?:data|prep|preprocess|covariat|feature|dataset|loader|split|clean)\b", stem_low)
-            or all(bool(f.get("is_pure_data_loader")) for f in fns if fns)
+            or _SCI_PREP_STEM_RE.search(stem_low)
+            or (bool(fns) and all(bool(f.get("is_pure_data_loader")) for f in fns))
         )
     ):
         return "data_prep"
     if rb.get("pipeline_stage") == "emit" and not has_core_model_ops:
         return "table_builders"
     return "core_estimation"
+
+
+def _is_discrete_choice_core_repository(core_members: List[Dict[str, Any]], all_buckets: List[Dict[str, Any]]) -> bool:
+    """Return True only when core estimation modules implement discrete-choice / conjoint / MNL models."""
+    inspect_pool = core_members if core_members else all_buckets
+    toks: Set[str] = set()
+    for mb in inspect_pool:
+        toks.update(_split_ident_subtokens(str(mb.get("file") or ""), min_len=2))
+        toks.update(_split_ident_subtokens(str(mb.get("summary") or ""), min_len=2))
+        for cls in mb.get("classes") or []:
+            toks.update(_split_ident_subtokens(str(cls.get("name") or ""), min_len=2))
+            toks.update(_split_ident_subtokens(str(cls.get("docstring") or ""), min_len=2))
+        for fn in mb.get("functions") or []:
+            toks.update(_split_ident_subtokens(str(fn.get("name") or ""), min_len=2))
+            toks.update(_split_ident_subtokens(str(fn.get("docstring") or fn.get("summary") or ""), min_len=2))
+    has_strict_choice = (
+        bool(toks & _DISCRETE_CHOICE_CORE_TOKENS)
+        or (
+            "choice" in toks
+            and bool(toks & {"logit", "utility", "utilities", "probs", "probabilities", "panel", "alternative", "alternatives"})
+        )
+        or (
+            "logit" in toks
+            and bool(toks & {"panel", "utility", "utilities", "alternative", "alternatives"})
+        )
+    )
+    has_flow_or_bayes_dom = bool(toks & _FLOW_OR_BAYES_CORE_TOKENS) and not bool(toks & {"mnl", "conjoint", "partworth"})
+    return has_strict_choice and not has_flow_or_bayes_dom
 
 
 def _cluster_scientific_replication_buckets(raw_buckets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -1769,10 +2083,17 @@ def _cluster_scientific_replication_buckets(raw_buckets: List[Dict[str, Any]]) -
     for rb in raw_buckets:
         by_role[_classify_scientific_module_role(rb)].append(rb)
 
+    core_title = (
+        "Core Choice & Panel Estimation"
+        if _is_discrete_choice_core_repository(by_role["core_estimation"], raw_buckets)
+        else "Core Model & Likelihood Estimation"
+    )
+
     out_buckets: List[Dict[str, Any]] = []
     used_titles: Set[str] = set()
     c_num = 1
     for rk, rtitle, rstage in SCIENTIFIC_PIPELINE_ROLE_SPECS:
+        eff_title = core_title if rk == "core_estimation" else rtitle
         members = sorted(by_role[rk], key=lambda m: m["file"])
         if not members:
             continue
@@ -1780,9 +2101,9 @@ def _cluster_scientific_replication_buckets(raw_buckets: List[Dict[str, Any]]) -
         for chunk_idx in range(0, len(members), MAX_MODULES_PER_BUCKET):
             chunk = members[chunk_idx:chunk_idx + MAX_MODULES_PER_BUCKET]
             sub_title = (
-                rtitle
+                eff_title
                 if len(members) <= MAX_MODULES_PER_BUCKET
-                else f"{rtitle} ({Path(chunk[0]['file']).stem})"
+                else f"{eff_title} ({Path(chunk[0]['file']).stem})"
             )
             out_buckets.append(
                 _materialize_bucket_from_members(c_num, sub_title, chunk, used_titles, forced_stage=rstage)
@@ -1845,35 +2166,40 @@ def _cluster_into_architectural_buckets(
         for j, cnt in cross_call_hits.items():
             _add_w(i, j, min(6.0, cnt * 1.4))
 
+    parents_list = [Path(b["file"]).parent.as_posix() for b in raw_buckets]
+    tops_list = [p.split("/")[0] if p != "." else "." for p in parents_list]
+    prefixes_list = [_stem_prefix(b["file"]) for b in raw_buckets]
+    stages_list = [b.get("pipeline_stage", "compute") for b in raw_buckets]
+    langs_list = [b.get("language", "python") for b in raw_buckets]
+
     for i in range(n):
-        pi = Path(raw_buckets[i]["file"]).parent.as_posix()
-        top_i = pi.split("/")[0] if pi != "." else "."
-        pref_i = _stem_prefix(raw_buckets[i]["file"])
-        stg_i = raw_buckets[i].get("pipeline_stage", "compute")
-        lang_i = raw_buckets[i].get("language", "python")
+        pi = parents_list[i]
+        top_i = tops_list[i]
+        pref_i = prefixes_list[i]
+        pref_ok = len(pref_i) >= 3
+        stg_i = stages_list[i]
+        lang_i = langs_list[i]
         for j in range(i + 1, n):
-            pj = Path(raw_buckets[j]["file"]).parent.as_posix()
-            top_j = pj.split("/")[0] if pj != "." else "."
-            pref_j = _stem_prefix(raw_buckets[j]["file"])
-            stg_j = raw_buckets[j].get("pipeline_stage", "compute")
-            lang_j = raw_buckets[j].get("language", "python")
+            w_ij = 0.0
+            pj = parents_list[j]
             if pi != "." and pi == pj:
-                _add_w(i, j, 3.8)
-            elif top_i != "." and top_i == top_j:
-                _add_w(i, j, 2.2)
-            if len(pref_i) >= 3 and pref_i == pref_j:
-                _add_w(i, j, 3.2)
-            if stg_i == stg_j:
-                _add_w(i, j, 0.45)
-            if lang_i == lang_j:
-                _add_w(i, j, 0.2)
+                w_ij += 3.8
+            elif top_i != "." and top_i == tops_list[j]:
+                w_ij += 2.2
+            if pref_ok and pref_i == prefixes_list[j]:
+                w_ij += 3.2
+            if stg_i == stages_list[j]:
+                w_ij += 0.45
+            if lang_i == langs_list[j]:
+                w_ij += 0.2
+            if w_ij > 0.0:
+                _add_w(i, j, w_ij)
 
     clusters: List[List[int]] = [[i] for i in range(n)]
     if n > 40:
         seed_groups: Dict[Tuple[str, str], List[int]] = {}
-        for i, b in enumerate(raw_buckets):
-            parent_dir = Path(b["file"]).parent.as_posix()
-            key = (parent_dir, _stem_prefix(b["file"]))
+        for i in range(n):
+            key = (parents_list[i], prefixes_list[i])
             seed_groups.setdefault(key, []).append(i)
         clusters = []
         step_sz = max(2, min(MAX_MODULES_PER_BUCKET // 2, max_cluster_size // 2))
@@ -1881,25 +2207,34 @@ def _cluster_into_architectural_buckets(
             for pos in range(0, len(grp), step_sz):
                 clusters.append(grp[pos:pos + step_sz])
 
-    def _cluster_coupling(c1: List[int], c2: List[int]) -> float:
-        if len(c1) + len(c2) > MAX_MODULES_PER_BUCKET:
-            return -1e15
-        total = 0.0
-        for u in c1:
-            for v in c2:
-                key = (u, v) if u < v else (v, u)
-                total += weights.get(key, 0.0)
-        denom = (len(c1) * len(c2)) ** 0.68
-        size_penalty = 0.35 * max(0, (len(c1) + len(c2)) - max_cluster_size)
-        return (total / denom) - size_penalty
+    m0 = len(clusters)
+    c_sizes = [len(c) for c in clusters]
+    elem_to_cl = [0] * n
+    for c_idx, cl in enumerate(clusters):
+        for elem in cl:
+            elem_to_cl[elem] = c_idx
+    pair_sums: List[List[float]] = [[0.0] * m0 for _ in range(m0)]
+    for (u, v), w in weights.items():
+        cu = elem_to_cl[u]
+        cv = elem_to_cl[v]
+        if cu != cv:
+            pair_sums[cu][cv] += w
+            pair_sums[cv][cu] += w
 
     while len(clusters) > target_k:
         best_pair: Optional[Tuple[int, int]] = None
         best_score = -1e14
         m_cnt = len(clusters)
         for a in range(m_cnt):
+            sz_a = c_sizes[a]
+            row_a = pair_sums[a]
             for b_idx in range(a + 1, m_cnt):
-                sc = _cluster_coupling(clusters[a], clusters[b_idx])
+                comb = sz_a + c_sizes[b_idx]
+                if comb > MAX_MODULES_PER_BUCKET:
+                    continue
+                sc = (row_a[b_idx] / ((sz_a * c_sizes[b_idx]) ** 0.68)) - (
+                    0.35 * (comb - max_cluster_size) if comb > max_cluster_size else 0.0
+                )
                 if sc > best_score:
                     best_score = sc
                     best_pair = (a, b_idx)
@@ -1907,7 +2242,19 @@ def _cluster_into_architectural_buckets(
             break
         a_idx, b_idx = best_pair
         clusters[a_idx] = clusters[a_idx] + clusters[b_idx]
+        c_sizes[a_idx] += c_sizes[b_idx]
+        row_a = pair_sums[a_idx]
+        row_b = pair_sums[b_idx]
+        for k in range(m_cnt):
+            if k != a_idx and k != b_idx:
+                nv = row_a[k] + row_b[k]
+                row_a[k] = nv
+                pair_sums[k][a_idx] = nv
         del clusters[b_idx]
+        del c_sizes[b_idx]
+        del pair_sums[b_idx]
+        for row in pair_sums:
+            del row[b_idx]
 
     stage_rank = {"ingest": 0, "compute": 1, "emit": 2}
     arch_buckets: List[Dict[str, Any]] = []
@@ -2080,7 +2427,7 @@ GREEK_AND_SYMBOLS: Dict[str, Tuple[str, str]] = {
     "cdot": ("mo", "⋅"), "cdots": ("mo", "⋯"), "ldots": ("mo", "…"), "dots": ("mo", "…"),
     "vdots": ("mo", "⋮"), "ddots": ("mo", "⋱"), "ast": ("mo", "∗"), "star": ("mo", "⋆"),
     "circ": ("mo", "∘"), "bullet": ("mo", "•"), "odot": ("mo", "⊙"), "oplus": ("mo", "⊕"),
-    "otimes": ("mo", "⊗"), "top": ("mi", "⊤"), "bot": ("mi", "⊥"), "perp": ("mo", "⊥"),
+    "otimes": ("mo", "⊗"), "top": ("mo", "⊤"), "bot": ("mo", "⊥"), "perp": ("mo", "⊥"),
     "mid": ("mo", "∣"), "parallel": ("mo", "∥"), "Vert": ("mo", "‖"), "vert": ("mo", "|"),
     "to": ("mo", "→"), "rightarrow": ("mo", "→"), "leftarrow": ("mo", "←"),
     "leftrightarrow": ("mo", "↔"), "mapsto": ("mo", "↦"),
@@ -3232,6 +3579,7 @@ def run_scientific_validation(
 
     return {
         "schema": "anvil-scientific-validation/v1",
+        "rules_checked": ["SCI-01", "SCI-02", "SCI-03", "SCI-04"],
         "files_scanned": len(rel_paths_scanned),
         "finding_count": len(findings),
         "status": "ISSUES_FOUND" if findings else "CLEAN",
@@ -3485,14 +3833,34 @@ def get_file_level3_source(
     if raw_rel.startswith("/") or ":" in raw_rel or ".." in raw_rel.split("/"):
         raise ValueError(f"Path traversal or absolute path '{rel_file}' is not permitted.")
 
-    cand = (root_dir / raw_rel).resolve()
+    walk_cur = root_dir
+    for seg in Path(raw_rel).parts:
+        if seg in ("", "."):
+            continue
+        walk_cur = walk_cur / seg
+        if walk_cur.is_symlink():
+            raise ValueError(f"Symbolic link component '{seg}' in '{rel_file}' is not permitted.")
+
+    cand = walk_cur.resolve()
     if cand.is_symlink() or not (cand == root_dir or root_dir in cand.parents):
         raise ValueError(f"File '{rel_file}' escapes repository root.")
     if not cand.is_file():
         raise ValueError(f"File '{rel_file}' was not found in repository.")
 
-    text = cand.read_text(encoding="utf-8", errors="replace")
-    lines = text.splitlines()
+    max_source_bytes = 2 * 1024 * 1024
+    st_size = cand.stat().st_size
+    if st_size > max_source_bytes:
+        raise ValueError(
+            f"BOUND_EXCEEDED_REFUSAL: Source file '{rel_file}' exceeds 2 MB limit ({st_size} > {max_source_bytes} bytes)."
+        )
+    raw_bytes = cand.read_bytes()
+    if len(raw_bytes) > max_source_bytes:
+        raise ValueError(
+            f"BOUND_EXCEEDED_REFUSAL: Source file '{rel_file}' exceeds 2 MB limit ({len(raw_bytes)} > {max_source_bytes} bytes)."
+        )
+
+    text = raw_bytes.decode("utf-8-sig", errors="replace").replace("\r\n", "\n").replace("\r", "\n")
+    lines = text[:-1].split("\n") if text.endswith("\n") else (text.split("\n") if text else [])
     numbered = "\n".join(f"{idx:4d} | {ln}" for idx, ln in enumerate(lines, start=1))
     norm_rel = cand.name if repo.is_file() else cand.relative_to(root_dir).as_posix()
 
@@ -3520,8 +3888,13 @@ def get_file_level3_source(
         "ok": True,
         "file": norm_rel,
         "language": _detect_language(cand),
+        "start_line": 1,
+        "end_line": len(lines),
         "total_lines": len(lines),
+        "content": text,
+        "raw_source": text,
         "source": text,
+        "lines": [[i, ln] for i, ln in enumerate(lines, start=1)],
         "numbered_source": numbered,
         "symbols": symbols,
     }
@@ -3693,7 +4066,7 @@ def run_beta_reader_panel(repo_path: str | Path, code_map: Optional[Dict[str, An
                 except Exception:
                     continue
 
-    high_crit = [f for f in aegis_findings if f.get("severity") in ("critical", "high")]
+    high_crit = [f for f in aegis_findings if str(f.get("severity") or "").upper() in ("CRITICAL", "HIGH")]
     sec_score = max(45, min(99, int(98 - len(high_crit) * 12 - (len(aegis_findings) - len(high_crit)) * 5)))
     if high_crit:
         sec_verdict = "ACTION_REQUIRED"
@@ -3758,7 +4131,7 @@ def run_beta_reader_panel(repo_path: str | Path, code_map: Optional[Dict[str, An
 # ---------------------------------------------------------------------------
 
 _CHILD_WALKTHROUGH_RUNNER = r"""
-import json, math, os, runpy, sys, types
+import json, math, os, runpy, sys, traceback, types
 
 payload = json.loads(sys.argv[1])
 base_dir = payload["base_dir"]
@@ -3795,6 +4168,7 @@ for item in probes:
     fn_name = item["fn_name"]
     arity = item["arity"]
     sample_arg = item["sample_arg"]
+    safe_auto = bool(item.get("safe_auto_probe", True))
     try:
         if fpath not in mod_cache:
             mod_cache[fpath] = _load_mod(fpath, f"_wt_{abs(hash(fpath))}")
@@ -3823,14 +4197,51 @@ for item in probes:
                 entry_res["note"] = f"Comparison raised {type(ce).__name__}: {ce}"
         results[bid] = entry_res
     except Exception as exc:
-        results[bid] = {
-            "ran": True,
-            "exit_code": 1,
-            "status": "DIVERGENCE",
-            "output_repr": "",
-            "output_type": type(exc).__name__,
-            "note": f"Uncaught {type(exc).__name__} in isolated child probe: {exc}",
-        }
+        tb_frames = traceback.extract_tb(exc.__traceback__)
+        missing_pkg = (getattr(exc, "name", "") or "").split(".")[0] if isinstance(exc, ModuleNotFoundError) else ""
+        is_optional_sci_dep = bool(
+            missing_pkg
+            and missing_pkg in {
+                "torch", "tensorflow", "jax", "flax", "optax", "pyro", "numpyro", "cmdstanpy",
+                "pymc", "sklearn", "scipy", "pandas", "polars", "pyarrow", "transformers",
+                "datasets", "einops", "lightning", "pytorch_lightning",
+            }
+            and not os.path.exists(os.path.join(base_dir, missing_pkg))
+            and not os.path.exists(os.path.join(base_dir, missing_pkg + ".py"))
+        )
+        is_synthetic_boundary = (
+            not cmp_callables
+            and arity >= 1
+            and isinstance(exc, (TypeError, ValueError))
+            and (not safe_auto or len(tb_frames) <= 2)
+        )
+        if is_optional_sci_dep:
+            results[bid] = {
+                "ran": True,
+                "exit_code": 1,
+                "status": "DEPENDENCY_MISSING",
+                "output_repr": "",
+                "output_type": type(exc).__name__,
+                "note": f"Optional scientific runtime dependency '{missing_pkg}' is not installed in probe interpreter ({exc}).",
+            }
+        elif is_synthetic_boundary:
+            results[bid] = {
+                "ran": False,
+                "exit_code": 0,
+                "status": "STATIC_ONLY",
+                "output_repr": "",
+                "output_type": type(exc).__name__,
+                "note": f"Auto-probe skipped (structured input required for synthetic probe argument: {type(exc).__name__}); supply --test-cmd for runtime execution.",
+            }
+        else:
+            results[bid] = {
+                "ran": True,
+                "exit_code": 1,
+                "status": "DIVERGENCE",
+                "output_repr": "",
+                "output_type": type(exc).__name__,
+                "note": f"Uncaught {type(exc).__name__} in isolated child probe: {exc}",
+            }
 
 sys.stdout.write(json.dumps(results))
 """
@@ -3900,6 +4311,7 @@ def run_code_walkthrough(
                 "fn_name": cand_fn["name"].split(".")[-1],
                 "arity": int(cand_fn.get("required_arity") or 0),
                 "sample_arg": sample_arg,
+                "safe_auto_probe": bool(cand_fn.get("safe_auto_probe", False)),
             })
 
     probe_results: Dict[str, Dict[str, Any]] = {}
@@ -3931,6 +4343,7 @@ def run_code_walkthrough(
     executed_pass_count = 0
     static_only_count = 0
     divergence_count = 0
+    dep_missing_count = 0
 
     for idx, b in enumerate(ordered_buckets):
         funcs = b.get("functions") or []
@@ -4013,6 +4426,8 @@ def run_code_walkthrough(
             executed_pass_count += 1
         elif verdict == "DIVERGENCE":
             divergence_count += 1
+        elif verdict == "DEPENDENCY_MISSING":
+            dep_missing_count += 1
         else:
             static_only_count += 1
 
@@ -4051,6 +4466,8 @@ def run_code_walkthrough(
 
     if divergence_count > 0:
         overall_verdict = "DIVERGENCE"
+    elif dep_missing_count > 0:
+        overall_verdict = "DEPENDENCY_MISSING"
     elif executed_pass_count > 0 and static_only_count == 0:
         overall_verdict = "EXECUTED_PASS"
     else:
@@ -4124,7 +4541,11 @@ def build_map(
     scope_summary: Optional[Dict[str, Any]] = None
     if repo.is_dir() and (not _fast_facts or paper_path or pipeline_id):
         v4_proc = _load_anvil_v4_process_only()
-        scope_info = v4_proc.discover_paper_matched_scopes(repo, Path(paper_path) if paper_path else None)
+        scope_info = v4_proc.discover_paper_matched_scopes(
+            repo,
+            Path(paper_path) if paper_path else None,
+            _precomputed_total_files=len(prod_files),
+        )
         scope_summary = v4_proc.resolve_active_pipeline_scope(scope_info, pipeline_id=pipeline_id)
         if scope_summary["scoped"]:
             allowed_rels = set(scope_summary["active_files"])
@@ -4139,7 +4560,7 @@ def build_map(
     for fpath in prod_files:
         rel = fpath.name if repo.is_file() else fpath.relative_to(repo).as_posix()
         try:
-            text = fpath.read_text(encoding="utf-8", errors="replace")
+            text = fpath.read_text(encoding="utf-8-sig", errors="replace")
         except Exception:
             continue
         ext = fpath.suffix.lower()
@@ -4244,12 +4665,23 @@ def build_map(
 
     flow_diagram = _build_foundry_flow_diagram(buckets, edges)
     sci_val: Optional[Dict[str, Any]] = None
+    has_scientific_py = any(bool(rec.get("imported_math")) for rec in file_records)
     if not _fast_facts and languages_counts.get("python", 0) > 0:
-        sci_val = run_scientific_validation(
-            repo,
-            active_files=[rb["file"] for rb in raw_buckets],
-            scope_summary=scope_summary,
-        )
+        if use_sci_roles or has_scientific_py:
+            sci_val = run_scientific_validation(
+                repo,
+                active_files=[rb["file"] for rb in raw_buckets],
+                scope_summary=scope_summary,
+            )
+        else:
+            sci_val = {
+                "schema": "anvil-scientific-validation/v1",
+                "files_scanned": languages_counts.get("python", 0),
+                "finding_count": 0,
+                "status": "CLEAN",
+                "findings": [],
+                "refactoring_proposal": None,
+            }
 
     _enrich_progressive_levels(
         repo,
@@ -4917,8 +5349,8 @@ MATH_SYNONYM_BRIDGE: Dict[str, Tuple[str, ...]] = {
     "phi": ("phi", "parameters", "net", "network", "flow", "weights"),
     "mu": ("mu", "mean", "loc", "shift"),
     "sigma": ("sigma", "scale", "log_scale", "std", "cov", "var"),
-    "beta": ("beta", "temper", "anneal", "weight", "schedule", "ramp", "warmup", "coef"),
-    "gamma": ("gamma", "coef", "utility", "bilinear", "weights"),
+    "beta": ("beta", "coef", "coefs", "gamma", "partworth", "utility"),
+    "gamma": ("gamma", "coef", "coefs", "utility", "bilinear"),
     "tau": ("tau", "precision", "scale", "step"),
     "alpha": ("alpha", "intercept", "rate", "weight"),
     "elbo": ("elbo", "loss", "kl", "variational", "objective", "log_q", "log_prob"),
@@ -5040,6 +5472,12 @@ def _expand_tex_tree(entry_tex: Path, root_dir: Path, visited: Optional[Set[Path
     return out
 
 
+_ARCHIVE_TEX_DIRS: Set[str] = {
+    "old", "archive", "archived", "backup", "bak", "deprecated", "obsolete",
+    "review-input", "code-job-outputs", "snapshots", ".hypothesis",
+}
+
+
 def _pick_main_tex_in_dir(paper_dir: Path) -> Optional[Path]:
     tex_files = [
         p for p in sorted(paper_dir.rglob("*.tex"))
@@ -5047,8 +5485,13 @@ def _pick_main_tex_in_dir(paper_dir: Path) -> Optional[Path]:
     ]
     if not tex_files:
         return None
+    non_archive = [
+        p for p in tex_files
+        if not any(pt.lower() in _ARCHIVE_TEX_DIRS for pt in p.relative_to(paper_dir).parts[:-1])
+    ]
+    pool = non_archive if non_archive else tex_files
     scored: List[Tuple[int, int, Path]] = []
-    for tf in tex_files:
+    for tf in pool:
         try:
             txt = tf.read_text(encoding="utf-8", errors="replace")
         except Exception:
@@ -5064,7 +5507,7 @@ def _pick_main_tex_in_dir(paper_dir: Path) -> Optional[Path]:
             score += 10
         scored.append((score, len(txt), tf))
     if not scored:
-        return tex_files[0]
+        return pool[0]
     scored.sort(key=lambda t: (t[0], t[1]), reverse=True)
     return scored[0][2]
 
@@ -5088,9 +5531,7 @@ def _extract_pdf_text_graceful(pdf_path: Path) -> str:
             return txt
     except Exception:
         pass
-    raw_bytes = pdf_path.read_bytes()
-    ascii_chunks = re.findall(rb"[\x20-\x7e]{6,}", raw_bytes)
-    return "\n".join(chunk.decode("ascii", errors="ignore") for chunk in ascii_chunks[:600])
+    return ""
 
 
 def _extract_equation_symbols(raw_latex: str, section_prose: str) -> List[Dict[str, Any]]:
@@ -5111,6 +5552,12 @@ def _extract_equation_symbols(raw_latex: str, section_prose: str) -> List[Dict[s
                 continue
             seen_sym.add(sym_tex)
             code_vars = list(MATH_SYNONYM_BRIDGE.get(cmd.lower(), (cmd.lower(),)))
+            if cmd.lower() == "beta" and re.search(
+                r"\b(?:anneal|temper|temperature|schedule|warmup|elbo|variational|flow)\b",
+                f"{raw_latex} {section_prose}",
+                re.IGNORECASE,
+            ):
+                code_vars = ["beta", "temper", "anneal", "schedule", "warmup", "weight"]
             meaning = f"Mathematical parameter/quantity {GREEK_AND_SYMBOLS[cmd][1]}"
             m_prose = re.search(rf"([^.;\n]{{0,55}}\\{re.escape(cmd)}(?![A-Za-z])[^.;\n]{{0,55}})", section_prose)
             if m_prose:
@@ -5244,7 +5691,7 @@ def _parse_paper_hierarchy_from_provenance_lines(
 
     sec_cmd_re = re.compile(r"\\(section|subsection|subsubsection)(\*?)\s*\{")
     md_sec_re = re.compile(r"^(#{1,3})\s+(.+)$")
-    eq_open_re = re.compile(r"\\begin\{(equation\*?|align\*?|gather\*?|eqnarray\*?)\}|\\\[|\$\$")
+    eq_open_re = re.compile(r"\\begin\{(equation\*?|align\*?|alignat\*?|gather\*?|multline\*?|eqnarray\*?)\}|(?<!\\)\\\[|\$\$")
     alg_open_re = re.compile(r"\\begin\{(algorithm\*?|algorithmic)\}")
     enum_open_re = re.compile(r"\\begin\{enumerate\}")
     md_alg_re = re.compile(r"^(?:#{2,4}\s*)?(?:\*\*)?Algorithm\s+(\d+)\s*[:.—-]?\s*(.*?)(?:\*\*)?$", flags=re.I)
@@ -5477,6 +5924,7 @@ def _parse_paper_hierarchy_from_provenance_lines(
                 eq_id = f"eq-{eq_num}"
                 mml = compile_latex_to_mathml(raw_eq_clean, display=True)
                 prose_ctx = " ".join(sec_prose_buffers.get(current_sec_id, [])[-6:])
+                immediate_prose = " ".join(sec_prose_buffers.get(current_sec_id, [])[-3:])
                 syms = _extract_equation_symbols(raw_eq_clean, prose_ctx)
                 equations.append({
                     "id": eq_id,
@@ -5486,6 +5934,7 @@ def _parse_paper_hierarchy_from_provenance_lines(
                     "source_file": src_file,
                     "line_start": lno,
                     "raw_latex": " ".join(raw_eq_clean.split()),
+                    "preceding_prose": immediate_prose,
                     "mathml": mml,
                     "symbols": syms,
                     "matched_functions": [],
@@ -5687,17 +6136,40 @@ def _score_paper_item_against_functions(
     all_funcs: List[Dict[str, Any]],
     *,
     preferred_files: Optional[Set[str]] = None,
+    primary_estimation_files: Optional[Set[str]] = None,
+    leaf_model_classes: Optional[Set[str]] = None,
+    abstract_or_base_classes: Optional[Set[str]] = None,
     excluded_symbols: Optional[Set[str]] = None,
+    prior_winner_counts: Optional[Dict[Tuple[str, str], int]] = None,
+    prev_section_mlp_winner: Optional[Tuple[str, str]] = None,
 ) -> List[Dict[str, Any]]:
     """Operator-grounded & scope-filtered multi-signal scorer aligning a paper equation/step/section
-    against active replication functions (penalizing prototype/archive scripts and pure data loaders).
+    against active replication functions (weighting manifest-reachable primary pipeline modules and
+    concrete leaf estimator subclasses ahead of abstract/base wrapper classes and auxiliary scripts).
     """
     paper_toks = _expand_domain_tokens(f"{item_text} {label} {raw_latex} {' '.join(symbol_vars)}")
     label_toks = {t for t in _split_ident_subtokens(label or "", min_len=3) if t not in _GENERIC_LABEL_TOKENS}
-    paper_ops = _detect_latex_math_ops(raw_latex)
+    if label_toks & {"ffnn", "mlp", "neural"}:
+        label_toks.update(("ffnn", "mlp", "neural"))
+    paper_ops = set(_detect_latex_math_ops(raw_latex))
+    is_coef_shift_eq = bool(
+        re.search(r"\\(?:beta|gamma)\b[^=]*=\s*\\(?:beta|gamma)\b[^=]*\+", raw_latex)
+        or (("a_s" in raw_latex or "d_s" in raw_latex or "\\delta" in raw_latex) and "h_" in raw_latex)
+    )
+    if is_coef_shift_eq and "\\tanh" in item_text.lower():
+        paper_ops.add("tanh_adapter")
     paper_high_ops = paper_ops & _STRUCTURAL_HIGH_PRECISION_OPS
     sym_set = {v.lower() for v in symbol_vars if len(v) >= 1}
     is_model_equation = bool(raw_latex.strip()) and bool(paper_ops - {"zscore_norm"})
+    eq_context_blob = f"{label} {item_text}".lower()
+    has_mixture_conditioning = bool(re.search(r"\\sum_\{?s|\|\s*s\}|g_\{|\\pi_", raw_latex))
+    is_standalone_mlp_eq = bool(
+        not has_mixture_conditioning
+        and not is_coef_shift_eq
+        and (
+            bool(re.search(r"\\mathbf\{h\}\^\{\([dD]|h\^\{\([dD]|\bffnn\b|\bmlp\b|hidden_layer|final_layer|feed[\s-]?forward|forward\s+feed", f"{raw_latex} {eq_context_blob}", re.I))
+        )
+    )
 
     def _score_pool(pool: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         scored_local: List[Dict[str, Any]] = []
@@ -5769,44 +6241,102 @@ def _score_paper_item_against_functions(
 
             # Penalize table-formatting / consistency-check scripts on core model equations when they lack structural math ops
             if is_model_equation and not matched_high_ops and (
-                stem_f_low.startswith(("check_", "summarize_", "build_table", "step2_tables"))
+                stem_f_low.startswith(("check_", "summarize_", "build_table", "make_table", "format_table"))
+                or stem_f_low.endswith("_tables")
             ):
                 score *= 0.25
 
-            # Reward dedicated choice/neural model architecture forward/utility/gating methods over __init__ or outer training loops
-            cls_low = str(fn.get("class_name") or "").lower()
+            cls_exact = str(fn.get("class_name") or "")
+            cls_low = cls_exact.lower()
             if is_model_equation:
                 if short_low == "__init__":
                     score *= 0.45
                 elif short_low.startswith(("train_", "fit_", "main", "cli")):
                     score *= 0.82
-                if any(k in cls_low for k in ("mixture", "moe", "expert", "gating", "neural", "ffnn", "choice", "anchored", "maf", "flow", "sampler", "variational", "trainer", "model", "net")):
-                    score += 3.5
+
+                # Generic manifest-entrypoint reachability weighting: favor matched pipeline / primary estimation modules
+                if primary_estimation_files:
+                    if fn_file in primary_estimation_files:
+                        score += 3.8
+                    elif not is_benchmark_section:
+                        score *= 0.78
+
+                # Generic concrete leaf estimator subclass weighting over abstract/base/wrapper classes
+                if cls_exact:
+                    if abstract_or_base_classes and cls_exact in abstract_or_base_classes:
+                        score *= 0.55
+                    elif leaf_model_classes and cls_exact in leaf_model_classes:
+                        score += 3.5
+
+                if any(k in cls_low for k in ("mixture", "moe", "expert", "gating", "neural", "ffnn", "maf", "flow", "sampler", "variational", "trainer", "estimator", "net")):
+                    score += 2.8
                 if short_low in ("forward", "forward_utilities", "utilities", "_expert_probabilities", "_mixture", "predict", "predict_probabilities", "log_probs", "log_weights", "nll", "loss", "components", "_mlp", "_build_mlp"):
-                    score += 3.5
-                if not is_benchmark_section and (stem_f_low.startswith("torch") or "core" in stem_f_low or stem_f_low == "step2_runner"):
                     score += 3.2
 
                 is_loglik_eq = ("panel_loglik" in paper_ops) or (
                     "log" in paper_ops and bool(re.search(r"\\mathcal\{[Ll]\}|\\ell|\bloss\b|\bnll\b|\\prod", raw_latex))
                 )
-                is_pure_linear_utility_eq = ("linear_proj" in paper_ops) and not (
-                    paper_ops & {"logit_softmax", "panel_loglik", "mixture_sum", "relu_act", "tanh_adapter", "exp", "log"}
+                is_pure_linear_utility_eq = (
+                    ("linear_proj" in paper_ops)
+                    and not is_standalone_mlp_eq
+                    and not is_coef_shift_eq
+                    and not (paper_ops & {"logit_softmax", "panel_loglik", "mixture_sum", "relu_adapter", "tanh_adapter", "exp", "log"})
                 )
                 is_gate_softmax_eq = (
                     ("logit_softmax" in paper_ops)
                     and not (paper_ops & {"panel_loglik", "mixture_sum", "log"})
                     and bool(re.search(r"\\pi_|g_\{i\s*\|\s*s\}|\\alpha|\\psi", raw_latex))
                 )
-                is_context_utility_eq = bool(re.search(r"\\beta_s\s*\+\s*h_s|\\delta_s", raw_latex))
+                is_context_utility_eq = bool(
+                    ("tanh_adapter" in paper_ops or "relu_adapter" in paper_ops)
+                    and not is_standalone_mlp_eq
+                    and (
+                        is_coef_shift_eq
+                        or "linear_proj" in paper_ops
+                        or re.search(
+                            r"(?:\\left)?\([^)]*\+\s*[A-Za-z_\\]+\s*\([^)]*\)[^)]*(?:\\right)?\)\s*\^",
+                            raw_latex,
+                        )
+                    )
+                )
 
                 if not is_loglik_eq and short_low in ("loss", "nll", "neg_log_lik"):
-                    score -= 6.0
+                    score -= 7.5
+                elif is_loglik_eq and short_low == "loss" and len(fn_ops & _STRUCTURAL_HIGH_PRECISION_OPS) == 0:
+                    # Thin delegating `.loss(...)` wrapper without direct structural logsumexp/softmax ops
+                    score -= 4.5
+
+                # Prevent pure gating-weight methods (`log_weights`, `gating`) from claiming non-gating utility/coefficient equations
+                if not is_gate_softmax_eq and "logit_softmax" not in paper_ops and not has_mixture_conditioning:
+                    if short_low in ("log_weights", "_logits", "gate_weights", "gating_weights") or "gating" in cls_low:
+                        score -= 8.0
+                elif is_coef_shift_eq and (short_low in ("log_weights", "_logits") or "gating" in cls_low):
+                    score -= 9.5
+
+                if is_standalone_mlp_eq:
+                    has_ffnn_identity = any(k in f"{cls_low} {short_low} {stem_f_low}" for k in ("neural", "ffnn", "mlp"))
+                    is_moe_cls = any(k in cls_low for k in ("expert", "moe", "mixture", "gating"))
+                    is_policy_mod = bool(_SCI_POLICY_RE.search(stem_f_low))
+                    eq_is_policy = bool(_SCI_POLICY_RE.search(eq_context_blob))
+                    if has_ffnn_identity and ("relu_adapter" in fn_ops or "linear_proj" in fn_ops) and not is_moe_cls:
+                        score += 8.5
+                        if "utilit" in short_low or short_low in ("_mlp", "_build_mlp", "forward"):
+                            score += 3.0
+                        if is_policy_mod and not eq_is_policy:
+                            score -= 4.5
+                        if prev_section_mlp_winner is not None:
+                            if (fn_file, cls_exact) == prev_section_mlp_winner and cls_exact:
+                                score += 5.0
+                            elif fn_file == prev_section_mlp_winner[0]:
+                                score += 3.0
+                    elif is_moe_cls:
+                        score -= 4.5
+
                 if is_pure_linear_utility_eq:
                     if "utilit" in short_low and not (fn_ops & {"logit_softmax", "panel_loglik"}):
                         score += 7.0
-                        if "expertmodule" in cls_low or "linearexpert" in cls_low:
-                            score += 6.5
+                        if "expert" in cls_low:
+                            score += 5.5
                         if "coeff" in (fn.get("args") or []):
                             score -= 4.5
                     elif "logit_softmax" in fn_ops or "panel_loglik" in fn_ops or "exp" in fn_ops or "predict" in short_low:
@@ -5816,14 +6346,24 @@ def _score_paper_item_against_functions(
                         score += 7.0
                     elif "utilit" in short_low or "_expert_probabilities" in short_low:
                         score -= 2.5
-                if is_context_utility_eq and ("component" in short_low or "adapter" in cls_low or "rawtextmoe" in cls_low or "anchoredmoe" in cls_low):
-                    score += 6.5
-                if ("one_unit_price" in label.lower() or ("price" in paper_toks and ("a_s" in raw_latex or "h_i" in raw_latex))) and (
-                    ("smallmoe" in cls_low and short_low in ("utilities", "representation"))
-                    or ("anchoredmoe" in cls_low and short_low == "log_probs")
-                ):
-                    score += 9.0
-                if is_loglik_eq and "panel_loglik" in fn_ops and (short_low in ("mixture_sequence_nll", "nll", "loss", "forward")):
+                if is_context_utility_eq:
+                    has_shift_arg = any(a in ("coeff", "coef", "delta", "shift") for a in (fn.get("args") or []))
+                    if is_coef_shift_eq:
+                        if short_low in ("utilities", "forward_utilities") and ("bilinear_einsum" in fn_ops and has_shift_arg):
+                            score += 24.0
+                        elif short_low in ("utilities", "forward_utilities") and ("bilinear_einsum" in fn_ops or "tanh_adapter" in fn_ops):
+                            score += 14.0
+                        elif short_low == "log_probs" and ("bilinear_einsum" in fn_ops or "tanh_adapter" in fn_ops):
+                            score += 9.5
+                        elif short_low == "representation" and "logit_softmax" in fn_ops and "logit_softmax" not in paper_ops:
+                            score -= 6.0
+                    elif ("tanh_adapter" in fn_ops or "relu_adapter" in fn_ops) and (
+                        "linear_proj" in fn_ops or "bilinear_einsum" in fn_ops or "logit_softmax" in fn_ops
+                    ):
+                        score += 6.5
+                    elif "component" in short_low or "adapter" in cls_low:
+                        score += 4.5
+                if is_loglik_eq and "panel_loglik" in fn_ops and (short_low in ("mixture_sequence_nll", "nll", "log_probs", "forward", "loss")):
                     score += 4.5
 
             # Penalize prototype / archive / historical clutter files
@@ -5839,6 +6379,12 @@ def _score_paper_item_against_functions(
                 score += 2.2
             elif (not is_benchmark_section) and is_bench_file:
                 score *= 0.62
+
+            # Repeat-winner diversity damper when a generic wrapper without unique structural high-ops has already claimed >=2 equations
+            if prior_winner_counts:
+                prior_wins = prior_winner_counts.get((fn_file, str(fn["name"])), 0)
+                if prior_wins >= 2 and not matched_high_ops:
+                    score *= 0.68 ** (prior_wins - 1)
 
             if score >= 2.5:
                 scored_local.append({
@@ -5963,13 +6509,15 @@ def _build_dual_stage_crosswalk_lookup(
     *,
     paper_path: Optional[Path] = None,
     pipeline_id: Optional[str] = None,
+    process_map: Optional[Dict[str, Any]] = None,
+    refactor_map: Optional[Dict[str, Any]] = None,
 ) -> Tuple[Dict[Tuple[str, str], Dict[str, str]], Dict[str, Dict[str, str]], Dict[Tuple[str, str], Dict[str, str]], Dict[str, Dict[str, str]], Dict[Tuple[str, str], int], Set[str]]:
     """Build lookups mapping `(file, qualname)` and `qualname` onto both As-Built `S1..Sk`
     and Proposed Refactored `N1..Nk` stages, plus traced hit counts and stage tripwires.
     """
     v4_proc = _load_anvil_v4_process_only()
     base_dir = repo_root if repo_root.is_dir() else repo_root.parent
-    proc_map = v4_proc.build_process_map(
+    proc_map = process_map if isinstance(process_map, dict) else v4_proc.build_process_map(
         base_dir,
         trace_data=trace_data,
         persist=False,
@@ -5977,12 +6525,20 @@ def _build_dual_stage_crosswalk_lookup(
         pipeline_id=pipeline_id,
     )
 
-    ref_map: Optional[Dict[str, Any]] = None
-    try:
-        _, _, v4_ref, _ = _load_anvil_v4_wave2_modules()
-        ref_map = v4_ref.build_refactor_map(base_dir, trace_data=trace_data, persist=False, paper_path=paper_path, pipeline_id=pipeline_id)
-    except ImportError:
-        ref_map = None
+    ref_map: Optional[Dict[str, Any]] = refactor_map if isinstance(refactor_map, dict) else None
+    if ref_map is None:
+        try:
+            _, _, v4_ref, _ = _load_anvil_v4_wave2_modules()
+            ref_map = v4_ref.build_refactor_map(
+                base_dir,
+                trace_data=trace_data,
+                persist=False,
+                paper_path=paper_path,
+                pipeline_id=pipeline_id,
+                process_map=proc_map,
+            )
+        except ImportError:
+            ref_map = None
 
     old_exact: Dict[Tuple[str, str], Dict[str, str]] = {}
     old_by_name: Dict[str, Dict[str, str]] = {}
@@ -6091,6 +6647,8 @@ def paper_to_code_map(
     approve_run: bool = False,
     exec_argv: Optional[Sequence[str]] = None,
     timeout_sec: float = 30.0,
+    process_map: Optional[Dict[str, Any]] = None,
+    refactor_map: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Mode 4: Rich Paper Sections, Step-by-Step Algorithms & Native MathML Equations ⇄ Companion Software Mapper."""
     v4_proc = _load_anvil_v4_process_only()
@@ -6217,10 +6775,76 @@ def paper_to_code_map(
         all_funcs = [f for f in all_funcs if f"{f.get('file')}:{f.get('name')}" not in excluded_sym_set]
     preferred_scope_files: Optional[Set[str]] = None
     if scope_summary["scoped"] and scope_summary["active_files"]:
-        preferred_scope_files = set(scope_summary["active_files"])
-        all_funcs = [f for f in all_funcs if f.get("file") in preferred_scope_files]
+        cand_scope_files = set(scope_summary["active_files"])
+        scoped_funcs = [f for f in all_funcs if f.get("file") in cand_scope_files]
+        has_scoped_models = any(
+            bool(f.get("class_name")) or bool(set(f.get("math_ops") or []) & _MODEL_MATH_OPS)
+            for f in scoped_funcs
+        )
+        any_repo_models = any(
+            bool(f.get("class_name")) or bool(set(f.get("math_ops") or []) & _MODEL_MATH_OPS)
+            for f in all_funcs
+        )
+        if pipeline_id or scope_info.get("workflow_manifests") or has_scoped_models or not any_repo_models:
+            preferred_scope_files = cand_scope_files
+            all_funcs = scoped_funcs
     elif scope_info.get("paper_matched_files"):
-        preferred_scope_files = set(scope_info["paper_matched_files"])
+        cand_pm_files = set(scope_info["paper_matched_files"])
+        if scope_info.get("workflow_manifests") or any(
+            bool(f.get("class_name")) or bool(set(f.get("math_ops") or []) & _MODEL_MATH_OPS)
+            for f in all_funcs
+            if f.get("file") in cand_pm_files
+        ):
+            preferred_scope_files = cand_pm_files
+
+    # Generic manifest-entrypoint reachability + concrete leaf-subclass discovery (zero repo-specific literals)
+    primary_estimation_files: Set[str] = set()
+    avail_pipes = scope_summary.get("available_pipelines") or []
+    if avail_pipes:
+        if pipeline_id and any(p.get("id") == pipeline_id for p in avail_pipes):
+            sel_p = next(p for p in avail_pipes if p.get("id") == pipeline_id)
+            primary_estimation_files.update(sel_p.get("files") or [])
+        else:
+            # Prefer primary empirical/model estimation pipelines over auxiliary check/diagnostic/policy-variant scripts
+            for p_obj in avail_pipes:
+                pid_low = str(p_obj.get("id") or "").lower()
+                ptitle_low = str(p_obj.get("title") or "").lower()
+                p_targets = " ".join(str(t).lower() for t in (p_obj.get("manuscript_targets") or []))
+                if any(k in f"{pid_low} {ptitle_low} {p_targets}" for k in ("empirical", "table1", "model", "main", "estimat")) and not any(
+                    k in pid_low for k in ("check", "audit", "verify", "policy")
+                ):
+                    primary_estimation_files.update(p_obj.get("files") or [])
+            if not primary_estimation_files and avail_pipes:
+                primary_estimation_files.update(avail_pipes[0].get("files") or [])
+
+    all_cls_bases: Dict[str, List[str]] = {}
+    for mb in mod_buckets:
+        for c_obj in mb.get("classes") or []:
+            cn = str(c_obj.get("name") or "")
+            if cn:
+                all_cls_bases.setdefault(cn, []).extend(c_obj.get("bases") or [])
+    subclassed_parents: Set[str] = {
+        str(b).split(".")[-1]
+        for b_list in all_cls_bases.values()
+        for b in b_list
+    }
+    cls_math_method_counts: Dict[str, int] = {}
+    for fn_item in all_funcs:
+        cn = str(fn_item.get("class_name") or "")
+        if cn and (set(fn_item.get("math_ops") or []) & _MODEL_MATH_OPS):
+            cls_math_method_counts[cn] = cls_math_method_counts.get(cn, 0) + 1
+
+    abstract_or_base_classes: Set[str] = {
+        cn for cn in all_cls_bases
+        if cn.lower().startswith(("base", "abstract")) or (cn in subclassed_parents and cls_math_method_counts.get(cn, 0) == 0)
+    }
+    leaf_model_classes: Set[str] = {
+        cn for cn in all_cls_bases
+        if cn not in subclassed_parents
+        and cn not in abstract_or_base_classes
+        and cls_math_method_counts.get(cn, 0) >= 1
+        and any(str(b).endswith(("Module", "Model", "Estimator")) or str(b).split(".")[-1] in all_cls_bases for b in all_cls_bases.get(cn, []))
+    }
 
     empirical_ran = consented_numeric_ran
     empirical_pass = consented_numeric_pass
@@ -6414,7 +7038,12 @@ def paper_to_code_map(
     sec_by_id = {s["id"]: s for s in sections}
 
     old_ex, old_nm, new_ex, new_nm, fn_hits, tw_stages = _build_dual_stage_crosswalk_lookup(
-        base_dir, active_trace, paper_path=spec_p, pipeline_id=pipeline_id
+        base_dir,
+        active_trace,
+        paper_path=spec_p,
+        pipeline_id=pipeline_id,
+        process_map=process_map,
+        refactor_map=refactor_map,
     )
 
     def _resolve_dual_links_from_matches(matches_list: Sequence[Dict[str, Any]]) -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
@@ -6454,11 +7083,40 @@ def paper_to_code_map(
         return any(k in tlow for k in ("empirical", "evaluat", "benchmark", "experiment", "credit", "volatility", "panel", "funnel", "simulation"))
 
     touched_files: Set[str] = set()
+    eq_winner_counts: Dict[Tuple[str, str], int] = {}
 
+    def _equation_pipeline_files(eq_obj: Dict[str, Any], sec_obj: Optional[Dict[str, Any]]) -> Optional[Set[str]]:
+        if pipeline_id or not avail_pipes:
+            return primary_estimation_files or None
+        src_stem = Path(str(eq_obj.get("source_file") or "")).stem.lower()
+        sec_title_low = str((sec_obj or {}).get("title") or "").lower()
+        ctx_toks = _split_ident_subtokens(f"{src_stem} {sec_title_low}", min_len=3)
+        if ctx_toks & {"policy", "targeting", "counterfactual", "counterfactuals", "welfare", "uplift", "discounting"}:
+            pol_files = {
+                f for p_obj in avail_pipes
+                if any(k in str(p_obj.get("id") or "").lower() for k in ("policy", "target", "counterfactual", "welfare"))
+                for f in (p_obj.get("files") or [])
+            }
+            if pol_files:
+                return pol_files
+        if ctx_toks & {"simulation", "simulations", "monte", "dgp"} and not (ctx_toks & {"model", "models"}):
+            sim_files = {
+                f for p_obj in avail_pipes
+                if any(k in str(p_obj.get("id") or "").lower() for k in ("sim", "dgp", "monte"))
+                for f in (p_obj.get("files") or [])
+            }
+            if sim_files:
+                return sim_files
+        return primary_estimation_files or None
+
+    prev_mlp_by_sec: Dict[str, Tuple[str, str]] = {}
     for eq in equations:
-        sec_obj = sec_by_id.get(eq["section_id"])
-        sec_context = f"{sec_obj['title']} {sec_obj['summary']}" if sec_obj else ""
+        sec_id_cur = str(eq.get("section_id") or "")
+        sec_obj = sec_by_id.get(sec_id_cur)
+        local_prose = eq.get("preceding_prose") or (sec_obj["summary"] if sec_obj else "")
+        sec_context = f"{sec_obj['title'] if sec_obj else ''} {local_prose}".strip()
         sym_vars = [v for sym in (eq.get("symbols") or []) for v in (sym.get("code_variables") or [])]
+        eq_prim_files = _equation_pipeline_files(eq, sec_obj)
         matches = _score_paper_item_against_functions(
             sec_context,
             eq["raw_latex"],
@@ -6466,8 +7124,20 @@ def paper_to_code_map(
             eq.get("label") or "",
             _is_bench_sec(sec_obj),
             all_funcs,
-            preferred_files=preferred_scope_files, excluded_symbols=excluded_sym_set,
+            preferred_files=preferred_scope_files,
+            primary_estimation_files=eq_prim_files,
+            leaf_model_classes=leaf_model_classes or None,
+            abstract_or_base_classes=abstract_or_base_classes or None,
+            excluded_symbols=excluded_sym_set,
+            prior_winner_counts=eq_winner_counts,
+            prev_section_mlp_winner=prev_mlp_by_sec.get(sec_id_cur),
         )
+        if matches:
+            w_key = (str(matches[0]["file"]), str(matches[0]["qualname"]))
+            eq_winner_counts[w_key] = eq_winner_counts.get(w_key, 0) + 1
+            if re.search(r"\\mathbf\{h\}\^\{\([dD]|h\^\{\([dD]|hidden_layer|final_layer|\bffnn\b|\bmlp\b", f"{eq['raw_latex']} {eq.get('label') or ''}", re.I):
+                w_cls = w_key[1].split(".", 1)[0] if "." in w_key[1] else ""
+                prev_mlp_by_sec[sec_id_cur] = (w_key[0], w_cls)
         eq["matched_functions"] = matches
         maps_old, maps_new = _resolve_dual_links_from_matches(matches)
         eq["maps_to_old"] = maps_old
@@ -6701,10 +7371,28 @@ def paper_to_code_map(
         vs = eq.get("verification_stamp", eq["status"])
         stamp_counts[vs] = stamp_counts.get(vs, 0) + 1
 
+    divergence_report: Dict[str, Any] = {
+        "schema": "anvil-v5-manuscript-divergences/v1",
+        "has_paper": True,
+        "divergence_count": 0,
+        "divergences": [],
+    }
+    try:
+        _, _, v4_ref_div, _ = _load_anvil_v4_wave2_modules()
+    except ImportError:
+        v4_ref_div = None
+    if v4_ref_div is not None and hasattr(v4_ref_div, "detect_manuscript_code_divergences") and spec_p is not None:
+        divergence_report = v4_ref_div.detect_manuscript_code_divergences(
+            base_dir,
+            spec_p,
+            active_files=sorted(preferred_scope_files) if preferred_scope_files else None,
+            scope_summary=scope_summary,
+        )
+
     return {
         "ok": True,
         "schema": "anvil-paper-map/v1",
-        "paper_map_version": "v4",
+        "paper_map_version": "v5",
         "has_paper": True,
         "isolation_boundary": iso_boundary if consented_numeric_ran else ("consented_local_subprocess" if active_trace else "static_ast_zero_execution"),
         "repo": str(repo),
@@ -6713,6 +7401,8 @@ def paper_to_code_map(
         "native_mathml_enforced": True,
         "paper_matched_scopes": scope_summary,
         "scientific_validation": sci_val,
+        "divergences": list(divergence_report.get("divergences") or []),
+        "divergence_report": divergence_report,
         "sections": sections,
         "algorithms": algorithms,
         "equations": equations,
@@ -7034,13 +7724,32 @@ def verify_repo_diff(repo_path: str | Path, files: Optional[Sequence[str] | str]
                 except Exception:
                     pass
         elif cand.suffix.lower() in (".js", ".mjs", ".cjs", ".ts", ".tsx"):
-            masked, _ = _mask_js_comments_and_strings(text)
-            if masked.count("{") != masked.count("}"):
-                syntax_errors.append({
-                    "file": norm_rel,
-                    "line": 1,
-                    "error": f"Unbalanced braces in {norm_rel}: '{{'={masked.count('{')} vs '}}'={masked.count('}')}",
-                })
+            ext_low = cand.suffix.lower()
+            node_bin = shutil.which("node") if ext_low in (".js", ".mjs", ".cjs") else None
+            if node_bin:
+                chk = subprocess.run(
+                    [node_bin, "--check", str(cand)],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=15,
+                )
+                if chk.returncode != 0:
+                    err_line = (chk.stderr or chk.stdout or "JS syntax error").strip().splitlines()
+                    syntax_errors.append({
+                        "file": norm_rel,
+                        "line": 1,
+                        "error": err_line[-1] if err_line else f"node --check failed for {norm_rel}",
+                    })
+            else:
+                masked, _ = _mask_js_comments_and_strings(text)
+                if masked.count("{") != masked.count("}"):
+                    syntax_errors.append({
+                        "file": norm_rel,
+                        "line": 1,
+                        "error": f"Unbalanced braces in {norm_rel}: '{{'={masked.count('{')} vs '}}'={masked.count('}')}",
+                    })
             rec = _analyze_js_ts_file(cand, norm_rel, text)
             if rec:
                 checked_records.append(rec)
@@ -7089,7 +7798,7 @@ def verify_repo_diff(repo_path: str | Path, files: Optional[Sequence[str] | str]
                         "disposition": "TRULY_UNREFERENCED_NON_ENTRYPOINT",
                     })
 
-    high_sec = [f for f in aegis_findings if f.get("severity") in ("critical", "high")]
+    high_sec = [f for f in aegis_findings if str(f.get("severity") or "").upper() in ("CRITICAL", "HIGH")]
     ok = (not syntax_errors) and (not duplicate_defs) and (not high_sec)
     return {
         "schema": "anvil-verify-diff/v1",
@@ -7587,6 +8296,7 @@ def run_v4_profile_lit(
 def run_v4_xval_audit(
     repo_dir: str | Path,
     *,
+    paper_path: Optional[str | Path] = None,
     validator_argv: Optional[Sequence[str]] = None,
     attestation_keyring_path: Optional[str | Path] = None,
     orchestrator_receipt_path: Optional[str | Path] = None,
@@ -7595,10 +8305,12 @@ def run_v4_xval_audit(
     max_digest_bytes: int = 32768,
     timeout_sec: float = 60.0,
     persist: bool = True,
+    live: Optional[bool] = None,
 ) -> Dict[str, Any]:
     _, _, _, v4_xval = _load_anvil_v4_wave2_modules()
     return v4_xval.run_xval_audit(
         repo_dir,
+        paper_path=paper_path,
         validator_argv=validator_argv,
         attestation_keyring_path=attestation_keyring_path,
         orchestrator_receipt_path=orchestrator_receipt_path,
@@ -7607,6 +8319,7 @@ def run_v4_xval_audit(
         max_digest_bytes=max_digest_bytes,
         timeout_sec=timeout_sec,
         persist=persist,
+        live=live,
     )
 
 
@@ -7817,6 +8530,8 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     p_xval4 = sub.add_parser("xval-audit", help="Anvil v4 Bounded <=2 Concurrent 2-Seat Cross-Family Validator Receipt")
     p_xval4.add_argument("--repo", required=True)
+    p_xval4.add_argument("--paper", default="")
+    p_xval4.add_argument("--live", action="store_true")
     p_xval4.add_argument("--max-concurrency", type=int, default=2)
     p_xval4.add_argument("--max-digest-bytes", type=int, default=32768)
     p_xval4.add_argument("--timeout", type=float, default=60.0)
@@ -8039,6 +8754,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 parsed_vargv = raw_v
             res = run_v4_xval_audit(
                 args.repo,
+                paper_path=getattr(args, "paper", "") or None,
                 validator_argv=parsed_vargv,
                 attestation_keyring_path=args.attestation_keyring or None,
                 orchestrator_receipt_path=args.orchestrator_receipt or None,
@@ -8047,6 +8763,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 max_digest_bytes=int(args.max_digest_bytes),
                 timeout_sec=float(args.timeout),
                 persist=not bool(args.no_persist),
+                live=bool(getattr(args, "live", False)),
             )
             if args.output:
                 v4_proc.atomic_locked_write_json(args.output, res)

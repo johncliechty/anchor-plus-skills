@@ -60,9 +60,35 @@
     existing.textContent = "⬇ Install Missing Packages (" + pkgs.join(", ") + ") & Complete Trace";
   }
 
+  function syncAnvilStrengthPill() {
+    var ctx = root.__anvilV6Ctx;
+    var btn = typeof document !== "undefined" ? document.getElementById("btnAnvilStrengthPill") : null;
+    if (!ctx || !btn) return;
+    var st = (ctx.state && ctx.state.seating && ctx.state.seating.strength) || (ctx.state && ctx.state.anvilStrength) || "heavy";
+    var isLight = String(st).toLowerCase() === "light";
+    btn.textContent = isLight ? "🪶 Light" : "⚡ Heavy";
+    btn.title = isLight
+      ? "Anvil Light active (1-below-frontier @ medium on Orchestrator & Reviewer) — click to switch back to ⚡ Heavy"
+      : "Anvil Heavy active (default frontier @ max/xhigh on Orchestrator & Reviewer) — click for 🪶 Light";
+    if (!btn.dataset.boundStrength) {
+      btn.dataset.boundStrength = "1";
+      btn.addEventListener("click", async function () {
+        var cur = (ctx.state.seating && ctx.state.seating.strength) || ctx.state.anvilStrength || "heavy";
+        var next = String(cur).toLowerCase() === "light" ? "heavy" : "light";
+        var res = await ctx.postAnvil("set_strength", { strength: next }, btn);
+        if (res && res.data && res.data.ok) {
+          ctx.state.anvilStrength = res.data.strength || next;
+          if (res.data.seating) ctx.state.seating = res.data.seating;
+          ctx.renderAll();
+        }
+      });
+    }
+  }
+
   root.AnvilV6Runtime = {
     hydrateV6BrandIcons: hydrateV6BrandIcons,
     mountV6SurfaceControllers: mountV6SurfaceControllers,
-    syncSurfaceDepInstallBanner: syncSurfaceDepInstallBanner
+    syncSurfaceDepInstallBanner: syncSurfaceDepInstallBanner,
+    syncAnvilStrengthPill: syncAnvilStrengthPill
   };
 })(typeof globalThis !== "undefined" ? globalThis : window);

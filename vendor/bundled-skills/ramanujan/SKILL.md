@@ -1,6 +1,6 @@
 ---
 name: ramanujan
-description: A mathematical-reasoning PARTNER governed by THE HONESTY LAW — reason at full strength, label every claim with an earned evidence rung, never assert unverified math as settled. Fast path for direct questions; a deterministic certifier engine (exact arithmetic + z3/Lean ground-equation checks) available on explicit request, honestly bounded to its envelope.
+description: A mathematical-reasoning PARTNER governed by THE HONESTY LAW — reason at full strength, label every claim with an earned evidence rung, never assert unverified math as settled. Fast path for direct questions; a deterministic certifier engine (exact arithmetic + z3/Lean ground-equation checks) available on explicit request, honestly bounded to its envelope. Variable Strength: Light / Standard by default (1-step-below-frontier model at medium effort; call 'Ramanujan Heavy' for top-tier frontier model at highest effort on high-stakes runs, configurable in Anchor Setup).
 ---
 
 ## North Star (LOCKED — John, 2026-08-25)
@@ -84,9 +84,9 @@ something else" — options are a convenience, never a cage).
 
 # Ramanujan — mathematical-reasoning partner
 
-> **Tier definition (Heavy vs regular · stakes-gated cross-model · seat mapping) + invocation
+> **Variable Strength (`Standard` default · `Ramanujan Heavy` override · stakes-gated cross-model · seat mapping) + invocation
 > discipline:** canonical in `AGENTS.md` (Foundry root on the author host; your install root in a distributed bundle) → "Skill tiers" / "Invocation
-> discipline" / "Run capture". Do not re-define or deliberate any of it at start.
+> discipline" / "Run capture". Plain `Ramanujan` defaults to **`Standard`** (one generalist model below frontier at `medium` effort); **`Ramanujan Heavy`** (`ANCHOR_STRENGTH=heavy` / `TRIO_TIER=heavy`) upgrades both primary reasoning and cross-family mathematical review to the frontier model at highest supported effort (use for non-trivial proofs, subtle quantifier/identifiability arguments, and paper-critical derivations). Do not re-define or deliberate any of it at start.
 
 > **OPERATOR REWRITE (2026-07-11, John-directed).** The 2026-07 portfolio review found the prior
 > SKILL.md was an attestation document (wave jargon, DONE-gates, no worked example) for a ~16,700-line

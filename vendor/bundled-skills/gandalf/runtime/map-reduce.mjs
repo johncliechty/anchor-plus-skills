@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { makeGeminiCliSeam, resolveGeminiModel } from 'fil<path>';
+import { makeGeminiCliSeam, resolveGeminiModel } from '../../drivers/gemini-cli.mjs';
 import { scoutAndFilter } from './scout.mjs';
 
 /**

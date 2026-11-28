@@ -34,9 +34,19 @@ import {
   assertGandalfSeatsFloor,
 } from './triage-band.mjs';
 import { createCommissionLedger } from '../seam/commission-ledger.mjs';
-import { runLiveRefutation, buildLiveRefuterAgent, DEFAULT_REFUTER_ROUTES, DRAFTER_FAMILY, REFUTER_FAMILY } from './live-refuter.mjs';
-import { makeGeminiCliSeam, resolveGeminiModel } from 'fil<path>';
-import { loadModelFamilies, familyToDriverName, runAgent } from 'fil<path>';
+import {
+  runLiveRefutation,
+  buildLiveRefuterAgent,
+  CANONICAL_CLAUDE_REFUTER_MODEL,
+  MAX_REFUTER_CONCURRENCY,
+  RefuterConcurrencyBoundError,
+  DEFAULT_REFUTER_ROUTES,
+  DRAFTER_FAMILY,
+  REFUTER_FAMILY,
+} from './live-refuter.mjs';
+import { makeGeminiCliSeam, resolveGeminiModel } from '../../drivers/gemini-cli.mjs';
+import { loadModelFamilies, familyToDriverName, runAgent } from '../../drivers/index.mjs';
+import { isVariableStrengthActive, normalizeStrength, resolveSkillStrength } from '../../drivers/model-policy.mjs';
 
 const USAGE =
   'usage: node runtime/gandalf-run.mjs --live [--budget N] [--input <file>] [--output <file>] [--report-html <file>] [--report-md <file>] [--title "<str>"] [--project <dir>]\n' +
@@ -115,7 +125,10 @@ export function parseArgs(argv) {
       if (opts.depth === undefined) throw new Error('--depth requires LITE|FULL|SPIKE-FIRST');
     } else if (a === '--tier') {
       opts.tier = argv[++i];
-      if (opts.tier === undefined) throw new Error('--tier requires Heavy|Standard');
+      if (opts.tier === undefined) throw new Error('--tier requires Heavy|Standard|Light');
+      if (normalizeStrength(opts.tier, null) === null) {
+        throw new Error(`--tier must be Heavy, Standard, or Light (got ${JSON.stringify(opts.tier)})`);
+      }
     } else if (a === '--cross-model') {
       opts.cross_model = true; // INTENT only — the output stamp is DERIVED, never set by this flag
     } else if (a === '--help' || a === '-h') {
@@ -189,12 +202,33 @@ export function resolveConsumeKnobs({
  * feed. NEVER writes into the human NNNN namespace. Best-effort: a capture failure must
  * not fail the run it records.
  */
-export function writeRunRecord(record, { skillDir = resolve(dirname(fileURLToPath(import.meta.url)), '..') } = {}) {
+export function buildRunReceipt({ dispatch = null, liveReceipt = null } = {}) {
+  const dispatchList = Array.isArray(dispatch) ? dispatch : [];
+  const servedModels = [...new Set(
+    [
+      liveReceipt?.model_served,
+      ...dispatchList.map(d => d?.model_served),
+    ].filter(v => typeof v === 'string' && v.trim()),
+  )];
+  const primaryServed = liveReceipt?.model_served ?? servedModels[0] ?? null;
+  const attested = liveReceipt?.model_attested === true
+    || (dispatchList.some(d => d?.minted) && dispatchList.filter(d => d?.minted).every(d => d?.model_attested === true));
+  return {
+    models: servedModels.length > 0 ? servedModels : null,
+    model_served: primaryServed,
+    model_attested: Boolean(primaryServed && attested),
+    max_concurrency: liveReceipt?.max_concurrency ?? null,
+    refuter_family: liveReceipt?.refuter_family ?? null,
+  };
+}
+
+export function writeRunRecord(record, {
+  skillDir = resolve(dirname(fileURLToPath(import.meta.url)), '..'),
+  forceCapture = false,
+} = {}) {
   try {
-    // Provenance discipline: capture is for REAL runs only. The test suite spawns
-    // this CLI, and those children inherit NODE_TEST_CONTEXT — skip capture there
-    // so mock runs never pollute the training feed (same rule as tidy-idy).
-    if (process.env.NODE_TEST_CONTEXT) return null;
+    // Provenance discipline: capture is for REAL runs only unless forceCapture=true in a temp-dir receipt test.
+    if (process.env.NODE_TEST_CONTEXT && !forceCapture) return null;
     const dir = join(skillDir, 'journal', 'runs');
     mkdirSync(dir, { recursive: true });
     const started = record.started || new Date().toISOString();
@@ -367,8 +401,10 @@ export async function runHostLive(rawText, {
   ledger: injectedLedger,
   routes,
   drafterFamily,
-  refuterFamily = REFUTER_FAMILY,
+  refuterFamily = undefined,
   budget,
+  maxConcurrency,
+  env = process.env,
   log = () => {},
 } = {}) {
   let rawDraft;
@@ -381,17 +417,28 @@ export async function runHostLive(rawText, {
   const ledger = injectedLedger || createCommissionLedger();
   const resolveCommission = ledger.resolveCommission;
   // Live agent: omit routes/drafter → coding/review family prefs; tests pass explicit pins.
-  const theAgent = agent || (await buildLiveRefuterAgent({ routes, drafterFamily, env: process.env }));
+  const theAgent = agent || (await buildLiveRefuterAgent({ routes, drafterFamily, env }));
+  const effectiveDrafter = drafterFamily ?? theAgent?._resolvedMeta?.drafterFamily;
+  const effectiveRefuter = refuterFamily ?? theAgent?._resolvedMeta?.refuterFamily;
+  const effectiveRoutes = routes ?? theAgent?._resolvedMeta?.routes ?? null;
 
   // Dispatch the live refuters and mint claim-bound commissions into the shared ledger.
-  const { draft, dispatch } = await runLiveRefutation(rawDraft, {
-    agent: theAgent, ledger, routes, drafterFamily, refuterFamily, budget, log,
+  const { draft, dispatch, receipt } = await runLiveRefutation(rawDraft, {
+    agent: theAgent,
+    ledger,
+    routes: effectiveRoutes,
+    drafterFamily: effectiveDrafter,
+    refuterFamily: effectiveRefuter,
+    budget,
+    maxConcurrency,
+    env,
+    log,
   });
 
   // Grade the refuted draft against the SAME ledger's resolver — cross_model / GROUNDED are DERIVED here.
   const output = applySeamPass(draft, { cross_model, resolveCommission });
   const finalized = finalizeConformant(draft, output, { cross_model, resolveCommission });
-  return { output: finalized, dispatch, ledger };
+  return { output: finalized, dispatch, ledger, receipt };
 }
 
 // ===========================================================================================
@@ -418,17 +465,51 @@ export async function runHostLive(rawText, {
  */
 export function resolveScaledModels(env = process.env) {
   const families = loadModelFamilies(env);
+  const vsActive = isVariableStrengthActive({ settings: families, env });
+  const effStrength = vsActive
+    ? resolveSkillStrength({
+        skill: 'gandalf',
+        explicitStrength: env?.ANCHOR_STRENGTH ?? env?.TRIO_TIER,
+        inheritedStrength: env?.ANCHOR_INHERITED_STRENGTH,
+        cockpitStrength: env?.ANCHOR_COCKPIT_STRENGTH,
+        defaultStrength: families?.model_policy?.default_strength || 'standard',
+      })
+    : 'heavy';
+  const claudeSeatModel = effStrength === 'heavy' ? CANONICAL_CLAUDE_REFUTER_MODEL : 'claude-opus-5-5';
   const mapDriver = familyToDriverName(families.review) || 'gemini-cli';
   const reduceDriver = familyToDriverName(families.coding) || 'claude';
   let mapModel = null;
   let reduceModel = null;
   if (mapDriver === 'gemini-cli' || mapDriver.startsWith('gemini')) {
     mapModel = resolveGeminiModel({ env: { ...env, TRIO_TIER: 'standard' } });
+  } else if (mapDriver === 'claude') {
+    mapModel = claudeSeatModel;
   }
   if (reduceDriver === 'gemini-cli' || reduceDriver.startsWith('gemini')) {
-    reduceModel = resolveGeminiModel({ env: { ...env, TRIO_TIER: 'heavy' } });
+    reduceModel = resolveGeminiModel({ env: { ...env, TRIO_TIER: effStrength === 'heavy' ? 'heavy' : 'standard' } });
+  } else if (reduceDriver === 'claude') {
+    reduceModel = claudeSeatModel;
   }
-  return { mapModel, reduceModel, mapDriver, reduceDriver, families };
+  return { mapModel, reduceModel, mapDriver, reduceDriver, families, effStrength };
+}
+
+export function resolveAnalyzeConcurrency({ concurrencyLimit = undefined, env = process.env } = {}) {
+  const envRaw = env?.GANDALF_MAX_CONCURRENCY;
+  let parsedEnv = null;
+  if (envRaw !== undefined && envRaw !== null && String(envRaw).trim() !== '') {
+    parsedEnv = Number(envRaw);
+    if (!Number.isInteger(parsedEnv) || parsedEnv < 1 || parsedEnv > MAX_REFUTER_CONCURRENCY) {
+      throw new RefuterConcurrencyBoundError(envRaw, MAX_REFUTER_CONCURRENCY);
+    }
+  }
+  if (concurrencyLimit === undefined || concurrencyLimit === null) {
+    return parsedEnv ?? MAX_REFUTER_CONCURRENCY;
+  }
+  const parsed = Number(concurrencyLimit);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > MAX_REFUTER_CONCURRENCY) {
+    throw new RefuterConcurrencyBoundError(concurrencyLimit, MAX_REFUTER_CONCURRENCY);
+  }
+  return parsedEnv !== null ? Math.min(parsed, parsedEnv) : parsed;
 }
 
 /**
@@ -450,7 +531,7 @@ export function resolveScaledModels(env = process.env) {
  * @param {Function} [o.log]
  * @param {?Function}[o.makeAgent]            (model, role) => agentFn — injected for tests
  * @param {?number}  [o.highContextLimit]
- * @param {number}   [o.concurrencyLimit=3]
+ * @param {number}   [o.concurrencyLimit=2]
  * @returns {Promise<string>}
  */
 export async function runScaledAnalysis({
@@ -461,14 +542,16 @@ export async function runScaledAnalysis({
   log = () => {},
   makeAgent = null,
   highContextLimit = null,
-  concurrencyLimit = 3,
+  concurrencyLimit = undefined,
   depth = null,
   tier = null,
   maxShards = null,
   fusionPasses = null,
   /** Optional inject for hermetic E1–E4 call-object capture (production omits → live runMapReduce). */
   mapReduceRunner = null,
+  onSeatReceipt = null,
 } = {}) {
+  const boundedConcurrency = resolveAnalyzeConcurrency({ concurrencyLimit, env });
   // B2 L2: locked path forwards authoritative band knobs; unlocked keeps caller caps / null.
   // Caller maxShards/fusionPasses cannot invert a lock (unlock-only override).
   const consume = resolveConsumeKnobs({
@@ -485,24 +568,43 @@ export async function runScaledAnalysis({
     log(`gandalf band: depth=${consume.knobs?.depth} shards=${shards} fusionPasses=${fusions} source=${consume.source}`);
   }
 
-  const { mapModel, reduceModel, mapDriver, reduceDriver } = resolveScaledModels(env);
+  const normCallTier = normalizeStrength(tier ?? env?.ANCHOR_STRENGTH ?? env?.TRIO_TIER, null);
+  const runEnv = normCallTier ? { ...env, TRIO_TIER: normCallTier, ANCHOR_STRENGTH: normCallTier } : env;
+  const { mapModel, reduceModel, mapDriver, reduceDriver, effStrength } = resolveScaledModels(runEnv);
   const target = projectDir || process.cwd();
   const factory = makeAgent || ((model, role) => {
     const driver = role === 'reduce' ? reduceDriver : mapDriver;
     // Gemini seats keep the dedicated agy seam; all other families use the prefs-routed runAgent.
     if (driver === 'gemini-cli' || String(driver).startsWith('gemini')) {
-      return makeGeminiCliSeam({ model, role, env, target, log }).agent;
+      return makeGeminiCliSeam({ model, role, env: runEnv, target, log }).agent;
     }
+    const seatRole = driver === 'claude' && role === 'map' ? 'review' : role;
     return (prompt, opts = {}) => runAgent({
       prompt,
       schema: opts.schema,
       label: opts.label || `gandalf:${role}`,
-      role: opts.role || role,
+      role: opts.role || seatRole,
       model: model || opts.model || null,
       driver,
-      env: { ...env, CRUCIBLE_AGENT_LIVE: env.CRUCIBLE_AGENT_LIVE || '1' },
+      env: {
+        ...runEnv,
+        CRUCIBLE_AGENT_LIVE: runEnv.CRUCIBLE_AGENT_LIVE || '1',
+        ...(driver === 'claude' ? { TRIO_TIER: effStrength || 'heavy' } : {}),
+      },
       target,
       log,
+      onReceipt: (r) => {
+        if (typeof onSeatReceipt === 'function') {
+          onSeatReceipt({
+            role,
+            driver,
+            requested_model: r?.requested?.model ?? model ?? null,
+            model_served: r?.served?.model ?? null,
+            model_attested: r?.served?.model_attested === true,
+            minted: true,
+          });
+        }
+      },
     });
   });
   const mapAgent = factory(mapModel, 'map');       // REVIEW_FAMILY bulk reads
@@ -517,7 +619,7 @@ export async function runScaledAnalysis({
     agent: mapAgent,
     reduceAgent,
     highContextLimit,
-    concurrencyLimit,
+    concurrencyLimit: boundedConcurrency,
     maxShards: shards,
     fusionPasses: fusions,
   });
@@ -605,7 +707,9 @@ function writeExecutiveReports(gradedOutput, opts) {
 async function runAnalyzeMode(opts) {
   const projectDir = resolve(opts.project || process.cwd());
   const objective = opts.objective || 'Provide a deep-think advisory review of this codebase.';
+  const maxConcurrency = resolveAnalyzeConcurrency({ env: process.env });
   const payload = collectProjectPayload(projectDir);
+  const seatReceipts = [];
   process.stderr.write(`gandalf-run: --analyze over ${payload.length} files in ${projectDir}\n`);
   const report = await runScaledAnalysis({
     projectDir,
@@ -613,14 +717,17 @@ async function runAnalyzeMode(opts) {
     userObjective: objective,
     env: process.env,
     log: (m) => process.stderr.write(`${m}\n`),
+    concurrencyLimit: maxConcurrency,
     depth: opts.depth || null,
     tier: opts.tier || null,
+    onSeatReceipt: (r) => seatReceipts.push(r),
   });
   const graded = gradeScaledReport(report);
   const serialized = `${JSON.stringify(graded, null, 2)}\n`;
   if (opts.output) writeFileSync(opts.output, serialized, 'utf8');
   else process.stdout.write(serialized);
   writeExecutiveReports(graded, opts);
+  return { graded, seatReceipts, maxConcurrency };
 }
 
 async function main() {
@@ -644,14 +751,24 @@ async function main() {
 
   if (opts.analyze) {
     try {
-      await runAnalyzeMode(opts);
+      const analyzeResult = await runAnalyzeMode(opts);
+      const analyzeReceipt = buildRunReceipt({
+        dispatch: analyzeResult.seatReceipts,
+        liveReceipt: { max_concurrency: analyzeResult.maxConcurrency },
+      });
       writeRunRecord({
         tier: 'scaled-analyze', started, ended: new Date().toISOString(),
         input: `--project ${opts.project || process.cwd()} --objective ${JSON.stringify(opts.objective || '(default)')}`,
-        params: { mode: 'analyze' },
+        params: { mode: 'analyze', max_concurrency: analyzeResult.maxConcurrency },
         output: opts.output || '(stdout)',
         result: 'analyze completed (see degraded stamp in the report)',
-        cross_model: false, models: null, duration_s: Math.round((Date.now() - t0) / 1000), journal_ref: null,
+        cross_model: false,
+        models: analyzeReceipt.models,
+        model_served: analyzeReceipt.model_served,
+        model_attested: analyzeReceipt.model_attested,
+        max_concurrency: analyzeResult.maxConcurrency,
+        duration_s: Math.round((Date.now() - t0) / 1000),
+        journal_ref: null,
       });
     } catch (err) {
       process.stderr.write(`gandalf-run: --analyze failed — no output written.\n${err.message}\n`);
@@ -673,19 +790,22 @@ async function main() {
     return;
   }
 
-  let output, dispatch = null;
+  let output, dispatch = null, liveReceipt = null;
+  const cliTierNorm = normalizeStrength(opts.tier, null);
+  const liveEnv = cliTierNorm
+    ? { ...process.env, TRIO_TIER: cliTierNorm, ANCHOR_STRENGTH: cliTierNorm }
+    : process.env;
   try {
     if (opts.live) {
-      // C1: the LIVE cross-family path — refuters via agy, commissions minted into the
-      // shared ledger, cross_model/GROUNDED derived by the gate. HALTs honestly if agy
-      // is down (the seam throws; we write NOTHING and exit non-zero).
       const live = await runHostLive(rawText, {
         cross_model: true,
         budget: opts.budget ?? undefined,
+        env: liveEnv,
         log: (m) => process.stderr.write(`${m}\n`),
       });
       output = live.output;
       dispatch = live.dispatch;
+      liveReceipt = live.receipt ?? null;
       const minted = dispatch.filter((d) => d.minted).length;
       process.stderr.write(`gandalf-run: --live dispatched ${dispatch.length} refuter(s), ${minted} commission(s) minted\n`);
     } else {
@@ -727,19 +847,22 @@ async function main() {
     }
   }
 
+  const receiptSummary = buildRunReceipt({ dispatch, liveReceipt });
   writeRunRecord({
     tier: opts.live ? 'live-cross-family' : 'tier1-deterministic',
     started, ended: new Date().toISOString(),
     input: opts.input || '(stdin)',
-    // P0 2026-07-25 (journal 0276): --live hardcodes cross_model:true into runHostLive, so the
-    // intent stamp must reflect it — recording opts.cross_model alone stamped intent:false on
-    // every --live run, corrupting the training feed for the highest-value runs.
     params: { live: opts.live, budget: opts.budget, cross_model_intent: !!(opts.live || opts.cross_model) },
     output: opts.output || '(stdout)',
     result: `graded: ${Array.isArray(output?.elevations) ? output.elevations.length : 0} elevation(s)` +
       (dispatch ? `; refuters ${dispatch.length}, minted ${dispatch.filter((d) => d.minted).length}` : ''),
     cross_model: output?.cross_model ?? false,
-    models: null,
+    models: receiptSummary.models,
+    model_served: receiptSummary.model_served,
+    model_attested: receiptSummary.model_attested,
+    max_concurrency: receiptSummary.max_concurrency,
+    refuter_family: receiptSummary.refuter_family,
+    requested_model: liveReceipt?.requested_model ?? null,
     duration_s: Math.round((Date.now() - t0) / 1000),
     journal_ref: null,
   });

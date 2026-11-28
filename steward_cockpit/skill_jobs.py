@@ -367,12 +367,64 @@ def _stop_asked(cdir, job_id):
     return bool(cur.get("stop_requested") or cur.get("status") not in LIVE)
 
 
-def start(cdir, argv, label="", actor=""):
+def _infer_skill_and_cli_tier(argv, label=""):
+    import model_policy as _mp
+    skill_name = None
+    cli_tier = None
+    try:
+        script_p = Path(argv[1]).resolve()
+        parts_low = [p.lower() for p in script_p.parts]
+        if "skills" in parts_low:
+            idx = parts_low.index("skills")
+            if idx + 1 < len(parts_low):
+                skill_name = _mp.canonical_skill_name(parts_low[idx + 1]) or parts_low[idx + 1]
+        elif "trio" in parts_low:
+            idx = parts_low.index("trio")
+            if idx + 1 < len(parts_low):
+                skill_name = _mp.canonical_skill_name(parts_low[idx + 1]) or parts_low[idx + 1]
+    except Exception:
+        skill_name = None
+    for idx_a, tok in enumerate(argv[2:], start=2):
+        s_tok = str(tok or "").strip()
+        if s_tok == "--tier" and idx_a + 1 < len(argv):
+            cli_tier = _mp.normalize_strength(argv[idx_a + 1], default=None)
+            break
+        if s_tok.lower().startswith("--tier="):
+            cli_tier = _mp.normalize_strength(s_tok.split("=", 1)[1], default=None)
+            break
+    qual = _mp.parse_leading_skill_qualifier(label or "")
+    if not skill_name and qual.get("skill"):
+        skill_name = qual["skill"]
+    return skill_name, (cli_tier or qual.get("strength"))
+
+
+def _read_cockpit_strength_file(cdir) -> str | None:
+    try:
+        sf = Path(cdir) / ".ecgberht" / "strength.json"
+        if sf.is_file():
+            raw = json.loads(sf.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                import model_policy as _mp
+                return _mp.normalize_strength(raw.get("strength"), default=None)
+    except Exception:
+        pass
+    return None
+
+
+def start(cdir, argv, label="", actor="", strength=""):
     """Start a skill job in the effort folder ``cdir``: contained, recorded FIRST (a launch that fails leaves an
     honest failed record under the same id, never an unowned process), with no clock on it."""
     ok, why = validate(argv)
     if not ok:
         return {"ok": False, "error": why}
+    import model_policy as _mp
+    inferred_skill, cli_or_label_tier = _infer_skill_and_cli_tier(argv, label=label)
+    eff_strength = _mp.resolve_skill_strength(
+        skill=inferred_skill,
+        explicit_strength=_mp.normalize_strength(strength, default=None) or cli_or_label_tier,
+        inherited_strength=os.environ.get("ANCHOR_INHERITED_STRENGTH"),
+        cockpit_strength=_read_cockpit_strength_file(cdir),
+    )
     job_id = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
     _PROCS[job_id] = _Reserved()
     try:
@@ -386,6 +438,7 @@ def start(cdir, argv, label="", actor=""):
     log_path = Path(cdir) / log_rel
     now = time.time()
     job = {"id": job_id, "label": (label or Path(argv[1]).stem)[:120], "argv": argv, "status": "running",
+           "skill": inferred_skill, "strength": eff_strength,
            "attempt": 1, "started": _stamp(), "started_epoch": now, "started_by": str(actor or "the steward"),
            "log": log_rel, "log_path": log_rel, "cwd": str(Path(cdir)), "phase": "running", "phase_at": now,
            "process": {"state": "starting", "pid": None, "birth": None, "contained": None, "activity_at": None,
@@ -393,6 +446,12 @@ def start(cdir, argv, label="", actor=""):
     env = dict(os.environ)
     env.pop("ANTHROPIC_API_KEY", None)          # subscription billing, as every skill launcher does
     env["CRUCIBLE_AGENT_LIVE"] = "1"
+    env["TRIO_TIER"] = eff_strength
+    env["ANCHOR_STRENGTH"] = eff_strength
+    env["ANCHOR_INHERITED_STRENGTH"] = eff_strength
+    env["ANCHOR_ALLOW_HEAVY_QUOTA_STEPDOWN"] = "1"
+    if inferred_skill:
+        env["ANCHOR_SKILL"] = inferred_skill
     try:
         import paths as _paths
         import usage_capture as _uc
@@ -666,19 +725,41 @@ def supervise(job, *, now=None):
     return progress.sample(job, worker, now=now)
 
 
+_LAST_SKILL_SUPERVISION_CHECK: dict[tuple[str, str, int], float] = {}
+_VOLATILE_SKILL_SUPERVISION_KEYS = frozenset(("observed_at", "activity_at"))
+
+
+def _skill_supervision_semantic_view(sup: dict | None) -> dict:
+    if not isinstance(sup, dict):
+        return {}
+    return {k: v for k, v in sup.items() if k not in _VOLATILE_SKILL_SUPERVISION_KEYS}
+
+
 def refresh_supervision(cdir, *, engine=None):
     """One cheap sample per live skill job on the existing steward tick; no process is started or ended here. An
     observation worth the steward's eye (quiet, lost visibility, dead) goes once through the engine's job-result queue
     as an OBSERVATION - never a completion, never an authorization to terminate or replace the run."""
     reconcile(cdir)
     now = time.time()
+    cdir_key = _cj._norm(cdir)
     for job in read_jobs(cdir).values():
         if not isinstance(job, dict) or job.get("status") not in LIVE:
             continue
-        if now - float((job.get("supervision") or {}).get("observed_at") or 0) < SUPERVISE_EVERY_S:
+        attempt = int(job.get("attempt", 1) or 1)
+        skey = (cdir_key, str(job["id"]), attempt)
+        persisted_obs = float((job.get("supervision") or {}).get("observed_at") or 0.0)
+        mem_obs = _LAST_SKILL_SUPERVISION_CHECK.get(skey, 0.0)
+        if mem_obs > now:
+            mem_obs = 0.0
+        if now - max(persisted_obs, mem_obs) < SUPERVISE_EVERY_S:
             continue
+        if len(_LAST_SKILL_SUPERVISION_CHECK) > 512:
+            _LAST_SKILL_SUPERVISION_CHECK.clear()
+        _LAST_SKILL_SUPERVISION_CHECK[skey] = now
         observation = supervise(job, now=now)
-        _transition(cdir, job["id"], LIVE, supervision=observation)
+        prev_sup = job.get("supervision")
+        if not isinstance(prev_sup, dict) or _skill_supervision_semantic_view(prev_sup) != _skill_supervision_semantic_view(observation):
+            _transition(cdir, job["id"], LIVE, supervision=observation)
         if engine is None or observation["state"] not in {"needs_attention", "dead", "waiting", "needs_inspection", "visibility_lost"}:
             continue
         if now - float(job.get("phase_at") or 0) < SUPERVISE_EVERY_S:

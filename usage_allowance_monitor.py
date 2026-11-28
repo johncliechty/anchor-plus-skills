@@ -39,9 +39,9 @@ USAGE_PAGE_URLS: Dict[str, str] = {
 }
 
 DEFAULT_FRONTIER_MODELS: Dict[str, str] = {
-    "claude": "claude-fable-5-1 · max",
-    "chatgpt": "gpt-6.1-sol · ultra",
-    "gemini": "gemini-4-argon · high",
+    "claude": "claude-fable-5-2 · max",
+    "chatgpt": "gpt-6-luna · ultra",
+    "gemini": "gemini-4-hydrogen · high",
     "grok": "grok-4.7 · xhigh",
 }
 
@@ -347,6 +347,18 @@ def compute_allowance_monitor(usage_summary: Optional[Dict[str, Any]] = None) ->
         models_list = p_info.get("models") or []
         top_recorded = models_list[0].get("model") if models_list and isinstance(models_list[0], dict) else None
         frontier_display = DEFAULT_FRONTIER_MODELS.get(fam, "latest_supported")
+        try:
+            import model_policy as _mp
+            with _mp._LOCK:
+                for k_mem, v_mem in _mp._MEMORY.items():
+                    if isinstance(k_mem, tuple) and k_mem and k_mem[0] == fam and isinstance(v_mem, dict):
+                        cat_rows = sorted(v_mem.get("catalog") or [], key=lambda r: r.get("rank", 0))
+                        if cat_rows and cat_rows[0].get("model"):
+                            eff_top = _mp.highest_effort(cat_rows[0].get("efforts") or ["high"])
+                            frontier_display = f"{cat_rows[0]['model']} · {eff_top}"
+                            break
+        except Exception:
+            pass
 
         families_out[fam] = {
             "family": fam,

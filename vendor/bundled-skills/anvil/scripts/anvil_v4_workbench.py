@@ -6,9 +6,12 @@ HTML Exporter (`scripts/anvil_v4_workbench.py`).
 from __future__ import annotations
 
 import ast
+import copy
+import hashlib
 import hmac
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -28,10 +31,13 @@ from anvil_v4_process import (
     _scan_contained_source_files,
     atomic_locked_read_json,
     atomic_locked_write_json,
+    bind_manuscript_equations_to_symbols,
     build_process_map,
+    discover_paper_matched_scopes,
     exclusive_file_lock,
     load_validated_trace_json,
     resolve_contained_path,
+    slice_call_graph,
 )
 from anvil_v4_refactor import (
     PROFILE_LIT_SCHEMA,
@@ -46,6 +52,7 @@ from anvil_v4_trace import (
 )
 from anvil_v4_xval import (
     XVAL_RECEIPT_SCHEMA,
+    run_live_copilot_cli_turn,
     run_xval_audit,
 )
 
@@ -211,6 +218,10 @@ def _probe_v4_store_dir(root: Path) -> Path:
     return v4_dir
 
 
+_TRACE_STORE_CACHE_LOCK = threading.RLock()
+_TRACE_STORE_CACHE: Dict[Tuple[str, int, int], Dict[str, Any]] = {}
+
+
 def _load_optional_trace_store(root: Path) -> Optional[Dict[str, Any]]:
     """Load `<root>/.anvil/v4/last_trace.json` if present, strictly distinguishing
     unreadable backing store (`BACKING_STORE_UNREADABLE` / 500) from corrupt trace
@@ -234,7 +245,18 @@ def _load_optional_trace_store(root: Path) -> Optional[Dict[str, Any]]:
     try:
         if not trace_path.is_file():
             _raise_backing_store_unreadable("last_trace.json is not a regular file")
-        return load_validated_trace_json(trace_path)
+        st = trace_path.stat()
+        cache_key = (str(trace_path.resolve()), int(st.st_mtime_ns), int(st.st_size))
+        with _TRACE_STORE_CACHE_LOCK:
+            cached_t = _TRACE_STORE_CACHE.get(cache_key)
+        if cached_t is not None:
+            return copy.deepcopy(cached_t)
+        loaded_t = load_validated_trace_json(trace_path)
+        with _TRACE_STORE_CACHE_LOCK:
+            if len(_TRACE_STORE_CACHE) >= 16:
+                _TRACE_STORE_CACHE.clear()
+            _TRACE_STORE_CACHE[cache_key] = copy.deepcopy(loaded_t)
+        return copy.deepcopy(loaded_t)
     except AnvilRefusalError as err:
         if err.error_code in {"BACKING_STORE_UNREADABLE", "LOCK_TIMEOUT_REFUSED"}:
             _raise_backing_store_unreadable(err.message)
@@ -691,6 +713,7 @@ def _load_or_build_xval(
     refactor_map: Dict[str, Any],
     paper_map: Dict[str, Any],
     *,
+    paper_path: Optional[Path] = None,
     persist: bool = True,
 ) -> Dict[str, Any]:
     v4_dir = _probe_v4_store_dir(root)
@@ -709,6 +732,7 @@ def _load_or_build_xval(
         process_map=process_map,
         refactor_map=refactor_map,
         paper_map=paper_map if paper_map.get("has_paper") else None,
+        paper_path=paper_path,
         persist=persist,
     )
 
@@ -719,6 +743,8 @@ def _load_paper_map(
     trace_data: Optional[Dict[str, Any]],
     *,
     pipeline_id: Optional[str] = None,
+    process_map: Optional[Dict[str, Any]] = None,
+    refactor_map: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     scripts_dir = str(Path(__file__).resolve().parent)
     if scripts_dir not in sys.path:
@@ -731,7 +757,490 @@ def _load_paper_map(
         pipeline_id=pipeline_id,
         trace_data=trace_data,
         approve_run=False,
+        process_map=process_map,
+        refactor_map=refactor_map,
     )
+
+
+_BUNDLE_CACHE_LOCK = threading.RLock()
+_WORKBENCH_BUNDLE_CACHE: Dict[Tuple[str, str, str, str, str], Dict[str, Any]] = {}
+_FILE_CONTENT_DIGEST_CACHE: Dict[str, Tuple[int, int, str]] = {}
+
+
+def _cached_file_content_sha256(fp: Path) -> Optional[str]:
+    """Return SHA-256 content digest of `fp`, cached per `(resolved_path, mtime_ns, size)` so
+    unchanged files hash once while any in-place subfile edit invalidates immediately.
+    """
+    try:
+        st = fp.stat()
+    except OSError:
+        return None
+    mtime_ns = int(st.st_mtime_ns)
+    size_b = int(st.st_size)
+    key = str(fp)
+    with _BUNDLE_CACHE_LOCK:
+        hit = _FILE_CONTENT_DIGEST_CACHE.get(key)
+        if hit is not None and hit[0] == mtime_ns and hit[1] == size_b:
+            return hit[2]
+    try:
+        digest = hashlib.sha256(fp.read_bytes()).hexdigest()
+    except OSError:
+        return None
+    with _BUNDLE_CACHE_LOCK:
+        if len(_FILE_CONTENT_DIGEST_CACHE) >= 4096:
+            _FILE_CONTENT_DIGEST_CACHE.clear()
+        _FILE_CONTENT_DIGEST_CACHE[key] = (mtime_ns, size_b, digest)
+    return digest
+
+
+def compute_repo_source_fingerprint(
+    repo_root: Path,
+    paper_path: Optional[Path] = None,
+) -> str:
+    """Content-SHA256 fingerprint across contained repository source/manifest files and
+    manuscript `.tex` files only (excluding `.anvil/v4` derived artifacts), used to detect
+    concurrent source/manuscript edits mid-build.
+    """
+    p_res_opt = paper_path.resolve() if (paper_path is not None and paper_path.exists()) else None
+    prod_files, test_files = _scan_contained_source_files(repo_root)
+    sh = hashlib.sha256()
+    for fp in prod_files + test_files:
+        f_sha = _cached_file_content_sha256(fp)
+        if f_sha is not None:
+            rel = fp.relative_to(repo_root).as_posix()
+            sh.update(f"S:{rel}:{f_sha}\n".encode("utf-8"))
+    for mf_name in ("workflow.sh", "run_all.sh", "replicate.sh", "pipeline.sh", "Makefile", "makefile"):
+        mp = repo_root / mf_name
+        if mp.is_file() and not _is_link_or_junction(mp):
+            m_sha = _cached_file_content_sha256(mp)
+            if m_sha is not None:
+                sh.update(f"M:{mf_name}:{m_sha}\n".encode("utf-8"))
+
+    if p_res_opt is not None:
+        p_dir = p_res_opt if p_res_opt.is_dir() else p_res_opt.parent
+        if p_res_opt.is_file():
+            p_sha = _cached_file_content_sha256(p_res_opt)
+            if p_sha is not None:
+                sh.update(f"P:{p_res_opt.name}:{p_sha}\n".encode("utf-8"))
+        if p_dir.is_dir() and (p_res_opt.is_dir() or p_res_opt.suffix.lower() == ".tex"):
+            for tf in sorted(p_dir.rglob("*.tex"))[:64]:
+                if tf.is_file() and not _is_link_or_junction(tf):
+                    t_sha = _cached_file_content_sha256(tf)
+                    if t_sha is not None:
+                        trel = tf.relative_to(p_dir).as_posix()
+                        sh.update(f"T:{trel}:{t_sha}\n".encode("utf-8"))
+    return sh.hexdigest()
+
+
+def compute_repo_state_fingerprint(
+    repo_root: Path,
+    paper_path: Optional[Path] = None,
+    store_root: Optional[Path] = None,
+) -> str:
+    """Content-SHA256 fingerprint across contained repository source/manifest files,
+    manuscript `.tex` files, and non-UI `.anvil/v4` artifacts (cached per `(path, mtime_ns, size)`
+    with zero blind root-mtime shortcut so in-place subdirectory edits invalidate immediately).
+    UI state mutations in `workbench_session.json` intentionally do NOT invalidate this digest.
+    """
+    src_digest = compute_repo_source_fingerprint(repo_root, paper_path)
+
+    h = hashlib.sha256()
+    h.update(f"SRC:{src_digest}\n".encode("utf-8"))
+    s_root = (store_root or repo_root).resolve()
+    v4_d = s_root / ".anvil" / "v4"
+    for art_name in ("last_trace.json", "profile_lit.json", "xval_receipt.json"):
+        ap = v4_d / art_name
+        if ap.exists() and not _is_link_or_junction(ap) and ap.is_file():
+            a_sha = _cached_file_content_sha256(ap)
+            if a_sha is not None:
+                h.update(f"A:{art_name}:{a_sha}\n".encode("utf-8"))
+        else:
+            h.update(f"A:{art_name}:none\n".encode("utf-8"))
+    return h.hexdigest()[:32]
+
+
+THREE_LAYER_VIEW_SCHEMA = "anvil-v6-three-layer-view/v1"
+STATIC_AUDIT_PATTERN_CLASSES_COUNT = 3
+STATIC_AUDIT_STAMP = (
+    f"{STATIC_AUDIT_PATTERN_CLASSES_COUNT} static pattern classes checked; "
+    "semantic math audit not run in this wave"
+)
+STATIC_AUDIT_DETAIL = "Static AST pattern scan only — semantic audit not run in this wave."
+
+
+def build_three_layer_comprehension_view(
+    repo_root: str | Path,
+    process_map: Optional[Dict[str, Any]] = None,
+    paper_map: Optional[Dict[str, Any]] = None,
+    *,
+    paper_path: Optional[str | Path] = None,
+    scope_files: Optional[Sequence[str]] = None,
+    entrypoints: Optional[Sequence[str]] = None,
+    allowed_root: Optional[str | Path] = None,
+) -> Dict[str, Any]:
+    """Construct the explicit 3-Layer Comprehension View:
+      - Layer 1 (`layer1_estimator`): Core Mathematical Estimator (`reached` & `uncertain` symbols + bound equations; statically `unreached` symbols excluded).
+      - Layer 2 (`layer2_replicators`): 1 card per paper Table/Figure linked to its replicator script + explicit `'No replicator script matched'` cards.
+      - Layer 3 (`layer3_plumbing`): Collapsed-by-default data loaders, ETL, utilities, load-time imports, and disclosed `unreached_symbols`.
+      - `static_audit`: Honest static pattern stamp (`3 static pattern classes checked; semantic math audit not run in this wave`).
+    """
+    root = Path(repo_root).resolve()
+    pm = paper_map if isinstance(paper_map, dict) else {}
+    proc = process_map if isinstance(process_map, dict) else {}
+
+    eff_paper: Optional[Path] = None
+    if paper_path is not None and str(paper_path).strip():
+        cand_p = Path(paper_path)
+        if cand_p.exists():
+            eff_paper = cand_p.resolve()
+    elif pm.get("paper_path") and str(pm.get("paper_path")).strip():
+        cand_pm = Path(str(pm["paper_path"]))
+        if cand_pm.exists():
+            eff_paper = cand_pm.resolve()
+
+    eff_allowed = Path(allowed_root).resolve() if allowed_root is not None else (
+        eff_paper.parent if (eff_paper is not None and not eff_paper.is_relative_to(root)) else root
+    )
+
+    try:
+        scope_info = discover_paper_matched_scopes(
+            root,
+            eff_paper,
+            allowed_root=eff_allowed,
+        )
+    except Exception:
+        scope_info = {"manuscript_artifacts": [], "workflow_steps": [], "pipelines": []}
+
+    scoped_set: Optional[Set[str]] = (
+        {str(f).replace("\\", "/").strip("/") for f in scope_files if str(f).strip()}
+        if scope_files is not None
+        else None
+    )
+
+    eff_eps: List[str] = []
+    if entrypoints:
+        for ep in entrypoints:
+            ep_norm = str(ep).replace("\\", "/").strip("/")
+            if ep_norm and (scoped_set is None or ep_norm in scoped_set) and (root / ep_norm).is_file():
+                if ep_norm not in eff_eps:
+                    eff_eps.append(ep_norm)
+    if not eff_eps:
+        for ws in scope_info.get("workflow_steps") or []:
+            ep_s = str(ws.get("entrypoint") or "")
+            if (
+                ep_s
+                and ws.get("pipeline_id") != "data_preparation"
+                and (scoped_set is None or ep_s in scoped_set)
+                and ep_s not in eff_eps
+            ):
+                eff_eps.append(ep_s)
+    if not eff_eps:
+        for sc in proc.get("l0_scenarios") or []:
+            ep_l0 = str(sc.get("entry_file") or "")
+            if ep_l0 and not ep_l0.startswith("tests/") and not Path(ep_l0).stem.startswith("test_"):
+                if (scoped_set is None or ep_l0 in scoped_set) and ep_l0 not in eff_eps:
+                    eff_eps.append(ep_l0)
+
+    try:
+        sym_slice = slice_call_graph(
+            root,
+            entrypoints=eff_eps or None,
+            scope_files=sorted(scoped_set) if scoped_set is not None else None,
+        )
+        if not sym_slice.get("ok"):
+            sym_slice = slice_call_graph(
+                root,
+                entrypoints=None,
+                scope_files=sorted(scoped_set) if scoped_set is not None else None,
+            )
+    except Exception:
+        sym_slice = {
+            "ok": True,
+            "entrypoints": eff_eps,
+            "reached": [],
+            "uncertain": [],
+            "unreached": [],
+            "reached_symbols": [],
+            "uncertain_symbols": [],
+            "unreached_symbols": [],
+            "load_time_imported_files": [],
+        }
+
+    unreached_ids = set(sym_slice.get("unreached") or [])
+    active_syms = list(sym_slice.get("reached_symbols") or []) + list(sym_slice.get("uncertain_symbols") or [])
+
+    etl_prefixes = ("convert_", "prepare_", "prep_", "ingest_", "clean_", "etl_", "load_", "io_", "utils", "data_utils", "metrics_utils")
+    etl_dirs = {"prep", "etl", "ingest", "data_prep", "cleaning", "loaders", "io", "tests", "test"}
+    replicator_ep_set = {
+        str(ws.get("entrypoint") or "")
+        for ws in (scope_info.get("workflow_steps") or [])
+        if ws.get("entrypoint") and (scoped_set is None or str(ws.get("entrypoint")) in scoped_set)
+    }
+
+    def _is_plumbing_file(rel_f: str) -> bool:
+        p = Path(rel_f)
+        parts_low = {pt.lower() for pt in p.parts[:-1]}
+        st_low = p.stem.lower()
+        return bool(parts_low & etl_dirs) or st_low.startswith(etl_prefixes) or st_low == "__init__"
+
+    estimator_syms = [
+        {
+            "id": str(s.get("id") or ""),
+            "symbol": str(s.get("symbol") or s.get("qualname") or ""),
+            "short_name": str(s.get("short_name") or ""),
+            "kind": str(s.get("kind") or "function"),
+            "file": str(s.get("file") or ""),
+            "lineno": int(s.get("lineno") or 1),
+            "badge": str(s.get("badge") or "reached"),
+        }
+        for s in active_syms
+        if not _is_plumbing_file(str(s.get("file") or ""))
+    ]
+    if not estimator_syms and active_syms:
+        estimator_syms = [
+            {
+                "id": str(s.get("id") or ""),
+                "symbol": str(s.get("symbol") or s.get("qualname") or ""),
+                "short_name": str(s.get("short_name") or ""),
+                "kind": str(s.get("kind") or "function"),
+                "file": str(s.get("file") or ""),
+                "lineno": int(s.get("lineno") or 1),
+                "badge": str(s.get("badge") or "reached"),
+            }
+            for s in active_syms[:40]
+        ]
+
+    # Bind/filter manuscript equations so statically `unreached` symbols are NEVER included
+    pruned_bindings: Dict[str, List[Dict[str, Any]]] = {}
+    if eff_paper is not None:
+        try:
+            bound_doc = bind_manuscript_equations_to_symbols(
+                root,
+                eff_paper,
+                symbol_slice=sym_slice,
+                scope_files=sorted(scoped_set) if scoped_set is not None else None,
+                allowed_root=eff_allowed,
+                scoped=True,
+            )
+            for eq_b in bound_doc.get("equations") or []:
+                ek = str(eq_b.get("id") or eq_b.get("label") or "")
+                pruned_bindings[ek] = list(eq_b.get("matched_functions") or [])
+        except Exception:
+            pruned_bindings = {}
+
+    bound_equations: List[Dict[str, Any]] = []
+    for eq in pm.get("equations") or []:
+        if not isinstance(eq, dict):
+            continue
+        eq_id = str(eq.get("id") or "")
+        eq_lbl = str(eq.get("label") or "")
+        raw_mfs = pruned_bindings.get(eq_id) if eq_id in pruned_bindings else (
+            pruned_bindings.get(eq_lbl) if eq_lbl in pruned_bindings else list(eq.get("matched_functions") or [])
+        )
+        filtered_mfs: List[Dict[str, Any]] = []
+        for mf in raw_mfs or []:
+            if not isinstance(mf, dict):
+                continue
+            mf_file = str(mf.get("file") or "")
+            mf_qual = str(mf.get("qualname") or mf.get("symbol") or "")
+            if scoped_set is not None and mf_file and mf_file not in scoped_set:
+                continue
+            full_id = f"{mf_file}:{mf_qual}" if mf_file and mf_qual else ""
+            if full_id and full_id in unreached_ids:
+                continue
+            badge_val = str(mf.get("reachability_badge") or (sym_slice.get("badges") or {}).get(full_id) or "reached")
+            if badge_val == "unreached":
+                continue
+            filtered_mfs.append({
+                "file": mf_file,
+                "qualname": mf_qual,
+                "line_start": int(mf.get("line_start") or 1),
+                "badge": badge_val,
+            })
+        bound_equations.append({
+            "id": eq_id or f"eq-{len(bound_equations) + 1}",
+            "number": str(eq.get("number") or eq_id or len(bound_equations) + 1),
+            "label": eq_lbl,
+            "mathml": str(eq.get("mathml") or ""),
+            "raw_latex": str(eq.get("raw_latex") or ""),
+            "matched_functions": filtered_mfs[:4],
+            "verification_stamp": str(eq.get("verification_stamp") or eq.get("status") or "STATIC_ALIGNED"),
+        })
+
+    # Layer 2: 1 card per paper Table/Figure + explicit "No replicator script matched" cards
+    ms_artifacts = [a for a in (scope_info.get("manuscript_artifacts") or []) if isinstance(a, dict)]
+    wf_steps = [
+        ws for ws in (scope_info.get("workflow_steps") or [])
+        if isinstance(ws, dict) and (scoped_set is None or str(ws.get("entrypoint") or "") in scoped_set)
+    ]
+
+    replicator_cards: List[Dict[str, Any]] = []
+    matched_count = 0
+    unmatched_count = 0
+
+    if ms_artifacts:
+        for idx, art in enumerate(ms_artifacts, start=1):
+            art_ref = str(art.get("ref") or f"artifact-{idx}")
+            art_kind = str(art.get("kind") or "table").title()
+            art_num = str(art.get("number") or idx)
+            art_cap = str(art.get("caption") or "").strip()
+            art_sec = str(art.get("section") or "").strip()
+            art_display = f"{art_kind} {art_num} ({art_ref})" if art_ref else f"{art_kind} {art_num}"
+
+            matched_ws = [
+                ws for ws in wf_steps
+                if any(str(t).lower() == art_ref.lower() for t in (ws.get("manuscript_targets") or []))
+            ]
+            if matched_ws:
+                lead_ws = matched_ws[0]
+                ep_script = str(lead_ws.get("entrypoint") or "")
+                matched_count += 1
+                replicator_cards.append({
+                    "id": f"rep-{idx}-{re.sub(r'[^a-z0-9_-]+', '-', art_ref.lower()).strip('-') or idx}",
+                    "matched": True,
+                    "status": "matched",
+                    "badge": "Matched Replicator",
+                    "title": art_display,
+                    "artifact_ref": art_ref,
+                    "kind": art_kind.lower(),
+                    "section": art_sec,
+                    "caption": art_cap,
+                    "script": ep_script,
+                    "closure_files": list(lead_ws.get("files") or [])[:12],
+                    "manifests": list(lead_ws.get("manifests") or []),
+                })
+            else:
+                unmatched_count += 1
+                replicator_cards.append({
+                    "id": f"rep-unmatched-{idx}-{re.sub(r'[^a-z0-9_-]+', '-', art_ref.lower()).strip('-') or idx}",
+                    "matched": False,
+                    "status": "unmatched",
+                    "badge": "No replicator script matched",
+                    "title": f"{art_display} — No replicator script matched",
+                    "artifact_ref": art_ref,
+                    "kind": art_kind.lower(),
+                    "section": art_sec,
+                    "caption": art_cap or "Manuscript artifact has no matched replication entrypoint in the locked scope.",
+                    "script": "",
+                    "closure_files": [],
+                    "manifests": [],
+                })
+    else:
+        for idx, ws in enumerate(wf_steps, start=1):
+            ep_script = str(ws.get("entrypoint") or "")
+            if not ep_script:
+                continue
+            matched_count += 1
+            replicator_cards.append({
+                "id": f"rep-wf-{idx}",
+                "matched": True,
+                "status": "matched",
+                "badge": "Matched Replicator",
+                "title": str(ws.get("title") or ep_script),
+                "artifact_ref": ", ".join(str(x) for x in (ws.get("manuscript_targets") or [])[:3]),
+                "kind": "script",
+                "section": ", ".join(str(x) for x in (ws.get("sections") or [])[:2]),
+                "caption": f"Entrypoint driver {ep_script}",
+                "script": ep_script,
+                "closure_files": list(ws.get("files") or [])[:12],
+                "manifests": list(ws.get("manifests") or []),
+            })
+        if not replicator_cards:
+            unmatched_count += 1
+            replicator_cards.append({
+                "id": "rep-none-matched",
+                "matched": False,
+                "status": "unmatched",
+                "badge": "No replicator script matched",
+                "title": "No replicator script matched",
+                "artifact_ref": "",
+                "kind": "none",
+                "section": "",
+                "caption": "No manuscript Table/Figure replicator script matched in this scope.",
+                "script": "",
+                "closure_files": [],
+                "manifests": [],
+            })
+
+    # Layer 3: Collapsed-by-default plumbing, ETL, utilities, load-time imports, and disclosed `unreached_symbols`
+    estimator_files = {s["file"] for s in estimator_syms if s.get("file")}
+    all_scoped_files = sorted(scoped_set) if scoped_set is not None else [
+        str(fm.get("file") or "") for fm in (proc.get("l3_files") or []) if fm.get("file")
+    ]
+    load_time_files = [
+        str(f) for f in (sym_slice.get("load_time_imported_files") or [])
+        if scoped_set is None or str(f) in scoped_set
+    ]
+    plumbing_files = sorted({
+        f for f in (list(all_scoped_files) + list(load_time_files))
+        if f and (_is_plumbing_file(f) or (f not in estimator_files and f not in replicator_ep_set))
+    })
+    unreached_syms_out = [
+        {
+            "id": str(u.get("id") or ""),
+            "symbol": str(u.get("symbol") or u.get("qualname") or ""),
+            "file": str(u.get("file") or ""),
+            "lineno": int(u.get("lineno") or 1),
+            "badge": "unreached",
+        }
+        for u in (sym_slice.get("unreached_symbols") or [])[:120]
+    ]
+
+    sci_val = pm.get("scientific_validation") if isinstance(pm.get("scientific_validation"), dict) else None
+    if isinstance(sci_val, dict) and sci_val:
+        if isinstance(sci_val.get("rules_checked"), list):
+            checked_classes_cnt = len(sci_val["rules_checked"])
+        elif sci_val.get("findings"):
+            checked_classes_cnt = len({str(f.get("rule_id") or "") for f in sci_val["findings"] if isinstance(f, dict) and f.get("rule_id")}) or 4
+        else:
+            checked_classes_cnt = 4
+        sci_findings_count = len(sci_val.get("findings") or [])
+    else:
+        checked_classes_cnt = 0
+        sci_findings_count = 0
+
+    dynamic_stamp = f"{checked_classes_cnt} static pattern classes checked; semantic math audit not run in this wave"
+
+    return {
+        "schema": THREE_LAYER_VIEW_SCHEMA,
+        "static_audit": {
+            "pattern_classes_checked": checked_classes_cnt,
+            "findings_count": sci_findings_count,
+            "semantic_audit_run": False,
+            "stamp": dynamic_stamp,
+            "detail": STATIC_AUDIT_DETAIL,
+        },
+        "layer1_estimator": {
+            "id": "anvil-layer1-estimator",
+            "title": "Layer 1 · Core Mathematical Estimator & Equations",
+            "estimator_files": sorted(estimator_files),
+            "symbols": estimator_syms[:60],
+            "symbol_count": len(estimator_syms),
+            "equations": bound_equations[:40],
+            "equation_count": len(bound_equations),
+        },
+        "layer2_replicators": {
+            "id": "anvil-layer2-replicators",
+            "title": "Layer 2 · Paper Table & Figure Replicators",
+            "matched_count": matched_count,
+            "unmatched_count": unmatched_count,
+            "cards": replicator_cards,
+        },
+        "layer3_plumbing": {
+            "id": "anvil-layer3-plumbing",
+            "title": "Layer 3 · Data Plumbing, Utilities & Unreached Symbols",
+            "collapsed_by_default": True,
+            "plumbing_files": plumbing_files,
+            "load_time_imported_files": load_time_files,
+            "unreached_count": len(sym_slice.get("unreached") or []),
+            "unreached_symbols": unreached_syms_out,
+        },
+    }
+
+
+def _is_anvil_v6_env_enabled() -> bool:
+    raw = str(os.environ.get("ANCHOR_ANVIL_V6") or "").strip().lower()
+    return raw in {"1", "true", "yes"}
 
 
 def build_workbench_bundle(
@@ -739,21 +1248,79 @@ def build_workbench_bundle(
     paper_path: Optional[str | Path] = None,
     approve_run: bool = False,
     persist: bool = True,
+    *,
+    anvil_v6_enabled: Optional[bool] = None,
 ) -> Dict[str, Any]:
-    """Assemble the unified Anvil v4 Workbench payload across all 6 pillars,
-    session backing store, L3 source lines + ghost values, and surface state.
+    """Assemble the unified Anvil v4/v5 Workbench payload across all pillars,
+    session backing store, L3 source lines + ghost values, divergences, and surface state,
+    serving warm reads in <100 ms via content-fingerprint caching.
     """
+    eff_v6 = _is_anvil_v6_env_enabled() if anvil_v6_enabled is None else bool(anvil_v6_enabled)
     root = Path(repo_dir).resolve()
     if not root.exists() or not root.is_dir():
         raise AnvilRefusalError("PATH_ESCAPE_REFUSED", "Repository directory does not exist.", cwe="CWE-22")
 
+    resolved_paper = Path(paper_path).resolve() if paper_path else None
+
+    # Always validate trace & session backing stores fail-closed on every call (502 / 500 contracts)
     trace_data = _load_optional_trace_store(root)
-    prelim_map = build_process_map(root, trace_data=trace_data, persist=False, paper_path=paper_path)
+    ws_path = root / ".anvil" / "v4" / "workbench_session.json"
+    peek_pipe: Optional[str] = None
+    if _is_link_or_junction(ws_path):
+        _raise_backing_store_unreadable("workbench_session.json is a symlink or junction")
+    if ws_path.exists():
+        if not ws_path.is_file():
+            _raise_backing_store_unreadable("workbench_session.json is not a regular file")
+        try:
+            raw_ws_peek = atomic_locked_read_json(ws_path, max_bytes=4_194_304)
+            if not isinstance(raw_ws_peek, dict) or raw_ws_peek.get("schema") != WORKBENCH_SESSION_SCHEMA:
+                _raise_backing_store_unreadable("Invalid workbench_session.json schema")
+            peek_pipe = str(raw_ws_peek.get("active_pipeline") or "").strip() or None
+        except AnvilRefusalError as ws_err:
+            _raise_backing_store_unreadable(ws_err.message)
+
+    fp_digest = compute_repo_state_fingerprint(root, resolved_paper, store_root=root)
+    cache_key = (str(root), f"v6={int(eff_v6)}", str(resolved_paper or ""), str(peek_pipe or ""), fp_digest)
+
+    with _BUNDLE_CACHE_LOCK:
+        cached_core = _WORKBENCH_BUNDLE_CACHE.get(cache_key)
+
+    if cached_core is not None and (not persist or bool(cached_core.get("_persisted", False))):
+        process_map = cached_core["process_map"]
+        session = _load_or_init_workbench_session(root, process_map, persist=persist)
+        cached_pins = tuple(cached_core.get("_pinned_watches_sig") or ())
+        cur_pins = tuple(session.get("pinned_watches") or [])
+        variable_catalog = (
+            cached_core["variable_catalog"]
+            if cur_pins == cached_pins
+            else _build_smart_funnel_catalog(
+                process_map,
+                trace_data,
+                cached_core["files_source_map"],
+                list(cur_pins),
+            )
+        )
+        warm_out = {k: v for k, v in cached_core.items() if not k.startswith("_")}
+        if isinstance(warm_out.get("surface_state"), dict):
+            warm_out["surface_state"] = dict(warm_out["surface_state"])
+        if isinstance(warm_out.get("xval_receipt"), dict):
+            warm_out["xval_receipt"] = copy.deepcopy(warm_out["xval_receipt"])
+        warm_out["cli_approve_run"] = bool(approve_run)
+        warm_out["anvil_v6_enabled"] = eff_v6
+        if not eff_v6:
+            warm_out["three_layer_view"] = None
+        warm_out["variable_catalog"] = dict(variable_catalog) if isinstance(variable_catalog, dict) else variable_catalog
+        warm_out["session"] = copy.deepcopy(session)
+        return warm_out
+
+    pre_src_fp = compute_repo_source_fingerprint(root, resolved_paper)
+
+    prelim_map = build_process_map(root, trace_data=trace_data, persist=False, paper_path=resolved_paper)
     session = _load_or_init_workbench_session(root, prelim_map, persist=persist)
     active_pipe = str(session.get("active_pipeline") or "").strip() or None
     if active_pipe:
         try:
-            process_map = build_process_map(root, trace_data=trace_data, persist=persist, paper_path=paper_path, pipeline_id=active_pipe)
+            process_map = build_process_map(root, trace_data=trace_data, persist=persist, paper_path=resolved_paper, pipeline_id=active_pipe)
         except AnvilRefusalError:
             active_pipe = None
             process_map = prelim_map
@@ -763,16 +1330,38 @@ def build_workbench_bundle(
         process_map = prelim_map
         if persist:
             atomic_locked_write_json(root / ".anvil" / "v4" / "process_map.json", process_map)
-    refactor_map = build_refactor_map(root, trace_data=trace_data, persist=persist, paper_path=paper_path, pipeline_id=active_pipe)
-    paper_map = _load_paper_map(root, paper_path, trace_data, pipeline_id=active_pipe)
+    refactor_map = build_refactor_map(
+        root,
+        trace_data=trace_data,
+        persist=persist,
+        paper_path=resolved_paper,
+        pipeline_id=active_pipe,
+        process_map=process_map,
+    )
+    paper_map = _load_paper_map(
+        root,
+        resolved_paper,
+        trace_data,
+        pipeline_id=active_pipe,
+        process_map=process_map,
+        refactor_map=refactor_map,
+    )
     profile_lit = _load_or_build_profile_lit(root, persist=persist)
-    xval_receipt = _load_or_build_xval(root, process_map, refactor_map, paper_map, persist=persist)
+    xval_receipt = _load_or_build_xval(
+        root,
+        process_map,
+        refactor_map,
+        paper_map,
+        paper_path=resolved_paper,
+        persist=persist,
+    )
     files_source_map = _build_files_source_map(root, process_map, trace_data)
+    cur_pins_list = list(session.get("pinned_watches") or [])
     variable_catalog = _build_smart_funnel_catalog(
         process_map,
         trace_data,
         files_source_map,
-        session.get("pinned_watches") or [],
+        cur_pins_list,
     )
 
     l0_list = process_map.get("l0_scenarios") or []
@@ -809,16 +1398,29 @@ def build_workbench_bundle(
             ),
         }
 
-    return {
+    divergences_list = list((paper_map.get("divergences") or []) if isinstance(paper_map, dict) else [])
+    three_layer_view = (
+        build_three_layer_comprehension_view(
+            root,
+            process_map,
+            paper_map,
+            paper_path=resolved_paper,
+        )
+        if eff_v6
+        else None
+    )
+
+    out_bundle: Dict[str, Any] = {
         "ok": True,
         "schema": WORKBENCH_BUNDLE_SCHEMA,
         "repo_name": root.name,
         "repo_fingerprint": process_map.get("repo_fingerprint", ""),
+        "state_fingerprint": fp_digest,
         "isolation_boundary": ISOLATION_BOUNDARY if trace_data is not None else "static_ast_zero_execution",
         "non_vm_trust_warning": NON_VM_TRUST_WARNING,
         "cli_approve_run": bool(approve_run),
         "has_trace": bool(trace_data is not None),
-        "has_paper": bool(paper_map.get("has_paper", False)),
+        "has_paper": bool(paper_map.get("has_paper", False)) if isinstance(paper_map, dict) else False,
         "recommended_argv": rec_argv,
         "resolved_argv": resolved_argv,
         "isolated_temp_copy_path": isolated_temp_copy_path,
@@ -829,6 +1431,9 @@ def build_workbench_bundle(
         "process_map": process_map,
         "refactor_map": refactor_map,
         "paper_map": paper_map,
+        "anvil_v6_enabled": eff_v6,
+        "three_layer_view": three_layer_view,
+        "divergences": divergences_list,
         "scientific_validation": paper_map.get("scientific_validation") if isinstance(paper_map, dict) else None,
         "profile_lit": profile_lit,
         "xval_receipt": xval_receipt,
@@ -852,6 +1457,48 @@ def build_workbench_bundle(
         "session": session,
     }
 
+    post_src_fp = compute_repo_source_fingerprint(root, resolved_paper)
+    final_fp = compute_repo_state_fingerprint(root, resolved_paper, store_root=root)
+    if post_src_fp == pre_src_fp:
+        out_bundle["state_fingerprint"] = final_fp
+        final_key = (str(root), str(root), str(resolved_paper or ""), str(active_pipe or ""), final_fp)
+        with _BUNDLE_CACHE_LOCK:
+            if len(_WORKBENCH_BUNDLE_CACHE) >= 32:
+                _WORKBENCH_BUNDLE_CACHE.clear()
+            cache_entry = copy.deepcopy(out_bundle)
+            cache_entry["_pinned_watches_sig"] = tuple(cur_pins_list)
+            cache_entry["_persisted"] = bool(persist)
+            _WORKBENCH_BUNDLE_CACHE[final_key] = cache_entry
+            if final_key != cache_key:
+                _WORKBENCH_BUNDLE_CACHE[cache_key] = cache_entry
+
+    return out_bundle
+
+
+def _normalize_http_preferred_family(raw_family: Any) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
+    if raw_family is None or raw_family == "":
+        return None, None
+    if not isinstance(raw_family, str):
+        return None, {
+            "ok": False,
+            "error_code": "MALFORMED_DATA_REFUSED",
+            "message": "'preferred_family' must be a string vendor family.",
+            "error": "'preferred_family' must be a string vendor family.",
+        }
+    norm = raw_family.strip().lower()
+    if norm == "anthropic":
+        norm = "claude"
+    elif norm == "google":
+        norm = "gemini"
+    if norm not in {"claude", "gemini", "chatgpt", "grok"}:
+        return None, {
+            "ok": False,
+            "error_code": "MALFORMED_DATA_REFUSED",
+            "message": f"Unrecognized 'preferred_family' value '{raw_family}'.",
+            "error": f"Unrecognized 'preferred_family' value '{raw_family}'.",
+        }
+    return norm, None
+
 
 def _synthesize_grounded_copilot_reply(
     root: Path,
@@ -861,19 +1508,29 @@ def _synthesize_grounded_copilot_reply(
     active_file: str,
     active_line: int,
     ide_open: bool,
+    *,
+    live: Optional[bool] = None,
+    preferred_family: str = "gemini",
+    cli_argv: Optional[Sequence[str]] = None,
+    cli_runner: Optional[Any] = None,
 ) -> Dict[str, Any]:
     scripts_dir = str(Path(__file__).resolve().parent)
     if scripts_dir not in sys.path:
         sys.path.insert(0, scripts_dir)
     import anvil_engine
 
-    proc_map = bundle.get("process_map") or {}
-    ref_map = bundle.get("refactor_map") or {}
-    pap_map = bundle.get("paper_map") or {}
-    var_cat = bundle.get("variable_catalog") or {}
-    funnel = var_cat.get("funnel") or {}
-    session = bundle.get("session") or {}
+    proc_map = bundle.get("process_map") if isinstance(bundle.get("process_map"), dict) else {}
+    ref_map = bundle.get("refactor_map") if isinstance(bundle.get("refactor_map"), dict) else {}
+    pap_map = bundle.get("paper_map") if isinstance(bundle.get("paper_map"), dict) else {}
+    var_cat = bundle.get("variable_catalog") if isinstance(bundle.get("variable_catalog"), dict) else {}
+    funnel = var_cat.get("funnel") if isinstance(var_cat.get("funnel"), dict) else {}
+    session = bundle.get("session") if isinstance(bundle.get("session"), dict) else {}
     stages = proc_map.get("l1_stages") or []
+    divergences = list(
+        bundle.get("divergences")
+        if isinstance(bundle.get("divergences"), list)
+        else (pap_map.get("divergences") or [])
+    )
 
     matched_stage = next((s for s in stages if s.get("id") == active_stage_id), stages[0] if stages else None)
     sid = str(matched_stage["id"]) if matched_stage else "S1"
@@ -890,16 +1547,67 @@ def _synthesize_grounded_copilot_reply(
     ]
     n_ids = list(dict.fromkeys(mapped_n)) or ([str(target_stages[0]["id"])] if target_stages else ["N1"])
 
+    trace_sum = bundle.get("trace_summary") or {}
+    tripwires = trace_sum.get("tripwires") or []
+    pins = session.get("pinned_watches") or []
+    eqs = pap_map.get("equations") or []
+
+    grounded_ctx = {
+        "active_stage": {
+            "id": sid,
+            "title": stitle,
+            "verdict": (matched_stage or {}).get("verdict", "STATIC_ONLY"),
+            "what_enters": (matched_stage or {}).get("what_enters") or [],
+            "what_exits": (matched_stage or {}).get("what_exits") or [],
+            "file": lead_file,
+            "line": lead_line,
+        },
+        "target_stages": n_ids,
+        "smart_funnel": funnel,
+        "pinned_watches": list(pins),
+        "tripwires": list(tripwires[:8]),
+        "divergences": [
+            {
+                "id": d.get("id"),
+                "category": d.get("category"),
+                "title": d.get("title"),
+                "code_citation": d.get("code_citation"),
+                "manuscript_status": d.get("manuscript_status"),
+                "manuscript_citation": d.get("manuscript_citation"),
+            }
+            for d in divergences[:12]
+            if isinstance(d, dict)
+        ],
+    }
+
+    live_res = run_live_copilot_cli_turn(
+        root,
+        question,
+        grounded_ctx,
+        preferred_family=preferred_family,
+        live=live,
+        cli_argv=cli_argv,
+        cli_runner=cli_runner,
+    )
+    if live_res is not None and live_res.get("ok") and live_res.get("reply"):
+        return {
+            "reply": str(live_res["reply"]),
+            "answer_mode": str(live_res.get("answer_mode") or "live_cli"),
+            "status": str(live_res.get("status") or "OK"),
+            "model_family": live_res.get("model_family"),
+            "model_served": live_res.get("model_served"),
+            "model_attested": bool(live_res.get("model_attested")),
+            "cited_stage_id": sid,
+            "cited_target_stages": n_ids,
+            "cited_file": lead_file,
+            "cited_line": lead_line,
+        }
+
     try:
         base_chat = anvil_engine.anvil_chat(root, "inspect", lead_file or sid, question)
         base_note = str(base_chat.get("proactive_recommendation") or "")
     except Exception:
         base_note = ""
-
-    trace_sum = bundle.get("trace_summary") or {}
-    tripwires = trace_sum.get("tripwires") or []
-    pins = session.get("pinned_watches") or []
-    eqs = pap_map.get("equations") or []
 
     parts: List[str] = [
         f"[Steward Co-Pilot · {'IDE Debugger' if ide_open else '48/52 Workbench'}] "
@@ -924,6 +1632,13 @@ def _synthesize_grounded_copilot_reply(
             f"Tripwire Alert: `{tw0.get('variable', 'val')}` hit `{tw0.get('kind', 'non-finite')}` "
             f"at `{tw0.get('file', lead_file)}:L{tw0.get('line', lead_line)}` in `{tw0.get('stage_id', sid)}`."
         )
+    if divergences:
+        d_prev = ", ".join(
+            f"`{d.get('id', 'DIV')}` (`{d.get('code_citation', '')}` · `{d.get('manuscript_status', '')}`)"
+            for d in divergences[:3]
+            if isinstance(d, dict)
+        )
+        parts.append(f"Divergences (`{len(divergences)}`): {d_prev}.")
     if pap_map.get("has_paper") and eqs:
         eq0 = eqs[0]
         parts.append(
@@ -932,8 +1647,17 @@ def _synthesize_grounded_copilot_reply(
     if base_note:
         parts.append(base_note)
 
+    fallback_status = str(
+        (live_res.get("status") if isinstance(live_res, dict) else None)
+        or "DETERMINISTIC_FALLBACK"
+    )
     return {
         "reply": " ".join(parts),
+        "answer_mode": "static_ast",
+        "status": fallback_status,
+        "model_family": live_res.get("model_family") if isinstance(live_res, dict) else None,
+        "model_served": None,
+        "model_attested": False,
         "cited_stage_id": sid,
         "cited_target_stages": n_ids,
         "cited_file": lead_file,
@@ -973,15 +1697,69 @@ def _render_workbench_html_document(bootstrap_payload: Dict[str, Any], csp_nonce
     return rendered
 
 
+_HOST_HOME_SCRUB_RE = re.compile(
+    r"(?i)[A-Za-z]:(?:\\\\|/)+" + "us" + r"ers(?:\\\\|/)+[^\\\\/\"'\s<>]+"
+)
+
+_PRESERVED_SOURCE_KEYS: Set[str] = {
+    "lines",
+    "content",
+    "raw_source",
+    "code_snippet",
+    "manuscript_passage",
+    "best_in_class_source",
+    "old_source",
+    "numbered_source_preview",
+}
+
+
+def _build_host_home_variants() -> List[str]:
+    variants: List[str] = []
+    try:
+        hp = Path.home().resolve()
+        raw_h = str(hp)
+        if len(raw_h) > 3:
+            for cand in (raw_h, hp.as_posix(), raw_h.replace("\\", "\\\\")):
+                if cand and cand not in variants:
+                    variants.append(cand)
+    except Exception:
+        pass
+    variants.sort(key=len, reverse=True)
+    return variants
+
+
+def _scrub_host_home_value(val: Any, home_variants: Sequence[str], *, parent_key: str = "") -> Any:
+    if parent_key in _PRESERVED_SOURCE_KEYS:
+        return val
+    if isinstance(val, str):
+        out_s = val
+        for hv in home_variants:
+            if hv in out_s:
+                out_s = out_s.replace(hv, "$HOME")
+        return _HOST_HOME_SCRUB_RE.sub("$HOME", out_s)
+    if isinstance(val, dict):
+        return {k: _scrub_host_home_value(v, home_variants, parent_key=str(k)) for k, v in val.items()}
+    if isinstance(val, list):
+        return [_scrub_host_home_value(item, home_variants) for item in val]
+    return val
+
+
 def export_workbench_html(
     repo_dir: str | Path,
     out_html_path: str | Path,
     paper_path: Optional[str | Path] = None,
     approve_run: bool = False,
+    *,
+    persist: bool = True,
+    bundle_override: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Export a standalone zero-CDN HTML workbench bundle atomically."""
     root = Path(repo_dir).resolve()
-    bundle = build_workbench_bundle(root, paper_path=paper_path, approve_run=approve_run, persist=True)
+    bundle = (
+        copy.deepcopy(bundle_override)
+        if isinstance(bundle_override, dict)
+        else build_workbench_bundle(root, paper_path=paper_path, approve_run=approve_run, persist=persist)
+    )
     csp_nonce = secrets.token_hex(16)
     bootstrap = {
         "mode": "standalone",
@@ -992,7 +1770,8 @@ def export_workbench_html(
         "surface_state": bundle.get("surface_state"),
         "bundle": bundle,
     }
-    html_text = _render_workbench_html_document(bootstrap, csp_nonce)
+    scrubbed_bootstrap = _scrub_host_home_value(bootstrap, _build_host_home_variants())
+    html_text = _render_workbench_html_document(scrubbed_bootstrap, csp_nonce)
     dest = Path(out_html_path).resolve()
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp_p: Optional[Path] = None
@@ -1091,6 +1870,26 @@ def _compute_server_state_response(server: AnvilWorkbenchHTTPServer) -> Tuple[in
                     "null_set": {"null_proven": [], "null_unexercised": [], "null_redundant": []},
                 },
                 "paper_map": {"has_paper": False, "sections": [], "algorithms": [], "equations": []},
+                "anvil_v6_enabled": _is_anvil_v6_env_enabled(),
+                "three_layer_view": {
+                    "schema": THREE_LAYER_VIEW_SCHEMA,
+                    "static_audit": {
+                        "pattern_classes_checked": STATIC_AUDIT_PATTERN_CLASSES_COUNT,
+                        "findings_count": 0,
+                        "semantic_audit_run": False,
+                        "stamp": STATIC_AUDIT_STAMP,
+                        "detail": STATIC_AUDIT_DETAIL,
+                    },
+                    "layer1_estimator": {"id": "anvil-layer1-estimator", "title": "Layer 1 · Core Mathematical Estimator & Equations", "estimator_files": [], "symbols": [], "symbol_count": 0, "equations": [], "equation_count": 0},
+                    "layer2_replicators": {
+                        "id": "anvil-layer2-replicators",
+                        "title": "Layer 2 · Paper Table & Figure Replicators",
+                        "matched_count": 0,
+                        "unmatched_count": 1,
+                        "cards": [{"id": "rep-none-matched", "matched": False, "status": "unmatched", "badge": "No replicator script matched", "title": "No replicator script matched", "artifact_ref": "", "kind": "none", "section": "", "caption": "No manuscript Table/Figure replicator script matched in this scope.", "script": "", "closure_files": [], "manifests": []}],
+                    },
+                    "layer3_plumbing": {"id": "anvil-layer3-plumbing", "title": "Layer 3 · Data Plumbing, Utilities & Unreached Symbols", "collapsed_by_default": True, "plumbing_files": [], "load_time_imported_files": [], "unreached_count": 0, "unreached_symbols": []},
+                },
                 "profile_lit": {
                     "stage_hotspots": [],
                     "imperative_shell_io_fixes": [],
@@ -1309,7 +2108,7 @@ class _WorkbenchRequestHandler(BaseHTTPRequestHandler):
                 )
                 return
             rel_posix = resolved.relative_to(self.server.repo_root).as_posix()
-            txt = raw_b.decode("utf-8", errors="replace")
+            txt = raw_b.decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", "\n")
             raw_lines = txt.splitlines()
             pairs = [[idx, ln] for idx, ln in enumerate(raw_lines, start=1)]
             numbered = "\n".join(f"{idx:4d} | {ln}" for idx, ln in pairs)
@@ -1318,7 +2117,11 @@ class _WorkbenchRequestHandler(BaseHTTPRequestHandler):
                 {
                     "ok": True,
                     "file": rel_posix,
+                    "start_line": 1,
+                    "end_line": len(raw_lines),
                     "total_lines": len(raw_lines),
+                    "content": txt,
+                    "raw_source": txt,
                     "watchable_tokens": _extract_watchable_tokens(txt, resolved.suffix.lower()),
                     "lines": pairs,
                     "numbered_source": numbered,
@@ -1361,6 +2164,9 @@ class _WorkbenchRequestHandler(BaseHTTPRequestHandler):
             return
         if route == "/api/anvil/v4/chat":
             self._handle_post_chat(body)
+            return
+        if route == "/api/anvil/v4/xval":
+            self._handle_post_xval(body)
             return
         if route == "/api/anvil/v4/trace":
             self._handle_post_trace_or_profile(body, is_profile=False)
@@ -1423,6 +2229,7 @@ class _WorkbenchRequestHandler(BaseHTTPRequestHandler):
                     "active_line",
                     "ide_open",
                     "ide_theme",
+                    "active_pipeline",
                 ):
                     if k in body:
                         merged[k] = body[k]
@@ -1458,8 +2265,26 @@ class _WorkbenchRequestHandler(BaseHTTPRequestHandler):
             if isinstance(aln, bool) or not isinstance(aln, int) or aln < 1 or aln > 1_000_000:
                 self._send_json(400, {"ok": False, "error_code": "MALFORMED_DATA_REFUSED", "message": "'active_line' must be a valid integer."})
                 return
-        with self.server.state_lock:
-            try:
+        if "live" in body and body["live"] is not None and not isinstance(body["live"], bool):
+            self._send_json(400, {"ok": False, "error_code": "MALFORMED_DATA_REFUSED", "message": "'live' must be a boolean when provided."})
+            return
+        norm_fam, fam_err = _normalize_http_preferred_family(body.get("preferred_family"))
+        if fam_err is not None:
+            self._send_json(400, fam_err)
+            return
+        if any(k in body for k in ("cli_argv", "seat1_cli_argv", "seat2_cli_argv")):
+            self._send_json(
+                403,
+                {
+                    "ok": False,
+                    "error_code": "EXECUTION_POLICY_REFUSED",
+                    "cwe": "CWE-78",
+                    "message": "Custom 'cli_argv' injection is forbidden over HTTP.",
+                },
+            )
+            return
+        try:
+            with self.server.state_lock:
                 bundle = build_workbench_bundle(
                     self.server.repo_root,
                     paper_path=self.server.paper_path,
@@ -1467,49 +2292,147 @@ class _WorkbenchRequestHandler(BaseHTTPRequestHandler):
                     persist=True,
                 )
                 self.server.last_good_bundle = bundle
-                session = dict(bundle["session"])
-                active_sid = str(body.get("active_stage_id") or session.get("active_stage_id") or "S1")
-                active_file = str(body.get("active_file") if body.get("active_file") is not None else session.get("active_file", ""))
-                active_line = max(1, int(body.get("active_line") or session.get("active_line") or 1))
-                ide_open = bool(body.get("ide_open", session.get("ide_open", False)))
+                session_snap = copy.deepcopy(bundle["session"])
+                active_sid = str(body.get("active_stage_id") or session_snap.get("active_stage_id") or "S1")
+                active_file = str(body.get("active_file") if body.get("active_file") is not None else session_snap.get("active_file", ""))
+                active_line = max(1, int(body.get("active_line") or session_snap.get("active_line") or 1))
+                ide_open = bool(body.get("ide_open", session_snap.get("ide_open", False)))
 
-                chat_res = _synthesize_grounded_copilot_reply(
+            # Release server.state_lock while slow external CLI Co-Pilot subprocess executes
+            chat_res = _synthesize_grounded_copilot_reply(
+                self.server.repo_root,
+                bundle,
+                question.strip()[:2048],
+                active_sid,
+                active_file,
+                active_line,
+                ide_open,
+                live=body.get("live"),
+                preferred_family=norm_fam or "gemini",
+            )
+
+            with self.server.state_lock:
+                latest_session = _load_or_init_workbench_session(
                     self.server.repo_root,
-                    bundle,
-                    question.strip()[:2048],
-                    active_sid,
-                    active_file,
-                    active_line,
-                    ide_open,
+                    bundle["process_map"],
+                    persist=True,
                 )
                 now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-                turns = list(session.get("dialogue_turns") or [])
+                turns = list(latest_session.get("dialogue_turns") or [])
                 turns.append({"role": "user", "text": question.strip()[:2048], "stage_id": active_sid, "ts": now_iso})
                 turns.append({"role": "assistant", "text": chat_res["reply"], "stage_id": chat_res["cited_stage_id"], "ts": now_iso})
-                session["dialogue_turns"] = turns[-80:]
-                session["active_stage_id"] = active_sid
+                latest_session["dialogue_turns"] = turns[-80:]
+                latest_session["active_stage_id"] = active_sid
                 if active_file:
-                    session["active_file"] = active_file
-                session["active_line"] = active_line
-                session["ide_open"] = ide_open
-
+                    latest_session["active_file"] = active_file
+                latest_session["active_line"] = active_line
+                latest_session["ide_open"] = ide_open
+                norm_session = _validate_and_normalize_session(
+                    latest_session,
+                    _default_session_payload(bundle["process_map"]),
+                )
                 session_path = self.server.repo_root / ".anvil" / "v4" / "workbench_session.json"
-                atomic_locked_write_json(session_path, session)
-                bundle["session"] = session
+                atomic_locked_write_json(session_path, norm_session)
+                bundle["session"] = norm_session
+                self.server.last_good_bundle = bundle
                 self._send_json(
                     200,
                     {
                         "ok": True,
                         "reply": chat_res["reply"],
+                        "answer_mode": chat_res.get("answer_mode", "static_ast"),
+                        "status": str(chat_res.get("status") or "OK"),
+                        "model_family": chat_res.get("model_family"),
+                        "model_served": chat_res.get("model_served"),
+                        "model_attested": bool(chat_res.get("model_attested", False)),
                         "cited_stage_id": chat_res["cited_stage_id"],
                         "cited_target_stages": chat_res["cited_target_stages"],
                         "cited_file": chat_res["cited_file"],
                         "cited_line": chat_res["cited_line"],
-                        "dialogue_turns": session["dialogue_turns"],
-                        "session": session,
+                        "dialogue_turns": norm_session["dialogue_turns"],
+                        "session": norm_session,
                     },
                 )
-            except AnvilRefusalError as err:
+        except AnvilRefusalError as err:
+            if err.error_code == "ATTESTATION_MISMATCH_REFUSAL":
+                self._send_json(502, err.to_dict())
+                return
+            surf = _map_refusal_to_surface_failure(err)
+            if surf is not None:
+                self._send_json(int(surf["http_status"]), {**err.to_dict(), **surf})
+            else:
+                self._send_json(400, err.to_dict())
+
+    def _handle_post_xval(self, body: Dict[str, Any]) -> None:
+        if any(k in body for k in ("seat1_cli_argv", "seat2_cli_argv", "cli_argv", "raw_digest_override", "enforce_bound")):
+            self._send_json(
+                403,
+                {
+                    "ok": False,
+                    "error_code": "EXECUTION_POLICY_REFUSED",
+                    "cwe": "CWE-78",
+                    "message": "Custom CLI argv and digest/bound overrides are forbidden in HTTP request bodies.",
+                },
+            )
+            return
+        raw_mc = body.get("max_concurrency", 2)
+        if isinstance(raw_mc, bool) or not isinstance(raw_mc, int):
+            self._send_json(400, {"ok": False, "error_code": "MALFORMED_DATA_REFUSED", "message": "'max_concurrency' must be an integer."})
+            return
+        raw_md = body.get("max_digest_bytes", 32768)
+        if isinstance(raw_md, bool) or not isinstance(raw_md, int):
+            self._send_json(400, {"ok": False, "error_code": "MALFORMED_DATA_REFUSED", "message": "'max_digest_bytes' must be an integer."})
+            return
+        raw_to = body.get("timeout_sec", 60.0)
+        if isinstance(raw_to, bool) or not isinstance(raw_to, (int, float)) or not math.isfinite(float(raw_to)):
+            self._send_json(400, {"ok": False, "error_code": "MALFORMED_DATA_REFUSED", "message": "'timeout_sec' must be a finite number."})
+            return
+        if "live" in body and body["live"] is not None and not isinstance(body["live"], bool):
+            self._send_json(400, {"ok": False, "error_code": "MALFORMED_DATA_REFUSED", "message": "'live' must be a boolean when provided."})
+            return
+
+        try:
+            with self.server.state_lock:
+                bundle = build_workbench_bundle(
+                    self.server.repo_root,
+                    paper_path=self.server.paper_path,
+                    approve_run=self.server.approve_run,
+                    persist=True,
+                )
+                proc_map = bundle["process_map"]
+                ref_map = bundle["refactor_map"]
+                raw_pap = bundle.get("paper_map")
+                pap_arg = raw_pap if isinstance(raw_pap, dict) and raw_pap.get("has_paper") else None
+
+            # Release server.state_lock while bounded 2-seat XVal CLI subprocesses run
+            receipt = run_xval_audit(
+                self.server.repo_root,
+                process_map=proc_map,
+                refactor_map=ref_map,
+                paper_map=pap_arg,
+                paper_path=self.server.paper_path,
+                max_concurrency=raw_mc,
+                max_digest_bytes=raw_md,
+                timeout_sec=float(raw_to),
+                persist=False,
+                live=body.get("live"),
+                enforce_bound=True,
+            )
+
+            with self.server.state_lock:
+                atomic_locked_write_json(self.server.repo_root / ".anvil" / "v4" / "xval_receipt.json", receipt)
+                with _BUNDLE_CACHE_LOCK:
+                    _WORKBENCH_BUNDLE_CACHE.clear()
+                bundle["xval_receipt"] = receipt
+                self.server.last_good_bundle = bundle
+                self._send_json(200, {"ok": True, "xval_receipt": receipt})
+        except AnvilRefusalError as err:
+            if err.error_code == "ATTESTATION_MISMATCH_REFUSAL":
+                self._send_json(502, err.to_dict())
+            elif err.error_code == "BOUND_EXCEEDED_REFUSAL":
+                status_c = 413 if err.details.get("bound_name") == "max_digest_bytes" else 400
+                self._send_json(status_c, err.to_dict())
+            else:
                 surf = _map_refusal_to_surface_failure(err)
                 if surf is not None:
                     self._send_json(int(surf["http_status"]), {**err.to_dict(), **surf})

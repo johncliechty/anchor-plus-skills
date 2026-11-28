@@ -25,6 +25,9 @@
 - Not an identity-token party trick that kills on a name match
 - Not a license to free up CPU by slaughtering supervised sessions
 
+## Variable Strength Note
+`Zombie Hunter` is a deterministic, evidence-gated OS process reaper (zero model guesswork on liveness or kill decisions). Any Steward inspection commissioned around a flagged orphan defaults to **`Standard`**, with **`Heavy`** reserved for post-incident forensic reviews.
+
 ## How to start (human)
 1. Treat it as part of Anchor operations; start from observe/log mode.
 2. Read the operator runbook for arming requirements and the kill-switch file.

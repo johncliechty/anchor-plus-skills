@@ -26,6 +26,15 @@
 - Not a noisy regex linter that floods you with unverified style nitpicks
 - Not an autonomous code mutator that edits production files during a read-only scan without human or worktree gate authorization
 
+## Variable Strength (`Aegis` Heavy Default vs. `Aegis Light`) — What to Call When
+`Aegis` is one of the four **`Heavy`-by-default** skills (`Anvil`, `Chekhov`, `Aegis`, `Superjump`):
+- **Call `Aegis` (default = `⚡ Heavy` · frontier Orchestrator + frontier Cross-Family Security Reviewer @ full effort)** when:
+  - Running a pre-release, pre-landing, or high-stakes security audit on production code
+  - Synthesizing and verifying multi-file defensive patches (`aegis remediate --apply` / `aegis verify`) across untrusted-input, auth, subprocess, or path-containment boundaries
+- **Call `Aegis Light` (`🪶 Light` · one generalist model below frontier @ `medium` effort on both Orchestrator and Reviewer — say `"Aegis Light"`, pass `--tier light`, or click the `🪶 Light` pill in the Aegis Workbench header)** when:
+  - Running a fast mid-development security check or interactive CWE triage pass before a final release gate
+  - Auditing internal scratch utilities where speed and token economy take priority *(deterministic AST/secret detection in `aegis scan` runs identically in both modes)*
+
 ## How to start (human)
 1. Open the **Aegis Security Workbench** from your AI Cockpit (`Aegis` shield button or `/steward/aegis?project=<id>`) or run `python "<path> Foundry/skills/aegis/scripts/aegis_engine.py" scan --target <path>`.
 2. Filter findings by CWE rule (`AEG-01` .. `AEG-06`) or severity (`CRITICAL`, `HIGH`, `MEDIUM`) and inspect the proposed unified diff for each finding.

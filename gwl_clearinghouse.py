@@ -1562,6 +1562,89 @@ def list_applicant_signups(hub_root: str | Path | None = None) -> list[dict[str,
     return GWLClearinghouse(hub_root=hub_root).list_applicant_signups()
 
 
+def import_registration_card(
+    card: dict[str, Any],
+    *,
+    hub_root: str | Path | None = None,
+    anchor_root: str | Path | None = None,
+) -> dict[str, Any]:
+    """Verify and import a cross-Tailnet `[ANCHOR-COLLAB-REGISTER]` registration card on Lead Homebase."""
+    if not isinstance(card, dict) or str(card.get("schema") or "") != "anchor.collab.registration_card.v1":
+        return {"ok": False, "error": "invalid_registration_card_schema"}
+    did = str(card.get("did") or "").strip()
+    pseudonym = str(card.get("pseudonym") or "").strip()
+    email = str(card.get("contact_email") or "").strip()
+    mothership_id = str(card.get("mothership_id") or "").strip()
+    card_sha = str(card.get("payload_sha256") or "").strip()
+    if not did or not pseudonym or not mothership_id or not card_sha:
+        return {"ok": False, "error": "incomplete_registration_card"}
+    body_for_hash = {
+        "schema": card.get("schema"),
+        "mothership_id": mothership_id,
+        "did": did,
+        "pseudonym": pseudonym,
+        "display_name": str(card.get("display_name") or ""),
+        "contact_email": email,
+        "steward_persona": str(card.get("steward_persona") or "aladdin"),
+        "platform": str(card.get("platform") or ""),
+        "version": str(card.get("version") or ""),
+        "tailscale_url": str(card.get("tailscale_url") or ""),
+        "created_at": str(card.get("created_at") or ""),
+    }
+    canon = json.dumps(body_for_hash, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    calc_sha = hashlib.sha256(canon).hexdigest()
+    if not hmac.compare_digest(calc_sha, card_sha):
+        return {"ok": False, "error": "registration_card_checksum_mismatch"}
+
+    signup_res = register_applicant_signup(
+        {
+            "applicant_id": mothership_id,
+            "display_name": str(card.get("display_name") or pseudonym),
+            "pseudonym": pseudonym,
+            "did": did,
+            "contact_email": email,
+            "tailscale_endpoint": str(card.get("tailscale_url") or ""),
+            "topology_mode": "main_mothership",
+            "onboarding_status": "registered_via_card",
+            "notes": f"Imported signed registration card ({card.get('version') or 'unknown'})",
+        },
+        hub_root=hub_root,
+    )
+    try:
+        import mothership_updater as _mu
+        reg = _mu.load_mothership_registry(anchor_root)
+        rows = list(reg.get("motherships") or [])
+        existing = next((r for r in rows if str(r.get("id") or "") == mothership_id), None)
+        entry = {
+            "id": mothership_id,
+            "owner": str(card.get("display_name") or pseudonym),
+            "pseudonym": pseudonym,
+            "did": did,
+            "contact_email": email,
+            "hostname": mothership_id,
+            "role": "collaborator",
+            "tailscale_url": str(card.get("tailscale_url") or ""),
+            "installed_version": str(card.get("version") or ""),
+            "registered_at": str(card.get("created_at") or ""),
+            "transport": "tailscale_or_website_pull",
+        }
+        if existing is not None:
+            existing.update(entry)
+        else:
+            rows.append(entry)
+        reg["motherships"] = rows
+        _mu.save_mothership_registry(reg, anchor_root=anchor_root, write_repo=False)
+    except Exception:
+        pass
+    return {
+        "ok": True,
+        "mothership_id": mothership_id,
+        "did": did,
+        "pseudonym": pseudonym,
+        "signup": signup_res,
+    }
+
+
 
 def compare_p2p_vs_central_matrix() -> dict[str, Any]:
     """Return the structured comparison matrix evaluating Pure P2P vs Pure Central vs Hybrid Split-Plane."""

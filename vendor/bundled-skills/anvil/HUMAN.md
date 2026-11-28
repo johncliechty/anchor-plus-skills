@@ -15,8 +15,18 @@
 - You are running broad multi-paper literature discovery across dozens of external citations (use literature-review or researchPrime)
 - You are executing an already-planned multi-wave build (use Foreman, which invokes Anvil's fast `slice` and `verify-diff` primitives automatically)
 
+## Variable Strength (`Anvil` Heavy Default vs. `Anvil Light`) — What to Call When
+`Anvil` is one of the four **`Heavy`-by-default** skills (`Anvil`, `Chekhov`, `Aegis`, `Superjump`):
+- **Call `Anvil` (default = `⚡ Heavy` · frontier Orchestrator + frontier Cross-Family Reviewer @ full effort)** when:
+  - Auditing paper-to-code replication (`--paper`), equation-to-AST alignment, or subclass/parameterization overrides
+  - Validating scientific bugs (`SCI-01` train/test leakage, `SCI-02` collinear heads, `SCI-03` duplicated likelihoods)
+  - Locking a Pure-Core / Imperative-Shell refactoring crosswalk (`refactor-map`) or Golden-Master equivalence gate
+- **Call `Anvil Light` (`🪶 Light` · one generalist model below frontier @ `medium` effort on both Orchestrator and Reviewer — say `"Anvil Light"`, pass `--tier light`, or click the `🪶 Light` pill in the Workbench header)** when:
+  - Getting fast architectural orientation (`process-map` / `Story Stream`) on an unfamiliar codebase
+  - Exploring small repositories or prototype scripts where rapid turnaround and lower token spend matter more than frontier proof depth
+
 ## How to start (human)
-1. **Launch the live Anvil v4 Workbench** from the `anvil` skill directory:
+1. **Launch the live Anvil Workbench** from the `anvil` skill directory (or click **Anvil** in any Anchor AI Cockpit):
    ```powershell
    python scripts/anvil_engine.py workbench --repo <dir> [--paper <main.tex>] --serve --port 0
    ```

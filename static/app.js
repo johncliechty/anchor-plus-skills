@@ -82,8 +82,18 @@
     t.splitSaid = isSplit;
     tellSplit(f, isSplit);
     var url = addressOf(f.contentWindow);
-    if (url) t.url = url;
     var route = resolve(url);
+    // The Cave of Wonders base tile is permanent and never turns into an AI Cockpit or another page.
+    // If anything inside the Cave navigates its frame in place, restore the Cave and open the target as its own tile.
+    if (t.kind === "cave" && route && !route.blank && pageKey(route) !== "cave") {
+      var strayedUrl = route.url;
+      t.url = CAVE_URL;
+      f.src = CAVE_URL;
+      setTimeout(function () { api.open(strayedUrl, "_blank", window); }, 0);
+      layout(); render();
+      return;
+    }
+    if (url) t.url = url;
     // A blank window can navigate to a real page, or receive a generated document at its caller's address.
     // Only the former acquires a page identity; the generated report must keep its own tile.
     if (t.kind !== "cave" && !t.asked && route && !route.blank && url !== t.blankFrom) {
@@ -390,6 +400,13 @@
     if (prev && prev !== id) { hist[k] = hist[k].filter(function (x) { return x !== prev; }); hist[k].push(prev); }
     if (prev && prev !== id && shownIn(prev) < 0) leave(prev);
     if (!t.frame) t.frame = newFrame(t.url || CAVE_URL);
+    else if (t.kind === "cave") {
+      var curCave = resolve(addressOf(t.frame.contentWindow));
+      if (curCave && !curCave.blank && pageKey(curCave) !== "cave") {
+        t.url = CAVE_URL;
+        t.frame.src = CAVE_URL;
+      }
+    }
     if (!fromCall) active = k;
     layout(); render();
     if (!fromCall && frameReady(t.frame)) settle();

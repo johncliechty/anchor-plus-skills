@@ -7602,17 +7602,42 @@ def _is_placeholder_model_label(label: str) -> bool:
     return not low or any(tok in low for tok in ("-argon", "-sol"))
 
 
-def _read_model_seating_info() -> Dict[str, str]:
-    """Read real configured Anchor model seating from preferences, env, and in-memory CLI capabilities."""
+def _read_model_seating_info(
+    strength: Optional[str] = None,
+    cdir: Optional[str | Path] = None,
+    skill: str = "anvil",
+) -> Dict[str, str]:
+    """Read real configured Anchor model seating for the active strength tier (`heavy` default for Anvil/Aegis, `light` override)."""
+    import model_policy as _mp
     coding_fam = "gemini"
     review_fam = "claude"
     steward = "aladdin"
     explicit_coding_model = ""
     explicit_review_model = ""
 
+    eff_strength = _mp.normalize_strength(strength, default=None)
+    if eff_strength is None and cdir is not None:
+        try:
+            sf_name = ".aegis" if skill == "aegis" else ".anvil"
+            sf = Path(cdir).resolve() / sf_name / "strength.json"
+            if sf.is_file():
+                sdoc = json.loads(sf.read_text(encoding="utf-8"))
+                if isinstance(sdoc, dict):
+                    eff_strength = _mp.normalize_strength(sdoc.get("strength"), default=None)
+        except Exception:
+            eff_strength = None
+    if eff_strength is None:
+        eff_strength = _mp.resolve_skill_strength(
+            skill=skill,
+            explicit_strength=os.environ.get("ANCHOR_STRENGTH"),
+            inherited_strength=os.environ.get("ANCHOR_INHERITED_STRENGTH"),
+        )
+    is_heavy = eff_strength == "heavy"
+
     pref_candidates: List[Path] = []
     try:
         import paths as _paths
+        pref_candidates.append(_paths.data_dir() / "settings.json")
         pref_candidates.append(_paths.data_dir() / ".anchor" / "model_prefs.json")
     except Exception:
         pass
@@ -7639,26 +7664,39 @@ def _read_model_seating_info() -> Dict[str, str]:
         except Exception:
             continue
 
-    frontier_defaults = {
-        "gemini": "gemini · latest_supported · high",
-        "claude": "claude · latest_supported · max",
-        "chatgpt": "chatgpt · latest_supported · xhigh",
-        "codex": "codex · latest_supported · xhigh",
-        "grok": "grok · latest_supported · high",
-    }
+    frontier_defaults = (
+        {
+            "gemini": "gemini-4-neon · xhigh",
+            "claude": "claude-fable-5-2 · max",
+            "chatgpt": "gpt-6-luna · max",
+            "codex": "gpt-6-luna · max",
+            "grok": "grok-4.7 · xhigh",
+        }
+        if is_heavy
+        else {
+            "gemini": "gemini-4-carbon · medium",
+            "claude": "claude-opus-5-5 · medium",
+            "chatgpt": "gpt-5.6-terra · medium",
+            "codex": "gpt-5.6-terra · medium",
+            "grok": "grok-4.7 · medium",
+        }
+    )
 
     # Consult live in-memory model_policy cache if already populated (zero subprocesses spawned)
     try:
-        import model_policy as _mp
         mem = getattr(_mp, "_MEMORY", None)
         if isinstance(mem, dict):
             for entry in mem.values():
-                if isinstance(entry, dict) and entry.get("family") and entry.get("model"):
+                if isinstance(entry, dict) and entry.get("family") and entry.get("_catalog_rows"):
                     fam_k = str(entry["family"]).lower()
-                    mdl = str(entry["model"]).strip()
-                    eff = str(entry.get("effort") or "high").strip()
-                    if not _is_placeholder_model_label(mdl):
-                        frontier_defaults[fam_k] = f"{mdl} · {eff}"
+                    try:
+                        sel_s = _mp.select_strength(fam_k, entry["_catalog_rows"], eff_strength)
+                        mdl = str(sel_s.get("model") or "").strip()
+                        eff = str(sel_s.get("effort") or "").strip()
+                        if mdl and not _is_placeholder_model_label(mdl):
+                            frontier_defaults[fam_k] = f"{mdl} · {eff}"
+                    except Exception:
+                        pass
     except Exception:
         pass
 
@@ -7689,15 +7727,16 @@ def _read_model_seating_info() -> Dict[str, str]:
     coding_parts = [p.strip() for p in coding_short.split("·")]
     review_parts = [p.strip() for p in review_short.split("·")]
     return {
+        "strength": eff_strength,
         "coding_family": coding_fam,
         "review_family": review_fam,
         "steward_type": steward.title(),
         "coding_short": coding_short,
         "review_short": review_short,
         "coding_model_id": coding_parts[0] if coding_parts else coding_fam,
-        "coding_effort": coding_parts[-1] if len(coding_parts) > 1 else "high",
+        "coding_effort": coding_parts[-1] if len(coding_parts) > 1 else ("max" if is_heavy else "medium"),
         "review_model_id": review_parts[0] if review_parts else review_fam,
-        "review_effort": review_parts[-1] if len(review_parts) > 1 else "max",
+        "review_effort": review_parts[-1] if len(review_parts) > 1 else ("max" if is_heavy else "medium"),
         "coding_label": coding_label,
         "review_label": review_label,
     }

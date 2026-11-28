@@ -1611,8 +1611,14 @@
     }
     function grow() {
       if (!say) return;
+      var ex = document.getElementById('exScroll'), list = document.getElementById('exList');
+      var keepTop = ex ? ex.scrollTop : 0;
+      var shouldFollow = (!ex || ex._follow !== false) && (!list || list._follow !== false);
       if (window.StewardDialogue) StewardDialogue.fitComposer(say);
-      var ex = document.getElementById('exScroll'); if (ex) ex.scrollTop = ex.scrollHeight;
+      if (ex) {
+        if (shouldFollow) ex.scrollTop = ex.scrollHeight;
+        else ex.scrollTop = keepTop;
+      }
     }
     fit(); grow();
     window.addEventListener('scroll', fit, { passive: true });
@@ -1656,6 +1662,11 @@
         }
         if (j.act === 'open_deliverable' && j.open_deliverable_url && window.StewardDialogue && typeof window.StewardDialogue.openCaveDeliverableDrawer === 'function') {
           window.StewardDialogue.openCaveDeliverableDrawer(j.open_deliverable_title || 'Deliverable', j.open_deliverable_url);
+          return;
+        }
+        if (j.open_url && (j.act === 'open_cockpit' || j.act === 'create_cockpit')) {
+          openWin(j.open_url);
+          if (j.campaign_act && !j.read_only) renewInPlace();
           return;
         }
         if (j.campaign_act && !j.read_only) { renewInPlace(); return; }   // W4: the change is placed in the page; the line and its undo stay
@@ -8113,7 +8124,7 @@
             }
           }
         }
-        _renderCaveSpeedRacerTile(!!draftId);
+        _renderCaveSpeedRacerTile(true);
         var tile = document.getElementById('caveSpeedRacerTile');
         if (tile) {
           try { tile.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (err) {}

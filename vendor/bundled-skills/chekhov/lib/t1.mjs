@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { createDataSession } from '../../../../trio/drivers/index.mjs';
+import { resolveSkillStrength } from '../../../../trio/drivers/model-policy.mjs';
 import { sha256Text } from './manifest.mjs';
 import { runT0 } from './t0.mjs';
 import { evaluateIdea, ideaSeatStamp, unknownVerdict, VERDICTS } from './idea.mjs';
@@ -311,8 +312,14 @@ export function createT1Judge({ createSession = createDataSession } = {}) {
       if (closed || turns >= T1_LIMITS.turns || session?.closed || session?.state === 'failed') throw Object.assign(new Error('judge session unavailable or exhausted'), { code: 'session_closed' });
       if (!session) {
         scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'chekhov-judge-'));
+        const effStrength = resolveSkillStrength({
+          skill: 'chekhov',
+          explicitStrength: process.env.ANCHOR_STRENGTH ?? process.env.TRIO_TIER,
+          inheritedStrength: process.env.ANCHOR_INHERITED_STRENGTH,
+          cockpitStrength: process.env.ANCHOR_COCKPIT_STRENGTH,
+        });
         try { session = await createSession({ role: 'idea-judge', cwd: scratch,
-          env: { ...process.env, CRUCIBLE_AGENT_LIVE: '1' }, maxTurns: T1_LIMITS.turns, turnTimeoutMs: T1_LIMITS.turn_ms }); }
+          env: { ...process.env, CRUCIBLE_AGENT_LIVE: '1', TRIO_TIER: effStrength, ANCHOR_STRENGTH: effStrength, ANCHOR_SKILL: 'chekhov' }, maxTurns: T1_LIMITS.turns, turnTimeoutMs: T1_LIMITS.turn_ms }); }
         catch (e) { await close(); throw e; }
       }
       turns++;

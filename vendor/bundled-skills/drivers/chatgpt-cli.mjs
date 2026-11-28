@@ -369,6 +369,7 @@ export function defaultRunCodexCli(fullPrompt, label, {
   target = process.cwd(),
   model = null,
   role = null,
+  tier = null,
   reasoningEffort = null,
   orchestrationMode = null,
   jsonSchema = null,
@@ -394,9 +395,9 @@ export function defaultRunCodexCli(fullPrompt, label, {
   const cmd = resolveCodexCmd(env);
   let selection;
   if (typeof policyResolver === 'function') {
-    selection = policyResolver('chatgpt', { env });
+    selection = policyResolver('chatgpt', tier ? { env, tier } : { env });
   } else if (processRunner === runCloseBoundProcess) {
-    selection = resolveModelPolicy('chatgpt', { env });
+    selection = resolveModelPolicy('chatgpt', { env, role, label, tier });
   } else {
     selection = {
       family: 'chatgpt',

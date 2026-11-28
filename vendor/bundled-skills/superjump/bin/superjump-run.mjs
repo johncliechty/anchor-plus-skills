@@ -5,6 +5,7 @@ import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import process from 'node:process';
 import { runAgent as trioRunAgent } from '../../../../trio/drivers/index.mjs';
+import { normalizeStrength, resolveSkillStrength } from '../../../../trio/drivers/model-policy.mjs';
 import {
   createJumperSeatingLedger,
   resolveGate3Seating,
@@ -26,7 +27,7 @@ const USAGE =
 function parseArgs(argv) {
   const o = {
     problem: null, input: null, output: null, candidates: 3, effort: 'auto',
-    control: null, reweight: null, from: null, help: false,
+    tier: null, control: null, reweight: null, from: null, help: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -35,6 +36,12 @@ function parseArgs(argv) {
     else if (a === '--output') o.output = argv[++i];
     else if (a === '--candidates') o.candidates = Number(argv[++i]);
     else if (a === '--effort') o.effort = argv[++i];
+    else if (a === '--tier') {
+      o.tier = argv[++i];
+      if (!o.tier || normalizeStrength(o.tier, null) === null) {
+        throw new Error('--tier requires Heavy, Light, or Standard');
+      }
+    }
     else if (a === '--control') o.control = argv[++i];
     else if (a === '--reweight') o.reweight = argv[++i];
     else if (a === '--from') o.from = argv[++i];
@@ -84,6 +91,16 @@ async function main() {
     process.exitCode = 2; return;
   }
   if (opts.output) mkdirSync(dirname(resolve(opts.output)), { recursive: true });
+
+  const effStrength = resolveSkillStrength({
+    skill: 'superjump',
+    explicitStrength: opts.tier ?? (opts.effort === 'light' ? 'light' : null) ?? process.env.ANCHOR_STRENGTH ?? process.env.TRIO_TIER,
+    inheritedStrength: process.env.ANCHOR_INHERITED_STRENGTH,
+    cockpitStrength: process.env.ANCHOR_COCKPIT_STRENGTH,
+  });
+  process.env.TRIO_TIER = effStrength;
+  process.env.ANCHOR_STRENGTH = effStrength;
+  process.env.ANCHOR_SKILL = 'superjump';
 
   const started = new Date().toISOString();
   const t0 = Date.now();

@@ -1,6 +1,6 @@
 ---
 name: gandalf
-description: Deep-think advisor — a rigorous, honesty-stamped read on any artifact or effort (what is really going on, what is wrong or missing, where it sits vs best-in-class, and the coming problems the author hasn't seen). Model proposes a RAW draft; a deterministic host grades/stamps it — tiers are earned in code, never self-assigned. Use for "review this deeply", "what am I missing", "deep think on X", "/gandalf", or any high-stakes second read.
+description: Deep-think advisor — a rigorous, honesty-stamped read on any artifact or effort (what is really going on, what is wrong or missing, where it sits vs best-in-class, and the coming problems the author hasn't seen). Model proposes a RAW draft; a deterministic host grades/stamps it — tiers are earned in code, never self-assigned. Use for "review this deeply", "what am I missing", "deep think on X", "/gandalf", or any high-stakes second read. Variable Strength: Light / Standard by default (1-step-below-frontier model at medium effort; call 'Gandalf Heavy' for top-tier frontier model at highest effort on high-stakes runs, configurable in Anchor Setup).
 ---
 
 <!-- ELEGANCE-LAW v2 -->
@@ -84,10 +84,10 @@ something else" — options are a convenience, never a cage).
 > gate = `node --test test/*.test.mjs test/mapreduce/*.test.mjs`). The vetted method this encodes is in `planning/research-advisor/FINDINGS.md`
 > and `planning/crucible-advisor/MASTER-PLAN.md`; the locked objective is `NORTH-STAR.md` (do not drift from it).
 
-> **Tier definition (Heavy vs regular · stakes-gated cross-model · seat mapping) + invocation discipline
+> **Variable Strength (`Standard` default · `Gandalf Heavy` override · stakes-gated cross-model · seat mapping) + invocation discipline
 > (zero deliberation; the LOCKED global status table; run capture):** canonical in
-> `AGENTS.md` (Foundry root on the author host; your install root in a distributed bundle) → "Skill tiers" / "Invocation discipline" / "Run capture". Do not
-> re-define any of it locally; do not deliberate it at start — apply it.
+> `AGENTS.md` (Foundry root on the author host; your install root in a distributed bundle) → "Skill tiers" / "Invocation discipline" / "Run capture".
+> Plain `Gandalf` defaults to **`Standard`** (one generalist model below frontier at `medium` effort on both author and refuter seats); designating **`Gandalf Heavy`** (`--tier heavy` or Cockpit `⚡ Heavy`) routes **both** author and cross-family refuter (`claude-fable-5-2 @ max`, `gemini-4-neon @ xhigh`, `gpt-6-luna @ max`, `grok-4.7 @ xhigh`) to the frontier model at highest supported effort. Do not re-define any of it locally; do not deliberate it at start — apply it.
 
 ## How to run (operator manual — this is the part a fresh session actually executes)
 
@@ -96,7 +96,7 @@ Emit the RAW draft per `runtime/RAW-DRAFT-CONTRACT.md` (no self-assigned tiers/s
 discussion:
 
 1. **The real path (stakes ≥ medium, any `-Heavy`, or on request) — LIVE cross-family grade:**
-   `node runtime/gandalf-run.mjs --live --input draft.json --output read.json [--budget N] [--report-html report.html] [--report-md report.md] [--title "<title>"]`
+   `node runtime/gandalf-run.mjs --live [--tier standard|heavy] --input draft.json --output read.json [--budget N] [--report-html report.html] [--report-md report.md] [--title "<title>"]`
    Fires independent refuters on the dashboard's `review_family` seat (never a hardwired family; agy only when
    that family is gemini) on every firing elevation (value_if_true ≥ HIGH / severity ≥ major), CONCURRENT under
    the host cap, mints claim-bound commissions, grades against the shared ledger — `cross_model:true` and

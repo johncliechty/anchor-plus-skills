@@ -547,7 +547,7 @@ async function agent(prompt, opts = {}) {
 }
 
 // BLOCKER-1 fix (Phase 1.1): resolve the engine TREE-RELATIVE to this file, never via
-// an absolute `fil<path> archive path. `new URL(spec, import.meta.url)`
+// an absolute `<path> archive path. `new URL(spec, import.meta.url)`
 // pins resolution inside the canonical trio tree, so a renamed/removed archive can never
 // be silently executed (asserted by drivers/test/canonical-no-escape.test.mjs).
 const { runProject, clearHaltedCheckpoint } = await import(new URL('./project-engine.mjs', import.meta.url));
@@ -877,6 +877,7 @@ try {
     git: USE_GIT ? (BRANCH ? { branch: BRANCH } : true) : false,
     gitDiff: GIT_DIFF,
     profile: PROFILE,
+    requireCompletedReview: process.env.FOREMAN_ALLOW_UNREVIEWED_GO !== '1',
     log: (s) => emit(s),
   });
 } catch (e) {

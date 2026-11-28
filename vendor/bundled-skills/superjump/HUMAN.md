@@ -2,7 +2,12 @@
 
 **One sentence:** Jumper's original structure — read the problem, take it apart, leap into a foreign domain, resolve the contradiction, kill the weak ideas — watched for real progress instead of cut off by a clock, with every idea judged in your brief's own terms.
 
-**Status:** shipped. Run `node bin/superjump-run.mjs --input brief.txt`. Jumper lean remains the fast path; Superjump is the original structure, watched for progress, judged in the brief's own terms.
+**Status:** shipped. Run `node bin/superjump-run.mjs --input brief.txt [--tier heavy|light]`. Jumper lean remains the fast path; Superjump is the original structure, watched for progress, judged in the brief's own terms.
+
+## Variable Strength (`Superjump` Heavy Default vs. `Superjump Light`) — What to Call When
+`Superjump` is one of the four **`Heavy`-by-default** skills (`Anvil`, `Chekhov`, `Aegis`, `Superjump`):
+- **Call `Superjump` (default = `⚡ Heavy` · frontier read/leap seats + frontier cross-family Fit-Contract judge @ full effort)** when you face a hard architectural, scientific, or narrative bottleneck where standard ideas failed and every candidate must survive full-depth cross-family judging against your `MUST` / `FIXED` / `FORBID` contract.
+- **Call `Superjump Light` (`🪶 Light` · one generalist model below frontier @ `medium` effort on read, leap, and judge seats — say `"Superjump Light"` or pass `--tier light`)** when tuning or dry-running a new Fit Contract brief, exploring wide analogical directions quickly before committing to a full frontier run, or iterating on lower-stakes creative options.
 
 ## Use this when
 - You want genuinely new ideas, not the first three sensible ones (that is Jumper's lean mode)

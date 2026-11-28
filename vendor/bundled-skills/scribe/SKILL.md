@@ -1,6 +1,6 @@
 ---
 name: Scribe
-description: Correspondence intelligence, voice-faithful email drafting, and persistent interest/priority memory engine. Mines long-horizon sent and received email history to learn John's authentic greeting/sign-off habits, tone warmth vs. formality, detail calibration by relationship archetype, and proper-name capitalization, while maintaining a durable interest ledger (.anchor/scribe-memory.json) that drives focused inbox triage, 5-mode tone/detail transforms (Warmer, More Formal, Simpler, More Detail, Redraft), and direct inline replies inside Anchor's Cave of Wonders.
+description: Correspondence intelligence, voice-faithful email drafting, and persistent interest/priority memory engine. Mines long-horizon sent and received email history to learn John's authentic greeting/sign-off habits, tone warmth vs. formality, detail calibration by relationship archetype, and proper-name capitalization, while maintaining a durable interest ledger (.anchor/scribe-memory.json) that drives focused inbox triage, 5-mode tone/detail transforms (Warmer, More Formal, Simpler, More Detail, Redraft), and direct inline replies inside Anchor's Cave of Wonders. Variable Strength: Light / Standard by default (1-step-below-frontier model at medium effort; call 'Scribe Heavy' for top-tier frontier model at highest effort on high-stakes runs, configurable in Anchor Setup).
 ---
 
 <!-- ELEGANCE-LAW v2 -->
@@ -35,7 +35,7 @@ block wins.
 
 # Scribe — Correspondence Intelligence, Voice-Faithful Drafting & Priority Memory Engine
 
-**Scribe** (marked by the **Feather Quill & Brass Inkwell** icon, `/vendor/brand/scribe-icon.jpg`) is the Skill Foundry's correspondence intelligence, voice-faithful drafting, and inbox interest-learning skill. It powers the **Cave of Wonders Email Workbench**, **Direct Inline Replies**, and **Speed Racer** inside Anchor.
+**Scribe** (marked by the **Feather Quill & Brass Inkwell** icon, `/vendor/brand/scribe-icon.jpg`) is the Skill Foundry's correspondence intelligence, voice-faithful drafting, and inbox interest-learning skill. It powers the **Cave of Wonders Email Workbench**, **Direct Inline Replies**, and **Speed Racer** inside Anchor. Under Variable Strength (`AGENTS.md`), Scribe defaults to **`Standard`** (one generalist model below frontier at `medium` effort alongside its deterministic voice engine), upgrading to **`Scribe Heavy`** (`ANCHOR_STRENGTH=heavy`) when explicitly requested for high-stakes executive, legal, or sensitive correspondence.
 
 ---
 

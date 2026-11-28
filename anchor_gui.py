@@ -24227,6 +24227,9 @@ class AnchorHandler(BaseHTTPRequestHandler):
                     _contained_art = paths.resolve_contained_path(_folder_real, rel, allow_missing=True)
                     if not _contained_art.is_relative_to(_folder_real):
                         raise paths.UnsafePathError("Blocked unsafe path traversal or disallowed URL scheme")
+                    if _provider_private_path(_contained_art):
+                        self._send_json({"ok": False, "error": "private_host_credentials"}, code=403)
+                        return
                     _rel_parts_art = _contained_art.relative_to(_folder_real).parts
                     if any(p.lower() in (".git", ".anchor") for p in _rel_parts_art):
                         raise paths.UnsafePathError("Blocked unsafe path traversal or disallowed URL scheme")
@@ -25034,27 +25037,34 @@ def main():
         if took >= 1.0:
             print(f"  boot step {label}: {took:.1f}s", flush=True)
             _logger.info("boot step %s took %.1fs", label, took)
-    try:
-        # BIND now (the single-instance guard must fire before any boot work
-        # touches shared state) but LISTEN only after the boot reconcile below
-        # — see the readiness note above ``server.server_activate()``.
-        server = make_server(bind_host, port, activate=False)
-    except OSError as exc:
-        # Single-instance guard: another healthy Anchor already owns this port.
-        # Do NOT retry-forever or fight for the port — exit cleanly so the
-        # existing server keeps serving and we never become a stale duplicate.
-        if _paths.classify_bind_error(exc) == "exit":
-            msg = (
-                f"Anchor already running on {port} — this instance is exiting "
-                f"to avoid a duplicate."
-            )
-            print(msg)
-            try:
-                _logger.warning(msg)
-            except Exception:
-                pass
-            sys.exit(0)
-        raise
+    _post_update_rebind = (
+        "--post-update-rebind" in sys.argv
+        or os.environ.get("ANCHOR_POST_UPDATE_REBIND") == "1"
+    )
+    _rebind_deadline = time.monotonic() + (20.0 if _post_update_rebind else 0.0)
+    while True:
+        try:
+            # BIND now (the single-instance guard must fire before any boot work
+            # touches shared state) but LISTEN only after the boot reconcile below
+            # — see the readiness note above ``server.server_activate()``.
+            server = make_server(bind_host, port, activate=False)
+            break
+        except OSError as exc:
+            if _paths.classify_bind_error(exc) == "exit":
+                if _post_update_rebind and time.monotonic() < _rebind_deadline:
+                    time.sleep(0.4)
+                    continue
+                msg = (
+                    f"Anchor already running on {port} — this instance is exiting "
+                    f"to avoid a duplicate."
+                )
+                print(msg)
+                try:
+                    _logger.warning(msg)
+                except Exception:
+                    pass
+                sys.exit(0)
+            raise
     _server_instance = server
     # Browser/log URL: localhost for a loopback bind, else the bound interface.
     url = (f"http://localhost:{port}" if bind_host in _LOOPBACK_HOSTS

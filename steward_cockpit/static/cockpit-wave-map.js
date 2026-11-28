@@ -120,7 +120,6 @@ window.CockpitWaveMap = (() => {
     const mount = document.querySelector("[data-wave-map]");
     if (!mount) return false;
     mount.hidden = false;
-    mount.textContent = "";
     document.querySelectorAll("[data-plan-focus],[data-plan-add]").forEach((n) => { n.hidden = true; n.style.display = "none"; });
 
     const postFn = (ctx && ctx.post) ? ctx.post : ((u, b) => fetch(u, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b || {}) }));
@@ -132,6 +131,26 @@ window.CockpitWaveMap = (() => {
     if (headEl) headEl.textContent = "PLAN";
     if (countEl) countEl.textContent = counts.done + "/" + counts.total + " Waves";
     if (fillEl) fillEl.style.width = (counts.total ? Math.round((100 * counts.done) / counts.total) : 0) + "%";
+
+    const ae = typeof document !== "undefined" ? document.activeElement : null;
+    if (_quickAddOpen && ae && mount.contains(ae) && (ae.dataset.waveAddTitle || ae.dataset.waveAddGoal)) {
+      return true;
+    }
+    const domSig = JSON.stringify([
+      counts,
+      Boolean(wm.all_done),
+      wm.goal_brief || "",
+      wm.folder_path || "",
+      Array.isArray(wm.recent_history) ? wm.recent_history.slice(0, 3) : [],
+      wm.current_wave || null,
+      Array.isArray(wm.coming_next) ? wm.coming_next : [],
+      Boolean(_quickAddOpen),
+    ]);
+    if (mount.dataset.domSig === domSig && mount.childElementCount > 0) {
+      return true;
+    }
+    mount.dataset.domSig = domSig;
+    mount.textContent = "";
 
     // Zone 1 (OPEN by default): Most Recently Done (+ immediate Goal/Folder/Recent hydration before large /api/map finishes)
     const histItems = Array.isArray(wm.recent_history) ? wm.recent_history.slice(0, 3) : [];

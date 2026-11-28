@@ -1,13 +1,13 @@
 {
   "schema": "anchor.release.signal.v1",
   "channel": "stable",
-  "version": "1.5.7",
+  "version": "1.5.8",
   "min_auto_update_version": "1.5.0",
-  "published_at": "2026-11-27T00:58:08Z",
+  "published_at": "2026-11-28T16:26:46Z",
   "repo_url": "https://github.com/johncliechty/ghostworldlabs-anchor.git",
   "exe_zip_url": "https://github.com/johncliechty/ghostworldlabs-anchor/releases/download/v1.5.7/Anchor.zip",
-  "core_sha256": "c7:a7:2d:ca:6a:bc:28:8c:77:79:7b:89:3c:c8:5c:4f:f8:52:7e:8e:18:ea:13:6c:b5:9d:22:2e:fd:ae:10:d3",
-  "notes": "Anchor v1.5.7 Round-2 collaborator release: Step-1 license gate, all 4 CLIs auto-installed + simple Connected flow, Gandalf checkmark folder tree + drag-merge/split, and pure-HTTPS git-free in-place updater.",
+  "core_sha256": "c8:87:3e:66:f7:ce:97:7f:10:09:88:e3:52:b0:08:0f:b1:cd:7c:b7:bc:3c:1f:2c:70:8f:1f:2b:7d:6d:a4:b4",
+  "notes": "Anchor v1.5.8 collaborator release: Variable Strength (configurable Heavy/Light relative steps & per-skill defaults in Setup), live subscription-entitled model discovery, updated Skill Foundry descriptions, and unified Anvil.",
   "key_id": "gwl-homebase-2026-v1",
-  "signature": "89:66:d8:ce:25:d4:2a:ff:d4:fd:54:32:1d:42:4b:dd:e9:2a:b3:f9:2e:c7:bb:98:86:74:15:6e:4d:36:8f:27:a6:ab:0e:47:54:f0:27:26:1c:98:ae:24:6d:d2:2a:15:39:f2:cc:a8:f6:d5:b1:83:ca:31:b2:7e:2a:22:2c:05"
+  "signature": "19:68:95:ab:ef:ff:35:78:8c:58:9f:4d:dc:a8:69:a9:e6:cf:7b:33:70:c5:a3:bd:ed:88:f8:74:f8:98:f0:ee:c3:ec:03:8d:73:0f:89:e1:06:95:85:ae:9d:5d:6a:70:c9:12:62:82:83:9d:3a:cb:37:a2:a5:f5:96:58:be:00"
 }

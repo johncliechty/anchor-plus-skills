@@ -214,7 +214,7 @@
     if($('wave2-spend-summary-line') && w7 && w30){
       $('wave2-spend-summary-line').textContent='Portfolio API Equivalent Value: 7d ~'+api.fmtUsd(w7.hypothetical_usd)+' ('+api.fmtTokens(w7.total_tokens)+' tok) · 30d ~'+api.fmtUsd(w30.hypothetical_usd)+' ('+api.fmtTokens(w30.total_tokens)+' tok).';
     }
-    const defaultFrontiers={claude:'claude-fable-5-2 · max',chatgpt:'gpt-6.1-sol · ultra',gemini:'gemini-4-argon · high',grok:'grok-4.7 · xhigh'};
+    const defaultFrontiers={claude:'claude-fable-5-2 · max',chatgpt:'gpt-6-luna · ultra',gemini:'gemini-4-hydrogen · high',grok:'grok-4.7 · xhigh'};
     Object.entries(api.labels).forEach(([key,label])=>{
       const list=data.connections.filter(c=>c.family===key);
       const selectedId=(data.preferences && data.preferences.accounts && data.preferences.accounts[key]) || '';
@@ -472,6 +472,115 @@
       }
     }
   }
+  const EFFORT_ORDER_JS=['none','minimal','low','medium','high','xhigh','max','ultra'];
+  let vsDraft=null;
+
+  function resolveEffortStepsJs(levels,stepsBelow,topEffort){
+    const raw=Array.isArray(levels)&&levels.length?levels:['low','medium','high'];
+    const ordered=EFFORT_ORDER_JS.filter(e=>raw.includes(e));
+    const list=ordered.length?ordered:['high'];
+    const capName=['ultra','max','xhigh','high'].includes(topEffort)?topEffort:'ultra';
+    const capIdx=EFFORT_ORDER_JS.indexOf(capName);
+    const capped=list.filter(e=>EFFORT_ORDER_JS.indexOf(e)<=capIdx);
+    const pool=capped.length?capped:[list[0]];
+    const topRung=topEffort==='high'?2:3;
+    const targetRung=Math.max(0,topRung-Math.max(0,Number(stepsBelow)||0));
+    if(targetRung>=3)return pool[pool.length-1];
+    const targetName=targetRung===2?'high':(targetRung===1?'medium':'low');
+    if(pool.includes(targetName))return targetName;
+    const le=pool.filter(e=>EFFORT_ORDER_JS.indexOf(e)<=EFFORT_ORDER_JS.indexOf(targetName));
+    return le.length?le[le.length-1]:pool[0];
+  }
+
+  function renderVariableStrengthPreview(){
+    const grid=$('vs-live-preview-grid');
+    if(!grid || !data || !vsDraft)return;
+    grid.replaceChildren();
+    const vsInfo=data.variable_strength||{};
+    const provs=vsInfo.providers||{};
+    ['claude','chatgpt','gemini','grok'].forEach(fam=>{
+      const p=provs[fam]||{family:fam,label:api.labels[fam]||fam,ladder:[]};
+      const ladder=Array.isArray(p.ladder)&&p.ladder.length?p.ladder:[{step:0,model:fam,efforts:['low','medium','high']}];
+      const hIdx=Math.min(Math.max(0,Number(vsDraft.heavy.model_steps_below)||0),ladder.length-1);
+      const lIdx=Math.min(Math.max(0,Number(vsDraft.light.model_steps_below)||0),ladder.length-1);
+      const hRow=ladder[hIdx], lRow=ladder[lIdx];
+      const hEff=resolveEffortStepsJs(hRow.efforts,vsDraft.heavy.effort_steps_below,vsDraft.top_effort);
+      const lEff=resolveEffortStepsJs(lRow.efforts,vsDraft.light.effort_steps_below,vsDraft.top_effort);
+      const card=document.createElement('div');
+      card.className='vs-preview-card';
+      card.dataset.vsPreviewFamily=fam;
+      const head=document.createElement('div');
+      head.className='wave2-matrix-top';
+      head.append(
+        text('strong',p.label||api.labels[fam]||fam),
+        text('span',p.live_discovered?'Live CLI':'Catalog','w3-badge '+(p.live_discovered?'w3-badge-emerald':'w3-badge-sky'))
+      );
+      const planLine=text('div',(p.plan||'Subscription')+(ladder.length>1?(' · '+ladder.length+' tiers'):' · 1 generalist tier'),'muted small');
+      const hLine=document.createElement('div');
+      hLine.append(text('span','⚡ Heavy: ','small'),text('code',hRow.model+' · '+hEff));
+      const lLine=document.createElement('div');
+      lLine.append(text('span','🪶 Light: ','small'),text('code',lRow.model+' · '+lEff));
+      card.append(head,planLine,hLine,lLine);
+      grid.append(card);
+    });
+  }
+
+  function renderVariableStrengthSkills(){
+    const sGrid=$('vs-skills-grid');
+    if(!sGrid || !data || !vsDraft)return;
+    sGrid.replaceChildren();
+    const skills=(data.variable_strength && Array.isArray(data.variable_strength.skills))?data.variable_strength.skills:[];
+    const heavySet=new Set(vsDraft.heavy_skills||[]);
+    skills.forEach(sk=>{
+      const isHeavy=heavySet.has(sk.id);
+      const btn=document.createElement('button');
+      btn.type='button';
+      btn.className='vs-skill-btn '+(isHeavy?'is-heavy':'is-light');
+      btn.dataset.vsSkillId=sk.id;
+      btn.setAttribute('aria-pressed',String(isHeavy));
+      const left=document.createElement('span');
+      left.style.fontWeight='600';
+      left.textContent=sk.label;
+      const tag=text('span',isHeavy?'⚡ Heavy':'🪶 Light','vs-skill-tag');
+      btn.append(left,tag);
+      btn.onclick=()=>{
+        if(heavySet.has(sk.id))heavySet.delete(sk.id);
+        else heavySet.add(sk.id);
+        vsDraft.heavy_skills=skills.filter(x=>heavySet.has(x.id)).map(x=>x.id);
+        renderVariableStrengthSkills();
+      };
+      sGrid.append(btn);
+    });
+  }
+
+  function renderVariableStrengthCard(value){
+    const card=$('variable-strength-card');
+    if(!card || !value)return;
+    const vs=value.variable_strength||{};
+    const cfg=vs.config||{top_effort:'highest',heavy:{model_steps_below:0,effort_steps_below:0},light:{model_steps_below:1,effort_steps_below:2},heavy_skills:['anvil','chekhov','aegis','superjump']};
+    vsDraft={
+      mode:'variable_strength',
+      default_strength:cfg.default_strength||'standard',
+      top_effort:cfg.top_effort||'highest',
+      heavy:{model_steps_below:Number(cfg.heavy&&cfg.heavy.model_steps_below||0),effort_steps_below:Number(cfg.heavy&&cfg.heavy.effort_steps_below||0)},
+      light:{model_steps_below:Number(cfg.light&&cfg.light.model_steps_below!==undefined?cfg.light.model_steps_below:1),effort_steps_below:Number(cfg.light&&cfg.light.effort_steps_below!==undefined?cfg.light.effort_steps_below:2)},
+      heavy_skills:Array.isArray(cfg.heavy_skills)?[...cfg.heavy_skills]:['anvil','chekhov','aegis','superjump']
+    };
+    const badge=$('vs-active-mode-badge');
+    if(badge){
+      const active=vs.enabled!==false;
+      badge.className='w3-badge '+(active?'w3-badge-emerald':'w3-badge-amber');
+      badge.textContent=active?('⚡ Active · '+vsDraft.heavy_skills.length+' Heavy Default Skills'):'Legacy Frontier-Only Mode (Save to Activate Variable Strength)';
+    }
+    if($('vs-top-effort'))$('vs-top-effort').value=vsDraft.top_effort;
+    if($('vs-heavy-model-steps'))$('vs-heavy-model-steps').value=String(vsDraft.heavy.model_steps_below);
+    if($('vs-heavy-effort-steps'))$('vs-heavy-effort-steps').value=String(vsDraft.heavy.effort_steps_below);
+    if($('vs-light-model-steps'))$('vs-light-model-steps').value=String(vsDraft.light.model_steps_below);
+    if($('vs-light-effort-steps'))$('vs-light-effort-steps').value=String(vsDraft.light.effort_steps_below);
+    renderVariableStrengthPreview();
+    renderVariableStrengthSkills();
+  }
+
   function render(value){
     if(data && value.settings_revision<data.settings_revision)return;
     const preferences=data && controller && value.settings_revision===data.settings_revision ? {...controller.get(),warning_threshold:Number($('setup-threshold').value),warning_policy:$('setup-warning').value} : value.preferences;
@@ -483,6 +592,7 @@
     if(!value.host.project_roots.length)$('setup-project-roots').append(text('li','No configured project folders were reported. Choose the first storage location with Aladdin in Star Chart.'));
     if(value.host.star_chart_url)$('setup-star-chart').href=value.host.star_chart_url;
     renderLoggedInServicesCard(value);
+    renderVariableStrengthCard(value);
     const frontierPill=$('setup-frontier-model-pill');
     if(frontierPill){
       const rev=(value.active_routing && value.active_routing.adversarial_reviewer) || {};
@@ -827,7 +937,7 @@
       const cpName=document.createElement('input');
       cpName.type='text';cpName.placeholder='Cockpit title (e.g. Crucible Plan Shark)';
       const cpEng=document.createElement('select');
-      ['claude-fable-5-2 · max','gemini-4-argon · high','gpt-6.1-sol · ultra','grok-4.7 · xhigh'].forEach(eng=>{const o=text('option',eng);o.value=eng;cpEng.append(o);});
+      ['claude-fable-5-2 · max','gemini-4-hydrogen · high','gpt-6-luna · ultra','grok-4.7 · xhigh'].forEach(eng=>{const o=text('option',eng);o.value=eng;cpEng.append(o);});
       const cpSave=text('button','Save Cockpit','primary btn-mini');
       cpSave.type='button';
       cpSave.onclick=()=>{
@@ -960,7 +1070,69 @@
     catch(error){if(popup && !popup.closed)popup.close();drawDetail();$('setup-message').textContent=error.message;}
     finally{$('add-account').disabled=false;}
   };
-  $('setup-apply').onclick=async()=>{$('setup-apply').disabled=true;$('apply-message').textContent='Saving…';try{const prefs=controller.get();prefs.warning_threshold=Number($('setup-threshold').value);prefs.warning_policy=$('setup-warning').value;render(await api.request('/api/provider-setup/apply',{preferences:prefs,expected_revision:data.settings_revision}));$('apply-message').textContent='Saved for new work. Existing conversations retain their accounts and sessions.';if(window.parent!==window)window.parent.postMessage({type:'anchor-setup-saved'},location.origin);}catch(error){$('apply-message').textContent=error.message;}finally{$('setup-apply').disabled=false;}};
+  $('setup-apply').onclick=async()=>{$('setup-apply').disabled=true;$('apply-message').textContent='Saving…';try{const prefs=controller.get();prefs.warning_threshold=Number($('setup-threshold').value);prefs.warning_policy=$('setup-warning').value;const payload={preferences:prefs,expected_revision:data.settings_revision};if(vsDraft)payload.variable_strength=vsDraft;render(await api.request('/api/provider-setup/apply',payload));$('apply-message').textContent='Saved for new work. Existing conversations retain their accounts and sessions.';if(window.parent!==window)window.parent.postMessage({type:'anchor-setup-saved'},location.origin);}catch(error){$('apply-message').textContent=error.message;}finally{$('setup-apply').disabled=false;}};
+
+  ['vs-top-effort','vs-heavy-model-steps','vs-heavy-effort-steps','vs-light-model-steps','vs-light-effort-steps'].forEach(selId=>{
+    const el=$(selId);
+    if(!el)return;
+    el.onchange=()=>{
+      if(!vsDraft)return;
+      if($('vs-top-effort'))vsDraft.top_effort=$('vs-top-effort').value||'highest';
+      if($('vs-heavy-model-steps'))vsDraft.heavy.model_steps_below=Number($('vs-heavy-model-steps').value||0);
+      if($('vs-heavy-effort-steps'))vsDraft.heavy.effort_steps_below=Number($('vs-heavy-effort-steps').value||0);
+      if($('vs-light-model-steps'))vsDraft.light.model_steps_below=Number($('vs-light-model-steps').value||1);
+      if($('vs-light-effort-steps'))vsDraft.light.effort_steps_below=Number($('vs-light-effort-steps').value||2);
+      renderVariableStrengthPreview();
+    };
+  });
+  if($('vs-reset-defaults-btn'))$('vs-reset-defaults-btn').onclick=()=>{
+    if(!vsDraft)return;
+    const rec=(data && data.variable_strength && Array.isArray(data.variable_strength.recommended_heavy_skills))
+      ? data.variable_strength.recommended_heavy_skills
+      : ['anvil','chekhov','aegis','superjump'];
+    vsDraft.top_effort='highest';
+    vsDraft.heavy={model_steps_below:0,effort_steps_below:0};
+    vsDraft.light={model_steps_below:1,effort_steps_below:2};
+    vsDraft.heavy_skills=[...rec];
+    if($('vs-top-effort'))$('vs-top-effort').value='highest';
+    if($('vs-heavy-model-steps'))$('vs-heavy-model-steps').value='0';
+    if($('vs-heavy-effort-steps'))$('vs-heavy-effort-steps').value='0';
+    if($('vs-light-model-steps'))$('vs-light-model-steps').value='1';
+    if($('vs-light-effort-steps'))$('vs-light-effort-steps').value='2';
+    renderVariableStrengthPreview();
+    renderVariableStrengthSkills();
+    if($('vs-save-message'))$('vs-save-message').textContent='Reset form to recommended defaults — click Save Variable Strength & Skill Defaults to apply.';
+  };
+  if($('vs-save-btn'))$('vs-save-btn').onclick=async()=>{
+    if(!vsDraft || !data)return;
+    const btn=$('vs-save-btn'),msg=$('vs-save-message');
+    btn.disabled=true;
+    if(msg)msg.textContent='Saving Variable Strength & Skill Defaults…';
+    try{
+      const snap=await api.request('/api/provider-setup/apply',{variable_strength:vsDraft,expected_revision:data.settings_revision});
+      render(snap);
+      if(msg)msg.textContent='✓ Saved Variable Strength & Skill Defaults across Anchor and Skill Foundry!';
+      if(window.parent!==window)window.parent.postMessage({type:'anchor-setup-saved'},location.origin);
+    }catch(error){
+      if(msg)msg.textContent='⚠ '+error.message;
+    }finally{
+      btn.disabled=false;
+    }
+  };
+  if($('vs-refresh-models-btn'))$('vs-refresh-models-btn').onclick=async()=>{
+    const btn=$('vs-refresh-models-btn'),msg=$('vs-save-message');
+    btn.disabled=true;
+    if(msg)msg.textContent='Querying subscription CLIs for your account tier & newest models…';
+    try{
+      await api.request('/api/onboard-wizard/action',{action:'refresh_live_models'});
+      await refresh();
+      if(msg)msg.textContent='✓ Discovered latest subscription-entitled models & effort levels across installed CLIs.';
+    }catch(error){
+      if(msg)msg.textContent='⚠ '+error.message;
+    }finally{
+      btn.disabled=false;
+    }
+  };
 
   // Wave 3 Controls
   function toggleDrawer(id){
@@ -1282,10 +1454,15 @@
       explicitFamilySelected=true;
     }
     const reqSecMsg=String(event.data.section||'').trim();
+    const reqFocus=String(event.data.focus||'').trim();
     api.request('/api/provider-setup').then(value=>{
       render(value);
       if(reqSecMsg && ['host','providers','provider-detail','chart','comms'].includes(reqSecMsg))section(reqSecMsg);
       else if(reqFam)section('provider-detail');
+      if(reqFocus==='variable-strength'){
+        const vsEl=$('variable-strength-card');
+        if(vsEl && vsEl.scrollIntoView)setTimeout(()=>vsEl.scrollIntoView({behavior:'smooth',block:'start'}),60);
+      }
     }).catch(error=>$('setup-message').textContent=error.message);
   });
   function invokeSetupWindowControl(act){
@@ -1423,6 +1600,10 @@
     if(!userPickedSection){
       if(reqSec && ['host','providers','provider-detail','chart','comms'].includes(reqSec))section(reqSec);
       else section((!collabForceHost && value.host.configured)?'providers':'host');
+    }
+    if(new URLSearchParams(location.search).get('focus')==='variable-strength' || location.hash==='#variable-strength-card'){
+      const vsEl=$('variable-strength-card');
+      if(vsEl && vsEl.scrollIntoView)setTimeout(()=>vsEl.scrollIntoView({behavior:'instant',block:'start'}),40);
     }
     const conns=Array.isArray(value && value.connections)?value.connections:[];
     if(!coldAutoRefreshDone && conns.length>0 && conns.every(c=>!c.observed_at && c.auth==='unknown')){

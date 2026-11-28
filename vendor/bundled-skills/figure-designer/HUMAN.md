@@ -23,6 +23,10 @@
 - Not rainbow charts, 3D junk, or texture for texture’s sake
 - Not a substitute for correct science — design serves the claim
 
+## Variable Strength (`Figure-Designer` Standard Default vs. `Figure-Designer Heavy`) — What to Call When
+- **Call `Figure-Designer` (default = `Standard` · one generalist model below frontier @ `medium` effort)** for internal deck diagrams, working architecture schematics, lecture visuals, and iterative layout sketches.
+- **Call `Figure-Designer Heavy` (`⚡ Heavy` · frontier model @ full effort on narrative lock, build, and visual review)** for flagship multi-panel journal figures, grant-winning architecture plates, or publication cover schematics.
+
 ## How to start (human)
 1. Write the 5-second reader takeaway for each figure (batch-lock multi-figure docs).
 2. Approve those narratives before any SVG/PNG work starts.

@@ -10,6 +10,24 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isTestPath } from './delta-coverage-gate.mjs';
+import {
+  INFRA_HELPER_NAMES,
+  walkBoundedRepoFiles,
+  extractTopLevelFunctionDefs,
+  verifySymbolEleganceRemoval,
+  discoverReusableRepoHelpers,
+  buildWaveEleganceElements,
+  extractTier0Targets,
+  buildTier0Command,
+} from './tier0-and-simplifier.mjs';
+
+export {
+  verifySymbolEleganceRemoval,
+  discoverReusableRepoHelpers,
+  buildWaveEleganceElements,
+  extractTier0Targets,
+  buildTier0Command,
+};
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TRIO_ROOT = path.resolve(__dirname, '..', '..');
@@ -434,13 +452,79 @@ function scanPythonFileWithAegis(absPath, env = process.env) {
   return out;
 }
 
+const AEGIS_SCAN_EXT_RE = /\.(?:py|mjs|cjs|js|ts|tsx|jsx)$/i;
+
+function scanJsTsFileWithAegis(absPath) {
+  let src = '';
+  try { src = fs.readFileSync(absPath, 'utf8'); } catch { return []; }
+  const out = [];
+  const lines = src.split(/\r?\n/);
+  const rules = [
+    {
+      id: 'AEG-JS-01',
+      cwe: 'CWE-78',
+      sev: 'CRITICAL',
+      re: /\b(?:child_process\.)?exec(?:Sync)?\s*\(\s*`[^`]*\$\{/,
+      msg: 'interpolated shell command in exec/execSync (use execFile/spawnSync with shell:false)',
+    },
+    {
+      id: 'AEG-JS-02',
+      cwe: 'CWE-78',
+      sev: 'HIGH',
+      re: /\bspawn(?:Sync)?\s*\([^)]*?\bshell\s*:\s*true\b/,
+      msg: 'spawn/spawnSync invoked with shell:true',
+    },
+    {
+      id: 'AEG-JS-03',
+      cwe: 'CWE-94',
+      sev: 'HIGH',
+      re: /(?:^|[^\w.$])eval\s*\(|\bnew\s+Function\s*\(/,
+      msg: 'dynamic code execution via eval() or new Function()',
+    },
+    {
+      id: 'AEG-JS-04',
+      cwe: 'CWE-798',
+      sev: 'CRITICAL',
+      re: /(['"`])(?:sk-(?:proj|ant)-[A-Za-z0-9_-]{20,}|AIzaSy[A-Za-z0-9_-]{30,}|ghp_[A-Za-z0-9]{30,}|xai-[A-Za-z0-9_-]{24,})\1/,
+      msg: 'hardcoded API secret token literal',
+    },
+  ];
+  for (let i = 0; i < lines.length; i++) {
+    const ln = lines[i];
+    if (/^\s*(?:\/\/|\/\*|\*)/.test(ln)) continue;
+    for (const r of rules) {
+      if (r.re.test(ln)) {
+        out.push({
+          rule_id: r.id,
+          cwe: r.cwe,
+          severity: r.sev,
+          line: i + 1,
+          message: r.msg,
+          snippet: ln.trim().slice(0, 120),
+        });
+      }
+    }
+  }
+  return out;
+}
+
+function scanSourceFileWithAegis(absPath, env = process.env) {
+  if (String(absPath).toLowerCase().endsWith('.py')) {
+    return scanPythonFileWithAegis(absPath, env);
+  }
+  if (AEGIS_SCAN_EXT_RE.test(absPath)) {
+    return scanJsTsFileWithAegis(absPath);
+  }
+  return [];
+}
+
 function aegisFindingSignature(f) {
   return `${f.rule_id || f.cwe || 'CWE'}|${String(f.snippet || f.code || f.message || '').trim()}`;
 }
 
 /**
- * Capture pre-wave Aegis finding signatures on existing `.py` files so legacy untouched lines
- * do not false-block an unrelated localized fix, while any NEW sink blocks immediately.
+ * Capture pre-wave Aegis finding signatures on existing `.py`/`.mjs`/`.js`/`.ts` files so legacy
+ * untouched lines do not false-block an unrelated localized fix, while any NEW sink blocks immediately.
  */
 export function captureAegisBaseline(projectDir, env = process.env) {
   const cache = new Map();
@@ -469,7 +553,7 @@ export function captureAegisBaseline(projectDir, env = process.env) {
     const tmpFile = path.join(tmpDir, path.basename(relPath));
     try {
       fs.writeFileSync(tmpFile, preWaveContent, 'utf8');
-      const baseFindings = scanPythonFileWithAegis(tmpFile, env);
+      const baseFindings = scanSourceFileWithAegis(tmpFile, env);
       const sigs = new Set(baseFindings.map(aegisFindingSignature));
       cache.set(relPath, sigs);
       return sigs;
@@ -484,21 +568,22 @@ export function captureAegisBaseline(projectDir, env = process.env) {
 }
 
 /**
- * Post-`GATE` Deterministic Fast-Gate 2: `Aegis` CWE Security Scan on changed non-test `.py` files.
+ * Post-`GATE` Deterministic Fast-Gate 2: Polyglot `Aegis` CWE Security Scan on changed non-test
+ * `.py`, `.mjs`, `.cjs`, `.js`, `.ts`, `.tsx`, and `.jsx` files.
  */
 export function runFastAegisGate(projectDir, changedFiles = [], getBaseline = null, env = process.env) {
   if (env?.FOREMAN_DISABLE_AEGIS_GATE === '1') return { pass: true, findings: [] };
-  const pyFiles = (changedFiles || [])
+  const targetFiles = (changedFiles || [])
     .map((f) => String(f || '').replace(/\\/g, '/'))
-    .filter((f) => f && !f.endsWith(' (deleted)') && f.toLowerCase().endsWith('.py') && !isTestPath(f));
+    .filter((f) => f && !f.endsWith(' (deleted)') && AEGIS_SCAN_EXT_RE.test(f) && !isTestPath(f) && !isForemanInternalRelPath(f));
 
-  if (pyFiles.length === 0) return { pass: true, findings: [] };
+  if (targetFiles.length === 0) return { pass: true, findings: [] };
 
   const findings = [];
-  for (const rel of pyFiles) {
+  for (const rel of targetFiles) {
     const abs = path.join(projectDir, rel);
     if (!fs.existsSync(abs)) continue;
-    const rawFindings = scanPythonFileWithAegis(abs, env);
+    const rawFindings = scanSourceFileWithAegis(abs, env);
     if (rawFindings.length === 0) continue;
     const baseSigs = typeof getBaseline === 'function' ? getBaseline(rel) : new Set();
     for (const f of rawFindings) {
@@ -519,6 +604,77 @@ export function runFastAegisGate(projectDir, changedFiles = [], getBaseline = nu
       });
     }
   }
+  return { pass: findings.length === 0, findings };
+}
+
+/**
+ * Post-`GATE` Deterministic Fast-Gate 5: Pre-staged Portfolio Skill Certifier Gate.
+ * Bridges Crucible's Parable-of-the-Oranges pre-staged wave skill gates (`Figure-Designer`,
+ * `Financial-Analyst`, `Legal-Beagle`) into deterministic pre-review checks.
+ */
+export function runFastPortfolioCertifierGate(projectDir, waveSectionText = '', changedFiles = [], env = process.env) {
+  if (env?.FOREMAN_DISABLE_CERTIFIER_GATE === '1') return { pass: true, findings: [] };
+  const sec = String(waveSectionText || '');
+  const live = (changedFiles || [])
+    .map((f) => String(f || '').replace(/\\/g, '/'))
+    .filter((f) => f && !f.endsWith(' (deleted)') && !isTestPath(f) && !isForemanInternalRelPath(f));
+
+  const findings = [];
+
+  // 1. Figure-Designer / SVG structural & coordinate integrity
+  const svgFiles = live.filter((f) => f.toLowerCase().endsWith('.svg'));
+  if (svgFiles.length > 0 || /\bFigure-Designer\b/i.test(sec)) {
+    for (const rel of svgFiles) {
+      const abs = path.join(projectDir, rel);
+      if (!fs.existsSync(abs)) continue;
+      const txt = fs.readFileSync(abs, 'utf8');
+      if (!/<svg\b[^>]*>/i.test(txt) || !/<\/svg\s*>/i.test(txt) || !/\bviewBox\s*=/i.test(txt)) {
+        findings.push({
+          id: `${rel}:1+figure-designer-svg`,
+          severity: 'BLOCKER',
+          file: rel,
+          line: 1,
+          rule: 'certifier-figure-designer',
+          status: 'open',
+          agreement: 2,
+          message: `[taxonomy:figure-designer] ${rel} is missing a complete <svg viewBox="...">...</svg> root envelope`,
+        });
+      } else if (/\b(?:NaN|undefined)\b/.test(txt)) {
+        findings.push({
+          id: `${rel}:1+figure-designer-nan`,
+          severity: 'BLOCKER',
+          file: rel,
+          line: 1,
+          rule: 'certifier-figure-designer',
+          status: 'open',
+          agreement: 2,
+          message: `[taxonomy:figure-designer] ${rel} contains unrendered NaN/undefined SVG attributes`,
+        });
+      }
+    }
+  }
+
+  // 2. Financial-Analyst exact-Decimal vs binary float guard on Python financial modules
+  if (/\bFinancial-Analyst\s+certifier\s+gate\b/i.test(sec)) {
+    for (const rel of live.filter((f) => f.toLowerCase().endsWith('.py'))) {
+      const abs = path.join(projectDir, rel);
+      if (!fs.existsSync(abs)) continue;
+      const txt = fs.readFileSync(abs, 'utf8');
+      if (/\bfloat\s*\(/.test(txt) && !/\bDecimal\b/.test(txt)) {
+        findings.push({
+          id: `${rel}:1+financial-analyst-decimal`,
+          severity: 'BLOCKER',
+          file: rel,
+          line: 1,
+          rule: 'certifier-financial-analyst',
+          status: 'open',
+          agreement: 2,
+          message: `[taxonomy:financial-analyst] ${rel} uses binary float() without Decimal under an active Financial-Analyst exact-Decimal certifier gate`,
+        });
+      }
+    }
+  }
+
   return { pass: findings.length === 0, findings };
 }
 
@@ -595,7 +751,7 @@ export function runFastAnvilAstGate(projectDir, changedFiles = [], env = process
     if (!handledByAnvil) {
       for (const rel of pyFiles) {
         const abs = path.join(projectDir, rel);
-        const r = spawnSync(resolvePythonBin(env), ['-m', 'py_compile', abs], {
+        const r = spawnSync(resolvePythonBin(env), ['-B', '-c', 'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_bytes(), sys.argv[1], "exec")', abs], {
           cwd: projectDir,
           encoding: 'utf8',
           windowsHide: true,
@@ -646,6 +802,323 @@ export function runFastAnvilAstGate(projectDir, changedFiles = [], env = process
   }
 
   return { pass: findings.length === 0, findings };
+}
+
+export const MONOLITH_LINE_THRESHOLD = 1500;
+export const MONOLITH_NET_ADD_BLOCK = 220;
+export const NEW_SOURCE_FILE_MAX_LINES = 1000;
+export const WAVE_MAX_NET_NON_TEST_LOC = 1400;
+
+const BLOAT_SOURCE_EXT_RE = /\.(?:py|mjs|cjs|js|jsx|ts|tsx|html|css|go|rs|java|cs)$/i;
+
+function countTextLines(txt) {
+  if (!txt) return 0;
+  return String(txt).split(/\r?\n/).length;
+}
+
+/**
+ * Capture pre-wave file line counts (falling back cleanly to `git show HEAD:<rel>`
+ * when not pre-cached) so `runFastBloatGate` measures exact net line accretion.
+ */
+export function captureFileLinesBaseline(projectDir, preSeededMap = null) {
+  const cache = new Map();
+  if (preSeededMap instanceof Map) {
+    for (const [k, v] of preSeededMap.entries()) {
+      cache.set(String(k).replace(/\\/g, '/'), typeof v === 'number' ? v : countTextLines(v));
+    }
+  }
+  return function getBeforeLines(relPath) {
+    const norm = String(relPath || '').replace(/\\/g, '/').replace(/^\.\//, '');
+    if (cache.has(norm)) return cache.get(norm);
+    let lines = 0;
+    if (isGitWorktreeOrRepoRoot(projectDir)) {
+      try {
+        const r = spawnSync('git', ['-C', projectDir, 'show', `HEAD:${norm}`], {
+          encoding: 'utf8',
+          windowsHide: true,
+          shell: false,
+          timeout: 5000,
+          maxBuffer: 8 * 1024 * 1024,
+        });
+        if (r.status === 0 && typeof r.stdout === 'string') {
+          lines = countTextLines(r.stdout);
+        }
+      } catch { /* brand-new or untracked */ }
+    }
+    cache.set(norm, lines);
+    return lines;
+  };
+}
+
+/**
+ * Capture pre-wave file contents (falling back cleanly to `git show HEAD:<rel>`)
+ * so duplicate-helper and dead-scaffolding checks only inspect newly added defs.
+ */
+export function captureFileContentBaseline(projectDir, preSeededMap = null) {
+  const cache = new Map();
+  if (preSeededMap instanceof Map) {
+    for (const [k, v] of preSeededMap.entries()) {
+      cache.set(String(k).replace(/\\/g, '/'), typeof v === 'string' ? v : '');
+    }
+  }
+  return function getBeforeContent(relPath) {
+    const norm = String(relPath || '').replace(/\\/g, '/').replace(/^\.\//, '');
+    if (cache.has(norm)) return cache.get(norm);
+    let txt = '';
+    if (isGitWorktreeOrRepoRoot(projectDir)) {
+      try {
+        const r = spawnSync('git', ['-C', projectDir, 'show', `HEAD:${norm}`], {
+          encoding: 'utf8',
+          windowsHide: true,
+          shell: false,
+          timeout: 5000,
+          maxBuffer: 8 * 1024 * 1024,
+        });
+        if (r.status === 0 && typeof r.stdout === 'string') txt = r.stdout;
+      } catch { /* untracked */ }
+    }
+    cache.set(norm, txt);
+    return txt;
+  };
+}
+
+function hasInlinePlanOverride(planStr, key) {
+  const escaped = String(key).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`^\\s*(?:[-*>]\\s*)?(?:\\*\\*)?${escaped}(?:\\*\\*)?\\s*:\\s*(?!\`)([^\`\\r\\n]{6,})$`, 'im');
+  const m = String(planStr || '').match(re);
+  if (!m) return false;
+  const val = m[1].trim();
+  return Boolean(val && !/^if\s+(?:coexistence|needed|required)\b/i.test(val));
+}
+
+/**
+ * Post-`GATE` Deterministic Fast-Gate 4 (Gandalf journal 0402 + Option-1 Trio Retool):
+ * Blocks:
+ *   1. Unbounded monolith accretion (>220 net added lines onto an existing >1,500-line file)
+ *   2. Oversized single new source files (>1,000 lines)
+ *   3. Oversized total per-wave net non-test LoC (>1,400 net lines across wave files)
+ *   4. Cross-file duplicate low-level helper re-implementation (`[taxonomy:duplicate-helper-bloat]`)
+ *   5. Provably unreferenced newly added private scaffolding (`[taxonomy:dead-scaffolding]`)
+ */
+export function runFastBloatGate(projectDir, changedFiles = [], getBeforeLines = null, {
+  planText = '',
+  env = process.env,
+  getBeforeContent = null,
+  monolithThreshold = MONOLITH_LINE_THRESHOLD,
+  monolithMaxNetAdd = MONOLITH_NET_ADD_BLOCK,
+  newFileMaxLines = NEW_SOURCE_FILE_MAX_LINES,
+  waveMaxNetLoc = WAVE_MAX_NET_NON_TEST_LOC,
+} = {}) {
+  if (env?.FOREMAN_DISABLE_BLOAT_GATE === '1' || env?.FOREMAN_ALLOW_LARGE_DIFF === '1') {
+    return { pass: true, findings: [], overridden: true };
+  }
+  const planStr = String(planText || '');
+  const hasMonolithOverride = hasInlinePlanOverride(planStr, 'monolith_override_reason');
+  const hasWaveLocOverride = hasMonolithOverride || hasInlinePlanOverride(planStr, 'wave_loc_override_reason');
+  const hasReuseOverride = hasInlinePlanOverride(planStr, 'reuse_override_reason') || env?.FOREMAN_DISABLE_DUPLICATE_HELPER_GATE === '1';
+  const disableDeadScaffolding = env?.FOREMAN_DISABLE_DEAD_SCAFFOLDING_GATE === '1';
+
+  const beforeContentFn = typeof getBeforeContent === 'function' ? getBeforeContent : captureFileContentBaseline(projectDir);
+  const changedNormSet = new Set(
+    (changedFiles || [])
+      .map((r) => String(r || '').replace(/\\/g, '/').replace(/\s*\(deleted\)\s*$/, '').replace(/^\.\//, ''))
+      .filter(Boolean),
+  );
+
+  // Lazy repo scan for existing canonical infra owners & whole-repo symbol references
+  const CORPUS_MAX_FILES = 600;
+  let repoCorpus = null;
+  const ensureRepoCorpus = () => {
+    if (repoCorpus) return repoCorpus;
+    const allRels = walkBoundedRepoFiles(projectDir, CORPUS_MAX_FILES);
+    const corpusComplete = allRels.length < CORPUS_MAX_FILES;
+    const infraOwners = new Map();
+    const fileTexts = new Map();
+    for (const rel of allRels) {
+      if (isForemanInternalRelPath(rel)) continue;
+      if (!/\.(?:py|pyi|mjs|cjs|js|jsx|ts|tsx|html|jinja2?|toml|json)$/i.test(rel)) continue;
+      const abs = path.join(projectDir, rel);
+      try {
+        const st = fs.statSync(abs);
+        if (!st.isFile() || st.size > 1_000_000) continue;
+        const txt = fs.readFileSync(abs, 'utf8');
+        fileTexts.set(rel, txt);
+        if (!changedNormSet.has(rel) && !isTestPath(rel) && /\.(?:py|m?js|cjs|ts)$/i.test(rel)) {
+          for (const d of extractTopLevelFunctionDefs(txt, rel)) {
+            if (INFRA_HELPER_NAMES.has(d.name) && !infraOwners.has(d.name)) {
+              infraOwners.set(d.name, rel);
+            }
+          }
+        }
+      } catch { /* ignore */ }
+    }
+    for (const chRel of changedNormSet) {
+      if (fileTexts.has(chRel)) continue;
+      const abs = path.join(projectDir, chRel);
+      try {
+        if (fs.existsSync(abs) && fs.statSync(abs).isFile()) {
+          fileTexts.set(chRel, fs.readFileSync(abs, 'utf8'));
+        }
+      } catch { /* ignore */ }
+    }
+    repoCorpus = { infraOwners, fileTexts, corpusComplete };
+    return repoCorpus;
+  };
+
+  const findings = [];
+  let totalWaveNetLoc = 0;
+  const locContributors = [];
+
+  for (const raw of changedFiles || []) {
+    const rel = String(raw || '').replace(/\\/g, '/').replace(/^\.\//, '');
+    if (!rel || rel.endsWith(' (deleted)')) continue;
+    if (isTestPath(rel) || isForemanInternalRelPath(rel)) continue;
+    if (/^(?:vendor|node_modules|dist|build|bundle|planning|docs)\//i.test(rel)) continue;
+    if (!BLOAT_SOURCE_EXT_RE.test(rel)) continue;
+
+    const abs = path.join(projectDir, rel);
+    if (!fs.existsSync(abs)) continue;
+    let afterTxt = '';
+    try {
+      afterTxt = fs.readFileSync(abs, 'utf8');
+    } catch {
+      continue;
+    }
+    const afterLines = countTextLines(afterTxt);
+    const beforeLines = typeof getBeforeLines === 'function' ? Number(getBeforeLines(rel) || 0) : 0;
+    const netAdded = afterLines - beforeLines;
+    totalWaveNetLoc += netAdded;
+    if (netAdded !== 0) locContributors.push({ rel, netAdded, afterLines });
+
+    if (!hasMonolithOverride) {
+      const safeRelExpr = JSON.stringify(rel);
+      if (beforeLines > monolithThreshold && netAdded > monolithMaxNetAdd) {
+        findings.push({
+          id: `${rel}:1+monolith-accretion`,
+          severity: 'BLOCKER',
+          file: rel,
+          line: 1,
+          rule: 'monolith-accretion',
+          status: 'open',
+          agreement: 2,
+          repro_kind: 'static',
+          repro_cmd: `node -e "console.log(require('fs').readFileSync(process.argv[1],'utf8').split(/\\r?\\n/).length)" -- ${safeRelExpr}`,
+          repro_output: `${rel} grew from ${beforeLines} -> ${afterLines} lines (+${netAdded} net > +${monolithMaxNetAdd} monolith cap)`,
+          message:
+            `[taxonomy:monolith-accretion] ${rel} (${beforeLines} lines > ${monolithThreshold} monolith threshold) grew by +${netAdded} net lines ` +
+            `(cap +${monolithMaxNetAdd}); compact or extract domain logic into a focused module (<600 lines) and keep monolith adapter glue <=${monolithMaxNetAdd} net lines`,
+        });
+      } else if (beforeLines === 0 && afterLines > newFileMaxLines) {
+        findings.push({
+          id: `${rel}:1+oversized-new-module`,
+          severity: 'BLOCKER',
+          file: rel,
+          line: 1,
+          rule: 'oversized-new-module',
+          status: 'open',
+          agreement: 2,
+          repro_kind: 'static',
+          repro_cmd: `node -e "console.log(require('fs').readFileSync(process.argv[1],'utf8').split(/\\r?\\n/).length)" -- ${safeRelExpr}`,
+          repro_output: `new file ${rel} is ${afterLines} lines (> ${newFileMaxLines} single-module cap)`,
+          message:
+            `[taxonomy:oversized-new-module] brand-new module ${rel} is ${afterLines} lines (cap ${newFileMaxLines}); ` +
+            `keep new modules compact and table-driven (<600 lines target)`,
+        });
+      }
+    }
+
+    // Check newly added top-level functions in .py / .js / .mjs / .cjs files for:
+    //   (a) duplicate canonical low-level infra helpers already owned by another repo module
+    //   (b) provably dead private scaffolding (`_helper` with <=1 occurrence across entire repo)
+    if (/\.(?:py|m?js|cjs)$/i.test(rel)) {
+      const beforeTxt = beforeLines > 0 ? String(beforeContentFn(rel) || '') : '';
+      const beforeDefNames = new Set(extractTopLevelFunctionDefs(beforeTxt, rel).map((d) => d.name));
+      const newDefs = extractTopLevelFunctionDefs(afterTxt, rel).filter((d) => !beforeDefNames.has(d.name));
+      if (newDefs.length > 0) {
+        const { infraOwners, fileTexts, corpusComplete } = ensureRepoCorpus();
+        fileTexts.set(rel, afterTxt);
+
+        if (!hasReuseOverride) {
+          for (const d of newDefs) {
+            const owner = infraOwners.get(d.name);
+            if (owner && owner !== rel) {
+              findings.push({
+                id: `${rel}:${d.line}+duplicate-helper-bloat`,
+                severity: 'BLOCKER',
+                file: rel,
+                line: d.line,
+                rule: 'duplicate-helper-bloat',
+                status: 'open',
+                agreement: 2,
+                repro_kind: 'static',
+                repro_cmd: 'static-ast:duplicate-helper',
+                repro_output: `${rel}:${d.line} re-implements ${d.name} already exported/defined in ${owner}`,
+                message:
+                  `[taxonomy:duplicate-helper-bloat] ${rel}:${d.line} re-implements infrastructure helper \`${d.name}\` which already exists in \`${owner}\`; ` +
+                  `import/reuse the canonical helper instead of duplicating boilerplate`,
+              });
+            }
+          }
+        }
+
+        if (!disableDeadScaffolding && corpusComplete && !/\b(?:getattr|globals)\s*\(/.test(afterTxt)) {
+          for (const d of newDefs) {
+            if (d.decorated) continue;
+            if (!/^_[a-z][A-Za-z0-9_$]{3,}$/.test(d.name) || d.name.startsWith('__')) continue;
+            const wordRe = new RegExp(`\\b${d.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g');
+            let totalRefs = 0;
+            for (const txt of fileTexts.values()) {
+              const matches = txt.match(wordRe);
+              if (matches) {
+                totalRefs += matches.length;
+                if (totalRefs >= 2) break;
+              }
+            }
+            if (totalRefs <= 1) {
+              findings.push({
+                id: `${rel}:${d.line}+dead-scaffolding`,
+                severity: 'BLOCKER',
+                file: rel,
+                line: d.line,
+                rule: 'dead-scaffolding',
+                status: 'open',
+                agreement: 2,
+                repro_kind: 'static',
+                repro_cmd: 'static-ast:dead-scaffolding',
+                repro_output: `${rel}:${d.line} defines private helper ${d.name} with 0 call sites across repo`,
+                message:
+                  `[taxonomy:dead-scaffolding] ${rel}:${d.line} defines private helper \`${d.name}\` with 0 call sites or references anywhere in the repository; ` +
+                  `delete dead speculative scaffolding`,
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (!hasWaveLocOverride && totalWaveNetLoc > waveMaxNetLoc) {
+    locContributors.sort((a, b) => b.netAdded - a.netAdded);
+    const topFile = locContributors[0]?.rel || 'wave-diff';
+    const breakdown = locContributors.slice(0, 5).map((c) => `${c.rel} (${c.netAdded >= 0 ? '+' : ''}${c.netAdded})`).join(', ');
+    findings.push({
+      id: `${topFile}:1+wave-loc-budget`,
+      severity: 'BLOCKER',
+      file: topFile,
+      line: 1,
+      rule: 'wave-loc-budget',
+      status: 'open',
+      agreement: 2,
+      repro_kind: 'static',
+      repro_cmd: 'static-ast:wave-loc-budget',
+      repro_output: `wave added +${totalWaveNetLoc} net non-test lines (cap +${waveMaxNetLoc}): ${breakdown}`,
+      message:
+        `[taxonomy:wave-loc-budget] wave added +${totalWaveNetLoc} net non-test lines across source files (cap +${waveMaxNetLoc}: ${breakdown}); ` +
+        `consolidate repetitive logic into compact table-driven code, delete dead shims, or declare \`wave_loc_override_reason:\` in the plan`,
+    });
+  }
+
+  return { pass: findings.length === 0, findings, totalWaveNetLoc, overridden: false };
 }
 
 const SKIP_MARKER_RE = /\b(?:it|test|describe|context|suite)\.(?:skip|xfail)\b|\b(?:xit|xtest|xdescribe)\s*\(|@pytest\.mark\.(?:skip|skipif|xfail)\b|\bpytest\.(?:skip|xfail)\s*\(/i;

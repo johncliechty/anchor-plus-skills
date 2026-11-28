@@ -1,6 +1,6 @@
 ---
 name: literature-review
-description: An interactive literature-review skill — deterministic snowball search + PRISMA discipline, ONE-call-per-paper claim extraction with deterministic quote grounding, weighted consensus synthesis, and a final adversarial pass through researchPrime's real governed round. Outputs a source-grounded Assumptions Ledger + comparison matrix.
+description: An interactive literature-review skill — deterministic snowball search + PRISMA discipline, ONE-call-per-paper claim extraction with deterministic quote grounding, weighted consensus synthesis, and a final adversarial pass through researchPrime's real governed round. Outputs a source-grounded Assumptions Ledger + comparison matrix. Variable Strength: Light / Standard by default (1-step-below-frontier model at medium effort; call 'Literature-Review Heavy' for top-tier frontier model at highest effort on high-stakes runs, configurable in Anchor Setup).
 ---
 
 ## North Star (LOCKED — John, 2026-08-25)
@@ -89,10 +89,9 @@ evidence by academic quality and adhering to the OBSERVED > CORROBORATED > CLAIM
 deliverable is a source-grounded **Assumptions Ledger** + **parameterized comparison matrix** that
 downstream phases can build on.
 
-> **Tier definition (Heavy vs regular · stakes-gated cross-model · seat mapping) + invocation
+> **Variable Strength (`Standard` default · `Literature-Review Heavy` override · stakes-gated cross-model · seat mapping) + invocation
 > discipline:** canonical in `AGENTS.md` (Foundry root on the author host; your install root in a distributed bundle) → "Skill tiers" / "Invocation
-> discipline" / "Run capture". Heavy = `TRIO_TIER=heavy` on the composed seats. Do not re-define
-> or deliberate any of it.
+> discipline" / "Run capture". Plain `Literature-Review` runs at **`Standard`** (one generalist model below frontier at `medium` effort); designating **`Literature-Review Heavy`** (`TRIO_TIER=heavy` / `ANCHOR_STRENGTH=heavy`) upgrades synthesis and the composed `researchPrime` adversarial round to the frontier model at highest supported effort. Do not re-define or deliberate any of it.
 
 ## How to run (operator manual — REWIRED REAL 2026-07-11; the CLI never fabricates)
 

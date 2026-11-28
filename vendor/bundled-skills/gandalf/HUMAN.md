@@ -27,6 +27,13 @@ Human-facing Gandalf deliverables always lead with clear, jargon-free prose rend
 - Not a builder or planner
 - Not free to claim “proven” without independent refutation work
 
+## Variable Strength (`Gandalf` Standard Default vs. `Gandalf Heavy`) — What to Call When
+- **Call `Gandalf` (default = `Standard` · one generalist model below frontier @ `medium` effort on both author and cross-family refuter)** when:
+  - Doing routine plan/design/code sanity checks, draft memo reviews, or fast mid-effort "what am I missing?" reads where speed and lower token spend are right-sized
+- **Call `Gandalf Heavy` (`⚡ Heavy` · frontier model @ full/max effort on both author and cross-family refuter — say `"Gandalf Heavy"`, pass `--tier heavy`, or toggle `⚡ Heavy` on your AI Cockpit)** when:
+  - Making an irreversible architecture, product, or capital decision
+  - Auditing a journal manuscript, grant proposal, legal/financial deliverable, or pre-launch system where missing a subtle flaw is costly
+
 ## How to start (human)
 1. Point Gandalf at the document, plan, code, or effort in question.
 2. Say what decision you’re trying to make (or what “good” looks like).

@@ -16,7 +16,7 @@
 <body class="provider-setup">
   <header class="setup-top">
     <span class="setup-brand">⚓ Anchor · Cave of Wonders</span>
-    <span class="w3-badge" id="setup-version-pill" style="font-family:Consolas,monospace;color:#f0b866;border:1px solid rgba(240,184,102,0.45);background:rgba(240,184,102,0.12);padding:4px 10px;border-radius:999px;font-weight:700;">v1.5.7</span>
+    <span class="w3-badge" id="setup-version-pill" style="font-family:Consolas,monospace;color:#f0b866;border:1px solid rgba(240,184,102,0.45);background:rgba(240,184,102,0.12);padding:4px 10px;border-radius:999px;font-weight:700;">v1.5.8</span>
     <span id="setup-host" class="muted"></span>
     <a href="/onboard-wizard" id="open-onboard-wizard-btn" style="background:linear-gradient(135deg,#f0b866,#d89638);color:#11131a;font-weight:700;padding:7px 14px;border-radius:8px;text-decoration:none;font-size:13px;margin-right:8px;">🧭 Onboarding &amp; Setup Wizard (or Sandbox Test Walkthrough)</a>
     <a href="/onboard-wizard?sandbox=1" id="open-onboard-sandbox-btn" style="background:rgba(240,184,102,0.14);border:1px solid rgba(240,184,102,0.45);color:#f0b866;font-weight:600;padding:7px 12px;border-radius:8px;text-decoration:none;font-size:12px;margin-right:8px;">🧪 Sandbox Walkthrough</a>
@@ -146,13 +146,13 @@
         <article class="setup-card" id="mothership-update-registry-card" style="margin:14px 0">
           <div class="wave2-matrix-top">
             <h2>🚀 Anchor Version, Automatic Updates &amp; 1-Click Registry</h2>
-            <span class="w3-badge w3-badge-emerald" id="ms-current-version-label" style="font-family:Consolas,monospace;">v1.5.7</span>
+            <span class="w3-badge w3-badge-emerald" id="ms-current-version-label" style="font-family:Consolas,monospace;">v1.5.8</span>
           </div>
           <p class="muted small"><code>Anchor.exe</code> automatically installs and updates Anchor plus all 20 Ghost World Labs skills from the official Anchor repository below (no separate Skill Foundry repository needed).</p>
           <div class="setup-actions" style="margin:10px 0;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
             <button type="button" id="btn-ms-check-update">🔍 Check for Updates</button>
             <button type="button" id="btn-ms-pull-update" style="background:linear-gradient(135deg,#4ade80,#22c55e);color:#09140e;font-weight:700;">⬆ Pull &amp; Update Anchor + 20 Skills</button>
-            <span id="ms-update-status-msg" class="muted small">Installed version: v1.5.7</span>
+            <span id="ms-update-status-msg" class="muted small">Installed version: v1.5.8</span>
           </div>
           <div style="margin:10px 0;padding:10px 12px;border:1px solid rgba(255,255,255,0.08);border-radius:8px;display:flex;flex-direction:column;gap:8px;">
             <label class="w3-checkbox-label" style="cursor:pointer;"><input type="checkbox" id="chk-ms-auto-pull-updates" checked> <strong>🌐 Automatic Website-Watched Version Updates:</strong> Watch <code>release-signal.json</code> online (Ed25519-signed) and automatically update Anchor + all 20 skills when idle</label>
@@ -334,8 +334,8 @@
           <div id="setup-browser-accounts-strip" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:10px;margin-top:10px"></div>
         </article>
 
-        <!-- Logged-In Services & Active Model Routing Overview -->
-        <article class="logged-in-services-card" id="logged-in-services-card" aria-label="Logged-in services and active model routing">
+        <!-- Logged-In Services & Active Model Routing Overview (collapsed into unified matrix so Step 2 shows one source of truth) -->
+        <article class="logged-in-services-card" id="logged-in-services-card" aria-label="Logged-in services and active model routing" hidden>
           <div class="wave2-matrix-top">
             <h2 style="margin:0">🔐 Logged-In Services &amp; Active Model Levels</h2>
             <span class="w3-badge w3-badge-emerald" id="lis-summary-badge">Checking live sign-ins…</span>
@@ -347,6 +347,95 @@
 
         <!-- Wave 2 Overview Matrix across all 4 families -->
         <div id="wave2-provider-matrix" class="wave2-provider-matrix" aria-label="Provider overview matrix"></div>
+
+        <!-- Variable Strength Routing & Per-Skill Default Matrix -->
+        <article class="setup-card vs-setup-card" id="variable-strength-card" aria-label="Variable Strength Heavy and Light configuration">
+          <div class="wave2-matrix-top">
+            <div>
+              <p class="eyebrow" style="margin:0 0 2px">Relative-Step Model &amp; Effort Policy · Subscription-Aware Discovery</p>
+              <h2 style="margin:0">⚡ Variable Strength — What <code>Heavy</code> &amp; <code>Light</code> Mean for Your Skills</h2>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <span class="w3-badge w3-badge-emerald" id="vs-active-mode-badge">⚡ Variable Strength Active</span>
+              <button type="button" class="btn-mini btn-amber" id="vs-refresh-models-btn">🔄 Discover Subscription Models</button>
+            </div>
+          </div>
+          <p class="muted small" style="margin:6px 0 10px">
+            Anchor discovers the newest models and effort levels available for your exact subscription tier on each CLI. Set your <strong>Top Tier (Frontier = 0 steps below)</strong> and <strong>Highest Effort</strong> ceiling, then define <strong>⚡ Heavy</strong> and <strong>🪶 Light / Standard</strong> in relative steps below that ceiling — so your preferences stay valid automatically as new frontier models ship.
+          </p>
+
+          <div style="max-width:440px;margin-bottom:10px">
+            <label for="vs-top-effort">Highest Effort Ceiling (0 Steps Below Top Effort)</label>
+            <select id="vs-top-effort">
+              <option value="highest">Auto Highest Available (Ultra / Max / XHigh / High per model)</option>
+              <option value="ultra">Ultra (or highest available up to Ultra)</option>
+              <option value="max">Max (cap peak effort at Max)</option>
+              <option value="xhigh">XHigh (cap peak effort at XHigh)</option>
+              <option value="high">High (cap peak effort at High)</option>
+            </select>
+          </div>
+
+          <div class="vs-tier-grid">
+            <div class="vs-tier-box is-heavy">
+              <div class="wave2-matrix-top">
+                <h3 style="margin:0;color:#fde68a">⚡ Heavy Tier Definition</h3>
+                <span class="w3-badge w3-badge-amber">Deep Audits · Continuity · Hard Ideation</span>
+              </div>
+              <p class="muted small" style="margin:4px 0 8px">Used by Heavy-default skills and whenever you call <code>&lt;Skill&gt; Heavy</code> or toggle a Cockpit to <strong>⚡ Heavy</strong>.</p>
+              <label for="vs-heavy-model-steps">Heavy Model Level (Steps Below Subscription Top Tier)</label>
+              <select id="vs-heavy-model-steps">
+                <option value="0">Top Tier / Frontier Model (0 steps below)</option>
+                <option value="1">1 Step Below Top Tier</option>
+                <option value="2">2 Steps Below Top Tier</option>
+              </select>
+              <label for="vs-heavy-effort-steps">Heavy Reasoning Effort (Steps Below Highest Effort)</label>
+              <select id="vs-heavy-effort-steps">
+                <option value="0">Highest Effort (0 steps below top effort)</option>
+                <option value="1">1 Step Below Highest Effort (High)</option>
+                <option value="2">2 Steps Below Highest Effort (Medium)</option>
+                <option value="3">3 Steps Below Highest Effort (Low)</option>
+              </select>
+            </div>
+
+            <div class="vs-tier-box is-light">
+              <div class="wave2-matrix-top">
+                <h3 style="margin:0;color:#bae6fd">🪶 Light / Standard Tier Definition</h3>
+                <span class="w3-badge w3-badge-sky">Everyday Work &amp; <code>&lt;Skill&gt; Light</code></span>
+              </div>
+              <p class="muted small" style="margin:4px 0 8px">Used for regular everyday work, Standard-default skills, and whenever you call <code>&lt;Skill&gt; Light</code>.</p>
+              <label for="vs-light-model-steps">Light / Standard Model Level (Steps Below Subscription Top Tier)</label>
+              <select id="vs-light-model-steps">
+                <option value="1">1 Step Below Top Tier (Recommended)</option>
+                <option value="2">2 Steps Below Top Tier</option>
+                <option value="0">Top Tier / Frontier Model (0 steps below)</option>
+              </select>
+              <label for="vs-light-effort-steps">Light / Standard Reasoning Effort (Steps Below Highest Effort)</label>
+              <select id="vs-light-effort-steps">
+                <option value="2">2 Steps Below Highest Effort (Medium — Recommended)</option>
+                <option value="1">1 Step Below Highest Effort (High)</option>
+                <option value="3">3 Steps Below Highest Effort (Low)</option>
+                <option value="0">Highest Effort (0 steps below top effort)</option>
+              </select>
+            </div>
+          </div>
+
+          <h3 style="margin:12px 0 4px">Live Resolution Across Your Subscriptions</h3>
+          <div id="vs-live-preview-grid" class="vs-preview-grid" aria-live="polite"></div>
+
+          <div class="wave2-matrix-top" style="margin-top:14px">
+            <div>
+              <h3 style="margin:0">Per-Skill Default Strength (Click Any Skill to Toggle ⚡ Heavy ⇄ 🪶 Light)</h3>
+              <p class="muted small" style="margin:2px 0 0">You can always override any skill on a single run by saying <code>&lt;Skill&gt; Heavy</code> or <code>&lt;Skill&gt; Light</code>.</p>
+            </div>
+            <button type="button" class="btn-mini" id="vs-reset-defaults-btn">↺ Reset Recommended Defaults</button>
+          </div>
+          <div id="vs-skills-grid" class="vs-skills-grid" role="group" aria-label="Per-skill default strength"></div>
+
+          <div class="setup-actions" style="margin:10px 0 0;align-items:center">
+            <button type="button" class="primary" id="vs-save-btn">✓ Save Variable Strength &amp; Skill Defaults</button>
+            <span id="vs-save-message" class="small" role="status"></span>
+          </div>
+        </article>
 
         <div id="provider-tabs" class="provider-tabs" role="group" aria-label="AI providers"></div>
         <div class="setup-grid provider-grid">

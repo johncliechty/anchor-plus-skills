@@ -92,7 +92,7 @@
     }
     function settle(list) {
       follow(list); if (list._follow) list.scrollTop = list.scrollHeight;
-      var sc = list.closest('.scroll'); if (sc) { follow(sc); if (sc._follow) sc.scrollTop = sc.scrollHeight; }
+      var sc = list.closest('.scroll, #exScroll'); if (sc) { follow(sc); if (sc._follow) sc.scrollTop = sc.scrollHeight; }
     }
     function put(list, li) { if (!list) return null; var fade = list.querySelector('.exfade'); if (fade) fade.remove(); list.appendChild(li); settle(list); return li; }
     // one log, two views: a line lands in the list that sent the turn and, when that is a goal's thread, in the
@@ -215,15 +215,25 @@
     });
     function pollLoop() {
       if (live.polling) return; live.polling = true;
+      var errStreak = 0;
       (function step() {
         if (live.stopped) { live.polling = false; return; }   // W2e: a card's dialogue stops when the card closes
         if (isDialogueHidden()) { _resumeStep = step; return; }
         var opts = { headers: getHeaders() };
         try { _pollAbort = new AbortController(); opts.signal = _pollAbort.signal; } catch (e) { _pollAbort = null; }
         fetch('/api/steward/events' + q() + '&since=' + live.seq, opts)
-          .then(asJson)
+          .then(function (r) {
+            if (r.status === 401 || r.status === 403) { var e = new Error('auth'); e.auth = true; throw e; }
+            if (!r.ok) { var he = new Error('http-' + r.status); he.status = r.status; throw he; }
+            return r.json();
+          })
           .then(function (j) {
-            if (!j || !j.events) { setTimeout(step, 3000); return; }   // an answer with no stream in it: wait, never hammer
+            if (!j || !Array.isArray(j.events)) {
+              errStreak += 1;
+              setTimeout(step, Math.min(30000, 3000 * Math.pow(2, Math.min(errStreak - 1, 3))));
+              return;
+            }   // an answer with no stream in it: wait, never hammer
+            errStreak = 0;
             var ep = j.state && j.state.epoch;
             if (ep !== undefined && live.epoch !== null && ep !== live.epoch) { live.seq = 0; live.epoch = ep; appendLine('sys', '— the steward reconnected —', 'dim'); }
             else if (ep !== undefined) live.epoch = ep;
@@ -241,7 +251,11 @@
           .catch(function (e) {
             if (e && e.auth) { refusedOnce(); return; }
             if (isDialogueHidden()) { _resumeStep = step; return; }
-            if (!live.stopped) setTimeout(step, 3000);
+            errStreak += 1;
+            var waitMs = (e && e.status === 404 && errStreak >= 3)
+              ? 30000
+              : Math.min(30000, 3000 * Math.pow(2, Math.min(errStreak - 1, 3)));
+            if (!live.stopped) setTimeout(step, waitMs);
           });
       })();
     }
@@ -322,8 +336,22 @@
               } catch (e) {}
               return;
             }
+            if (j.open_url && (j.act === 'open_cockpit' || j.act === 'create_cockpit')) {
+              receipt(j.say, false);
+              try {
+                if (window.top && window.top !== window && window.top.ANCHOR_APP && typeof window.top.ANCHOR_APP.open === 'function') {
+                  window.top.ANCHOR_APP.open(j.open_url, '_blank', window);
+                  if (o.onRecord && !j.read_only) o.onRecord(j.receipt || j.say, j.undo || null, false);
+                  return;
+                }
+              } catch (e) {}
+              var wOpen = null;
+              try { wOpen = window.open(j.open_url, '_blank', 'noopener'); } catch (e2) { wOpen = null; }
+              if (!wOpen) window.location.href = j.open_url;
+              else if (o.onRecord && !j.read_only) o.onRecord(j.receipt || j.say, j.undo || null, false);
+              return;
+            }
             if (j.read_only) { receipt(j.receipt || j.say || 'Answered.', false); return; }
-            if (j.open_url && j.act === 'open_cockpit') { receipt(j.say, false); window.location.href = j.open_url; return; }
             if (o.onRecord) { o.onRecord(j.receipt || j.say, j.undo || null, false); return; }
             keep(j.receipt || j.say, false, j.undo || null);
             location.reload(); return;
@@ -455,11 +483,16 @@
     }
     var minimum = parseFloat(getComputedStyle(box).minHeight) || 0;
     var prevScroll = box.scrollTop;
+    var parent = box.parentElement;
+    var prevParentMin = parent ? parent.style.minHeight : '';
     if (!box._composing) {
+      if (parent && parent.offsetHeight) parent.style.minHeight = parent.offsetHeight + 'px';
+      var curH = parseFloat(box.style.height) || box.offsetHeight || 0;
       box.style.height = 'auto';
       var target = Math.max(minimum, Math.min(box.scrollHeight + 2, window.innerHeight * 0.4));
-      box.style.height = target + 'px';
-      if (prevScroll) box.scrollTop = prevScroll;
+      box.style.height = (Math.abs(curH - target) > 0.5 ? target : curH || target) + 'px';
+      if (parent) parent.style.minHeight = prevParentMin;
+      if (prevScroll > 0) box.scrollTop = prevScroll;
     } else if (box.scrollHeight > box.clientHeight) {
       var targetC = Math.max(minimum, Math.min(box.scrollHeight + 2, window.innerHeight * 0.4));
       if (targetC > (parseFloat(box.style.height) || 0)) box.style.height = targetC + 'px';

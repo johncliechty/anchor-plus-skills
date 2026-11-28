@@ -1064,36 +1064,47 @@ def _fast_single_clause(folder, raw_text, goal=None, today_dt=None, from_cave=Fa
     if m_open:
         target_q = m_open.group(1).strip().strip("\"'“”‘’")
         tq_norm = _norm(target_q)
-        if tq_norm in ("star chart", "campaign", "the star chart", "the campaign"):
-            msg = "Opening the Star Chart\u2026"
-            return {"ok": True, "say": msg, "receipt": msg, "undo": None, "act": "open_cockpit", "campaign_act": True, "read_only": False, "model_called": False, "open_url": "/project/Campaign"}
-        if tq_norm in ("cave of wonders", "the cave of wonders", "cave", "high seat", "the high seat"):
-            msg = "Opening the Cave of Wonders\u2026"
-            return {"ok": True, "say": msg, "receipt": msg, "undo": None, "act": "open_cockpit", "campaign_act": True, "read_only": False, "model_called": False, "open_url": "/high-seat"}
-        rm_path, rm = _load_rm_fast(folder)
-        proj = rm.get("roadmap_projection") or []
-        hit = _fuzzy_match_item(proj, target_q, prefer_goals=False)
-        if hit is not None:
-            hname = str(hit.get("name") or hit.get("id"))
-            if hit.get("effort_dir"):
-                url = "/steward?dir=" + urllib.parse.quote(str(hit["effort_dir"]))
-            elif str(hit.get("ref") or "").startswith("project:"):
-                pid = str(hit["ref"]).split(":", 1)[1]
-                url = "/steward?pid=" + urllib.parse.quote(pid)
-            elif acts._own_group(hit) is not None:
-                gid = str(hit.get("id"))
-                child = next((c for c in proj if isinstance(c, dict) and c.get("id") != gid and (c.get("navigation") or {}).get("path") == [gid] and (c.get("effort_dir") or str(c.get("ref") or "").startswith("project:"))), None)
-                if child and child.get("effort_dir"):
-                    url = "/steward?dir=" + urllib.parse.quote(str(child["effort_dir"]))
-                elif child and str(child.get("ref") or "").startswith("project:"):
-                    url = "/steward?pid=" + urllib.parse.quote(str(child["ref"]).split(":", 1)[1])
+        # Skip anaphoric references ("this AI Cockpit", "it") or compound seating instructions
+        # ("... and place it in Active") so the Steward resolves conversation context & executes both parts.
+        is_anaphoric = bool(re.match(r"^(?:this|that|it)(?:\s+(?:ai\s+)?cockpits?|\s+projects?|\s+initiatives?|\s+ones?)?$", tq_norm))
+        has_compound_act = bool(re.search(r"\band\s+(?:place|put|move|seat|add|make|set)\b", tq_norm))
+        if not is_anaphoric and not has_compound_act:
+            if tq_norm in ("star chart", "campaign", "the star chart", "the campaign"):
+                msg = "Opening the Star Chart\u2026"
+                return {"ok": True, "say": msg, "receipt": msg, "undo": None, "act": "open_cockpit", "campaign_act": True, "read_only": True, "model_called": False, "open_url": "/project/Campaign"}
+            if tq_norm in ("cave of wonders", "the cave of wonders", "cave", "high seat", "the high seat"):
+                msg = "Opening the Cave of Wonders\u2026"
+                return {"ok": True, "say": msg, "receipt": msg, "undo": None, "act": "open_cockpit", "campaign_act": True, "read_only": True, "model_called": False, "open_url": "/high-seat"}
+            rm_path, rm = _load_rm_fast(folder)
+            proj = rm.get("roadmap_projection") or []
+            hit = _fuzzy_match_item(proj, target_q, prefer_goals=False)
+            if hit is not None:
+                hname = str(hit.get("name") or hit.get("id"))
+                _cdir_hit, hit_pid, hit_rel = _resolve_cockpit_step_and_dir(folder, hit)
+                if hit_pid:
+                    url = "/steward/v1?pid=" + urllib.parse.quote(str(hit_pid)) + "&dir=" + urllib.parse.quote(str(hit_rel or ""))
+                elif hit.get("effort_dir"):
+                    url = "/steward?dir=" + urllib.parse.quote(str(hit["effort_dir"]))
+                elif str(hit.get("ref") or "").startswith("project:"):
+                    pid = str(hit["ref"]).split(":", 1)[1]
+                    url = "/steward/v1?pid=" + urllib.parse.quote(pid) + "&dir="
+                elif acts._own_group(hit) is not None:
+                    gid = str(hit.get("id"))
+                    child = next((c for c in proj if isinstance(c, dict) and c.get("id") != gid and (c.get("navigation") or {}).get("path") == [gid] and (c.get("effort_dir") or str(c.get("ref") or "").startswith("project:"))), None)
+                    _c_dir, c_pid, c_rel = _resolve_cockpit_step_and_dir(folder, child) if child else (None, "", "")
+                    if c_pid:
+                        url = "/steward/v1?pid=" + urllib.parse.quote(str(c_pid)) + "&dir=" + urllib.parse.quote(str(c_rel or ""))
+                    elif child and child.get("effort_dir"):
+                        url = "/steward?dir=" + urllib.parse.quote(str(child["effort_dir"]))
+                    elif child and str(child.get("ref") or "").startswith("project:"):
+                        url = "/steward/v1?pid=" + urllib.parse.quote(str(child["ref"]).split(":", 1)[1]) + "&dir="
+                    else:
+                        url = "/project/Campaign?open=" + urllib.parse.quote(gid)
                 else:
-                    url = "/project/Campaign?open=" + urllib.parse.quote(gid)
-            else:
-                gid = ((hit.get("navigation") or {}).get("path") or [hit.get("id")])[0]
-                url = "/project/Campaign?open=" + urllib.parse.quote(str(gid))
-            msg = f"Opening AI Cockpit \u201c{hname}\u201d\u2026"
-            return {"ok": True, "say": msg, "receipt": msg, "undo": None, "act": "open_cockpit", "campaign_act": True, "read_only": False, "model_called": False, "open_url": url}
+                    gid = ((hit.get("navigation") or {}).get("path") or [hit.get("id")])[0]
+                    url = "/project/Campaign?open=" + urllib.parse.quote(str(gid))
+                msg = f"Opening AI Cockpit \u201c{hname}\u201d\u2026"
+                return {"ok": True, "say": msg, "receipt": msg, "undo": None, "act": "open_cockpit", "campaign_act": True, "read_only": True, "model_called": False, "open_url": url}
 
     # 3. Convert shorthand conversational verbs ("archive X", "elevate X", "move X down") into canonical rearrange/archive operations
     m_infix = _MOVE_DOWN_INFIX_RX.match(t)
@@ -1459,10 +1470,14 @@ def fast_steward_command(folder, text, goal=None, today=None, from_cave=False, f
     clauses = [c.strip() for c in _CLAUSE_SPLIT_RX.split(t) if c and c.strip()]
     if len(clauses) > 1:
         results = []
+        clause_goal = goal
         for cl in clauses:
-            r = _fast_single_clause(folder, cl, goal=goal, today_dt=today_dt, from_cave=from_cave, force_goal_seat=force_goal_seat)
-            if r is not None and r.get("ok"):
-                results.append(r)
+            r = _fast_single_clause(folder, cl, goal=clause_goal, today_dt=today_dt, from_cave=from_cave, force_goal_seat=force_goal_seat)
+            if r is None or not r.get("ok"):
+                return None
+            results.append(r)
+            if r.get("step"):
+                clause_goal = r["step"]
         if results:
             combined_say = " ".join(r.get("say") or r.get("receipt") or "" for r in results if (r.get("say") or r.get("receipt"))).strip()
             combined_receipt = " ".join(r.get("receipt") or r.get("say") or "" for r in results if (r.get("receipt") or r.get("say"))).strip()

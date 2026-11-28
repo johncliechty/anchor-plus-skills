@@ -5,7 +5,7 @@ description: >-
   has frozen design + implementation-plan docs to drive each wave/sprint/section
   to done via fresh-context sub-agents in an EXECUTE -> ADVERSARIAL-REVIEW -> FIX
   -> RE-REVIEW loop, auto-advancing across waves and halting only on a defined
-  blocker set. STATUS (2026-08-24): PRODUCTION — ~15 real builds shipped; the
+  blocker set. Variable Strength: Light / Standard by default (1-step-below-frontier model at medium effort; call 'Foreman Heavy' for top-tier frontier model at highest effort on high-stakes runs, configurable in Anchor Setup). STATUS (2026-08-24): PRODUCTION — ~15 real builds shipped; the
   ground-truth test gate is run by the orchestrator (a Node process), never by a
   sub-agent. One consolidated status block lives in the body below; verified
   currency lives in the foundry PLAN.md, never in this line.
@@ -100,11 +100,10 @@ wave/sprint/section to done through fresh-context sub-agents, auto-advances to
 the next wave, keeps the tree clean, prints running commentary, and **halts only
 on a defined blocker set**.
 
-> **Tier definition (Heavy vs regular · stakes-gated cross-model · seat mapping) + invocation
+> **Variable Strength (`Standard` default · `Foreman Heavy` override · stakes-gated cross-model · seat mapping) + invocation
 > discipline (zero deliberation · the LOCKED global status table · run capture):** canonical in
 > `AGENTS.md` (Foundry root on the author host; your install root in a distributed bundle) → "Skill tiers" / "Invocation discipline" / "Run capture".
-> Trio build tier: `TRIO_TIER=heavy|standard` (standard is the build default). Do not re-define
-> or deliberate any of it.
+> Trio build tier: `TRIO_TIER=heavy|standard` (`Standard` — one generalist model below frontier at `medium` effort on wave executors, cross-family reviewers, and elegance seat — is the build default; `Foreman Heavy` / `TRIO_TIER=heavy` upgrades every seat to the frontier model at highest supported effort). Do not re-define or deliberate any of it.
 
 > **Status (2026-08-24, consolidated — the ONE status block; verified currency lives in
 > `Skill Foundry/PLAN.md`): PRODUCTION — ~15 real builds shipped** (aurora,

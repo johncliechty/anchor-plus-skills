@@ -104,6 +104,7 @@ DEFAULTS = {
 SETTINGS_NAME = "settings.json"
 MIRROR_DIRNAME = ".anchor"
 MIRROR_NAME = "model_prefs.json"
+_IMPORT_TIME_HOME = Path.home().resolve()
 
 
 class SettingsInvalid(ValueError):
@@ -162,8 +163,24 @@ def settings_path() -> Path:
 
 
 def mirror_path() -> Path:
-    """Absolute path to ``~/.anchor/model_prefs.json`` (agent-discoverable mirror)."""
-    return Path.home() / MIRROR_DIRNAME / MIRROR_NAME
+    """Absolute path to ``~/.anchor/model_prefs.json`` (agent-discoverable mirror).
+
+    Under pytest, if ``ANCHOR_SETTINGS_DIR`` or ``ANCHOR_DATA_DIR`` points at an isolated
+    test directory while ``Path.home()`` was NOT monkeypatched into ``tempfile.gettempdir()``,
+    redirect the mirror into that isolated directory so tests never clobber ``~/.anchor/model_prefs.json``.
+    """
+    home_now = Path.home()
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        override = (os.environ.get("ANCHOR_SETTINGS_DIR") or os.environ.get("ANCHOR_DATA_DIR") or "").strip()
+        if override:
+            try:
+                import tempfile
+                tmp_root = Path(tempfile.gettempdir()).resolve()
+                if not home_now.resolve().is_relative_to(tmp_root):
+                    return Path(override).expanduser().resolve() / MIRROR_DIRNAME / MIRROR_NAME
+            except OSError:
+                pass
+    return home_now / MIRROR_DIRNAME / MIRROR_NAME
 
 
 def _now_iso() -> str:

@@ -358,16 +358,36 @@ def start_literature_job(cdir: str | Path, body: Optional[Mapping[str, Any]] = N
         claude_cands = ([str(Path(user_prof) / ".local" / "bin" / "claude.exe")] if user_prof else []) + ["claude.exe"]
         claude_exe = _ace._resolve_strict_exe(claude_cands, exclude_dir=c_path) or ""
 
+        import model_policy as _mp
+        lit_strength = _mp.normalize_strength(req.get("strength"), default=None) or _ace.read_anvil_strength(c_path)
+        seats = _ace._resolve_host_seats(strength=lit_strength, cdir=c_path)
+        claude_seat = seats["review"] if seats["review"]["vendor"] == "claude" else seats["primary"]
+        gemini_seat = seats["primary"] if seats["primary"]["vendor"] == "gemini" else seats["review"]
+        gemini_cli_id = (
+            gemini_seat["model_id"]
+            if "(" in gemini_seat["model_id"]
+            else _mp.agy_model_id(gemini_seat["model_id"], gemini_seat["effort"])
+        )
+
         tmp_d = Path(tempfile.mkdtemp(prefix="anvil_lit_job_"))
         in_f, out_f = tmp_d / "input.json", tmp_d / "output.json"
         in_f.write_text(json.dumps({
             "catalog_seeds": [{"seed_id": s["seed_id"]} for s in seeds],
-            "claude_exe": claude_exe, "claude_model": "opus", "adversarial_rounds": 1,
+            "claude_exe": claude_exe,
+            "claude_model": claude_seat.get("model_id") or ("claude-fable-5-2" if lit_strength == "heavy" else "claude-opus-5-5"),
+            "claude_effort": claude_seat.get("effort") or ("max" if lit_strength == "heavy" else "medium"),
+            "gemini_model": gemini_cli_id,
+            "strength": lit_strength,
+            "adversarial_rounds": 1,
         }), encoding="utf-8")
 
+        lit_env = _ace.build_minimal_cli_env()
+        lit_env["TRIO_TIER"] = lit_strength
+        lit_env["ANCHOR_STRENGTH"] = lit_strength
+        lit_env["ANCHOR_INHERITED_STRENGTH"] = lit_strength
         proc, job_handle = _ace.spawn_in_win32_job(
             [str(node_exe), str(runner_mjs), "--input", str(in_f), "--output", str(out_f)],
-            cwd=tmp_d, env=_ace.build_minimal_cli_env(), has_stdin=False,
+            cwd=tmp_d, env=lit_env, has_stdin=False,
         )
         abort_spawn = False
         with _LIT_LOCK:

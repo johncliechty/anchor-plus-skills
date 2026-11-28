@@ -340,8 +340,11 @@ class ProviderService:
         except Exception:
             usage_summary = None
         routing_info = _build_services_and_routing_summary(settings, out, capabilities, usage_summary)
+        vs_info = _build_variable_strength_snapshot(settings, out, routing_info.get("catalog_defaults"))
         return {"ok": True, "host": host_state(), "settings_revision": settings["settings_revision"],
                 "settings_error": settings.get("settings_error"), "preferences": deepcopy(settings["provider_preferences"]),
+                "model_policy": deepcopy(settings.get("model_policy", model_policy.DEFAULT_POLICY)),
+                "variable_strength": vs_info,
                 "default_family": settings["default_cli"],
                 "coding_family": settings.get("coding_family") or settings["default_cli"],
                 "review_family": settings.get("review_family") or ("claude" if (settings.get("coding_family") or settings["default_cli"]) != "claude" else "gemini"),
@@ -532,6 +535,19 @@ class ProviderService:
         if type(body.get("expected_revision")) is not int:
             raise ValueError("Load settings before applying changes")
         settings = anchor_settings.get_launch_settings()
+        has_vs = "variable_strength" in body or "model_policy" in body
+        validated_vs = None
+        if has_vs:
+            raw_vs = body.get("variable_strength") if "variable_strength" in body else body.get("model_policy")
+            if not isinstance(raw_vs, dict):
+                raise ValueError("Invalid variable_strength configuration")
+            vs_candidate = dict(raw_vs)
+            vs_candidate.setdefault("mode", "variable_strength")
+            vs_candidate.setdefault("default_strength", "standard")
+            validated_vs = model_policy.validate_policy(vs_candidate)
+        if "preferences" not in body and validated_vs is not None:
+            anchor_settings.save_settings(model_policy=validated_vs, expected_revision=body["expected_revision"])
+            return self.snapshot()
         prefs = metadata.validate_preferences(body.get("preferences"), settings["provider_connections"])
         saved = settings["provider_preferences"]
         proposed = {**settings, "provider_preferences": prefs}
@@ -581,7 +597,10 @@ class ProviderService:
                 raise ValueError("Model or reasoning effort is not advertised by this account's native CLI")
         # Store user choices in the existing settings transaction. Do not touch
         # global family/model policy or any live engine, queue or campaign.
-        anchor_settings.save_settings(provider_preferences=prefs, expected_revision=body["expected_revision"])
+        save_kwargs = {"provider_preferences": prefs, "expected_revision": body["expected_revision"]}
+        if validated_vs is not None:
+            save_kwargs["model_policy"] = validated_vs
+        anchor_settings.save_settings(**save_kwargs)
         return self.snapshot()
 
     def start_login(self, identity):
@@ -1012,8 +1031,9 @@ def selected_for_launch(settings, family, surface="cockpit", check_capacity=Fals
     return connection
 
 
-def resolve_quality(family, settings, connection, *, surface="cockpit", role=None, label=None, tier=None):
+def resolve_quality(family, settings, connection, *, surface="cockpit", role=None, label=None, tier=None, skill=None):
     choice = settings.get("provider_preferences", metadata.DEFAULT_PREFERENCES)["quality"].get(family)
+    vs_mode = (settings.get("model_policy") or {}).get("mode") == "variable_strength" or str(tier or "").strip().lower() == "light"
     if surface == "jobs" and family == "chatgpt" and choice and choice != {"model": "latest_supported", "effort": "highest_supported"}:
         raise ValueError("The Codex one-shot adapter requires latest model and highest reasoning")
     # Default accounts still need their own marker and homes when this process
@@ -1025,7 +1045,10 @@ def resolve_quality(family, settings, connection, *, surface="cockpit", role=Non
         role=role,
         label=label,
         tier=tier,
+        skill=skill,
     )
+    if vs_mode:
+        return selected
     if family == "claude" and (
         model_policy.is_claude_verification_role(role=role, label=label)
         or str(tier or "").strip().lower() == "heavy"
@@ -1052,6 +1075,118 @@ def resolve_quality(family, settings, connection, *, surface="cockpit", role=Non
     if effort not in row["efforts"]:
         raise ValueError("The explicitly selected reasoning effort is unavailable")
     return {**selected, "model": model, "effort": effort, "selection_evidence": "explicit_setup_choice"}
+
+
+def _fallback_preview_rows(family: str, cat_defaults: dict | None = None) -> list[dict]:
+    defaults_by_fam = {
+        "claude": [
+            {"model": "claude-fable-5-2", "efforts": ["low", "medium", "high", "max"], "rank": 0},
+            {"model": "claude-opus-5-5", "efforts": ["low", "medium", "high", "max"], "rank": 1},
+            {"model": "sonnet", "efforts": ["low", "medium", "high", "max"], "rank": 2},
+        ],
+        "chatgpt": [
+            {"model": "gpt-6-luna", "efforts": ["low", "medium", "high", "max"], "rank": 0},
+            {"model": "gpt-5.6-terra", "efforts": ["low", "medium", "high", "xhigh"], "rank": 1},
+        ],
+        "gemini": [
+            {"model": "gemini-4-neon", "efforts": ["low", "medium", "high", "xhigh"], "rank": 0},
+            {"model": "gemini-4-carbon", "efforts": ["low", "medium", "high"], "rank": 1},
+            {"model": "gemini-4-argon", "efforts": ["low", "medium", "high"], "rank": 2},
+        ],
+        "grok": [
+            {"model": "grok-4.7", "efforts": ["low", "medium", "high", "xhigh"], "rank": 0},
+        ],
+    }
+    base = list(defaults_by_fam.get(family, []))
+    cat_fam = (cat_defaults or {}).get(family) if isinstance(cat_defaults, dict) else None
+    if isinstance(cat_fam, dict):
+        disc_models = [str(m).strip() for m in (cat_fam.get("models") or []) if str(m).strip()]
+        if disc_models and family != "claude":
+            eff_def = ["low", "medium", "high", str(cat_fam.get("effort_frontier") or "high").lower()]
+            eff_clean = []
+            for e in eff_def:
+                if e in model_policy.EFFORT_ORDER and e not in eff_clean:
+                    eff_clean.append(e)
+            base = [{"model": m, "efforts": eff_clean or ["low", "medium", "high"], "rank": idx} for idx, m in enumerate(disc_models)]
+    return base
+
+
+def _build_variable_strength_snapshot(settings: dict, connections: list[dict], catalog_defaults: dict | None = None) -> dict:
+    pol_raw = settings.get("model_policy") if isinstance(settings, dict) else None
+    mode = pol_raw.get("mode") if isinstance(pol_raw, dict) else "latest_supported"
+    vs_cfg = model_policy.effective_variable_strength_config(settings)
+    heavy_set = set(vs_cfg["heavy_skills"])
+    accounts_map = ((settings.get("provider_preferences") or {}).get("accounts") or {}) if isinstance(settings, dict) else {}
+    family_labels = {
+        "claude": "Claude",
+        "chatgpt": "ChatGPT",
+        "gemini": "Gemini",
+        "grok": "Grok",
+    }
+    providers_preview = {}
+    for fam in metadata.FAMILIES:
+        fam_conns = [c for c in connections if c.get("family") == fam]
+        sel_id = accounts_map.get(fam) or f"{fam}-default"
+        primary = next((c for c in fam_conns if c.get("id") == sel_id), fam_conns[0] if fam_conns else {})
+        cat_obj = primary.get("catalog") or {}
+        cat_rows = cat_obj.get("rows") or []
+        live_discovered = bool(cat_obj.get("state") == "fresh" and cat_rows)
+        norm_rows = []
+        if cat_rows:
+            for idx, r in enumerate(cat_rows):
+                if isinstance(r, dict) and r.get("model") and r.get("efforts"):
+                    norm_rows.append({"model": r["model"], "efforts": list(r["efforts"]), "rank": idx})
+        if not norm_rows and fam == "claude" and str(primary.get("subscription_type") or "").lower() in ("pro", "free"):
+            norm_rows = [
+                {"model": "claude-opus-5-5", "efforts": ["low", "medium", "high", "max"], "rank": 0},
+                {"model": "sonnet", "efforts": ["low", "medium", "high", "max"], "rank": 1},
+            ]
+        if not norm_rows:
+            norm_rows = _fallback_preview_rows(fam, catalog_defaults)
+        try:
+            heavy_sel = model_policy.select_strength(fam, norm_rows, "heavy", policy=vs_cfg)
+            light_sel = model_policy.select_strength(fam, norm_rows, "light", policy=vs_cfg)
+            ladder_rows = model_policy._generalist_ladder(fam, norm_rows)
+        except Exception:
+            heavy_sel = {"model": norm_rows[0]["model"], "effort": "high"}
+            light_sel = {"model": norm_rows[min(1, len(norm_rows) - 1)]["model"], "effort": "medium"}
+            ladder_rows = norm_rows
+        plan_text = str(primary.get("plan") or "").strip()
+        if not plan_text:
+            if fam == "gemini" and (primary.get("capability") or {}).get("installed"):
+                plan_text = "Google Ultra / Antigravity"
+            elif primary.get("auth") == "signed_in":
+                plan_text = f"{family_labels.get(fam, fam.title())} Subscription"
+            else:
+                plan_text = str(primary.get("auth") or "Not checked").replace("_", " ")
+        providers_preview[fam] = {
+            "family": fam,
+            "label": family_labels.get(fam, fam.title()),
+            "plan": plan_text,
+            "subscription_type": str(primary.get("subscription_type") or ""),
+            "live_discovered": live_discovered,
+            "heavy": {"model": heavy_sel["model"], "effort": heavy_sel["effort"]},
+            "light": {"model": light_sel["model"], "effort": light_sel["effort"]},
+            "ladder": [{"step": idx, "model": r["model"], "efforts": list(r["efforts"])} for idx, r in enumerate(ladder_rows[:4])],
+        }
+    skills_out = [
+        {
+            "id": s["id"],
+            "label": s["label"],
+            "group": s["group"],
+            "default_heavy": bool(s["default_heavy"]),
+            "strength": "heavy" if s["id"] in heavy_set else "light",
+        }
+        for s in model_policy.PORTFOLIO_SKILLS
+    ]
+    return {
+        "enabled": mode == "variable_strength",
+        "mode": mode,
+        "config": vs_cfg,
+        "providers": providers_preview,
+        "skills": skills_out,
+        "recommended_heavy_skills": [s["id"] for s in model_policy.PORTFOLIO_SKILLS if s["default_heavy"]],
+    }
 
 
 def _human_model_display(family, model_id, effort_id, *, default_model=None):

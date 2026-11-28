@@ -24,6 +24,10 @@
 - Not a lightweight daily task list
 - Not a free-for-all that invents scope after you locked the goal
 
+## Variable Strength (`Crucible` Standard Default vs. `Crucible Heavy`) — What to Call When
+- **Call `Crucible` (default = `Standard` · one generalist model below frontier @ `medium` effort on Synthesizer, Sharks, and Judge)** for localized `LITE` plans, clear single-repo features, and standard `MATRIX-FAST-TRACK` implementation plans.
+- **Call `Crucible Heavy` (`⚡ Heavy` · frontier model @ full/max effort on Synthesizer, all Sharks, and Judge — say `"Crucible Heavy"`, set `TRIO_TIER=heavy`, or toggle `⚡ Heavy` on your AI Cockpit)** for cross-repo or brownfield security/concurrency architectures, novel `SPIKE-FIRST` designs, or high-cost multi-wave builds where catching a design flaw before code starts saves hours.
+
 ## How to start (human)
 1. Open Crucible with your intent or project folder.
 2. Confirm the recommended depth (light / full / probe-first) when asked.

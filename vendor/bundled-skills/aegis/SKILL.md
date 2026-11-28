@@ -1,6 +1,6 @@
 ---
 name: Aegis
-description: Defensive software security vulnerability scanner and auto-remediation engine (Sentinel / Aegis). Performs deterministic AST taint/sink analysis across 6 CWE/OWASP families (CWE-78 shell injection, CWE-94/502 code execution & unsafe deserialization, CWE-22 path traversal, CWE-918 SSRF, CWE-208/328 timing/crypto weaknesses, and CWE-798 hardcoded secrets/PII), synthesizes minimal AST/LibCST defensive patches, verifies fixes with regression tests + cross-family adversarial review, and integrates directly into Anchor AI Cockpits.
+description: Defensive software security vulnerability scanner and auto-remediation engine (Sentinel / Aegis). Performs deterministic AST taint/sink analysis across 6 CWE/OWASP families (CWE-78 shell injection, CWE-94/502 code execution & unsafe deserialization, CWE-22 path traversal, CWE-918 SSRF, CWE-208/328 timing/crypto weaknesses, and CWE-798 hardcoded secrets/PII), synthesizes minimal AST/LibCST defensive patches, verifies fixes with regression tests + cross-family adversarial review, and integrates directly into Anchor AI Cockpits. Variable Strength: Heavy by default (top-tier frontier model at highest effort; call 'Aegis Light' for 1-step-below-frontier at medium effort, configurable in Anchor Setup).
 ---
 
 <!-- ELEGANCE-LAW v2 -->
@@ -46,7 +46,7 @@ Aegis follows the **Functional Core / Imperative Shell** architecture and enforc
 2. **Read-Only Scan vs. Explicit Remediation Gate (`remediate_target`):** Running `scan` or `remediate` without `--apply` never modifies files on disk; it computes exact unified diffs (`difflib.unified_diff`) for human or Steward inspection.
 3. **Auditable False-Positive / Contained-Boundary Sign-Off (`.aegis/signed-off.json`):** Intentional mechanisms (e.g., contained job runners, test fixtures) are signed off with explicit human rationale and preserved across scans.
 4. **Ground-Truth Regression Verification (`verify_target`):** Every applied remediation is verified by re-running the target's test suite (`pytest -q`, executed with `shell=False`) plus a post-patch `scan_target` confirming the sink is closed.
-5. **Cross-Family Adversarial Security Verification:** Governed remediation waves pair the primary coding seat with an independent cross-family security reviewer (`Gandalf` / secondary model family per `~/.anchor/model_prefs.json`).
+5. **Cross-Family Adversarial Security Verification & Variable Strength (`Heavy` Default · `Aegis Light` Override):** Governed remediation waves pair the primary coding seat with an independent cross-family security reviewer (`~/.anchor/model_prefs.json`). `Aegis` is **`Heavy` by default** (frontier Orchestrator + frontier Reviewer at highest supported effort); designating **`Aegis Light`** (`--tier light`, `ANCHOR_STRENGTH=light`, or the Workbench `🪶 Light` toggle) steps **both** Orchestrator and Reviewer down to one generalist model below frontier at `medium` effort for rapid mid-development triage.
 
 ---
 

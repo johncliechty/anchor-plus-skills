@@ -21,6 +21,7 @@ import { HaltError, haltForHuman } from './crucible-lib.mjs';
 import { resolveBandProfile, normalizeBandDepth, bandProfileStamp } from './band-profile.mjs';
 import { tracesToNorthStar } from './shark-tank.mjs';
 import { runWellFormednessGate } from './gates.mjs';
+import { checkPropertyGates } from './hardening-gate.mjs';
 import { runSlim } from './slim.mjs';
 import {
   DEFAULT_TEST_COMMAND,
@@ -33,6 +34,8 @@ import {
 } from './stage2.mjs';
 import {
   APPROVAL_MAX_WORDS,
+  MONOLITH_FREEZE_LINES,
+  MONOLITH_MAX_ADAPTER_DELTA_LINES,
   attachPortfolioSkillGates,
   checkApprovalBlockWordBudget,
   detectPortfolioSkillGates,
@@ -70,6 +73,10 @@ const SKIP_SCAN_DIRS = new Set([
 ]);
 
 const CODE_EXT_RE = /\.(?:mjs|cjs|js|ts|tsx|jsx|py|go|rs|java|cs)$/i;
+const REUSABLE_FILE_RE = /(?:^|\/)(?:paths|job_runner|deliverables|reliability|atomic|lock|shared|common|utils?|helpers?|fs[-_]?utils?|io[-_]?utils?)\.(?:py|m?js|cjs|ts)$/i;
+const REUSABLE_EXPORT_RE = /^(?:exclusive_file_lock|_?atomic_write(?:_json|_text)?|write_json_atomic|writeCheckpointAtomic|writeFileAtomic|resolve_contained_path|_?is_symlink_or_junction|WRITE_LOCK|load_record|makeReliableAgent)$/;
+const VERSIONED_PATH_RE = /(?:^|[/_.-])v([1-9]\d?)(?:[/_.-]|\.[a-z0-9]+$)/i;
+const VERSIONED_SYM_RE = /(?:^|_)v([1-9]\d?)(?:_|$)/i;
 
 /**
  * Deterministic zero-LLM fallback symbol & file-tree scan (<2s, max 160 files).
@@ -78,7 +85,11 @@ export function scanDeterministicRepoFacts(repoDir, { maxFiles = 160, budgetMs =
   const start = Date.now();
   const root = path.resolve(repoDir);
   const files = [];
+  const fileLines = [];
+  const monoliths = [];
   const symbols = [];
+  const reusablePrimitives = [];
+  const versionedLayers = [];
   const extCounts = {};
 
   function walk(dir, depth = 0) {
@@ -99,18 +110,44 @@ export function scanDeterministicRepoFacts(repoDir, { maxFiles = 160, budgetMs =
       } else if (e.isFile()) {
         const rel = path.relative(root, full).replace(/\\/g, '/');
         files.push(rel);
+        const isTestRel = /(^|\/)tests?\//i.test(rel) || /(^|\/)test_[^/]*\.py$/i.test(rel) || /\.(?:test|spec)\.[a-z]+$/i.test(rel);
+        if (!isTestRel && VERSIONED_PATH_RE.test(rel) && versionedLayers.length < 30) {
+          versionedLayers.push(rel);
+        }
         const ext = path.extname(e.name).toLowerCase() || '(no-ext)';
         extCounts[ext] = (extCounts[ext] || 0) + 1;
-        if (CODE_EXT_RE.test(e.name) && symbols.length < 120) {
+        if (CODE_EXT_RE.test(e.name) || /\.(?:html|css)$/i.test(e.name)) {
           try {
             const stat = fs.statSync(full);
-            if (stat.size <= 128_000) {
+            if (stat.size <= 2_000_000) {
               const snippet = fs.readFileSync(full, 'utf8');
-              const symRe = /(?:export\s+(?:async\s+)?(?:function|class|const)\s+([A-Za-z0-9_$]+)|^(?:async\s+)?def\s+([A-Za-z0-9_]+)|^class\s+([A-Za-z0-9_]+))/gm;
-              let m;
-              while ((m = symRe.exec(snippet)) !== null && symbols.length < 120) {
-                const sym = m[1] || m[2] || m[3];
-                if (sym) symbols.push(`${rel}:${sym}`);
+              const lines = snippet ? snippet.split(/\r?\n/).length : 0;
+              fileLines.push({ path: rel, lines });
+              if (!isTestRel && lines > MONOLITH_FREEZE_LINES) {
+                monoliths.push({ path: rel, lines });
+              }
+              if (CODE_EXT_RE.test(e.name) && stat.size <= 256_000) {
+                const symRe = /(?:export\s+(?:async\s+)?(?:function|class|const)\s+([A-Za-z0-9_$]+)|^(?:async\s+)?def\s+([A-Za-z0-9_]+)|^class\s+([A-Za-z0-9_]+)|^([A-Z][A-Z0-9_]{2,})\s*=)/gm;
+                const fileSyms = [];
+                let m;
+                while ((m = symRe.exec(snippet)) !== null && fileSyms.length < 40) {
+                  const sym = m[1] || m[2] || m[3] || m[4];
+                  if (!sym) continue;
+                  fileSyms.push(sym);
+                  if (symbols.length < 120) symbols.push(`${rel}:${sym}`);
+                  if (!isTestRel && VERSIONED_SYM_RE.test(sym) && versionedLayers.length < 30) {
+                    versionedLayers.push(`${rel}:${sym}`);
+                  }
+                }
+                if (!isTestRel && reusablePrimitives.length < 20) {
+                  const infraExports = fileSyms.filter((s) => REUSABLE_EXPORT_RE.test(s));
+                  if (infraExports.length > 0 || (REUSABLE_FILE_RE.test(rel) && fileSyms.length > 0)) {
+                    reusablePrimitives.push({
+                      path: rel,
+                      exports: (infraExports.length ? infraExports : fileSyms.filter((s) => !s.startsWith('_'))).slice(0, 8),
+                    });
+                  }
+                }
               }
             }
           } catch { /* ignore unreadable file */ }
@@ -120,6 +157,7 @@ export function scanDeterministicRepoFacts(repoDir, { maxFiles = 160, budgetMs =
   }
 
   walk(root, 0);
+  monoliths.sort((a, b) => b.lines - a.lines);
 
   let packageTestScript = null;
   const pkgPath = path.join(root, 'package.json');
@@ -134,6 +172,10 @@ export function scanDeterministicRepoFacts(repoDir, { maxFiles = 160, budgetMs =
     repoDir: root,
     fileCount: files.length,
     files: files.slice(0, 80),
+    fileLines: fileLines.slice(0, 80),
+    monoliths: monoliths.slice(0, 30),
+    reusablePrimitives: reusablePrimitives.slice(0, 20),
+    versionedLayers: [...new Set(versionedLayers)].slice(0, 30),
     symbols: symbols.slice(0, 80),
     extCounts,
     packageTestScript,
@@ -171,6 +213,12 @@ export function runAnvilBrownfieldIntake({
       }) || {};
       if (!r.error && r.status === 0 && r.stdout) {
         const parsed = JSON.parse(String(r.stdout));
+        if (!Array.isArray(parsed.monoliths) || !Array.isArray(parsed.reusablePrimitives) || !Array.isArray(parsed.versionedLayers)) {
+          const supp = scanDeterministicRepoFacts(root, { budgetMs: 400 });
+          if (!Array.isArray(parsed.monoliths)) parsed.monoliths = supp.monoliths;
+          if (!Array.isArray(parsed.reusablePrimitives)) parsed.reusablePrimitives = supp.reusablePrimitives;
+          if (!Array.isArray(parsed.versionedLayers)) parsed.versionedLayers = supp.versionedLayers;
+        }
         const elapsedMs = Date.now() - t0;
         log(`stage0 anvil: AST facts extracted in ${elapsedMs}ms (0 LLM calls)`);
         return { ok: true, source: 'anvil-ast', llmCalls: 0, elapsedMs, facts: parsed };
@@ -477,36 +525,43 @@ export const MATRIX_DELTA_VERIFY_SCHEMA = {
   },
 };
 
-const MATRIX_SEATS = Object.freeze([
+export const MATRIX_SEATS = Object.freeze([
   {
     id: 'M1',
     label: 'matrix:L0-L5:northstar-simplicity',
-    layers: ['L0', 'L5'],
+    layers: ['L0', 'L5', 'L1', 'L4'],
+    primaryLayers: ['L0', 'L5'],
     focus:
-      'L0 North Star fidelity & scope-cut honesty (every wave serves the locked North Star; deferred scope named aloud) + ' +
-      'L5 Gandalf operational simplicity / Rabbit-Catcher cut check (flag unnecessary abstractions or over-engineering).',
+      'PRIMARY L0 North Star fidelity & scope-cut honesty (every wave serves the locked North Star; deferred scope named aloud) + ' +
+      'PRIMARY L5 Gandalf operational simplicity / Rabbit-Catcher cut check + ' +
+      'SECONDARY cross-check on L1 Deep-Module boundaries and L4 Wave-1 usable pilot / call-budget bounds (so every layer has >=2 independent eyes).',
   },
   {
     id: 'M2',
     label: 'matrix:L1-L2:arch-security',
-    layers: ['L1', 'L2'],
+    layers: ['L1', 'L2', 'L0', 'L3'],
+    primaryLayers: ['L1', 'L2'],
     focus:
-      'L1 Anvil Pure-Core / Deep-Module / Functional-Core-Imperative-Shell architecture + ' +
-      'L2 Aegis defensive security CWE boundaries (CWE-78 shell injection, CWE-22 path traversal, CWE-94/502 unsafe eval/deser, CWE-918 SSRF, CWE-798 secrets).',
+      'PRIMARY L1 Anvil Pure-Core / Deep-Module / Functional-Core-Imperative-Shell architecture + ' +
+      'PRIMARY L2 Aegis defensive security CWE boundaries (CWE-78 shell injection, CWE-22 path traversal, CWE-94/502 unsafe eval/deser, CWE-918 SSRF, CWE-798 secrets) + ' +
+      'SECONDARY cross-check on L0 North-Star scope drift and L3 UI/Figure surface safety.',
   },
   {
     id: 'M3',
     label: 'matrix:L3-L4:surface-budget',
-    layers: ['L3', 'L4'],
+    layers: ['L3', 'L4', 'L2', 'L5'],
+    primaryLayers: ['L3', 'L4'],
     focus:
-      'L3 UI Interactive Chrome Mockup (`ft.py chrome-open` + `ft.py look`) / `Figure-Designer` visual gate when UI/SVG files are touched + ' +
-      'L4 deterministic testability, Chekhov Wave-1 usable end-to-end pilot slice, and O(N) LLM call/latency budget bounds.',
+      'PRIMARY L3 UI Interactive Chrome Mockup (`ft.py chrome-open` + `ft.py look`) / `Figure-Designer` visual gate when UI/SVG files are touched + ' +
+      'PRIMARY L4 deterministic testability, Chekhov Wave-1 usable end-to-end pilot slice, and O(N) LLM call/latency budget bounds + ' +
+      'SECONDARY cross-check on L2 CWE boundary exposure and L5 unnecessary abstraction bloat.',
   },
 ]);
 
-function tallyMatrixReviews(seatOutputs = []) {
+export function tallyMatrixReviews(seatOutputs = []) {
   const byTopic = new Map();
   const layersCovered = new Set();
+  const activeSeatCount = Array.isArray(seatOutputs) ? seatOutputs.filter(Boolean).length : 0;
 
   seatOutputs.forEach((out, seatIdx) => {
     const layers = Array.isArray(out?.layersChecked) ? out.layersChecked : MATRIX_SEATS[seatIdx]?.layers || [];
@@ -533,18 +588,28 @@ function tallyMatrixReviews(seatOutputs = []) {
       prev.seats.add(seatIdx);
       prev.agreement = prev.seats.size;
       if (f?.message) prev.messages.push(f.message);
-      if (f?.fix) prev.fixes.push(f.fix);
+      if (f?.fix && String(f.fix).trim()) prev.fixes.push(String(f.fix).trim());
       byTopic.set(key, prev);
     }
   });
 
   const findings = [...byTopic.values()].map((e) => {
-    const demoted = !e.traces;
-    const isBlocker = !demoted && (e.severity === 'BLOCKER' || (e.severity === 'MAJOR' && e.agreement >= 2));
+    const soloSubjectiveOrUnremedied =
+      activeSeatCount >= 2 &&
+      e.agreement < 2 &&
+      e.severity === 'BLOCKER' &&
+      (e.layer === 'L5' || e.fixes.length === 0);
+    const effectiveSeverity = soloSubjectiveOrUnremedied ? 'MAJOR' : e.severity;
+    const demoted = !e.traces || soloSubjectiveOrUnremedied;
+    const isBlocker =
+      e.traces &&
+      !soloSubjectiveOrUnremedied &&
+      (effectiveSeverity === 'BLOCKER' || (effectiveSeverity === 'MAJOR' && e.agreement >= 2));
     return {
       id: e.id,
       layer: e.layer,
-      severity: e.severity,
+      severity: effectiveSeverity,
+      rawSeverity: e.severity,
       traces: e.traces,
       demoted,
       agreement: e.agreement,
@@ -561,6 +626,102 @@ function tallyMatrixReviews(seatOutputs = []) {
     findings,
     layersCovered: [...layersCovered].sort(),
   };
+}
+
+/**
+ * Derive honest cross-family provenance from collected `trio.seat.v1` seat receipts.
+ */
+export function matrixProvenanceOf(receipts = []) {
+  const models = [];
+  const draftFamilies = new Set();
+  const attestedReviewFamilies = new Set();
+  const allReviewFamilies = new Set();
+
+  for (const r of Array.isArray(receipts) ? receipts : []) {
+    if (!r || typeof r !== 'object') continue;
+    const last = Array.isArray(r.attempts) && r.attempts.length ? r.attempts[r.attempts.length - 1] : null;
+    const label = r.label || r.seat || null;
+    const role = r.role || (String(label || '').startsWith('matrix:L') || label === 'matrix:delta-verify' ? 'shark' : 'synthesizer');
+    const family = r.served?.family || last?.requested?.family || r.requested?.family || null;
+    const model = r.served?.model ?? null;
+    const familyAttested =
+      r.served?.family_attested === true ||
+      (r.served?.family_attested !== false && Boolean(r.served?.family && r.served?.model));
+    const modelAttested =
+      r.served?.model_attested === true ||
+      (r.served?.model_attested !== false && Boolean(r.served?.model));
+    const failoverUsed = r.failover?.used === true || Boolean(last && Number(last.ordinal) > 1);
+    const ok = r.ok !== false;
+
+    models.push({
+      label,
+      role,
+      family,
+      model_served: model,
+      family_attested: familyAttested,
+      model_attested: modelAttested,
+      status: r.status ?? (ok ? 'ok' : 'failed'),
+      failover_used: failoverUsed,
+    });
+
+    if (role === 'shark' || role === 'review') {
+      if (family) allReviewFamilies.add(family);
+      if (ok && family && familyAttested) attestedReviewFamilies.add(family);
+    } else if (family) {
+      draftFamilies.add(family);
+    }
+  }
+
+  let crossModel = false;
+  if (draftFamilies.size > 0 && attestedReviewFamilies.size > 0) {
+    crossModel = [...attestedReviewFamilies].some((rf) => !draftFamilies.has(rf));
+  }
+
+  return {
+    draft_families: [...draftFamilies],
+    review_families: [...allReviewFamilies],
+    attested_review_families: [...attestedReviewFamilies],
+    family_attested: attestedReviewFamilies.size > 0,
+    cross_model: crossModel,
+    models,
+  };
+}
+
+/**
+ * Emit a Skill Foundry machine run receipt (`journal/runs/*.json`) for any Crucible band.
+ * Never throws; respects `runsDir` or `CRUCIBLE_RUNS_DIR` overrides.
+ */
+export function writeCrucibleRunRecord(record = {}, { runsDir = null } = {}) {
+  try {
+    if (process.env.CRUCIBLE_SKIP_RUN_RECORD === '1') return null;
+    const skillDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+    const dir = runsDir || process.env.CRUCIBLE_RUNS_DIR || path.join(skillDir, 'journal', 'runs');
+    fs.mkdirSync(dir, { recursive: true });
+    const started = record.started || new Date().toISOString();
+    const payload = {
+      run_id: record.run_id || `crucible-${String(started).replace(/[:.]/g, '-')}-${Math.abs(Date.now() % 100000)}`,
+      skill: 'crucible',
+      tier: String(record.tier || 'heavy').toLowerCase(),
+      band: record.band || 'MATRIX-FAST-TRACK',
+      started,
+      ended: record.ended || new Date().toISOString(),
+      input: record.input || '',
+      params: record.params || {},
+      resource_ids: Array.isArray(record.resource_ids) ? record.resource_ids : [],
+      output: Array.isArray(record.output) ? record.output : [],
+      result: record.result || 'OK',
+      cross_model: record.cross_model === true,
+      family_attested: record.family_attested === true,
+      models: Array.isArray(record.models) ? record.models : [],
+      duration_s: typeof record.duration_s === 'number' ? record.duration_s : 0,
+      journal_ref: record.journal_ref || null,
+    };
+    const file = path.join(dir, `${payload.run_id}.json`);
+    fs.writeFileSync(file, JSON.stringify(payload, null, 2) + '\n', 'utf8');
+    return file;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -581,7 +742,15 @@ export async function runMatrixFastTrack({
   superjump = false,
   competingDesigns = 0,
   approved = false,
+  pauseAtStage0Lock = false,
+  promoteLockedDraft = true,
+  forceReplan = false,
+  recordRun = false,
+  runsDir = null,
   pilotOverrideReason = null,
+  monolithOverrideReason = null,
+  reuseOverrideReason = null,
+  sunsetOverrideReason = null,
   addsSurface = false,
   propertyGates = {},
   triageLock = null,
@@ -590,11 +759,92 @@ export async function runMatrixFastTrack({
   spawn = spawnSync,
   log = () => {},
 } = {}) {
+  const started = new Date().toISOString();
+  const t0 = Date.now();
   const normalizedBand = normalizeBandDepth(band === 'SPIKE-FIRST' ? 'SPIKE-FIRST' : 'MATRIX-FAST-TRACK');
   const profile = resolveBandProfile('MATRIX-FAST-TRACK');
   const rawIntent = String(intent || northStar || '').trim();
   if (!rawIntent) {
     throw new HaltError('runMatrixFastTrack requires an intent or northStar', 'pass { intent } or { northStar }');
+  }
+
+  const stateDir = artifactsDir
+    ? path.resolve(artifactsDir)
+    : (outputDir ? path.join(path.resolve(outputDir), '.crucible') : null);
+  const lockableDraftPath = stateDir ? path.join(stateDir, '_human-lockable-draft.json') : null;
+  const candidatePlanPath = stateDir ? path.join(stateDir, 'CANDIDATE-IMPLEMENTATION-PLAN.md') : null;
+
+  // O-2 Fix (journal 0122): When `approved: true` is passed after an unapproved halt on the same
+  // outputDir + intent, promote the persisted `_human-lockable-draft.json` in 0 extra LLM calls!
+  if (approved && promoteLockedDraft && !forceReplan && outputDir && lockableDraftPath && fs.existsSync(lockableDraftPath)) {
+    try {
+      const saved = JSON.parse(fs.readFileSync(lockableDraftPath, 'utf8'));
+      if (saved && saved.rawIntent === rawIntent && typeof saved.renderedPlan === 'string' && saved.renderedPlan.trim()) {
+        const description = renderDescriptionDoc({
+          title: saved.planTitle || title,
+          northStar: saved.northStar,
+          criteria: saved.criteria || [],
+          summary: saved.planSummary || '',
+        });
+        const executionLog = renderExecutionLog({
+          title: saved.planTitle || title,
+          waveCount: Array.isArray(saved.waves) ? saved.waves.length : 1,
+        });
+        const docTrio = writeDocTrio({
+          outputDir,
+          plan: saved.renderedPlan,
+          description,
+          executionLog,
+          depth: 'MATRIX-FAST-TRACK',
+          tier,
+          triageLock,
+          handoffTriage,
+          addsSurface,
+          propertyGates,
+          log,
+        });
+        const runGate = typeof wellFormedness === 'function' ? wellFormedness : runWellFormednessGate;
+        const handoff = runHandoffGate({ projectDir: docTrio.dir, artifactsDir: stateDir, runGate, log });
+        try { fs.unlinkSync(lockableDraftPath); } catch { /* ignore */ }
+        if (recordRun || runsDir || process.env.CRUCIBLE_RUNS_DIR) {
+          writeCrucibleRunRecord({
+            band: 'MATRIX-FAST-TRACK',
+            tier,
+            started,
+            input: rawIntent,
+            params: { approved: true, promoted_from_locked_draft: true, calls: 0 },
+            output: [docTrio.files.plan, docTrio.files.description, docTrio.files.execution_log, docTrio.configPath],
+            result: 'APPROVED_PROMOTED_FROM_LOCKED_DRAFT',
+            cross_model: saved.provenance?.cross_model === true,
+            family_attested: saved.provenance?.family_attested === true,
+            models: saved.provenance?.models || [],
+            duration_s: Math.max(0, Math.round((Date.now() - t0) / 1000)),
+          }, { runsDir });
+        }
+        return {
+          band: 'MATRIX-FAST-TRACK',
+          bandStamp: bandProfileStamp(profile),
+          promotedFromLockedDraft: true,
+          northStar: saved.northStar,
+          criteria: saved.criteria || [],
+          deferredScope: saved.deferredScope || [],
+          cutElement: saved.cutElement || null,
+          waves: saved.waves || [],
+          plan: saved.renderedPlan,
+          matrixTally: saved.matrixTally || null,
+          revised: Boolean(saved.revised),
+          chekhov: saved.chekhov || null,
+          portfolioGates: saved.portfolioGates || [],
+          provenance: saved.provenance || null,
+          cross_model: saved.provenance?.cross_model === true,
+          calls: 0,
+          priorCalls: saved.calls || 0,
+          maxModelCalls: MATRIX_MAX_MODEL_CALLS,
+          docTrio,
+          handoff,
+        };
+      }
+    } catch { /* corrupt draft falls through to normal run */ }
   }
 
   // --- Stage 0 (0 LLM calls for Anvil AST + testCommand preflight; 1 LLM call for framing) ---
@@ -608,7 +858,7 @@ export async function runMatrixFastTrack({
   const baseAgent = async (prompt, opts = {}) => agent(prompt, {
     ...opts,
     onReceipt: async (r) => {
-      if (r) receipts.push(r);
+      if (r) receipts.push({ ...r, label: r.label || opts.label || null, role: r.role || opts.role || null });
       if (typeof opts.onReceipt === 'function') await opts.onReceipt(r);
     },
   });
@@ -617,10 +867,19 @@ export async function runMatrixFastTrack({
     bandName: 'MATRIX-FAST-TRACK',
   });
 
+  const anvilMonoliths = Array.isArray(anvil?.facts?.monoliths) ? anvil.facts.monoliths : [];
+  const anvilReusable = Array.isArray(anvil?.facts?.reusablePrimitives) ? anvil.facts.reusablePrimitives : [];
+  const anvilVersionedLayers = Array.isArray(anvil?.facts?.versionedLayers) ? anvil.facts.versionedLayers : [];
   const anvilContext = anvil?.ok && anvil.facts
     ? `Anvil Brownfield Facts (${anvil.source}, 0 LLM calls):\n${JSON.stringify({
         fileCount: anvil.facts.fileCount,
         files: (anvil.facts.files || []).slice(0, 30),
+        monolithsOver1500Lines: anvilMonoliths.slice(0, 15),
+        monolithRule: anvilMonoliths.length
+          ? `FROZEN MONOLITHS (>${MONOLITH_FREEZE_LINES} lines): keep adapter edits <=${MONOLITH_MAX_ADAPTER_DELTA_LINES} net lines and place new domain logic in focused companion modules (<600 lines)`
+          : undefined,
+        reusablePrimitives: anvilReusable.slice(0, 12),
+        versionedLayers: anvilVersionedLayers.slice(0, 15),
         symbols: (anvil.facts.symbols || []).slice(0, 30),
       })}`
     : '';
@@ -643,6 +902,29 @@ export async function runMatrixFastTrack({
     : (Array.isArray(stage0Out.criteria) && stage0Out.criteria.length ? stage0Out.criteria : ['passes locate-plan.mjs and test suite']);
   const stage0Deferred = Array.isArray(stage0Out.deferredScope) ? stage0Out.deferredScope : [];
   const designCount = Math.max(Number(competingDesigns) || 0, Number(stage0Out.competingDesigns) || 0);
+
+  if (pauseAtStage0Lock && !northStar && !approved) {
+    if (stateDir) {
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(stateDir, '_stage0-north-star.json'),
+        JSON.stringify({ northStar: lockedNorthStar, criteria: lockedCriteria, deferredScope: stage0Deferred, ts: new Date().toISOString() }, null, 2) + '\n',
+        'utf8',
+      );
+    }
+    const nsHalt = haltForHuman(
+      `Stage-0 North Star (please review and lock before Stage-1 planning):\n\n` +
+        `North Star: ${lockedNorthStar}\n` +
+        `Criteria: ${lockedCriteria.join(' · ')}\n` +
+        (stage0Deferred.length ? `Deferred scope: ${stage0Deferred.join(', ')}\n` : '') +
+        `\nRe-run with --north-star "${lockedNorthStar.replace(/"/g, "'")}" (or --approve) to lock and proceed.`,
+      'stage0-north-star-lock',
+    );
+    nsHalt.northStar = lockedNorthStar;
+    nsHalt.criteria = lockedCriteria;
+    nsHalt.calls = budgetedAgent.count();
+    throw nsHalt;
+  }
 
   // --- Stage 1: Optional Superjump + Plan+Waves Draft + L0-L5 Matrix + <=1 Delta Pass ---
   let superjumpResult = null;
@@ -669,6 +951,9 @@ export async function runMatrixFastTrack({
       'Rules:',
       '- Wave 1 MUST deliver a thin, runnable end-to-end user or CLI pilot slice (never pure internal plumbing/schemas across Waves 1-2).',
       '- Bound any LLM/model calls via explicit batching or concurrency caps (never unbounded per-item serial spawns).',
+      '- REUSE BEFORE WRITE: import existing repo `reusablePrimitives` for file locking, atomic writes, and path containment — never re-implement duplicate lock/atomic helpers.',
+      '- SUNSET OLD VERSIONS: when building a newer `vN` over existing `versionedLayers`, explicitly name superseded `v(N-1)` shims to retire/consolidate (or declare `sunset_override_reason:` if coexistence is required).',
+      '- Keep each wave `doneWhen` concise (<= 360 words) and focused on observable contracts.',
       '- Name at least one scope cut / simplification (`cutElement`) or state "nothing cut".',
       `North Star: ${lockedNorthStar}`,
       `Criteria: ${lockedCriteria.join(' · ')}`,
@@ -728,6 +1013,7 @@ export async function runMatrixFastTrack({
       [
         'You are Crucible Matrix-Fast-Track Targeted Reviser.',
         'Patch ONLY the blocking L0-L5 matrix findings below while preserving all contiguous waves and North Star fidelity.',
+        'CONSOLIDATE, DO NOT ACCRETE: keep every wave `doneWhen` <= 360 words — replace or tighten existing clauses rather than concatenating Shark checklists, and reuse existing repo helpers.',
         `North Star: ${lockedNorthStar}`,
         `Blocking Findings:\n${matrixTally.blockers.map((b, i) => `(${i + 1}) [${b.layer}/${b.severity}] ${b.message}${b.fix ? ` -> Fix: ${b.fix}` : ''}`).join('\n')}`,
         `Current Waves JSON:\n${JSON.stringify(waves, null, 2)}`,
@@ -754,11 +1040,23 @@ export async function runMatrixFastTrack({
       revised = true;
     }
 
+    // Journal 0128 + Gandalf 0402: run deterministic hardening-gate check (<10ms) BEFORE
+    // spending a billable delta-verify call so missing mechanical tokens surface immediately.
+    const preDeltaHardening = checkPropertyGates({
+      plan: renderedPlan,
+      waves,
+      propertyGates,
+      addsSurface,
+    });
+    const hardeningHint = !preDeltaHardening.pass
+      ? `\n\nNOTE (deterministic hardening-gate pre-check): ${preDeltaHardening.detail}`
+      : '';
+
     deltaVerification = (await budgetedAgent(
       [
         'You are Crucible Matrix-Fast-Track Delta Verifier (120s bounded delta-only pass).',
         'Verify ONLY whether the previously raised blocking findings are resolved in the patched plan.',
-        `Patched Blockers:\n${matrixTally.blockers.map((b) => `- [${b.layer}] ${b.message}`).join('\n')}`,
+        `Patched Blockers:\n${matrixTally.blockers.map((b) => `- [${b.layer}] ${b.message}`).join('\n')}${hardeningHint}`,
         `=== PATCHED IMPLEMENTATION PLAN ===\n${renderedPlan}\n=== END PLAN ===`,
       ].join('\n\n'),
       {
@@ -786,7 +1084,9 @@ export async function runMatrixFastTrack({
     waves,
   });
 
-  const planPathHint = outputDir ? path.join(path.resolve(outputDir), 'IMPLEMENTATION-PLAN.md') : 'IMPLEMENTATION-PLAN.md';
+  const planPathHint = approved
+    ? (outputDir ? path.join(path.resolve(outputDir), 'IMPLEMENTATION-PLAN.md') : 'IMPLEMENTATION-PLAN.md')
+    : (candidatePlanPath || 'CANDIDATE-IMPLEMENTATION-PLAN.md');
   const gateBlock = formatPlainEnglishApprovalGate({
     goal: lockedNorthStar,
     recommendation: 'Approve and hand off to Foreman.',
@@ -805,6 +1105,13 @@ export async function runMatrixFastTrack({
     deferredScope,
     eleganceCuts: cutElement ? [cutElement] : [],
     pilotOverrideReason,
+    monoliths: anvilMonoliths,
+    monolithOverrideReason,
+    enforceProseBudget: true,
+    reusablePrimitives: anvilReusable,
+    versionedLayers: anvilVersionedLayers,
+    reuseOverrideReason,
+    sunsetOverrideReason,
     gateBlock,
   });
 
@@ -815,9 +1122,8 @@ export async function runMatrixFastTrack({
     );
   }
 
-  const stateDir = artifactsDir
-    ? path.resolve(artifactsDir)
-    : (outputDir ? path.join(path.resolve(outputDir), '.crucible') : null);
+  const provenance = matrixProvenanceOf(receipts);
+
   if (stateDir) {
     fs.mkdirSync(stateDir, { recursive: true });
     fs.writeFileSync(
@@ -831,6 +1137,10 @@ export async function runMatrixFastTrack({
         deltaVerified: Boolean(deltaVerification?.resolved),
         portfolioGates: finalPortfolioGates.map((g) => g.skill),
         chekhovPass: chekhov.pass,
+        cross_model: provenance.cross_model,
+        family_attested: provenance.family_attested,
+        models: provenance.models,
+        provenance,
         ts: new Date().toISOString(),
       }, null, 2) + '\n',
       'utf8',
@@ -838,12 +1148,56 @@ export async function runMatrixFastTrack({
   }
 
   if (!approved) {
+    if (stateDir && candidatePlanPath && lockableDraftPath) {
+      fs.writeFileSync(candidatePlanPath, renderedPlan.trimEnd() + '\n', 'utf8');
+      fs.writeFileSync(
+        lockableDraftPath,
+        JSON.stringify({
+          rawIntent,
+          northStar: lockedNorthStar,
+          criteria: lockedCriteria,
+          planTitle,
+          planSummary,
+          renderedPlan,
+          waves,
+          deferredScope,
+          cutElement,
+          testCommand: preflight.command,
+          portfolioGates: finalPortfolioGates,
+          chekhov,
+          matrixTally,
+          revised,
+          provenance,
+          calls: budgetedAgent.count(),
+          ts: new Date().toISOString(),
+        }, null, 2) + '\n',
+        'utf8',
+      );
+    }
+    if (recordRun || runsDir || process.env.CRUCIBLE_RUNS_DIR) {
+      writeCrucibleRunRecord({
+        band: 'MATRIX-FAST-TRACK',
+        tier,
+        started,
+        input: rawIntent,
+        params: { approved: false, calls: budgetedAgent.count(), max_calls: MATRIX_MAX_MODEL_CALLS },
+        output: candidatePlanPath ? [candidatePlanPath] : [],
+        result: 'GATE: implementation-plan-approval',
+        cross_model: provenance.cross_model,
+        family_attested: provenance.family_attested,
+        models: provenance.models,
+        duration_s: Math.max(0, Math.round((Date.now() - t0) / 1000)),
+      }, { runsDir });
+    }
     const halt = haltForHuman(gateBlock, 'implementation-plan-approval');
     halt.plan = renderedPlan;
     halt.waves = waves;
     halt.calls = budgetedAgent.count();
     halt.chekhov = chekhov;
     halt.matrixTally = matrixTally;
+    halt.provenance = provenance;
+    halt.cross_model = provenance.cross_model;
+    halt.candidatePlanPath = candidatePlanPath;
     throw halt;
   }
 
@@ -874,6 +1228,22 @@ export async function runMatrixFastTrack({
     handoff = runHandoffGate({ projectDir: docTrio.dir, artifactsDir: stateDir, runGate, log });
   }
 
+  if (recordRun || runsDir || process.env.CRUCIBLE_RUNS_DIR) {
+    writeCrucibleRunRecord({
+      band: 'MATRIX-FAST-TRACK',
+      tier,
+      started,
+      input: rawIntent,
+      params: { approved: true, calls: budgetedAgent.count(), max_calls: MATRIX_MAX_MODEL_CALLS, revised },
+      output: docTrio ? [docTrio.files.plan, docTrio.files.description, docTrio.files.execution_log, docTrio.configPath] : [],
+      result: 'HANDOFF_READY',
+      cross_model: provenance.cross_model,
+      family_attested: provenance.family_attested,
+      models: provenance.models,
+      duration_s: Math.max(0, Math.round((Date.now() - t0) / 1000)),
+    }, { runsDir });
+  }
+
   return {
     band: 'MATRIX-FAST-TRACK',
     bandStamp: bandProfileStamp(profile),
@@ -892,6 +1262,8 @@ export async function runMatrixFastTrack({
     chekhov,
     portfolioGates: finalPortfolioGates,
     gateBlock,
+    provenance,
+    cross_model: provenance.cross_model,
     calls: budgetedAgent.count(),
     maxModelCalls: MATRIX_MAX_MODEL_CALLS,
     callHistory: budgetedAgent.history(),
@@ -938,27 +1310,41 @@ if (isMain()) {
 
   try {
     if (isLite) {
-      const res = await runLiteFastPath({
-        agent: built.agent,
-        task: intent,
-        repoDir,
-        outDir,
-        families: built.families,
-        log: (s) => console.log(s),
-      });
-      console.log(`LITE_PLAN ${res.files?.plan || outDir} (calls=${res.calls}/${LITE_MAX_MODEL_CALLS})`);
-    } else {
-      const res = await runMatrixFastTrack({
-        agent: built.agent,
-        intent,
-        repoDir,
-        outputDir: outDir,
-        superjump: argv.includes('--superjump'),
-        approved,
-        log: (s) => console.log(s),
-      });
-      console.log(`MATRIX_PLAN ${res.docTrio?.files?.plan || outDir} (calls=${res.calls}/${MATRIX_MAX_MODEL_CALLS})`);
-    }
+        const res = await runLiteFastPath({
+          agent: built.agent,
+          task: intent,
+          repoDir,
+          outDir,
+          families: built.families,
+          log: (s) => console.log(s),
+        });
+        writeCrucibleRunRecord({
+          band: 'LITE',
+          tier: 'standard',
+          input: intent,
+          params: { calls: res.calls, max_calls: LITE_MAX_MODEL_CALLS },
+          output: res.files ? [res.files.plan, res.files.description, res.files.execution_log, res.files.config, res.files.review] : [],
+          result: `LITE_PLAN calls=${res.calls}`,
+          cross_model: res.cross_model === true,
+          family_attested: Boolean(res.provenance?.review?.family_attested),
+          models: res.provenance?.review ? [res.provenance.draft, res.provenance.review, res.provenance.revise].filter(Boolean) : [],
+        });
+        console.log(`LITE_PLAN ${res.files?.plan || outDir} (calls=${res.calls}/${LITE_MAX_MODEL_CALLS})`);
+      } else {
+        const res = await runMatrixFastTrack({
+          agent: built.agent,
+          intent,
+          northStar: flag('--north-star'),
+          repoDir,
+          outputDir: outDir,
+          superjump: argv.includes('--superjump'),
+          pauseAtStage0Lock: argv.includes('--lock-north-star-first'),
+          approved,
+          recordRun: true,
+          log: (s) => console.log(s),
+        });
+        console.log(`MATRIX_PLAN ${res.docTrio?.files?.plan || outDir} (calls=${res.calls}/${MATRIX_MAX_MODEL_CALLS})`);
+      }
     process.exit(0);
   } catch (e) {
     if (e && e.halt_for_human) {

@@ -151,13 +151,22 @@ function executePrompt(ctx) {
         '----- END PRE-COMPUTED AST SYMBOL SLICE (Anvil) -----',
       ]
     : [];
+  const reusableBlock = (!nonCode && ctx.reusableHelpers)
+    ? [
+        '----- BEGIN EXISTING REUSABLE REPO HELPERS (import these — do NOT duplicate) -----',
+        ctx.reusableHelpers,
+        '----- END EXISTING REUSABLE REPO HELPERS -----',
+      ]
+    : [];
   const lite = /^(LITE|LIGHT)$/i.test(String(process.env.FOREMAN_BAND_DEPTH || ''));
   const liteBudget = lite
     ? [
         `LITE BAND BUDGET: stay minimal — implement only this wave's deliverables + the`,
         `smallest tests that import new modules. No drive-by refactors, no docs fluff.`,
       ]
-    : [];
+    : (nonCode ? [] : [
+        `MODULARITY & ANTI-BLOAT BUDGET: keep new modules compact (<600 lines target, <=1,000 hard cap), keep total wave net non-test code <=1,400 lines, NEVER append >220 net lines onto an existing file >1,500 lines, reuse existing repo helpers instead of re-implementing file locks / atomic writers, and leave zero uncalled private helper functions.`,
+      ]);
   const checklist = [
     ...(nonCode
       ? [`Every declared output exists as a non-empty file inside the project and was written by you in this wave.`]
@@ -174,6 +183,7 @@ function executePrompt(ctx) {
     `frozen plan. Do not refactor outside the plan; do not weaken or delete tests.`,
     ...contractBlock,
     ...anvilBlock,
+    ...reusableBlock,
     ...liteBudget,
     ...(nonCode
       ? [`Produce ONLY the declared outputs (and what they need); no tests are expected of a ${ctx.wave.waveKind} wave.`]
@@ -263,6 +273,7 @@ function eleganceInReview(ctx = {}) {
     `stated deliverable? (2) Is anything built that an existing function, file or library already does? (3) Is a`,
     `test asserting more than the plan's acceptance needs? Report each real case as a MAJOR finding with`,
     `rule: "elegance", naming what to remove and the plan line it fails; report nothing for taste.`,
+    ...(ctx.locSummary ? [`Measured wave line deltas: ${ctx.locSummary}.`] : []),
     ...(beyond.length
       ? [`Changed test file(s) that no acceptance item's (oracle: ...) names: ${beyond.slice(0, 12).join(', ')} — question (3) applies to each.`]
       : []),
@@ -348,11 +359,13 @@ export function makeAgentDriver({ agent }) {
     async elegance(ctx, gate) {
       const changed = (Array.isArray(ctx.changed) ? ctx.changed : [])
         .map((f) => String(f)).filter((f) => f && !f.endsWith(' (deleted)'));
-      const elements = changed.map((f, i) => ({
-        id: `F${i + 1}`, text: f,
-        kind: /(^|\/)(test|tests|spec|fixtures?)(\/|$)|\.test\.|_test\.|test_/i.test(f) ? 'malleability' : 'element',
-        detail: `changed in wave ${ctx.wave.n}`,
-      }));
+      const elements = Array.isArray(ctx.eleganceElements) && ctx.eleganceElements.length > 0
+        ? ctx.eleganceElements
+        : changed.map((f, i) => ({
+            id: `F${i + 1}`, text: f,
+            kind: /(^|\/)(test|tests|spec|fixtures?)(\/|$)|\.test\.|_test\.|test_/i.test(f) ? 'malleability' : 'element',
+            detail: `changed in wave ${ctx.wave.n}`,
+          }));
       const section = waveSectionText(ctx.planText, ctx.wave.n);
       return runElegancePass({
         elements,
@@ -360,7 +373,7 @@ export function makeAgentDriver({ agent }) {
         criteria: [],
         provenance: { records: [`the frozen implementation plan, wave ${ctx.wave.n} section`], proposerWritten: [] },
         agent: (p, o = {}) => agent(p, { ...o, label: `${o.label || 'elegance'}:w${ctx.wave.n}` }),
-        context: `wave ${ctx.wave.n}${ctx.wave.title ? ` "${ctx.wave.title}"` : ''} — ${elements.length} changed file(s); gate ${gate?.tap?.pass ?? '?'}/${gate?.tap?.tests ?? '?'}` +
+        context: `wave ${ctx.wave.n}${ctx.wave.title ? ` "${ctx.wave.title}"` : ''} — ${changed.length} changed file(s)${ctx.locSummary ? ` (${ctx.locSummary})` : ''}; gate ${gate?.tap?.pass ?? '?'}/${gate?.tap?.tests ?? '?'}` +
           (section ? `\nPLAN SECTION:\n${section.slice(0, 2500)}` : ''),
         log: typeof ctx.log === 'function' ? ctx.log : () => {},
         profile: ctx.profile || null,

@@ -1,6 +1,6 @@
 ---
 name: zombie-hunter
-description: The armed-by-evidence background reaper for the Anchor service — it freezes or kills only a truly-orphaned sub-agent swarm and never a legitimate run, via ownership-based liveness, positive proof-of-death, an abstain-by-default safety gate, and a token-authenticated control plane.
+description: The armed-by-evidence background reaper for the Anchor service — it freezes or kills only a truly-orphaned sub-agent swarm and never a legitimate run, via ownership-based liveness, positive proof-of-death, an abstain-by-default safety gate, and a token-authenticated control plane. Variable Strength: Light / Standard by default (1-step-below-frontier model at medium effort; call 'Zombie-Hunter Heavy' for top-tier frontier model at highest effort on high-stakes runs, configurable in Anchor Setup).
 ---
 
 ## North Star (LOCKED — John, 2026-08-25)

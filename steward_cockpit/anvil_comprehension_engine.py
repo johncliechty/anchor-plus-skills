@@ -32,6 +32,8 @@ _ENV_ALLOWLIST_KEYS = frozenset({
     "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT", "PATH", "TEMP", "TMP", "TMPDIR", "USERPROFILE", "HOME",
     "HOMEDRIVE", "HOMEPATH", "APPDATA", "LOCALAPPDATA", "USERNAME", "COMPUTERNAME", "OS",
     "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE", "SYSTEMDRIVE", "PROGRAMDATA", "PROGRAMFILES", "PROGRAMFILES(X86)", "COMMONPROGRAMFILES",
+    "TRIO_TIER", "ANCHOR_STRENGTH", "ANCHOR_INHERITED_STRENGTH", "ANCHOR_DATA_DIR", "ANCHOR_SETTINGS_DIR",
+    "CLAUDE_CONFIG_DIR", "CODEX_HOME", "GROK_HOME",
 })
 
 
@@ -274,17 +276,110 @@ def _write_signed_cache(cache_file: Path, payload: Mapping[str, Any]) -> None:
     _as._atomic_write_text(cache_file, json.dumps({"hmac": sig, "payload": payload}, indent=2))
 
 
-def _resolve_host_seats() -> Dict[str, Dict[str, str]]:
-    coding = {"vendor": "gemini", "model_id": "Gemini 4 Argon (High)", "effort": "high"}
-    review = {"vendor": "claude", "model_id": "opus", "effort": "high"}
-    try:
-        import model_policy as _mp
-        prefs = _mp.load_prefs()
-        if str(prefs.get("coding_family") or "gemini").strip().lower() == "claude":
-            coding, review = review, coding
-    except Exception:
-        pass
-    return {"primary": coding, "review": review}
+def read_anvil_strength(cdir: Optional[str | Path] = None) -> str:
+    import model_policy as _mp
+    explicit = _mp.normalize_strength(os.environ.get("ANCHOR_STRENGTH"), default=None)
+    if explicit in ("heavy", "light"):
+        return explicit
+    if cdir is not None:
+        try:
+            c_raw = Path(cdir)
+            if not _is_lstat_reparse(c_raw):
+                sf = c_raw.resolve() / ".anvil" / "strength.json"
+                if not _is_lstat_reparse(sf) and sf.is_file():
+                    doc = json.loads(sf.read_text(encoding="utf-8"))
+                    if isinstance(doc, dict):
+                        val = _mp.normalize_strength(doc.get("strength"), default=None)
+                        if val in ("heavy", "light"):
+                            return val
+                        if val == "standard":
+                            return "light"
+        except Exception:
+            pass
+    inh = _mp.normalize_strength(os.environ.get("ANCHOR_INHERITED_STRENGTH"), default=None)
+    if inh in ("heavy", "light"):
+        return inh
+    if inh == "standard":
+        return "light"
+    return "heavy"
+
+
+def write_anvil_strength(cdir: str | Path, strength: str) -> Dict[str, Any]:
+    import model_policy as _mp
+    c_raw = Path(cdir)
+    if _is_lstat_reparse(c_raw):
+        raise AnvilPathEscapeError("Cockpit directory is a symlink or junction.")
+    c_path = c_raw.resolve()
+    anvil_d = _ensure_no_reparse_chain(c_path, (".anvil",), create_dirs=True)
+    sf = anvil_d / "strength.json"
+    if _is_lstat_reparse(sf):
+        raise AnvilPathEscapeError("Symlink .anvil/strength.json refused.")
+    norm = _mp.normalize_strength(strength, default="heavy")
+    eff = "light" if norm in ("light", "standard") else "heavy"
+    payload = {
+        "schema": "anvil-strength/v1",
+        "strength": eff,
+        "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    _as._atomic_write_text(sf, json.dumps(payload, indent=2))
+    seats = _resolve_host_seats(strength=eff)
+    return {"ok": True, "strength": eff, "seats": seats}
+
+
+def _resolve_host_seats(strength: Optional[str] = None, cdir: Optional[str | Path] = None) -> Dict[str, Dict[str, str]]:
+    import anchor_settings as _aset
+    import model_policy as _mp
+
+    eff_strength = _mp.normalize_strength(strength, default=None) or read_anvil_strength(cdir)
+    is_heavy = eff_strength == "heavy"
+    coding_fam = "gemini"
+    review_fam = "claude"
+    settings_obj: Optional[Dict[str, Any]] = None
+    in_pytest = "pytest" in sys.modules and os.environ.get("ANVIL_ALLOW_LIVE_SEATS_IN_PYTEST") != "1"
+    if not in_pytest or os.environ.get("ANCHOR_SETTINGS_DIR"):
+        try:
+            settings_obj = _aset.load_settings()
+            cf = str(settings_obj.get("coding_family") or settings_obj.get("default_cli") or "gemini").strip().lower()
+            rf = str(settings_obj.get("review_family") or "claude").strip().lower()
+            if cf in ("gemini", "claude"):
+                coding_fam = cf
+            if rf in ("gemini", "claude") and rf != coding_fam:
+                review_fam = rf
+            else:
+                review_fam = "claude" if coding_fam != "claude" else "gemini"
+        except Exception:
+            settings_obj = None
+
+    fallback_models = {
+        "gemini": ("gemini-4-neon", "xhigh") if is_heavy else ("gemini-4-carbon", "medium"),
+        "claude": ("claude-fable-5-2", "max") if is_heavy else ("claude-opus-5-5", "medium"),
+    }
+
+    def _seat_for(fam: str, role_name: str) -> Dict[str, str]:
+        def_m, def_e = fallback_models.get(fam, ("gemini-4-neon", "xhigh"))
+        if not in_pytest:
+            try:
+                sel = _mp.resolve(
+                    fam,
+                    settings=settings_obj if (settings_obj and not settings_obj.get("settings_error")) else None,
+                    role=role_name,
+                    tier=eff_strength,
+                    skill="anvil",
+                )
+                return {
+                    "vendor": fam,
+                    "model_id": str(sel.get("model") or def_m),
+                    "effort": str(sel.get("effort") or def_e),
+                    "strength": eff_strength,
+                }
+            except Exception:
+                pass
+        return {"vendor": fam, "model_id": def_m, "effort": def_e, "strength": eff_strength}
+
+    return {
+        "primary": _seat_for(coding_fam, "coding"),
+        "review": _seat_for(review_fam, "review"),
+    }
 
 
 _extract_json_object = _avg.extract_json_object
@@ -298,6 +393,7 @@ def _run_hermetic_cli(seat: Mapping[str, str], prompt: str, *, label: str, timeo
     if in_pytest and os.environ.get("ANVIL_ALLOW_LIVE_SEATS_IN_PYTEST") != "1":
         return {"ok": False, "failure_key": "seat-missing", "error": "Live CLI seats disabled in hermetic pytest without injected runner."}
 
+    import model_policy as _mp
     vendor = str(seat.get("vendor") or "").lower()
     model_id = str(seat.get("model_id") or "")
     effort = str(seat.get("effort") or "high")
@@ -315,7 +411,7 @@ def _run_hermetic_cli(seat: Mapping[str, str], prompt: str, *, label: str, timeo
             c_exe = _resolve_strict_exe(cands, exclude_dir=exclude_dir, extra_exclude=extra_exclude)
             if not c_exe:
                 return {"ok": False, "failure_key": "seat-missing", "error": "claude.exe not found"}
-            cli_model = "opus" if model_id in ("", "claude-opus-5-5", "claude-fable-5-2") else model_id
+            cli_model = model_id if model_id else ("claude-fable-5-2" if effort == "max" else "claude-opus-5-5")
             argv = [
                 c_exe, "-p", "--setting-sources", "user", "--model", cli_model, "--effort", effort,
                 "--permission-mode", "dontAsk", "--max-turns", "1", "--tools", "", "--strict-mcp-config",
@@ -330,7 +426,12 @@ def _run_hermetic_cli(seat: Mapping[str, str], prompt: str, *, label: str, timeo
             if not agy_exe or not py_exe:
                 return {"ok": False, "failure_key": "seat-missing", "error": "agy.exe or python.exe not found"}
             _avg.write_agy_zero_tool_hooks(tmp_dir, py_exe)
-            agy_lbl = model_id if "(" in model_id else "Gemini 4 Argon (High)"
+            if "(" in model_id:
+                agy_lbl = model_id
+            elif model_id.startswith("gemini-"):
+                agy_lbl = _mp.agy_model_id(model_id, effort)
+            else:
+                agy_lbl = "gemini-4-neon-xhigh" if effort in ("xhigh", "max") else "gemini-4-carbon-medium"
             argv = [
                 agy_exe, "--input-format", "stream-json", "--output-format", "stream-json",
                 "--mode", "plan", "--sandbox", "--disable-slash-commands",
@@ -348,6 +449,32 @@ def _run_hermetic_cli(seat: Mapping[str, str], prompt: str, *, label: str, timeo
             proc.kill()
             proc.communicate()
             return {"ok": False, "failure_key": "seat-timeout-or-cancelled", "error": f"{vendor} seat timed out after {timeout_sec}s"}
+
+        quota_stepdown_from: Optional[str] = None
+        if (
+            proc.returncode != 0
+            and vendor == "claude"
+            and model_id == "claude-fable-5-2"
+            and re.search(r"hit your limit|rate_limit|quota|usage limit", f"{stdout_s or ''} {stderr_s or ''}", re.I)
+        ):
+            terminate_and_close_win32_job(job_handle, terminate=False)
+            job_handle = 0
+            retry_argv = [
+                c_exe, "-p", "--setting-sources", "user", "--model", "claude-opus-5-5", "--effort", "medium",
+                "--permission-mode", "dontAsk", "--max-turns", "1", "--tools", "", "--strict-mcp-config",
+                "--mcp-config", str(empty_mcp), "--no-session-persistence", "--output-format", "json",
+            ]
+            proc, job_handle = spawn_in_win32_job(retry_argv, cwd=tmp_dir, env=build_minimal_cli_env(), has_stdin=True)
+            try:
+                stdout_s, stderr_s = proc.communicate(input=stdin_text, timeout=timeout_sec)
+                quota_stepdown_from = "claude-fable-5-2"
+            except subprocess.TimeoutExpired:
+                timed_out = True
+                terminate_and_close_win32_job(job_handle, terminate=True)
+                job_handle = 0
+                proc.kill()
+                proc.communicate()
+                return {"ok": False, "failure_key": "seat-timeout-or-cancelled", "error": f"{vendor} fallback seat timed out after {timeout_sec}s"}
 
         if proc.returncode != 0:
             return {"ok": False, "failure_key": "seat-missing", "error": (stderr_s or stdout_s or f"rc={proc.returncode}")[:400]}
@@ -370,7 +497,11 @@ def _run_hermetic_cli(seat: Mapping[str, str], prompt: str, *, label: str, timeo
         parsed = _extract_json_object(raw_reply)
         if not isinstance(parsed, dict):
             return {"ok": False, "failure_key": "schema-or-json-invalid", "error": "Seat output did not contain a valid JSON object"}
-        return {"ok": True, "vendor": vendor, "model_served": served_model, "data": parsed}
+        out_res: Dict[str, Any] = {"ok": True, "vendor": vendor, "model_served": served_model, "data": parsed}
+        if quota_stepdown_from:
+            out_res["quota_stepdown_from"] = quota_stepdown_from
+            out_res["degraded"] = True
+        return out_res
     finally:
         terminate_and_close_win32_job(job_handle, terminate=timed_out)
         shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -664,7 +795,8 @@ def issue_comprehension_consent(cdir: str | Path, body: Optional[Mapping[str, An
         if type(exc).__name__ in ("AnvilLatexSecurityError", "AnvilRefusalError", "AnvilPathEscapeError"):
             return {"ok": False, "error_code": "PATH_ESCAPE_REFUSED", "cwe": "CWE-22", "message": str(exc)}, 403
         raise
-    seats = _resolve_host_seats()
+    eff_str_c = str(req.get("strength") or "").strip() or None
+    seats = _resolve_host_seats(strength=eff_str_c, cdir=c_path)
     vendors_tag = f"{seats['primary']['vendor']}+{seats['review']['vendor']}"
     ts = int(time.time())
     nonce = secrets.token_hex(12)
@@ -673,7 +805,8 @@ def issue_comprehension_consent(cdir: str | Path, body: Optional[Mapping[str, An
         "ok": True, "schema": COMPREHENSION_CONSENT_SCHEMA, "status": "awaiting-comprehension-consent",
         "scope_sha256": scope_sha256, "payload_sha256": prep["payload_sha256"],
         "payload_bytes": len(prep["p_prompt"].encode("utf-8")), "consent_token": tok,
-        "vendors_disclosed": [f"{seats['primary']['vendor']} ({seats['primary']['model_id']})", f"{seats['review']['vendor']} ({seats['review']['model_id']})"],
+        "strength": seats["primary"].get("strength", "heavy"),
+        "vendors_disclosed": [f"{seats['primary']['vendor']} ({seats['primary']['model_id']} · {seats['primary']['effort']})", f"{seats['review']['vendor']} ({seats['review']['model_id']} · {seats['review']['effort']})"],
         "in_scope_file_count": len(prep["scope_files"]), "equation_count": len(prep["equations"]),
     }, 200
 
@@ -714,7 +847,8 @@ def run_semantic_comprehension(cdir: str | Path, body: Optional[Mapping[str, Any
 
     has_injected = callable(globals().get("_INJECTED_SEAT_RUNNER")) and bool(os.environ.get("PYTEST_CURRENT_TEST"))
     use_live_seats = bool(req.get("use_live_seats", has_injected))
-    seats = _resolve_host_seats()
+    eff_str_r = str(req.get("strength") or "").strip() or None
+    seats = _resolve_host_seats(strength=eff_str_r, cdir=c_path)
     vendors_tag = f"{seats['primary']['vendor']}+{seats['review']['vendor']}"
     job_key = f"{os.path.normcase(str(c_path))}::{scope_sha256}"
     with _ENGINE_LOCK:

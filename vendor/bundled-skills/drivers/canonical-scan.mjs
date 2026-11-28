@@ -1,7 +1,7 @@
 // drivers/canonical-scan.mjs — SR-2 canonical-tree guard (Phase 1.1 done-when a+b).
 //
 // Statically proves that NO production import specifier escapes the canonical trio tree
-// (no `fil<path> archive import, no absolute drive/POSIX path). ESM
+// (no `<path> archive import, no absolute drive/POSIX path). ESM
 // specifiers are static, so a whole-tree specifier scan IS the runtime resolution
 // property: with the archive dirs renamed/removed, zero imports could resolve outside
 // `<path> This is the assertion registered in the Phase-0.4 gate-inventory

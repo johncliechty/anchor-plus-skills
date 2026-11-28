@@ -231,7 +231,7 @@ def _compute_core_bundle_digest(anchor_root: Path | str | None = None) -> str:
 
 
 def _canonical_release_signal_bytes(doc: dict[str, Any]) -> bytes:
-    core = {
+    core: dict[str, Any] = {
         "schema": str(doc.get("schema") or ""),
         "channel": str(doc.get("channel") or "stable"),
         "version": str(doc.get("version") or ""),
@@ -243,6 +243,8 @@ def _canonical_release_signal_bytes(doc: dict[str, Any]) -> bytes:
         "notes": str(doc.get("notes") or ""),
         "key_id": str(doc.get("key_id") or ""),
     }
+    if doc.get("exe_sha256"):
+        core["exe_sha256"] = str(doc["exe_sha256"])
     return json.dumps(core, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
 
 
@@ -253,6 +255,7 @@ def build_signed_release_signal(
     key_file: Path | str | None = None,
     anchor_root: Path | str | None = None,
     core_sha256: str | None = None,
+    exe_sha256: str | None = None,
     min_auto_update_version: str = "1.5.0",
     notes: str = "",
     channel: str = "stable",
@@ -292,9 +295,25 @@ def build_signed_release_signal(
         "notes": str(notes or f"Anchor v{clean_ver} collaborator release.").strip(),
         "key_id": eff_kid,
     }
+    if exe_sha256:
+        doc["exe_sha256"] = str(exe_sha256).strip()
     sig = _ed25519_sign(seed, _canonical_release_signal_bytes(doc))
     doc["signature"] = _format_colon_hex(sig)
     return doc
+
+
+def verify_downloaded_exe_zip(zip_bytes: bytes, signal_doc: dict[str, Any]) -> tuple[bool, str]:
+    """Verify downloaded `Anchor.zip` bytes against a signed `exe_sha256` field when present."""
+    if not zip_bytes:
+        return False, "empty_zip_payload"
+    expected = str((signal_doc or {}).get("exe_sha256") or "").strip().lower()
+    if not expected:
+        return True, "no_exe_sha256_pinned"
+    norm_exp = expected.replace(":", "")
+    got_hex = hashlib.sha256(zip_bytes).hexdigest().lower()
+    if not hmac.compare_digest(got_hex, norm_exp):
+        return False, "exe_sha256_mismatch"
+    return True, "verified"
 
 
 def verify_release_signal(
@@ -929,7 +948,11 @@ def check_for_updates(
     }
 
 
-def _sync_bundled_skills_for_root(root: Path) -> tuple[list[str], str]:
+def _sync_bundled_skills_for_root(
+    root: Path,
+    *,
+    cli_homes: tuple[Path, ...] | None = None,
+) -> tuple[list[str], str]:
     src_skills = root / "vendor" / "bundled-skills"
     ws_skills = root.parent / "skills"
     if not src_skills.is_dir():
@@ -939,6 +962,23 @@ def _sync_bundled_skills_for_root(root: Path) -> tuple[list[str], str]:
         (item["name"] if isinstance(item, dict) else str(item))
         for item in (rep.get("installed") or [])
     ]
+    extra_homes: tuple[Path, ...] = ()
+    if cli_homes is not None:
+        extra_homes = cli_homes
+    elif "PYTEST_CURRENT_TEST" not in os.environ or os.environ.get("ANCHOR_UPDATER_SYNC_CLI_HOMES") == "1":
+        extra_homes = (
+            Path.home() / ".claude" / "skills",
+            Path.home() / ".codex" / "skills",
+            Path.home() / ".agents" / "skills",
+            Path.home() / ".gemini" / "antigravity" / "skills",
+        )
+    for h_dir in extra_homes:
+        with contextlib.suppress(Exception):
+            onboard.install_skills(skills_src=src_skills, skills_home=h_dir, overwrite=True)
+    if cli_homes is None and "PYTEST_CURRENT_TEST" not in os.environ:
+        with contextlib.suppress(Exception):
+            import foundry_autoload as _fa
+            _fa.sync_registrations()
     return installed, f"skills_synced:{len(installed)}"
 
 
@@ -1284,12 +1324,26 @@ def push_update_to_motherships(
     now_iso = _utc_now_iso()
 
     git_pushed = False
-    if push_git and (root / ".git").is_dir() and runner_fn is not None:
-        try:
-            p_res = run(["git", "-C", str(root), "push", "origin", "HEAD"], cwd=str(root))
-            git_pushed = getattr(p_res, "returncode", 1) == 0
-        except Exception:
-            git_pushed = False
+    git_push_note = ""
+    if push_git and (root / ".git").is_dir():
+        if runner_fn is not None:
+            try:
+                p_res = run(["git", "-C", str(root), "push", "origin", "HEAD"], cwd=str(root))
+                git_pushed = getattr(p_res, "returncode", 1) == 0
+            except Exception as exc:
+                git_pushed = False
+                git_push_note = str(exc)
+        elif "PYTEST_CURRENT_TEST" not in os.environ:
+            try:
+                rem_res = run(["git", "-C", str(root), "remote", "get-url", "origin"], cwd=str(root))
+                rem_url = (getattr(rem_res, "stdout", "") or "").strip()
+                if "ghostworldlabs-anchor" in rem_url.lower():
+                    p_res = run(["git", "-C", str(root), "push", "origin", "HEAD"], cwd=str(root))
+                    git_pushed = getattr(p_res, "returncode", 1) == 0
+                else:
+                    git_push_note = "origin_is_private_or_local_use_publish_collaborator_release"
+            except Exception as exc:
+                git_push_note = str(exc)
 
     peer_caps = _load_homebase_peer_capabilities(eff_anchor)
 
@@ -2403,15 +2457,22 @@ def _acquire_cross_process_update_lock(anchor_root: Path | str | None = None) ->
 
 
 def is_host_busy_for_auto_update(anchor_root: Path | str | None = None) -> tuple[bool, str]:
-    """Return `(True, reason)` if any Steward AI Cockpit turn, managed PTY session, or Foreman/code job is actively running."""
+    """Return `(True, reason)` if any Steward AI Cockpit turn, managed PTY session, Foreman/code job, or preview is running.
+    Fails CLOSED (`True`) if any live job/session backing store raises an unexpected read/parse error."""
     try:
         import cave_processing_feed as _cpf
-        snap = _cpf.snapshot()
-        active_items = [x for x in (snap.get("items") or []) if isinstance(x, dict) and str(x.get("state") or "") in ("running", "working", "active")]
+        snap = _cpf.read_processing_feed_for_cave()
+        active_items = [
+            x for x in (snap.get("rows") or snap.get("items") or [])
+            if isinstance(x, dict) and str(x.get("state") or x.get("status") or "") in ("running", "working", "active")
+        ]
         if active_items:
             return True, f"active_processing_items:{len(active_items)}"
-    except Exception:
+    except ImportError:
         pass
+    except Exception as exc:
+        return True, f"busy_check_error:cave_processing_feed:{type(exc).__name__}"
+
     try:
         from steward_cockpit import steward_engine as _se
         eng = getattr(_se, "ENGINE", None)
@@ -2419,16 +2480,110 @@ def is_host_busy_for_auto_update(anchor_root: Path | str | None = None) -> tuple
             for _k, sess in list((getattr(eng, "sessions", None) or {}).items()):
                 if getattr(sess, "busy", False) or str(getattr(sess, "state", "") or "") in ("thinking", "working", "running"):
                     return True, "steward_turn_active"
-    except Exception:
+    except ImportError:
         pass
+    except Exception as exc:
+        return True, f"busy_check_error:steward_engine:{type(exc).__name__}"
+
     try:
         import session_registry as _sreg
         live_rows = [r for r in (_sreg.list_sessions() or []) if isinstance(r, dict) and str(r.get("status") or "") in ("running", "working")]
         if live_rows:
             return True, f"active_terminal_sessions:{len(live_rows)}"
-    except Exception:
+    except ImportError:
         pass
+    except Exception as exc:
+        return True, f"busy_check_error:session_registry:{type(exc).__name__}"
+
+    try:
+        import job_runner as _jr
+        if hasattr(_jr, "list_records"):
+            running_jobs = [r for r in (_jr.list_records() or []) if isinstance(r, dict) and str(r.get("status") or "") in ("running", "starting", "waiting_gate")]
+            if running_jobs:
+                return True, f"active_jobs:{len(running_jobs)}"
+    except ImportError:
+        pass
+    except Exception as exc:
+        return True, f"busy_check_error:job_runner:{type(exc).__name__}"
+
+    try:
+        from steward_cockpit import code_jobs as _cj
+        if hasattr(_cj, "list_jobs"):
+            active_cjobs = [j for j in (_cj.list_jobs() or []) if isinstance(j, dict) and str(j.get("status") or "") in ("running", "starting", "checking")]
+            if active_cjobs:
+                return True, f"active_code_jobs:{len(active_cjobs)}"
+    except ImportError:
+        pass
+    except Exception as exc:
+        return True, f"busy_check_error:code_jobs:{type(exc).__name__}"
+
+    try:
+        import preview_server as _ps
+        if hasattr(_ps, "list_previews"):
+            live_prevs = [p for p in (_ps.list_previews() or []) if isinstance(p, dict) and p.get("running")]
+            if live_prevs:
+                return True, f"active_previews:{len(live_prevs)}"
+    except ImportError:
+        pass
+    except Exception as exc:
+        return True, f"busy_check_error:preview_server:{type(exc).__name__}"
+
     return False, ""
+
+
+def schedule_safe_post_update_reload(
+    anchor_root: Path | str | None = None,
+    *,
+    current_pid: int | None = None,
+    runner_fn=None,
+    busy_check_fn=None,
+) -> dict[str, Any]:
+    """Trigger a supervisor-safe server restart after an update when idle.
+
+    Never self-spawns `anchor_gui.py` directly against a bound `SO_EXCLUSIVEADDRUSE` port.
+    Routes through `nssm restart anchor` (when NSSM supervises), `launchctl kickstart -k` (macOS),
+    or `launch_anchor_dashboard.py --no-browser --restart-after-pid <pid> --post-update-rebind`.
+    """
+    root = _code_dir(anchor_root)
+    check_busy = busy_check_fn or (lambda: is_host_busy_for_auto_update(root))
+    busy, reason = check_busy()
+    if busy:
+        return {"ok": False, "deferred": True, "reason": reason}
+    pid = int(current_pid if current_pid is not None else os.getpid())
+    launcher = root / "launch_anchor_dashboard.py"
+    if os.name == "nt" and shutil.which("nssm") and paths.is_windows_service_or_session0():
+        cmd = ["nssm", "restart", "anchor"]
+        method = "nssm_service"
+    elif sys.platform == "darwin" and (Path.home() / "Library" / "LaunchAgents" / "com.ghostworldlabs.anchor.plist").is_file():
+        uid = os.getuid() if hasattr(os, "getuid") else 501
+        cmd = ["launchctl", "kickstart", "-k", f"gui/{uid}/com.ghostworldlabs.anchor"]
+        method = "launchd_agent"
+    else:
+        cmd = [
+            sys.executable,
+            str(launcher),
+            "--no-browser",
+            "--restart-after-pid",
+            str(pid),
+            "--post-update-rebind",
+        ]
+        method = "launcher_rebind_handoff"
+    if runner_fn is not None:
+        runner_fn(cmd)
+        return {"ok": True, "scheduled": True, "method": method, "command": cmd}
+    if "PYTEST_CURRENT_TEST" in os.environ:
+        return {"ok": True, "scheduled": False, "method": method, "command": cmd, "skipped_in_pytest": True}
+    subprocess.Popen(
+        cmd,
+        cwd=str(root),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        shell=False,
+        creationflags=(0x08000000 if os.name == "nt" else 0),
+        start_new_session=(os.name != "nt"),
+    )
+    return {"ok": True, "scheduled": True, "method": method, "command": cmd}
 
 
 def poll_website_release_signal(

@@ -5,6 +5,12 @@ never told to an agent; SKILL.md shows a host only the four public verbs.
 Stopping halfway through any step list loses nothing — every step is
 idempotent and re-runnable.
 
+## Variable Strength (`Chekhov` Heavy Default vs. `Chekhov Light`) — What to Call When
+
+`Chekhov` is one of the four **`Heavy`-by-default** skills (`Anvil`, `Chekhov`, `Aegis`, `Superjump`):
+- **Call `Chekhov` (default = `⚡ Heavy` · frontier Orchestrator + frontier T1 Judge/Reviewer @ full effort)** when onboarding Story Bibles or canonical sources, running full-chapter refinement (6-seat Blind/Informed Beta-Readers + Wit & Crispness polish pass), checking multi-book theme/timeline arcs, or running `chekhov lock`.
+- **Call `Chekhov Light` (`🪶 Light` · one generalist model below frontier @ `medium` effort on both Orchestrator and Judge/Reviewer — say `"Chekhov Light"` or pass `--tier light` to `bin/chekhov.mjs`)** when checking a quick dictated scene idea (`chekhov idea`), brainstorming early scene beats, or running a fast mid-draft continuity check before full chapter polish.
+
 ## The operator verbs (yours alone)
 
 ### Notes do not need a chapter assignment

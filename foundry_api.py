@@ -133,9 +133,10 @@ def _resolve_source(source):
     if _is_default_foundry_root():
         leaf = Path(source.replace("\\", "/")).name
         for root in (ANCHOR_DIR.parent / "skills", ANCHOR_DIR / "vendor" / "bundled-skills"):
-            cand = root / leaf
-            if cand.is_dir():
-                return str(cand)
+            for cand_name in dict.fromkeys((leaf, leaf.lower())):
+                cand = root / cand_name
+                if cand.is_dir():
+                    return str(cand)
     return primary
 
 
@@ -1490,6 +1491,7 @@ def sleep_rollback(body):
 # ── static-file serving of the built React app (foundry-gui/dist) ────────────
 
 DIST_DIR = (ANCHOR_DIR / "foundry-gui" / "dist").resolve()
+VENDOR_DIST_DIR = (ANCHOR_DIR / "vendor" / "foundry-gui-dist").resolve()
 
 _CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -1514,7 +1516,7 @@ def resolve_dist_file(rel_path):
     rel = (rel_path or "").split("?", 1)[0].lstrip("/")
     if not rel:
         rel = "index.html"
-    roots = [DIST_DIR]
+    roots = [DIST_DIR, VENDOR_DIST_DIR]
     if rel.startswith("brand/"):
         roots.append((ANCHOR_DIR / "foundry-gui" / "public").resolve())
         roots.append((ANCHOR_DIR / "vendor").resolve())

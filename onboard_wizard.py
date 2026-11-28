@@ -119,8 +119,8 @@ SERVICE_CATALOG = {
         "tiers": {
             "frontier": {
                 "label": "Frontier (Top-Tier Capability)",
-                "orchestrator_model": "gemini-4-argon",
-                "reviewer_model": "gemini-4-argon",
+                "orchestrator_model": "gemini-4-hydrogen",
+                "reviewer_model": "gemini-4-hydrogen",
                 "effort": "high",
             },
             "one_tier_down": {
@@ -138,7 +138,7 @@ SERVICE_CATALOG = {
             },
         },
         "update_cmd": ["agy", "--version"],
-        "login_cmd": ["agy", "auth", "login"],
+        "login_cmd": ["agy", "models"],
     },
     "grok": {
         "family": "grok",
@@ -179,20 +179,20 @@ SERVICE_CATALOG = {
         "tiers": {
             "frontier": {
                 "label": "Frontier (Top-Tier Capability)",
-                "orchestrator_model": "gpt-6.1-sol",
-                "reviewer_model": "gpt-6.1-sol",
-                "effort": "xhigh",
+                "orchestrator_model": "gpt-6-luna",
+                "reviewer_model": "gpt-6-luna",
+                "effort": "ultra",
             },
             "one_tier_down": {
                 "label": "One Tier Down (Fast / Cost-Balanced)",
-                "orchestrator_model": "gpt-6-astra",
-                "reviewer_model": "gpt-6-astra",
+                "orchestrator_model": "gpt-5.6-terra",
+                "reviewer_model": "gpt-5.6-terra",
                 "effort": "high",
             },
             "free_tier": {
                 "label": "Free Account / Rate-Limit Friendly (Single-Seat Paced)",
-                "orchestrator_model": "gpt-6-astra",
-                "reviewer_model": "gpt-6-astra",
+                "orchestrator_model": "gpt-5.6-luna",
+                "reviewer_model": "gpt-5.6-luna",
                 "effort": "high",
                 "single_seat_pacing": True,
             },
@@ -1335,14 +1335,16 @@ def configure_mothership_topology(
 # ═════════════════════════════════════════════════════════════════════════════
 
 _STALE_MODEL_UPGRADES: dict[str, str] = {
-    "claude-opus-4-7": "claude-fable-5-1",
+    "claude-opus-4-7": "claude-fable-5-2",
+    "claude-fable-5-1": "claude-fable-5-2",
     "claude-sonnet-4-6": "opus",
-    "gemini-3.1-pro-high": "gemini-4-argon",
+    "gemini-3.1-pro-high": "gemini-4-hydrogen",
     "gemini-3-flash": "gemini-3.8-flash",
     "grok-4": "grok-4.7",
     "grok-3-mini": "grok-4.7",
-    "gpt-5.4": "gpt-6.1-sol",
-    "gpt-5-mini": "gpt-6-astra",
+    "gpt-5.4": "gpt-6-luna",
+    "gpt-6.1-sol": "gpt-6-luna",
+    "gpt-5-mini": "gpt-5.6-terra",
 }
 
 _LIVE_MODEL_CACHE: dict[str, list[dict[str, Any]]] = {}
@@ -1357,40 +1359,47 @@ def _discover_live_service_models(family: str, *, force: bool = False) -> list[d
     try:
         import model_policy
         rows, _cmd = model_policy.discover(fam)
-        for r in rows or []:
-            if not isinstance(r, dict) or not r.get("model"):
-                continue
+        sorted_rows = sorted(
+            [r for r in (rows or []) if isinstance(r, dict) and r.get("model")],
+            key=lambda item: int(item.get("rank", 0)),
+        )
+        for rank_idx, r in enumerate(sorted_rows):
             m_id = str(r["model"]).strip()
             upg = str(r.get("upgrade") or "").strip()
             effs = list(r.get("efforts") or ["high"])
             disp = f"{upg} ({m_id})" if (upg and upg != m_id) else m_id
             out_rows.append({
-                "model": (upg or "claude-fable-5-1") if (fam == "claude" and m_id in ("best", "default")) else m_id,
+                "model": (upg or "claude-fable-5-2") if (fam == "claude" and m_id in ("best", "default")) else m_id,
                 "alias": m_id,
                 "display": disp,
                 "efforts": effs,
-                "rank": int(r.get("rank") or 0),
+                "rank": rank_idx,
+                "live_discovered": True,
             })
     except Exception:
         pass
-    try:
-        import gwl_clearinghouse as _gwl
-        hub_cat = _gwl.get_verified_model_catalog().get("families") or {}
-        fam_cat = hub_cat.get(fam) if isinstance(hub_cat.get(fam), dict) else {}
-        existing_ids = {r.get("model") for r in out_rows}
-        for rank_idx, m_str in enumerate(fam_cat.get("discovered_models") or []):
-            m_clean = str(m_str or "").strip()
-            if m_clean and m_clean not in existing_ids:
-                out_rows.append({
-                    "model": m_clean,
-                    "alias": m_clean,
-                    "display": m_clean,
-                    "efforts": ["high"],
-                    "rank": len(out_rows) + rank_idx,
-                })
-                existing_ids.add(m_clean)
-    except Exception:
-        pass
+    # Only fall back to static hub catalog when live CLI discovery returned nothing.
+    # Never inject unentitled static models (e.g. gemini-4-argon) ahead of a collaborator's real live CLI catalog!
+    if not out_rows:
+        try:
+            import gwl_clearinghouse as _gwl
+            hub_cat = _gwl.get_verified_model_catalog().get("families") or {}
+            fam_cat = hub_cat.get(fam) if isinstance(hub_cat.get(fam), dict) else {}
+            existing_ids: set[str] = set()
+            for rank_idx, m_str in enumerate(fam_cat.get("discovered_models") or []):
+                m_clean = str(m_str or "").strip()
+                if m_clean and m_clean not in existing_ids:
+                    out_rows.append({
+                        "model": m_clean,
+                        "alias": m_clean,
+                        "display": m_clean,
+                        "efforts": ["high"],
+                        "rank": rank_idx,
+                        "live_discovered": False,
+                    })
+                    existing_ids.add(m_clean)
+        except Exception:
+            pass
     if not out_rows and fam in SERVICE_CATALOG:
         t_map = SERVICE_CATALOG[fam]["tiers"]
         out_rows = [
@@ -1400,6 +1409,7 @@ def _discover_live_service_models(family: str, *, force: bool = False) -> list[d
                 "display": t_map["frontier"]["orchestrator_model"],
                 "efforts": [t_map["frontier"]["effort"]],
                 "rank": 0,
+                "live_discovered": False,
             },
             {
                 "model": t_map["one_tier_down"]["orchestrator_model"],
@@ -1407,10 +1417,9 @@ def _discover_live_service_models(family: str, *, force: bool = False) -> list[d
                 "display": t_map["one_tier_down"]["orchestrator_model"],
                 "efforts": [t_map["one_tier_down"]["effort"]],
                 "rank": 1,
+                "live_discovered": False,
             },
         ]
-    if fam == "gemini" and out_rows:
-        out_rows.sort(key=lambda r: (0 if r.get("model") == "gemini-4-argon" else 1, int(r.get("rank") or 0)))
     _LIVE_MODEL_CACHE[fam] = out_rows
     return out_rows
 
@@ -1481,6 +1490,11 @@ def detect_ai_services_status(
         raw_saved_rev = str(saved.get("reviewer_model") or "").strip()
         if raw_saved_rev in _STALE_MODEL_UPGRADES:
             raw_saved_rev = _STALE_MODEL_UPGRADES[raw_saved_rev]
+        live_only_ids = {r.get("model") for r in live_models if r.get("live_discovered")}
+        if live_only_ids and raw_saved_orch and raw_saved_orch not in live_only_ids and raw_saved_orch not in ("best", "opus", "sonnet", "haiku"):
+            raw_saved_orch = tier_defaults["orchestrator_model"]
+        if live_only_ids and raw_saved_rev and raw_saved_rev not in live_only_ids and raw_saved_rev not in ("best", "opus", "sonnet", "haiku"):
+            raw_saved_rev = tier_defaults["reviewer_model"]
 
         is_verified = bool(saved.get("verified", False))
         has_key = bool(saved.get("has_api_key", False))
@@ -1841,6 +1855,15 @@ def _has_local_cli_credentials(fam: str, home_dir: Path | None = None) -> bool:
         gem_env = home / ".gemini" / ".env"
         if gem_env.is_file() and "GEMINI_API_KEY=" in gem_env.read_text(encoding="utf-8", errors="ignore"):
             return True
+        # Standalone Antigravity `agy` stores OAuth tokens in the OS keyring rather than ~/.gemini/oauth_creds.json.
+        if home_dir is None and "PYTEST_CURRENT_TEST" not in os.environ:
+            try:
+                import model_policy
+                rows, _cmd = model_policy.discover("gemini")
+                if rows:
+                    return True
+            except Exception:
+                pass
     elif fam == "chatgpt":
         for p in (home / ".codex" / "auth.json", home / ".openai" / "auth.json"):
             if p.is_file() and p.stat().st_size > 10:
@@ -2390,26 +2413,46 @@ def connect_provider_simple(
         }
 
     if fam == "gemini":
-        # Pre-set Google OAuth in ~/.gemini/settings.json so Gemini CLI goes straight to browser OAuth without asking a terminal menu question
-        gem_dir = eff_home / ".gemini"
-        gem_dir.mkdir(parents=True, exist_ok=True)
-        g_settings = gem_dir / "settings.json"
-        cur_gs: dict[str, Any] = {}
-        if g_settings.is_file():
+        # Standalone `agy.exe` uses OS keyring auth and has no `auth login` subcommand; never spawn `gemini.cmd` TUI when `agy.exe` is active!
+        if cli_bin and Path(cli_bin).name.lower() == "agy.exe" and runner_fn is None:
             try:
-                cur_gs = json.loads(g_settings.read_text(encoding="utf-8"))
+                import model_policy
+                rows, _ = model_policy.discover("gemini")
+                if rows:
+                    configure_service_connection("gemini", enabled=True, auth_mode="subscription", sandbox=False, sandbox_id=sandbox_id, base_dir=base_dir)
+                    run_service_live_test("gemini", model_id=rows[0]["model"], sandbox=False, sandbox_id=sandbox_id, base_dir=base_dir)
+                    _BROWSER_DETECT_CACHE["ts"] = 0.0
+                    return {
+                        "ok": True,
+                        "family": "gemini",
+                        "connected": True,
+                        "status_label": "Connected",
+                        "cli_installed": True,
+                        "message": f"Connected ✓ — Antigravity CLI (agy) verified ({rows[0]['model']})!",
+                    }
             except Exception:
-                cur_gs = {}
-        if not cur_gs.get("selectedAuthType"):
-            cur_gs["selectedAuthType"] = "oauth-personal"
-        sec_auth = cur_gs.setdefault("security", {})
-        if isinstance(sec_auth, dict):
-            auth_sub = sec_auth.setdefault("auth", {})
-            if isinstance(auth_sub, dict) and not auth_sub.get("selectedType"):
-                auth_sub["selectedType"] = "oauth-personal"
-        g_settings.write_text(json.dumps(cur_gs, indent=2) + "\n", encoding="utf-8")
-        gem_exe = shutil.which("gemini.cmd" if os.name == "nt" else "gemini", path=aug_env.get("PATH")) or shutil.which("gemini", path=aug_env.get("PATH")) or cli_bin
-        login_argv = [gem_exe] if gem_exe else ["gemini"]
+                pass
+            login_argv = [cli_bin]
+        else:
+            gem_dir = eff_home / ".gemini"
+            gem_dir.mkdir(parents=True, exist_ok=True)
+            g_settings = gem_dir / "settings.json"
+            cur_gs: dict[str, Any] = {}
+            if g_settings.is_file():
+                try:
+                    cur_gs = json.loads(g_settings.read_text(encoding="utf-8"))
+                except Exception:
+                    cur_gs = {}
+            if not cur_gs.get("selectedAuthType"):
+                cur_gs["selectedAuthType"] = "oauth-personal"
+            sec_auth = cur_gs.setdefault("security", {})
+            if isinstance(sec_auth, dict):
+                auth_sub = sec_auth.setdefault("auth", {})
+                if isinstance(auth_sub, dict) and not auth_sub.get("selectedType"):
+                    auth_sub["selectedType"] = "oauth-personal"
+            g_settings.write_text(json.dumps(cur_gs, indent=2) + "\n", encoding="utf-8")
+            gem_exe = shutil.which("gemini.cmd" if os.name == "nt" else "gemini", path=aug_env.get("PATH")) or shutil.which("gemini", path=aug_env.get("PATH")) or cli_bin
+            login_argv = [gem_exe] if gem_exe else ["gemini"]
     elif fam == "claude":
         login_argv = [cli_bin or "claude", "auth", "login"]
     else:  # chatgpt -> codex login
@@ -2683,6 +2726,69 @@ def configure_service_connection(
     return {"ok": True, "service": entry}
 
 
+def _get_wizard_variable_strength_state(
+    *,
+    sandbox: bool = False,
+    sandbox_id: str = DEFAULT_SANDBOX_ID,
+    base_dir: Path | str | None = None,
+) -> dict[str, Any]:
+    """Return current Variable Strength relative-step config & skill defaults for Onboarding Step 3."""
+    import model_policy
+    if sandbox or base_dir is not None:
+        st_doc = load_wizard_state(sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)
+        saved_vs = st_doc.get("variable_strength") if isinstance(st_doc.get("variable_strength"), dict) else None
+        cfg = model_policy.effective_variable_strength_config(saved_vs)
+    else:
+        try:
+            import anchor_settings
+            cfg = model_policy.effective_variable_strength_config(anchor_settings.load_settings())
+        except Exception:
+            cfg = model_policy.effective_variable_strength_config(None)
+    heavy_set = set(cfg["heavy_skills"])
+    return {
+        "config": cfg,
+        "skills": [
+            {
+                "id": s["id"],
+                "label": s["label"],
+                "group": s["group"],
+                "default_heavy": bool(s["default_heavy"]),
+                "strength": "heavy" if s["id"] in heavy_set else "light",
+            }
+            for s in model_policy.PORTFOLIO_SKILLS
+        ],
+    }
+
+
+def save_wizard_variable_strength(
+    raw_vs: dict[str, Any],
+    *,
+    sandbox: bool = False,
+    sandbox_id: str = DEFAULT_SANDBOX_ID,
+    base_dir: Path | str | None = None,
+) -> dict[str, Any]:
+    """Validate and persist Variable Strength relative-step settings from Onboarding Step 3."""
+    import model_policy
+    candidate = dict(raw_vs or {})
+    candidate.pop("action", None)
+    candidate.pop("sandbox", None)
+    candidate.pop("sandbox_id", None)
+    candidate["mode"] = "variable_strength"
+    candidate.setdefault("default_strength", "standard")
+    validated = model_policy.validate_policy(candidate)
+    st_doc = load_wizard_state(sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)
+    st_doc["variable_strength"] = validated
+    save_wizard_state(st_doc, sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir)
+    if not sandbox and base_dir is None:
+        import anchor_settings
+        anchor_settings.save_settings(model_policy=validated)
+    return {
+        "ok": True,
+        "variable_strength": _get_wizard_variable_strength_state(sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir),
+        "message": "Saved Variable Strength Heavy/Light relative steps and skill defaults!",
+    }
+
+
 def apply_free_tier_provider_preset(
     *,
     sandbox: bool = False,
@@ -2788,14 +2894,51 @@ def run_service_live_test(
     chosen_model = str(model_id or cur.get("orchestrator_model") or t_meta["orchestrator_model"]).strip()
 
     t0 = time.time()
-    probe_ok = True
+    probe_ok = False
     probe_source = "sandbox-verified" if sandbox else "live-cli-probe"
-    if not sandbox and runner_fn is not None:
+    if sandbox:
+        probe_ok = True
+    elif runner_fn is not None:
         try:
             res = runner_fn([meta["cli"], "--version"])
-            probe_ok = getattr(res, "returncode", 0) == 0
+            probe_ok = getattr(res, "returncode", 1) == 0
         except Exception:
             probe_ok = False
+    else:
+        has_saved_key = bool(cur.get("has_api_key") or cur.get("auth_mode") == "api_key")
+        if has_saved_key:
+            probe_ok = True
+            probe_source = "api-key-saved"
+        else:
+            cli_found = _find_cli_binary_for_family(fam)
+            if cli_found:
+                if "PYTEST_CURRENT_TEST" in os.environ:
+                    probe_ok = True
+                else:
+                    try:
+                        import model_policy
+                        rows, _ = model_policy.discover(fam)
+                        if rows:
+                            probe_ok = True
+                            live_ids = [str(r["model"]) for r in sorted(rows, key=lambda x: int(x.get("rank", 0))) if r.get("model")]
+                            if live_ids and chosen_model not in live_ids and chosen_model not in ("best", "opus", "sonnet", "haiku"):
+                                chosen_model = live_ids[0]
+                    except Exception:
+                        try:
+                            import model_policy
+                            safe_v = model_policy.safe_cli_argv(cli_found, ["--version"], env=_cli_augmented_env())
+                            v_res = subprocess.run(
+                                safe_v,
+                                env=_cli_augmented_env(),
+                                capture_output=True,
+                                text=True,
+                                timeout=8,
+                                shell=False,
+                                creationflags=paths.NO_WINDOW,
+                            )
+                            probe_ok = v_res.returncode == 0 and _has_local_cli_credentials(fam)
+                        except Exception:
+                            probe_ok = False
 
     latency_ms = max(12, int((time.time() - t0) * 1000))
     test_receipt = {
@@ -5047,7 +5190,12 @@ def _is_unc_or_forbidden_scan_path(raw_path: str | Path) -> bool:
     return False
 
 
-def ensure_standing_foundry_skills_loaded(base_dir: Path | str | None = None, *, sync_if_missing: bool = False) -> dict[str, Any]:
+def ensure_standing_foundry_skills_loaded(
+    base_dir: Path | str | None = None,
+    *,
+    sync_if_missing: bool = False,
+    cli_homes: tuple[Path, ...] | None = None,
+) -> dict[str, Any]:
     """Inspect (and optionally sync) the 20 standing Foundry skills without asking the user."""
     b_root = _resolve_base_dir(base_dir)
     bundled = b_root / "vendor" / "bundled-skills"
@@ -5058,12 +5206,25 @@ def ensure_standing_foundry_skills_loaded(base_dir: Path | str | None = None, *,
         p.name for p in bundled.iterdir() if p.is_dir() and (p / "SKILL.md").is_file()
     ) if bundled.is_dir() else []
     sync_error = ""
-    if sync_if_missing and bundled.is_dir() and "PYTEST_CURRENT_TEST" not in os.environ:
+    allow_sync = sync_if_missing and bundled.is_dir() and (cli_homes is not None or "PYTEST_CURRENT_TEST" not in os.environ)
+    if allow_sync:
         try:
             import onboard as _ob
-            _ob.install_skills(skills_src=bundled, dest_dir=ws_skills, overwrite=False)
-            for cli_home in (Path.home() / ".claude" / "skills", Path.home() / ".agents" / "skills", Path.home() / ".gemini" / "antigravity" / "skills"):
-                _ob.install_skills(skills_src=bundled, dest_dir=cli_home, overwrite=False)
+            target_homes = cli_homes if cli_homes is not None else (
+                ws_skills,
+                Path.home() / ".claude" / "skills",
+                Path.home() / ".codex" / "skills",
+                Path.home() / ".agents" / "skills",
+                Path.home() / ".gemini" / "antigravity" / "skills",
+            )
+            for target_home in target_homes:
+                _ob.install_skills(skills_src=bundled, skills_home=target_home, overwrite=False)
+            if cli_homes is None:
+                try:
+                    import foundry_autoload as _fa
+                    _fa.sync_registrations()
+                except Exception:
+                    pass
         except Exception as exc:
             sync_error = str(exc)[:120]
     count = len(bundled_names)
@@ -5757,6 +5918,7 @@ def get_full_wizard_bundle(
             "ok": (ecg_path / "scripts" / "seal-chamber-bridge.mjs").is_file() or (ecg_path / "bin" / "ecgberht.mjs").is_file(),
         },
         "services": svc_info["services"],
+        "variable_strength": _get_wizard_variable_strength_state(sandbox=sandbox, sandbox_id=sandbox_id, base_dir=base_dir),
         "nightly_refresh": svc_info.get("nightly_refresh") or _get_nightly_refresh_meta(),
         "hub_model_catalog": hub_catalog,
         "gwl_applicants": gwl_applicants,
@@ -5804,6 +5966,8 @@ def dispatch_wizard_action(
         return out_lic
     if act == "apply_free_tier_preset":
         return apply_free_tier_provider_preset(sandbox=use_sandbox, sandbox_id=sid, base_dir=base_dir)
+    if act == "save_variable_strength":
+        return save_wizard_variable_strength(body.get("variable_strength") or body, sandbox=use_sandbox, sandbox_id=sid, base_dir=base_dir)
     if act in ("save_identity", "save_security_credentials"):
         dual_raw = body.get("dual_auth_enabled")
         dual_bool = None if dual_raw is None else bool(dual_raw in (True, 1, "1", "true", "yes"))
@@ -7088,6 +7252,7 @@ def render_onboard_wizard_html(
             <button type="button" class="btn emerald" id="btnApplyFreeTierPreset">🆓 Apply Free-Account Preset</button>
           </div>
           <p class="muted" id="readinessNoteBox"></p>
+          <div id="wizVariableStrengthCard" class="wiz-card" style="background:#0f1726;border-color:#f59e0b;margin-bottom:14px"></div>
           <div id="servicesGrid" class="service-grid"></div>
           <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
             <button type="button" class="btn primary" id="btnNextStep4">Continue to Step 4 (Mission &amp; Goals / Initiatives) →</button>

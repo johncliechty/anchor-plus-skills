@@ -24,6 +24,11 @@
 - Not a substitute for research or engineering proof
 - Not a guarantee the surviving idea will work — only that it survived structured filters
 
+## Variable Strength (`Jumper` Standard Default vs. `Jumper Heavy` vs. `Superjump`) — What to Call When
+- **Call `Jumper` (default = `Standard` · one generalist model below frontier @ `medium` effort on generation and cross-family kill-filter)** when you want fast vetted lateral options (`--mode lean` or standard tripartite pass) for everyday design pivots, feature ideas, or framing bottlenecks.
+- **Call `Jumper Heavy` (`⚡ Heavy` · frontier model @ full effort on generation, composed Gandalf, and cross-family kill-filter)** when you want Jumper's fast tripartite/lean workflow backed by frontier model depth on a high-stakes pivot.
+- **Escalate to `Superjump` (`⚡ Heavy` by default, with `Superjump Light` available)** when you have explicit `MUST` / `FIXED` / `FORBID` / `JUDGE` constraints and want unbounded progress-watched analogical leaps judged against a formal Fit Contract.
+
 ## How to start (human)
 1. State the problem as clearly as you can (constraints and what “good” means).
 2. Run Jumper (optionally more fan-out for more parallel candidates).

@@ -211,6 +211,8 @@ def _is_denied(rel: Path, skill: str | None = None) -> bool:
     base = rel.name.lower()
 
     key = (skill or "").lower()
+    if key == "gandalf" and rel.as_posix().lower() in ("test", "test/harness.mjs"):
+        return False
     extra_dirs = _DENY_DIR_COMPONENTS_BY_SKILL.get(key, frozenset())
     if extra_dirs and any(c.lower() in extra_dirs for c in parts):
         return True
@@ -310,9 +312,16 @@ _BINARY_SUFFIXES = {
 
 
 def _scrub_text(text: str) -> str:
+    # Rewrite local trio driver file:// URLs to bundled relative imports before generic path scrubbing
+    text = re.sub(
+        r"file:///[A-Za-z]:/(?:[^\s\"'<>|]*/)?dev/trio/drivers/([^\s\"'<>|]+)",
+        r"../../drivers/\1",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = _FILE_URL_HOST_RE.sub("<path>", text)
     text = _WIN_DEV_RE.sub("<path>", text)
     text = _WIN_DEV_FWD_RE.sub("<path>", text)
-    text = _FILE_URL_HOST_RE.sub("<path>", text)
     # JSDoc / import() host paths that use mixed quoting
     text = re.sub(
         r"import\(['\"][A-Za-z]:[/\\][^\s'\"]+['\"]\)",

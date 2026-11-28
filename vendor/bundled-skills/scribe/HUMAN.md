@@ -18,6 +18,10 @@ A voice-faithful correspondence intelligence and email drafting skill that learn
    - **✨ Redraft**
 5. **Remembers What Is Important vs. Noise (`.anchor/scribe-memory.json`):** Clicking **⭐ Seen & Important**, **Send Reply Now**, or **✕ Ignore** updates Scribe's durable memory ledger so emails from people and topics you care about stay front-and-center in your Focused Inbox while noise is filtered out.
 
+## Variable Strength (`Scribe` Standard Default vs. `Scribe Heavy`) — What to Call When
+- **Call `Scribe` (default = `Standard` · deterministic correspondence engine + one generalist model below frontier @ `medium` effort when LLM drafting runs)** for everyday inbox triage, Speed Racer replies, student/colleague scheduling, and routine follow-ups.
+- **Call `Scribe Heavy` (`⚡ Heavy` · frontier model @ full effort)** for sensitive high-stakes correspondence (dean/provost, board/LP, legal counsel, or delicate interpersonal replies) where tone calibration and nuance carry high consequence.
+
 ## Honest Boundaries
 - **Never Auto-Sends Without Your Click:** Scribe drafts, refines, and scores emails, but an email only leaves your outbox when you explicitly click **Send Reply Now** (in the Email Reading Pane) or **✓ Approve & Send** (in Speed Racer).
 - **Read-Only Email Sandbox:** Incoming email content is sanitized as untrusted data and can never trigger commands or instructions on its own.

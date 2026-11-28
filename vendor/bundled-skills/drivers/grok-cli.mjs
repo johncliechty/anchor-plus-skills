@@ -243,6 +243,7 @@ export function defaultRunGrokCli(fullPrompt, label, {
   target = process.cwd(),
   model = null,
   role = null,
+  tier = null,
   sandbox = null,
   repairOnly = false,
   timeoutMs = (Number(env.GROK_CLI_TIMEOUT_MS) || DEFAULT_GROK_CLI_TIMEOUT_MS),
@@ -267,9 +268,9 @@ export function defaultRunGrokCli(fullPrompt, label, {
   const cmdName = platform === 'win32' ? 'grok.exe' : 'grok';
   let selection;
   if (typeof policyResolver === 'function') {
-    selection = policyResolver('grok', { env });
+    selection = policyResolver('grok', tier ? { env, tier } : { env });
   } else if (processRunner === runCloseBoundProcess) {
-    selection = resolveModelPolicy('grok', { env });
+    selection = resolveModelPolicy('grok', { env, role, label, tier });
   } else {
     selection = {
       family: 'grok',

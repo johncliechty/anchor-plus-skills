@@ -802,6 +802,11 @@ def _infer_oranges_skill(category: str = "", title: str = "") -> str:
     return "Gandalf"
 
 
+def _oranges_default_strength(skill_name: str) -> str:
+    import model_policy as _mp
+    return _mp.resolve_skill_strength(skill=skill_name)
+
+
 def chief_of_staff_horizon_efforts(ctx: dict[str, Any]) -> dict[str, Any]:
     """Dynamic Chief-of-Staff Next-Effort Engine (Wave 2 — zero hardcoded dates or static mockups).
     Co-populated dynamically from live *The List* (`working-list-spine.json`), `steward-watchlist.json`,
@@ -872,9 +877,12 @@ def chief_of_staff_horizon_efforts(ctx: dict[str, Any]) -> dict[str, Any]:
         r_copy["step_id"] = str(r_copy.get("step_id") or fallback_c.get("step_id") or "")
         r_copy["href"] = str(r_copy.get("href") or _cockpit_href(pid_r))
         r_copy["oranges_skill"] = skill_r
-        r_copy["oranges_text"] = str(r_copy.get("oranges_text") or f"Pre-stage {skill_r} in the linked AI Cockpit.")
+        str_r = _oranges_default_strength(skill_r)
+        r_copy["default_strength"] = str_r
+        str_tag = "⚡ Heavy" if str_r == "heavy" else "Standard"
+        r_copy["oranges_text"] = str(r_copy.get("oranges_text") or f"Pre-stage {skill_r} ({str_tag}) in the linked AI Cockpit.")
         r_copy["open_label"] = str(r_copy.get("open_label") or ("↗ Open AI Cockpit" if pid_r else "+ Create AI Cockpit"))
-        r_copy["skill_btn_label"] = str(r_copy.get("skill_btn_label") or f"🍊 Pre-Stage {skill_r}")
+        r_copy["skill_btn_label"] = str(r_copy.get("skill_btn_label") or f"🍊 Pre-Stage {skill_r} · {str_tag}")
         r_copy["skill_prompt"] = str(r_copy.get("skill_prompt") or f"Use {skill_r} to advance: {r_copy.get('title') or 'next step'}.")
         today_efforts.append(r_copy)
 

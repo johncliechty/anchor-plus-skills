@@ -200,13 +200,22 @@ window.CockpitDeliverableShelves = (() => {
   function render(mount, delivResponse, _decoratedItems, ctx) {
     const shelves = (delivResponse && delivResponse.shelves && typeof delivResponse.shelves === "object") ? delivResponse.shelves : null;
     if (!mount || !shelves) return false;
+    const hier = (delivResponse && delivResponse.deliverable_hierarchy && typeof delivResponse.deliverable_hierarchy === "object") ? delivResponse.deliverable_hierarchy : null;
+    const domSig = JSON.stringify([shelves, hier]);
+    const ae = typeof document !== "undefined" ? document.activeElement : null;
+    if (mount.dataset.domSig === domSig && mount.childElementCount > 0) {
+      return true;
+    }
+    if (ae && mount.contains(ae) && ae.dataset && ae.dataset.earlierSearch && mount.childElementCount > 0 && mount.dataset.domSig === domSig) {
+      return true;
+    }
+    mount.dataset.domSig = domSig;
     mount.textContent = "";
 
     const recentBatches = Array.isArray(shelves.most_recent_batches) ? shelves.most_recent_batches.slice(0, 2) : [];
     const recentFilesCnt = recentBatches.reduce((acc, b) => acc + (Number(b.file_count) || (b.items || []).length), 0);
     const finalList = Array.isArray(shelves.final) ? shelves.final : [];
     const earlierList = Array.isArray(shelves.earlier) ? shelves.earlier : [];
-    const hier = (delivResponse && delivResponse.deliverable_hierarchy && typeof delivResponse.deliverable_hierarchy === "object") ? delivResponse.deliverable_hierarchy : null;
     const hierUnitsCnt = (hier && Array.isArray(hier.categories) && hier.categories.length)
       ? hier.categories.reduce((acc, c) => acc + (Number(c.unit_count) || (c.units || []).length), 0)
       : 0;

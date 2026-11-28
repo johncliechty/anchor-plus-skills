@@ -128,7 +128,9 @@
       var amode = String(a.auth_mode || '').toLowerCase();
       var hasIcs = Boolean(String(a.ics_url || '').trim()) || famL === 'outlook';
       var noteTip = esc(String(a.last_imap_note || a.last_ics_note || '').slice(0, 180));
-      var isDegraded = astat === 'paused_safety' || astat === 'auth_error' || astat === 'error' || astat === 'disconnected';
+      var mailSyncErr = String(a.mail_sync_state || '').toLowerCase() === 'sync_error'
+        || Boolean(d.provider_states && d.provider_states[a.id] && d.provider_states[a.id].mail === 'unknown');
+      var isDegraded = astat === 'paused_safety' || astat === 'auth_error' || astat === 'error' || astat === 'disconnected' || mailSyncErr;
       if (!isDegraded) okN += 1;
       var tone = (astat === 'auth_error' || astat === 'error' || astat === 'disconnected') ? 'red' : (isDegraded ? 'amber' : 'emerald');
 
@@ -136,9 +138,11 @@
         ? '<span class="comms-pill sky">Email: ICS Only</span>'
         : (astat === 'paused_safety'
             ? '<span class="comms-pill amber">Email: Paused</span>'
-            : (isDegraded
-                ? '<span class="comms-pill red">Email: Needs Sign-In</span>'
-                : '<span class="comms-pill emerald">Email: Connected</span>'));
+            : (mailSyncErr
+                ? '<span class="comms-pill amber" title="' + esc(String(a.last_sync_error || a.last_imap_note || 'IMAP sync delayed')) + '">Email: Sync Delayed (Retrying)</span>'
+                : (isDegraded
+                    ? '<span class="comms-pill red">Email: Needs Sign-In</span>'
+                    : '<span class="comms-pill emerald">Email: Connected</span>')));
       var calPill = astat === 'paused_safety'
         ? '<span class="comms-pill amber">Calendar: Paused</span>'
         : ((tone === 'red' && !hasIcs)

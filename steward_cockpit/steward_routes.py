@@ -404,6 +404,18 @@ def serve_static(name):
              else "application/javascript; charset=utf-8")
     if name == "anvil.html":
         html_txt = f.read_text(encoding="utf-8")
+        try:
+            from steward_cockpit import anvil_session as _as_html
+            v6_on = bool(_as_html.is_anvil_v6_enabled())
+        except Exception:
+            v6_on = os.environ.get("ANCHOR_ANVIL_V6", "1").strip().lower() not in ("0", "false", "no", "off")
+        html_txt = html_txt.replace("<body>", f'<body data-anvil-v6-enabled="{"1" if v6_on else "0"}">', 1)
+        if not v6_on:
+            html_txt = html_txt.replace(
+                '<span id="brandTitleText">Anvil · Process Workbench &amp; Scientific IDE</span>',
+                '<span id="brandTitleText">Anvil v5 · B3 Workbench + Scientific IDE</span>',
+                1,
+            )
         def _stamp_static_html(m):
             attr_and_url = m.group(1)
             asset_rel = m.group(2)
@@ -4847,6 +4859,9 @@ def handle_get(cdir, verb, qs):
         if eng is None:
             return {"error": "no such session"}, 404
         return _state_cached(eng, cdir), 200
+    if verb == "strength":
+        from steward_cockpit import steward_engine as _se_str
+        return {"ok": True, "cockpit_strength": _se_str.read_cockpit_strength(cdir)}, 200
     if verb == "status":
         # the deterministic two-part 10-minute status, composed FRESH
         # (zero-model) — the same shape the engine's cadence persists to
@@ -6152,6 +6167,17 @@ def drain_all():
 
 
 def handle_post(cdir, verb, body):
+    if verb == "strength":
+        from steward_cockpit import steward_engine as _se_str
+        req_str = str((body or {}).get("strength") or "standard").strip().lower()
+        eng = get_engine(cdir, bool((body or {}).get("general")), (body or {}).get("term"), create=False)
+        if eng is not None and hasattr(eng, "set_strength"):
+            norm = eng.set_strength(req_str)
+        else:
+            norm = _se_str.write_cockpit_strength(cdir, req_str)
+        if isinstance(globals().get("_STATE_CACHE"), dict):
+            globals()["_STATE_CACHE"].clear()
+        return {"ok": True, "cockpit_strength": norm}, 200
     if verb == "clear-wait":
         cleared = []
         try:
@@ -6441,6 +6467,13 @@ def handle_post(cdir, verb, body):
                 return out if (isinstance(out, tuple) and len(out) == 2) else (out, 200)
             if act in ("semantic_state", "comprehension_state"):
                 return _ace.get_comprehension_state(cdir, scope_sha256=body.get("scope_sha256"), analysis_id=aid_post)
+            if act in ("strength", "get_strength"):
+                st_cur = _ace.read_anvil_strength(cdir)
+                return {"ok": True, "strength": st_cur, "seating": _as._read_model_seating_info(strength=st_cur, cdir=cdir, skill="anvil")}, 200
+            if act == "set_strength":
+                res_st = _ace.write_anvil_strength(cdir, str(body.get("strength") or "heavy"))
+                res_st["seating"] = _as._read_model_seating_info(strength=res_st["strength"], cdir=cdir, skill="anvil")
+                return res_st, 200
             if act in ("semantic_consent", "issue_comprehension_consent"):
                 return _ace.issue_comprehension_consent(cdir, body)
             if act in ("semantic_run", "run_comprehension", "run_pass2"):
@@ -6674,7 +6707,7 @@ def handle_post(cdir, verb, body):
                 "message": "Blocked unsafe path traversal or disallowed URL scheme",
             }, 400
         act = str(body.get("action") or "scan").strip()
-        if act not in ("scan", "bind_target", "remediate", "sign_off", "chat"):
+        if act not in ("scan", "bind_target", "remediate", "sign_off", "chat", "set_strength", "strength"):
             return {
                 "ok": False,
                 "failure_state": "dependency-returns-garbage",
@@ -6683,6 +6716,15 @@ def handle_post(cdir, verb, body):
             }, 400
 
         def _do_aegis_post(_aeg):
+            if act in ("set_strength", "strength"):
+                if body.get("strength"):
+                    return _aeg.set_aegis_strength(cdir, str(body.get("strength")))
+                st_now = _aeg.read_aegis_strength(cdir)
+                return {
+                    "ok": True,
+                    "strength": st_now,
+                    "model_seating": _aeg._read_model_seating_info(strength=st_now, cdir=cdir),
+                }
             if act in ("scan", "bind_target"):
                 res = _run_with_cockpit_usage_attribution(
                     "aegis", act, cdir, body,
@@ -6706,8 +6748,8 @@ def handle_post(cdir, verb, body):
                         msg = (
                             f"🛡 **Aegis Security Audit (`{sc.get('verdict', 'PASS')}`):** Scanned `{sc.get('files_scanned', 0)}` Python files "
                             f"across all 6 OWASP/CWE families (`AEG-01`–`AEG-06`) — `{sc.get('total_findings', 0)}` open finding(s) "
-                            f"(`{sc.get('auto_fixable_count', 0)}` auto-fixable). Seated on **`{seat.get('coding_model_id', 'gemini-4-argon')} · {seat.get('coding_effort', 'high')}`** "
-                            f"+ **`{seat.get('review_model_id', 'claude-fable-5-1')} · {seat.get('review_effort', 'max')}`**; report saved to `AEGIS-SECURITY-REPORT.md`."
+                            f"(`{sc.get('auto_fixable_count', 0)}` auto-fixable). Seated on **`{seat.get('coding_model_id', 'gemini-4-neon')} · {seat.get('coding_effort', 'xhigh')}`** "
+                            f"+ **`{seat.get('review_model_id', 'claude-fable-5-2')} · {seat.get('review_effort', 'max')}`**; report saved to `AEGIS-SECURITY-REPORT.md`."
                         )
                         eng._emit({"t": "delta", "text": msg})
                         eng._emit({"t": "turn_end", "tokens": 0})

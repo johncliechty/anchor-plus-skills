@@ -1,6 +1,6 @@
 ---
 name: Anvil
-description: Human-first polyglot software process comprehension, Paper-Matched Replication Scoping (--pipeline) with historical-clutter quarantine, PyTorch/NumPy AST -> Native MathML Formula Extraction, Dual-Channel Process Schematic (L0 Scenarios -> L1 Macro Stages -> L2 Sub-Steps -> L3 Line-Numbered Code), Pure-Core Refactoring Crosswalk & 3-Tier Null Set with Golden-Master stage-boundary replay, Operator-Grounded Dual-Target Paper <-> Software Crosswalk, Static Scientific Bug/Leakage Validation (SCI-01..SCI-03) & Concrete Functional-Core Proposals, Consented Local Subprocess Tracer + 4-Stage Smart Variable Funnel + Expandable 3-Column Scientific IDE Debugger Workbench, Bounded 2-Seat Cross-Family Validator, and preserved fast AST/LibCST/Beta-Reader/Aegis primitives.
+description: Human-first polyglot software process comprehension, Paper-Matched Replication Scoping (--pipeline) with historical-clutter quarantine, PyTorch/NumPy AST -> Native MathML Formula Extraction, Dual-Channel Process Schematic (L0 Scenarios -> L1 Macro Stages -> L2 Sub-Steps -> L3 Line-Numbered Code), Pure-Core Refactoring Crosswalk & 3-Tier Null Set with Golden-Master stage-boundary replay, Operator-Grounded Dual-Target Paper <-> Software Crosswalk, Static Scientific Bug/Leakage Validation (SCI-01..SCI-03) & Concrete Functional-Core Proposals, Consented Local Subprocess Tracer + 4-Stage Smart Variable Funnel + Expandable 3-Column Scientific IDE Debugger Workbench, Bounded 2-Seat Cross-Family Validator, and preserved fast AST/LibCST/Beta-Reader/Aegis primitives. Variable Strength: Heavy by default (top-tier frontier model at highest effort; call 'Anvil Light' for 1-step-below-frontier at medium effort, configurable in Anchor Setup).
 ---
 
 <!-- ELEGANCE-LAW v2 -->
@@ -97,7 +97,7 @@ something else" — options are a convenience, never a cage).
 
 1. **Paper-Matched Replication Scope, Dual-Channel Process Schematic (`scripts/anvil_v4_process.py`) & 3-Level Progressive Map (`map`):**
    - **Replication Scope (`discover_paper_matched_scopes`, `--pipeline <id>`):** Partitions multi-pipeline research repos by manuscript table/figure targets and workflow scripts, quarantining `unreferenced_historical_files[]` when `>15` files contain historical clutter and recording `paper_matched_scopes` in JSON and `ANVIL-REPORT.md`.
-   - **v4 Dual-Channel Map (`process-map`):** Pure static polyglot AST scanner (`Python`, `JS/TS/MJS`, `R`, `C/C++`) emitting `L0` entry scenarios, `L1` macro stages (`S1..Sk` with steady `(x, y)` coordinates, `purpose`, `what_enters`, `actions_run`, `what_exits`), `L2` intra-stage call sub-steps, and on-demand `L3` line-numbered source (`get_l3_numbered_file`), overlaying runtime traces when supplied.
+   - **Dual-Channel Process Schematic (`process-map`):** Pure static polyglot AST scanner (`Python`, `JS/TS/MJS`, `R`, `C/C++`) emitting `L0` entry scenarios, `L1` macro stages (`S1..Sk` with steady `(x, y)` coordinates, `purpose`, `what_enters`, `actions_run`, `what_exits`), `L2` intra-stage call sub-steps, and on-demand `L3` line-numbered source (`get_l3_numbered_file`), overlaying runtime traces when supplied.
    - **v3 Progressive Map (`map`):** Role-clustered / import-graph-clustered Deep Modules with `level1_summary`, `level2_mechanics` (including PyTorch/NumPy native MathML equations and `scientific_validation`), `level3_code`, and AI Agent Touchpoint badges.
 2. **Pure-Core Refactoring Crosswalk, Scientific Validation, The Parable of the Oranges & Scope-Safe `LibCST` (`scripts/anvil_v4_refactor.py`, `orange-split`, `remap`, `cst-rewrite`):**
    - Applies **The Parable of the Oranges** (gathering pure-core vs. imperative-shell boundaries, variety, price, and what the boss's wife needs in **one trip** via `orange-split` rather than repeated round-trips).
@@ -109,7 +109,8 @@ something else" — options are a convenience, never a cage).
 4. **Untraced Stage Profiler, Literature Enhancer & 5-Seat Beta-Reader Panel (`profile-lit`, `beta-readers`):**
    - `profile-lit` runs an untraced `perf_counter_ns` stage timer under `--approve-run` and checks AST/shape preconditions before recommending Functional-Core literature kernel upgrades.
    - `beta-readers` runs the 5-Seat panel (`cal_newport_cognitive_load`, `functional_core_architect`, `numerical_verification_auditor`, `systems_performance_specialist`, and `security_boundary_auditor` wired to `../aegis/scripts/aegis_engine.py`).
-5. **Bounded 2-Seat Cross-Validator & Merged Graphical Workbench (`scripts/anvil_v4_xval.py`, `scripts/anvil_v4_workbench.py`, `static/anvil_v4_workbench.html`):**
+5. **Bounded 2-Seat Cross-Validator, Variable Strength Routing & Unified Graphical Workbench (`Anvil`):**
+   - **Variable Strength (`Heavy` Default · `Anvil Light` Override):** `Anvil` is one of the four `Heavy`-by-default skills (`Anvil`, `Chekhov`, `Aegis`, `Superjump`) — running frontier Orchestrator + frontier Cross-Family Reviewer at highest supported effort by default. Designating `Anvil Light` (`--tier light` or clicking the Workbench `🪶 Light` pill) steps **both** Orchestrator and Reviewer (plus any child passes) down to one generalist model below frontier at `medium` effort.
    - **Posture 1 (`48% / 52%` Process Workbench):** Steady-coordinate Dual-Channel Map paired with the 4-mode right pane (`Story Stream`, `IDE + Watch Split`, `Smart Funnel`, `Cross-Validator`) and Grounded Steward Co-Pilot.
    - **Posture 2 (`25% / 45% / 30%` `Open IDE Debugger`, `Esc` toggle):** Compact Live Process Rail + L2 file jumpers (`25%`), Multi-Tab Code Window with gutter breakpoints, `Paper Light / Studio Dark` toggle, active line `▶`, inline runtime ghost values, and clickable pin-watch tokens (`45%`), plus synced Smart Variable Funnel & Steward Co-Debugger (`30%`), persisted via cross-process file lock + `temp` + `fsync` + `rename`.
 
@@ -120,7 +121,7 @@ something else" — options are a convenience, never a cage).
 Run from the `anvil` skill root (or pass the path to `scripts/anvil_engine.py`):
 
 ```powershell
-# Anvil v4 Process Schematic, Paper-Matched Scoping (--pipeline), Tracer, Refactor Crosswalk, Profiler, XVal & Workbench
+# Unified Anvil Process Schematic, Paper-Matched Scoping (--pipeline), Tracer, Refactor Crosswalk, Profiler, XVal & Workbench
 python scripts/anvil_engine.py process-map --repo "<repo>" [--paper "<main.tex>"] [--pipeline "<id>"] [--trace "<trace.json>"] --json
 python scripts/anvil_engine.py trace-run --repo "<repo>" --approve-run [--pin-watch "loss"] --json -- python run_pipeline.py
 python scripts/anvil_engine.py refactor-map --repo "<repo>" [--trace "<trace.json>"] [--approve-run] --json [-- python run_pipeline.py]

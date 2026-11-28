@@ -23,6 +23,9 @@
 - Not a second Apply on the same run without a re-scan
 - Not a silent security product; secrets findings still need your judgment
 
+## Variable Strength Note
+`Tidy-Idy` is primarily deterministic scan + reversible-trash hygiene; whenever model-assisted classification is invoked, plain `Tidy-Idy` runs at **`Standard`** (one model below frontier @ `medium` effort), while **`Tidy-Idy Heavy`** upgrades model triage to frontier @ full effort for complex multi-branch repo reorganizations.
+
 ## How to start (human)
 1. Launch Tidy-Idy on the folder (terminal or Anchor’s button).
 2. Open the triage panel and approve/reject items.

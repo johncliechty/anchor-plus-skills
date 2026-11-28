@@ -11,6 +11,7 @@ kill. Explicitly NOT an OS/VM sandbox against hostile untrusted malware.
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import importlib.util
 import inspect
@@ -49,6 +50,11 @@ DEFAULT_TIMEOUT_SEC = 30.0
 DEFAULT_MAX_EVENTS = 50_000
 DEFAULT_MAX_SKETCH_BYTES = 524_288
 MAX_TIMEOUT_SEC = 300.0
+MAX_REPLICATION_TABLE_TIMEOUT_SEC = 1800.0
+MAX_REPLICATION_TOTAL_TIMEOUT_SEC = 5400.0
+MAX_ALLOWLISTED_DATA_BYTES = 2 * 1024 * 1024 * 1024
+ALLOWLISTED_DATA_DIR_NAMES: Tuple[str, ...] = ("data", "Data", "datasets", "Datasets")
+REPLICATION_TABLE_RECEIPT_SCHEMA = "anvil-v6-replication-table-receipt/v1"
 MAX_TRACE_EVENTS = 50_000
 MAX_SKETCH_BYTES = 1_048_576
 
@@ -368,10 +374,186 @@ def _is_sensitive_untracked_or_secret_file(rel_posix: str, fname: str) -> bool:
     return False
 
 
-def _stage_isolated_worktree_copy(repo_root: Path, scratch_base: Path) -> Path:
+def _copy_allowlisted_data_roots_into_scratch(
+    repo_root: Path,
+    work_repo: Path,
+    allowlisted_data_roots: Sequence[str | Path],
+    *,
+    cockpit_root: Optional[Path] = None,
+    max_data_bytes: int = MAX_ALLOWLISTED_DATA_BYTES,
+) -> List[str]:
+    """Copy (NEVER hardlink — leaving source file attributes/mtimes/inodes untouched)
+    server-manifest allowlisted data subdirectories (`data/`, `Data/`, `datasets/`, `Datasets/`
+    under `repo_root` or `cockpit_root`) into `work_repo`, enforcing `<= 2 GB` total cap
+    and refusing `..`, absolute paths, non-allowlisted names, and symlinks/junctions.
+    """
+    eff_cap = min(int(MAX_ALLOWLISTED_DATA_BYTES), int(max_data_bytes))
+    if eff_cap <= 0:
+        raise AnvilRefusalError(
+            "BOUND_EXCEEDED_REFUSAL",
+            f"max_data_bytes ({eff_cap}) must be positive.",
+            details={
+                "bound_name": "max_allowlisted_data_bytes",
+                "bound_limit": eff_cap,
+                "observed_value": eff_cap,
+                "http_status": 413,
+            },
+        )
+    repo_res = repo_root.resolve()
+    ck_res: Optional[Path] = None
+    if cockpit_root is not None and str(cockpit_root).strip():
+        raw_ck = Path(cockpit_root)
+        if _is_link_or_junction(raw_ck) or not raw_ck.exists() or not raw_ck.is_dir():
+            raise AnvilRefusalError("PATH_ESCAPE_REFUSED", "Invalid or symlinked cockpit_root refused.", cwe="CWE-22", details={"http_status": 403})
+        ck_res = raw_ck.resolve()
+
+    allow_set = set(ALLOWLISTED_DATA_DIR_NAMES)
+    bases: Dict[str, Path] = {"repo": repo_res}
+    if ck_res is not None:
+        bases["cockpit"] = ck_res
+
+    target_dirs: List[Tuple[str, str, Path]] = []
+    seen_dirs: Set[str] = set()
+
+    if list(allowlisted_data_roots) == ["*"]:
+        for btag, bpath in bases.items():
+            try:
+                entries = sorted(os.scandir(bpath), key=lambda e: e.name)
+            except OSError:
+                continue
+            for ent in entries:
+                if ent.name not in allow_set:
+                    continue
+                ep = Path(ent.path)
+                if _is_link_or_junction(ep):
+                    raise AnvilRefusalError("PATH_ESCAPE_REFUSED", f"Symlink/junction data directory '{ent.name}' refused.", cwe="CWE-22", details={"http_status": 403})
+                if ep.is_dir():
+                    rdp = ep.resolve()
+                    if not rdp.is_relative_to(bpath):
+                        raise AnvilRefusalError("PATH_ESCAPE_REFUSED", f"Data directory '{ent.name}' escapes root.", cwe="CWE-22", details={"http_status": 403})
+                    nk = os.path.normcase(str(rdp))
+                    if nk not in seen_dirs:
+                        seen_dirs.add(nk)
+                        target_dirs.append((btag, ent.name, rdp))
+    else:
+        for raw_item in allowlisted_data_roots:
+            raw_s = str(raw_item or "").strip()
+            if not raw_s or "\x00" in raw_s:
+                raise AnvilRefusalError("PATH_ESCAPE_REFUSED", "Empty allowlisted data root refused.", cwe="CWE-22", details={"http_status": 403})
+            prefix_tag = "repo"
+            rel_expr = raw_s
+            if ":" in raw_s and raw_s.split(":", 1)[0] in {"repo", "cockpit"}:
+                prefix_tag, rel_expr = raw_s.split(":", 1)
+            if (
+                rel_expr.startswith(("/", "\\"))
+                or ":" in rel_expr
+                or Path(rel_expr).is_absolute()
+                or ".." in rel_expr.replace("\\", "/").split("/")
+            ):
+                raise AnvilRefusalError(
+                    "PATH_ESCAPE_REFUSED",
+                    f"Escaping or absolute data root '{raw_s}' refused.",
+                    cwe="CWE-22",
+                    details={"candidate": raw_s, "http_status": 403},
+                )
+            if prefix_tag not in bases:
+                raise AnvilRefusalError("PATH_ESCAPE_REFUSED", f"Unavailable base '{prefix_tag}' for data root '{raw_s}'.", cwe="CWE-22", details={"http_status": 403})
+            chosen_base = bases[prefix_tag]
+            rel_parts = [pt for pt in rel_expr.replace("\\", "/").split("/") if pt and pt != "."]
+            if not rel_parts or rel_parts[0] not in allow_set:
+                raise AnvilRefusalError(
+                    "PATH_ESCAPE_REFUSED",
+                    f"Data root '{raw_s}' is not in allowlisted directories ({', '.join(ALLOWLISTED_DATA_DIR_NAMES)}).",
+                    cwe="CWE-22",
+                    details={"candidate": raw_s, "http_status": 403},
+                )
+            cur = chosen_base
+            for pt in rel_parts:
+                cur = cur / pt
+                if _is_link_or_junction(cur):
+                    raise AnvilRefusalError("PATH_ESCAPE_REFUSED", f"Symlink/junction data component '{pt}' refused.", cwe="CWE-22", details={"http_status": 403})
+                if not cur.exists() or not cur.is_dir():
+                    raise AnvilRefusalError("PATH_ESCAPE_REFUSED", f"Allowlisted data root '{raw_s}' does not exist as directory.", cwe="CWE-22", details={"http_status": 403})
+            rdp = cur.resolve()
+            if not rdp.is_relative_to(chosen_base):
+                raise AnvilRefusalError("PATH_ESCAPE_REFUSED", f"Data root '{raw_s}' escapes base directory.", cwe="CWE-22", details={"http_status": 403})
+            nk = os.path.normcase(str(rdp))
+            if nk not in seen_dirs:
+                seen_dirs.add(nk)
+                target_dirs.append((prefix_tag, "/".join(rel_parts), rdp))
+
+    total_bytes = 0
+    staged_rels: List[str] = []
+    copy_plan: List[Tuple[Path, Path, str]] = []
+
+    for _btag, rel_prefix, dpath in target_dirs:
+        for cur_r, dirs, files in os.walk(dpath, followlinks=False):
+            cur_p = Path(cur_r)
+            dirs.sort()
+            kept_d: List[str] = []
+            for d in dirs:
+                if d.startswith(".") or d == "__pycache__":
+                    continue
+                sdp = cur_p / d
+                if _is_link_or_junction(sdp):
+                    raise AnvilRefusalError("PATH_ESCAPE_REFUSED", f"Symlink/junction subdirectory '{d}' in data root refused.", cwe="CWE-22", details={"http_status": 403})
+                if not sdp.resolve().is_relative_to(dpath):
+                    raise AnvilRefusalError("PATH_ESCAPE_REFUSED", f"Subdirectory '{d}' escapes data root.", cwe="CWE-22", details={"http_status": 403})
+                kept_d.append(d)
+            dirs[:] = kept_d
+
+            for fname in sorted(files):
+                if fname.startswith("."):
+                    continue
+                fp = cur_p / fname
+                if _is_link_or_junction(fp):
+                    raise AnvilRefusalError("PATH_ESCAPE_REFUSED", f"Symlink/junction data file '{fname}' refused.", cwe="CWE-22", details={"http_status": 403})
+                rfp = fp.resolve()
+                if not rfp.is_relative_to(dpath):
+                    raise AnvilRefusalError("PATH_ESCAPE_REFUSED", f"Data file '{fname}' escapes data root.", cwe="CWE-22", details={"http_status": 403})
+                rel_in_root = rfp.relative_to(dpath).as_posix()
+                dest_rel = f"{rel_prefix}/{rel_in_root}"
+                if _is_sensitive_untracked_or_secret_file(dest_rel, fname):
+                    continue
+                st = os.stat(rfp, follow_symlinks=False)
+                prospective = total_bytes + int(st.st_size)
+                if prospective > eff_cap:
+                    raise AnvilRefusalError(
+                        "BOUND_EXCEEDED_REFUSAL",
+                        f"Allowlisted data roots total size ({prospective} bytes) exceeds cap ({eff_cap} bytes).",
+                        details={
+                            "bound_name": "max_allowlisted_data_bytes",
+                            "bound_limit": eff_cap,
+                            "observed_value": prospective,
+                            "http_status": 413,
+                        },
+                    )
+                total_bytes = prospective
+                dst_p = work_repo / Path(*dest_rel.split("/"))
+                copy_plan.append((rfp, dst_p, dest_rel))
+
+    for src_fp, dst_fp, dest_rel in copy_plan:
+        dst_fp.parent.mkdir(parents=True, exist_ok=True)
+        # Pure byte copy via open('rb') -> open('wb'): NEVER hardlinks and NEVER touches source file attributes/atime/mode
+        with open(src_fp, "rb") as f_in, open(dst_fp, "wb") as f_out:
+            shutil.copyfileobj(f_in, f_out, length=1024 * 1024)
+        staged_rels.append(dest_rel)
+
+    return staged_rels
+
+
+def _stage_isolated_worktree_copy(
+    repo_root: Path,
+    scratch_base: Path,
+    *,
+    allowlisted_data_roots: Optional[Sequence[str | Path]] = None,
+    cockpit_root: Optional[Path] = None,
+    max_data_bytes: int = MAX_ALLOWLISTED_DATA_BYTES,
+) -> Path:
     """Copy tracked and non-gitignored repository files (in Git repos via
     `git ls-files -z --cached --others --exclude-standard`) or contained
     non-sensitive source files (in non-Git directories) into an isolated scratch worktree,
+    plus optional manifest-allowlisted data roots by pure byte copy (`<= 2 GB` cap),
     skipping metadata/cache/secret files and refusing escaping symlinks or junctions.
     """
     work_repo = scratch_base / "worktree"
@@ -421,14 +603,26 @@ def _stage_isolated_worktree_copy(repo_root: Path, scratch_base: Path) -> Path:
                 dst = work_repo / Path(*rel_parts)
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(fp, dst)
+        if allowlisted_data_roots is not None:
+            _copy_allowlisted_data_roots_into_scratch(
+                repo_root,
+                work_repo,
+                allowlisted_data_roots,
+                cockpit_root=cockpit_root,
+                max_data_bytes=max_data_bytes,
+            )
         return work_repo
 
+    allow_data_set = set(ALLOWLISTED_DATA_DIR_NAMES)
     for cur_root, dirs, files in os.walk(repo_root, followlinks=False):
         cur_path = Path(cur_root)
         rel_dir = cur_path.relative_to(repo_root)
         kept_dirs: List[str] = []
         for d in sorted(dirs):
             if d in SKIP_SCAN_DIRS:
+                continue
+            if allowlisted_data_roots is not None and rel_dir == Path(".") and d in allow_data_set:
+                # Handled with strict <=2 GB cap + symlink refusal in _copy_allowlisted_data_roots_into_scratch
                 continue
             dp = cur_path / d
             if _is_link_or_junction(dp):
@@ -461,6 +655,14 @@ def _stage_isolated_worktree_copy(repo_root: Path, scratch_base: Path) -> Path:
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(fp, dst)
 
+    if allowlisted_data_roots is not None:
+        _copy_allowlisted_data_roots_into_scratch(
+            repo_root,
+            work_repo,
+            allowlisted_data_roots,
+            cockpit_root=cockpit_root,
+            max_data_bytes=max_data_bytes,
+        )
     return work_repo
 
 
@@ -1228,13 +1430,16 @@ def _run_python_tracer_worker(manifest_path: Path) -> int:
         if cand_pkg.is_dir() and str(cand_pkg) not in sys.path:
             sys.path.insert(0, str(cand_pkg))
     sys.path.insert(0, str(work_repo))
-    prio_sps = [sp for sp in (manifest.get("priority_site_packages") or []) if isinstance(sp, str) and sp]
-    for sp_dir in reversed(prio_sps):
-        if sp_dir in sys.path:
-            sys.path.remove(sp_dir)
-        sys.path.insert(1, sp_dir)
     for sp_dir in manifest.get("host_site_packages") or []:
         if isinstance(sp_dir, str) and sp_dir and sp_dir not in sys.path:
+            sys.path.append(sp_dir)
+    prio_sps = [sp for sp in (manifest.get("priority_site_packages") or []) if isinstance(sp, str) and sp]
+    with contextlib.suppress(Exception):
+        import site as _w_site
+        for sp_dir in prio_sps:
+            _w_site.addsitedir(sp_dir)
+    for sp_dir in prio_sps:
+        if sp_dir not in sys.path:
             sys.path.append(sp_dir)
     os.chdir(str(work_repo))
     target_exception: Optional[Dict[str, Any]] = None
@@ -1265,6 +1470,13 @@ def _run_python_tracer_worker(manifest_path: Path) -> int:
         estg = active_stage_clock[0] or (stage_ids[0] if stage_ids else "S1")
         uncaught_stage_exceptions.add(estg)
         target_exception = {"type": type(exc).__qualname__, "stage_id": estg}
+        if isinstance(exc, ImportError):
+            m_name = str(getattr(exc, "name", "") or "").strip()
+            if not m_name:
+                m_re = re.search(r"No module named ['\"]([^'\"]+)['\"]", str(exc))
+                m_name = m_re.group(1).strip() if m_re else ""
+            if m_name:
+                target_exception["missing_module"] = m_name
     finally:
         sys.settrace(None)
         _switch_stage_clock(None)
@@ -2040,6 +2252,9 @@ def run_consented_trace(
     paper_path: Optional[str | Path] = None,
     pipeline_id: Optional[str] = None,
     static_map: Optional[Dict[str, Any]] = None,
+    cockpit_root: Optional[str | Path] = None,
+    store_root: Optional[str | Path] = None,
+    verified_extra_site_packages: Optional[Sequence[str]] = None,
 ) -> Dict[str, Any]:
     """Execute a consented local child-subprocess trace inside an isolated temp
     worktree copy with `shell=False`, scrubbed credential env, and process-tree
@@ -2136,44 +2351,9 @@ def run_consented_trace(
         worker_out = scratch_dir / "_worker_trace_out.json"
         r_raw_tsv = scratch_dir / "_r_raw_trace.tsv"
 
-        host_site_packages = [
-            str(Path(p).resolve())
-            for p in sys.path
-            if isinstance(p, str) and "site-packages" in p and Path(p).is_dir()
-        ]
-        try:
-            import site as _site_mod
-            u_sp = _site_mod.getusersitepackages()
-            if isinstance(u_sp, str) and u_sp and Path(u_sp).is_dir():
-                u_res = str(Path(u_sp).resolve())
-                if u_res not in host_site_packages:
-                    host_site_packages.append(u_res)
-        except Exception:
-            pass
-        priority_site_packages: List[str] = []
-        for anc in (root, root.parent, root.parent.parent):
-            for vname in (".venv", "venv"):
-                cand_win = anc / vname / "Lib" / "site-packages"
-                if cand_win.is_dir():
-                    c_res = str(cand_win.resolve())
-                    if c_res not in priority_site_packages:
-                        priority_site_packages.append(c_res)
-                for cand_pos in (anc / vname / "lib").glob("python*/site-packages"):
-                    if cand_pos.is_dir():
-                        cp_res = str(cand_pos.resolve())
-                        if cp_res not in priority_site_packages:
-                            priority_site_packages.append(cp_res)
-            hint_file = anc / ".anvil" / "runtime_env.json"
-            if hint_file.is_file():
-                try:
-                    hint_doc = json.loads(hint_file.read_text(encoding="utf-8"))
-                    for extra_sp in (hint_doc.get("extra_site_packages") or []):
-                        if isinstance(extra_sp, str) and extra_sp and Path(extra_sp).is_dir():
-                            ex_res = str(Path(extra_sp).resolve())
-                            if ex_res not in priority_site_packages:
-                                priority_site_packages.append(ex_res)
-                except Exception:
-                    pass
+        ck_p = Path(cockpit_root).resolve() if (cockpit_root is not None and str(cockpit_root).strip()) else None
+        st_p = Path(store_root).resolve() if (store_root is not None and str(store_root).strip()) else None
+        priority_site_packages, host_site_packages = _discover_priority_and_host_site_packages(root, cockpit_root=ck_p, store_root=st_p, verified_extra_site_packages=verified_extra_site_packages)
         manifest_path = scratch_dir / "_worker_manifest.json"
         atomic_locked_write_json(
             manifest_path,
@@ -2275,6 +2455,20 @@ def run_consented_trace(
             raise AnvilRefusalError(err_code, err_msg, details=extra)
 
         uncaught_exc = worker_data.get("uncaught_exception")
+        if isinstance(uncaught_exc, dict) and uncaught_exc.get("missing_module"):
+            miss_m = str(uncaught_exc["missing_module"]).strip()
+            raise AnvilRefusalError(
+                "PIPELINE_DEPENDENCY_MISSING",
+                f"PIPELINE_DEPENDENCY_MISSING: Missing package '{miss_m}'",
+                details={
+                    "status_kind": "dependency-missing",
+                    "http_status": 503,
+                    "missing_module": miss_m,
+                    "uncaught_exception": uncaught_exc,
+                    "stderr_preview": stderr_preview[:512],
+                    "isolation_boundary": ISOLATION_BOUNDARY,
+                },
+            )
         exec_lines_out = list(worker_data.get("executed_lines") or [])
         if uncaught_exc is not None and len(exec_lines_out) == 0:
             raise AnvilRefusalError(
@@ -2328,6 +2522,26 @@ def run_consented_trace(
         return trace_doc
     finally:
         shutil.rmtree(scratch_dir, ignore_errors=True)
+
+
+from anvil_v4_repl_scratch import (  # noqa: E402
+    _apply_unified_diff_in_scratch,
+    _check_python_ast_sinks_safe,
+    discover_priority_and_host_site_packages as _discover_priority_and_host_site_packages,
+    execute_replication_table_in_scratch,
+)
+
+
+def run_replication_table_in_scratch(repo_dir: str | Path, argv: Sequence[str], **kwargs: Any) -> Dict[str, Any]:
+    return execute_replication_table_in_scratch(
+        repo_dir,
+        argv,
+        validate_argv_fn=validate_execution_argv,
+        stage_worktree_fn=_stage_isolated_worktree_copy,
+        build_env_fn=build_scrubbed_env,
+        kill_tree_fn=_kill_process_tree,
+        **kwargs,
+    )
 
 
 def _worker_cli_entry(argv: Sequence[str]) -> int:

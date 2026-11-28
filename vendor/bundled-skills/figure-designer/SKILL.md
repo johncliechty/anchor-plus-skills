@@ -1,6 +1,6 @@
 ---
 name: figure-designer
-description: Best-in-class scientific figure design for technical/scientific documents. Trigger BEFORE generating any SVG, PNG, or PDF figure for whitepapers, papers, or technical reports — especially neuroscience, computational neuroscience, ML architecture diagrams, signal/circuit/system schematics, training-loss visuals, or any multi-panel figure where the reader needs to grasp the meaning at a glance. Trigger AGAIN when reviewing a figure before publication. Use when the user asks for "scientific illustration", "neuroscience figure", "architecture diagram", or pushes back on figures being "decorative but not informative".
+description: Best-in-class scientific figure design for technical/scientific documents. Trigger BEFORE generating any SVG, PNG, or PDF figure for whitepapers, papers, or technical reports — especially neuroscience, computational neuroscience, ML architecture diagrams, signal/circuit/system schematics, training-loss visuals, or any multi-panel figure where the reader needs to grasp the meaning at a glance. Trigger AGAIN when reviewing a figure before publication. Use when the user asks for "scientific illustration", "neuroscience figure", "architecture diagram", or pushes back on figures being "decorative but not informative". Variable Strength: Light / Standard by default (1-step-below-frontier model at medium effort; call 'Figure-Designer Heavy' for top-tier frontier model at highest effort on high-stakes runs, configurable in Anchor Setup).
 ---
 
 ## North Star (LOCKED — John, 2026-08-25)
@@ -13,6 +13,7 @@ visual communication and blocks decorative-but-uninformative figures before they
 A quick 2-box diagram gets COMPRESSED ceremony: narrative in one line, build, gate 6
 (render-and-look) — no scratch file, no full checklist. A publication or deck figure runs
 the full workflow. Narrative-first and gate 6 are never skipped at any size.
+Under Variable Strength (`AGENTS.md`), plain `Figure-Designer` runs at **`Standard`** (one generalist model below frontier at `medium` effort); **`Figure-Designer Heavy`** (`ANCHOR_STRENGTH=heavy` / `TRIO_TIER=heavy`) upgrades narrative design and cross-family visual critique to the frontier model at highest supported effort for flagship publication figures.
 
 <!-- ELEGANCE-LAW v2 -->
 ## The Elegance Law (locked by John — binding on this skill)

@@ -42,7 +42,7 @@
 
   const state = {
     bootPending: true, bootNeedsInitialFetch: true, bootFailureOnly: false,
-    multiAnalysisEnabled: false, anvilV6Enabled: false, scopeDrifted: false, scopeSha256: "",
+    multiAnalysisEnabled: false, anvilV6Enabled: !(document.body && document.body.getAttribute("data-anvil-v6-enabled") === "0"), anvilStrength: "heavy", scopeDrifted: false, scopeSha256: "",
     scopingState: null, scopingMapExpanded: false, scopingGandalfEnabled: true,
     scopingSelectedModuleIds: null, scopingSoftwareSpec: ".", scopingPaperSpec: "", scopingLegacyRemoved: false,
     replicationViewOpen: params.get("view") === "replication", replicationState: null,
@@ -402,6 +402,7 @@
       const backoff = BACKOFF_STEPS_MS[Math.min(window.__anvilSyncStats.failureStreak, BACKOFF_STEPS_MS.length - 1)];
       window.__anvilSyncStats.failureStreak += 1; window.__anvilSyncStats.lastBackoffMs = backoff;
       hydrateFromServerPayload({ ok: false, error: err ? err.message : "Network timeout" }, 0, false);
+      if (!state.active) { state.bootFailureOnly = true; state.surfaceState = SURFACE_FAILURE_ROWS[504]; }
       state.bootPending = false; state.bootNeedsInitialFetch = false; window.__anvilBootTelemetry.bootSettled = true;
       renderAll();
       scheduleNextStateSync(backoff);
@@ -452,10 +453,11 @@
     const b = state.bundle;
     const cname = state.cockpitName || "AI Cockpit";
     const brandSpan = document.getElementById("brandTitleText");
-    if (brandSpan) {
+    if (brandSpan && !state.bootPending) {
       brandSpan.textContent = state.anvilV6Enabled ? "Anvil · Process Workbench & Scientific IDE" : "Anvil v5 · B3 Workbench + Scientific IDE";
       if (state.anvilV6Enabled) document.title = "Anvil · Anchor Cockpit Process Workbench & Scientific IDE";
     }
+    if (window.AnvilV6Runtime && window.AnvilV6Runtime.syncAnvilStrengthPill) window.AnvilV6Runtime.syncAnvilStrengthPill();
 
     const switcherEl = document.getElementById("analysisSwitcherSelect");
     if (switcherEl) {

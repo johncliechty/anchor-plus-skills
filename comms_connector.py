@@ -673,6 +673,29 @@ def _parse_imap_header_block(raw_hdr: str) -> dict:
     return out
 
 
+def _imap_fetch_tail_uids(conn, exists_count: int, window: int) -> list[int]:
+    """Fetch the newest ``window`` non-deleted permanent UIDs by sequence number without scanning 300k+ messages."""
+    if exists_count <= 0:
+        return []
+    span = max(window * 3, 150)
+    seq_lo = max(1, exists_count - span + 1)
+    typ, data = conn.fetch(f"{seq_lo}:{exists_count}", "(UID FLAGS)")
+    if typ != "OK":
+        raise IOError(f"IMAP sequence FETCH failed for {seq_lo}:{exists_count}: {typ}")
+    uids: list[int] = []
+    for item in (data or []):
+        raw_part = item[0] if isinstance(item, tuple) else item
+        if raw_part is None:
+            continue
+        txt = raw_part.decode("ascii", errors="ignore") if isinstance(raw_part, (bytes, bytearray)) else str(raw_part)
+        if "\\deleted" in txt.lower():
+            continue
+        m_u = re.search(r"\bUID\s+(\d+)\b", txt, flags=re.I)
+        if m_u:
+            uids.append(int(m_u.group(1)))
+    return sorted(set(uids))
+
+
 def imap_uid_fetch_headers(
     conn,
     *,
@@ -681,15 +704,38 @@ def imap_uid_fetch_headers(
     account_badge: str = "",
     max_messages: int = 50,
     uid_cursor: str | None = None,
+    exists_count: int | None = None,
 ) -> dict:
-    """Fetch inbox headers with permanent IMAP UIDs: ``conn.uid("SEARCH", ...)`` then 100-UID batched
-    ``conn.uid("FETCH", ...)``. The recent window (``max_messages``) is always read; older UNSEEN mail below
-    ``uid_cursor`` is back-filled newest-first within the 14-day active triage window. At most
-    ``IMAP_MAX_HEADERS_PER_TICK`` (200) headers are fetched per tick — overflow returns ``has_more_unread=True`` +
-    ``next_uid_cursor`` (never an "empty inbox" claim)."""
-    all_uids = _imap_uid_list(conn, "UNDELETED")
-    unseen = set(_imap_uid_list(conn, "UNSEEN"))
+    """Fetch inbox headers with permanent IMAP UIDs.
+
+    On large mailboxes (>1,000 messages, such as 292k-message Gmail archives), uses O(window)
+    sequence-tail ``FETCH <lo>:<exists> (UID FLAGS)`` + bounded 15-day ``UID SEARCH (UNSEEN SINCE <15d>)``
+    so ``imaplib._MAXLINE`` (1 MB) and 8s timeouts never trip. Preserves ``uid_cursor`` backfill.
+    """
     window = max(1, min(int(max_messages or 1), IMAP_MAX_HEADERS_PER_TICK))
+    if exists_count is not None and int(exists_count) <= 0:
+        return {
+            "headers": [],
+            "has_more_unread": False,
+            "next_uid_cursor": None,
+            "unseen_total": 0,
+            "fetch_batches": 0,
+            "fetched_count": 0,
+        }
+    use_bounded_tail = bool(exists_count is not None and int(exists_count) > 1000 and hasattr(conn, "fetch"))
+    if not use_bounded_tail:
+        try:
+            all_uids = _imap_uid_list(conn, "UNDELETED")
+            unseen = set(_imap_uid_list(conn, "UNSEEN"))
+        except Exception as search_exc:
+            if "more than" in str(search_exc).lower() and hasattr(conn, "fetch") and exists_count and int(exists_count) > 0:
+                use_bounded_tail = True
+            else:
+                raise
+    if use_bounded_tail:
+        all_uids = _imap_fetch_tail_uids(conn, int(exists_count or 0), window)
+        since_imap = (date.today() - timedelta(days=15)).strftime("%d-%b-%Y")
+        unseen = set(_imap_uid_list(conn, f"(UNSEEN SINCE {since_imap})"))
     recent = all_uids[-window:]
     recent_set = set(recent)
     floor_uid = recent[0] if recent else 0
@@ -1935,6 +1981,12 @@ def fetch_imap_headers(account: dict, secret: str, max_messages: int = 15, timeo
             if typ != "OK":
                 account["_imap_state"] = "unknown"
                 return False, f"IMAP connection note: INBOX select failed (unknown): {typ}", []
+            exists_cnt: int | None = None
+            if sel_data and sel_data[0] is not None:
+                raw_sel = sel_data[0].decode("ascii", errors="ignore") if isinstance(sel_data[0], (bytes, bytearray)) else str(sel_data[0])
+                m_ex = re.search(r"\b(\d+)\b", raw_sel)
+                if m_ex:
+                    exists_cnt = int(m_ex.group(1))
             tick = imap_uid_fetch_headers(
                 conn,
                 account_id=aid,
@@ -1942,6 +1994,7 @@ def fetch_imap_headers(account: dict, secret: str, max_messages: int = 15, timeo
                 account_badge=acct_badge,
                 max_messages=max_messages,
                 uid_cursor=load_imap_backfill_cursor(aid) if aid else None,
+                exists_count=exists_cnt,
             )
             headers_out = tick["headers"]
             account["_imap_backfill"] = {
@@ -9394,6 +9447,12 @@ def send_email_message(
     reply_uid = str(payload.get("uid") or "").strip()
     att_paths = [str(p).strip() for p in (payload.get("attachments") or []) if str(p).strip()]
 
+    if any(str(a or "").strip().lower() == "recipient@example.com" for a in recips.get("envelope_addrs") or []):
+        return {
+            "ok": False,
+            "status_code": 400,
+            "error": "Please enter the real recipient email address before sending (placeholder recipient@example.com blocked).",
+        }
     if not subj:
         return {"ok": False, "status_code": 400, "error": "Email subject required"}
 
@@ -10290,6 +10349,8 @@ def _sync_comms_now_inner(entries: list[dict] | None = None, facts: dict | None 
                 acct_state["unread_capped"] = True
             acc["last_imap_note"] = msg_imap
             if ok_imap:
+                acc["mail_sync_state"] = "ok"
+                acc.pop("last_sync_error", None)
                 all_headers.extend(hdrs)
                 extracted = acc.pop("_extracted_ics_events", None) or []
                 if extracted:
@@ -10338,8 +10399,11 @@ def _sync_comms_now_inner(entries: list[dict] | None = None, facts: dict | None 
                 )
                 if not ics_url and is_true_auth_failure:
                     acc["status"] = "auth_error"
+                    acc["mail_sync_state"] = "auth_error"
                 else:
                     acc["status"] = acc.get("status") if acc.get("status") != "auth_error" else "connected"
+                    acc["mail_sync_state"] = "sync_error"
+                acc["last_sync_error"] = str(msg_imap or "")[:180]
         elif secret or auth_mode == "ics_only":
             acc["status"] = acc.get("status") or "configured"
 
@@ -13104,7 +13168,7 @@ def queue_speed_racer_draft(body: dict, *, async_draft: bool | None = None) -> d
             "reply_mode": reply_mode,
             "from": orig_from_hdr or str(body.get("from") or to_str),
             "sender_email": orig_sender_em or to_str,
-            "to": "" if (reply_mode == "forward" and not to_str) else (_proper_capitalize_sender_display(to_str or "recipient@example.com") if ("<" in str(to_str or "") and "," not in str(to_str or "")) else (to_str or "recipient@example.com")),
+            "to": "" if not to_str else (_proper_capitalize_sender_display(to_str) if ("<" in str(to_str) and "," not in str(to_str)) else to_str),
             "cc": cc_str,
             "bcc": bcc_str,
             "reply_to": reply_recips_q.get("reply_to") or (_proper_capitalize_sender_display(to_str or "") if "<" in str(to_str or "") else to_str),
@@ -13441,7 +13505,7 @@ def queue_speed_racer_draft(body: dict, *, async_draft: bool | None = None) -> d
         "account_badge": acct_badge,
         "account": acct_badge,
         "reply_mode": reply_mode,
-        "to": "" if (reply_mode == "forward" and not to_str) else (_proper_capitalize_sender_display(to_str or "recipient@example.com") if ("<" in str(to_str or "") and "," not in str(to_str or "")) else (to_str or "recipient@example.com")),
+        "to": "" if not to_str else (_proper_capitalize_sender_display(to_str) if ("<" in str(to_str) and "," not in str(to_str)) else to_str),
         "cc": cc_str,
         "bcc": bcc_str,
         "reply_to": reply_recips_q.get("reply_to") or (_proper_capitalize_sender_display(to_str or "") if "<" in str(to_str or "") else to_str),

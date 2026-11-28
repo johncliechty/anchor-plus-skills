@@ -268,24 +268,28 @@ const CERTIFIER_RULES = Object.freeze([
     id: 'ramanujan',
     skill: 'Ramanujan',
     pattern: /\b(?:ramanujan|theorem|lemma|formal\s+proof|mathematical\s+derivation|closed[- ]form|differential\s+equation|eigenvalue|jacobian|hessian|z3\b|lean\s*4?|symbolic\s+certif)/i,
+    fileHintRe: /(?:math|proof|solver|symbolic|certif|matrix|eigen|jacobian|hessian|z3|lean|theorem|formula)/i,
     gateText: 'Ramanujan certifier gate: exact arithmetic / symbolic / z3 ground-equation check with earned honesty rung',
   },
   {
     id: 'financial-analyst',
     skill: 'Financial-Analyst',
     pattern: /\b(?:financial-analyst|cap[- ]?table|equity\s+waterfall|liquidation\s+preference|dcf\b|irr\b|npv\b|valuation\s+model|round[- ]comp|penny[- ]exact\s+tie[- ]out)/i,
+    fileHintRe: /(?:waterfall|valuation|captable|cap[-_]?table|dcf|irr|npv|finance|financial|ledger|decimal)/i,
     gateText: 'Financial-Analyst certifier gate: exact-Decimal Python/Excel dependency-graph tie-out (zero float drift)',
   },
   {
     id: 'legal-beagle',
     skill: 'Legal-Beagle',
     pattern: /\b(?:legal-beagle|contract\s+clause|indemnification|fiduciary\s+duty|regulatory\s+compliance|case[- ]law|statut(?:e|ory)|governing\s+law|nda\b|msa\b)/i,
+    fileHintRe: /(?:legal|contract|clause|compliance|nda|msa|indemn|statut|policy|trust)/i,
     gateText: 'Legal-Beagle certifier gate: jurisdiction + date established and zero uncited case-law/statute claims',
   },
   {
     id: 'literature-review',
     skill: 'Literature-Review',
     pattern: /\b(?:literature-review|systematic\s+review|multi[- ]paper\s+synthesis|prisma\b|snowball\s+search|citation\s+matrix|meta[- ]analysis)/i,
+    fileHintRe: /(?:prisma|snowball|citation|literature|bibliography|corpus|meta[-_]?analysis|papers?)/i,
     gateText: 'Literature-Review certifier gate: PRISMA flow + deterministic primary-source quote grounding',
   },
 ]);
@@ -298,6 +302,42 @@ function collectMatches(re, haystack) {
     if (m[1]) out.add(m[1]);
   }
   return [...out];
+}
+
+function selectOwningCertifierWaveIndex(waves = [], rule) {
+  if (!Array.isArray(waves) || waves.length === 0 || !rule) return -1;
+  const FORWARD_REF_RE = /\b(?:before\s+wave\s+\d+|prepared?\s+for\s+wave\s+\d+|deferred\s+to\s+wave\s+\d+|later\s+in\s+wave\s+\d+)\b/i;
+  let bestIdx = -1;
+  let bestScore = 0;
+
+  waves.forEach((w, idx) => {
+    const dels = [
+      ...(Array.isArray(w?.deliverables) ? w.deliverables : [w?.deliverables]),
+      ...(Array.isArray(w?.files) ? w.files : []),
+      ...(Array.isArray(w?.writes) ? w.writes : []),
+    ].filter(Boolean).join(' ');
+    const gwtText = Array.isArray(w?.gwt)
+      ? w.gwt.map((g) => `${g?.given ?? ''} ${g?.when ?? ''} ${g?.then ?? ''}`).join(' ')
+      : '';
+    const ownedSurface = `${w?.title ?? ''}\n${dels}\n${w?.doneWhen ?? ''}\n${gwtText}`;
+    const fullWave = flattenWaveText(w);
+
+    let score = 0;
+    if (rule.fileHintRe && dels && rule.fileHintRe.test(dels)) score += 6;
+    if (dels && rule.pattern.test(dels)) score += 5;
+    if (w?.title && rule.pattern.test(String(w.title))) score += 4;
+    if (ownedSurface && rule.pattern.test(ownedSurface)) score += 3;
+    if (fullWave && rule.pattern.test(fullWave)) {
+      score += FORWARD_REF_RE.test(String(w?.intent ?? '')) && score === 0 ? 0.5 : 1;
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestIdx = idx;
+    }
+  });
+
+  return bestScore > 0 ? bestIdx : waves.length - 1;
 }
 
 /**
@@ -316,11 +356,13 @@ export function detectPortfolioSkillGates({ intent = '', northStar = '', plan = 
   const gates = [];
 
   if (uiFiles.length > 0 || hasUiTemplate) {
+    const why = uiFiles.length ? `UI targets (${uiFiles.slice(0, 3).join(', ')})` : 'interactive UI template surface';
     gates.push({
       id: 'ui-chrome-mockup',
       skill: 'Chrome-UI-Mockup',
       waveTarget: 1,
       matchedTargets: uiFiles,
+      neededBecause: `Needed-because: ${why} requires rendered visual verification per ELEGANCE Rule 6`,
       gateText:
         'Wave-1 Interactive Chrome Mockup gate: launch preview via `python <path> chrome-open <url> --new-window` ' +
         'and visually inspect layout/states via `python <path> look` before downstream UI waves',
@@ -328,11 +370,13 @@ export function detectPortfolioSkillGates({ intent = '', northStar = '', plan = 
   }
 
   if (svgFiles.length > 0 || hasFigureSignal) {
+    const why = svgFiles.length ? `figure targets (${svgFiles.slice(0, 3).join(', ')})` : 'scientific/architectural figure surface';
     gates.push({
       id: 'figure-designer',
       skill: 'Figure-Designer',
       waveTarget: 1,
       matchedTargets: svgFiles,
+      neededBecause: `Needed-because: ${why} requires Figure-Designer encoding & visual inspection`,
       gateText:
         'Wave-1 Figure-Designer gate: apply `Figure-Designer` visual hierarchy/encoding check and inspect rendered figure via ' +
         '`python <path> chrome-open <svg/html> --new-window` + `ft.py look`',
@@ -340,12 +384,14 @@ export function detectPortfolioSkillGates({ intent = '', northStar = '', plan = 
   }
 
   for (const rule of CERTIFIER_RULES) {
-    if (rule.pattern.test(fullBlob)) {
+    const m = rule.pattern.exec(fullBlob);
+    if (m) {
       gates.push({
         id: rule.id,
         skill: rule.skill,
         waveTarget: 'domain',
-        matchedTargets: [],
+        matchedTargets: [m[0]],
+        neededBecause: `Needed-because: plan domain signal "${m[0]}" requires ${rule.skill} deterministic/honesty certification`,
         gateText: rule.gateText,
       });
     }
@@ -367,22 +413,27 @@ export function attachPortfolioSkillGates(waves = [], gates = []) {
   }));
 
   for (const gate of gates) {
+    const whySuffix = gate.neededBecause ? ` (${gate.neededBecause})` : '';
     if (gate.waveTarget === 1) {
-      const w1 = out[0];
-      if (!w1.skillGates.includes(gate.skill)) w1.skillGates.push(gate.skill);
-      if (!String(w1.doneWhen || '').includes('ft.py chrome-open')) {
-        w1.doneWhen = `${String(w1.doneWhen || '').trim()}; ${gate.gateText}`;
+      const ruleAsUi = gate.id === 'figure-designer'
+        ? { pattern: FIGURE_SIGNAL_RE, fileHintRe: /\.svg\b/i }
+        : { pattern: UI_TEMPLATE_RE, fileHintRe: /\.(?:html?|css|scss|tsx|jsx|vue|svelte)\b/i };
+      const uiOwnerIdx = selectOwningCertifierWaveIndex(out, ruleAsUi);
+      const targetWave = out[uiOwnerIdx >= 0 && gate.matchedTargets?.length ? uiOwnerIdx : 0];
+      if (!targetWave.skillGates.includes(gate.skill)) targetWave.skillGates.push(gate.skill);
+      if (!String(targetWave.doneWhen || '').includes('ft.py chrome-open')) {
+        targetWave.doneWhen = `${String(targetWave.doneWhen || '').trim()}; ${gate.gateText}${whySuffix}`;
       }
       continue;
     }
-    // Domain certifiers attach to the wave matching the domain pattern, or the final wave as certifier sign-off.
+    // Journal 0126 fix: attach domain certifiers to the wave OWNING the domain deliverables/surface,
+    // never blindly to Wave 1 when Wave 1 merely forward-references a downstream wave in prose.
     const rule = CERTIFIER_RULES.find((r) => r.id === gate.id);
-    let idx = rule ? out.findIndex((w) => rule.pattern.test(flattenWaveText(w))) : -1;
-    if (idx < 0) idx = out.length - 1;
-    const target = out[idx];
+    const idx = selectOwningCertifierWaveIndex(out, rule);
+    const target = out[idx >= 0 ? idx : out.length - 1];
     if (!target.skillGates.includes(gate.skill)) target.skillGates.push(gate.skill);
     if (!String(target.doneWhen || '').toLowerCase().includes(gate.skill.toLowerCase())) {
-      target.doneWhen = `${String(target.doneWhen || '').trim()}; ${gate.gateText}`;
+      target.doneWhen = `${String(target.doneWhen || '').trim()}; ${gate.gateText}${whySuffix}`;
     }
   }
 
@@ -440,6 +491,238 @@ export function partitionDisjointSubWaves(wave, waveNumber = null) {
   return subWaves;
 }
 
+export const MONOLITH_FREEZE_LINES = 1500;
+export const MONOLITH_MAX_ADAPTER_DELTA_LINES = 180;
+export const WAVE_DONE_WHEN_MAX_WORDS = 360;
+
+const STRIP_INJECTED_GATE_SUFFIX_RE = /;\s*(?:Wave-1\s+(?:Interactive Chrome Mockup|Figure-Designer)\s+gate:|Ramanujan\s+math\/domain\s+gate:|Financial-Analyst\s+gate:|Legal-Beagle\s+gate:|Literature-Review\s+gate:)[\s\S]*$/i;
+
+function extractDeliverablePaths(deliverables = []) {
+  const list = Array.isArray(deliverables) ? deliverables : [];
+  const out = [];
+  for (const raw of list) {
+    const s = String(raw ?? '').trim();
+    if (!s) continue;
+    const colonIdx = s.lastIndexOf(': ');
+    const cand = (colonIdx >= 0 ? s.slice(colonIdx + 2) : s.split(/\s+[—–-]\s+/)[0])
+      .replace(/^[`'"(]+|[`'")\],;:]+$/g, '')
+      .replace(/^Test\s+file\s+/i, '')
+      .trim()
+      .replace(/\\/g, '/');
+    if (cand && (FILE_LIKE_RE.test(cand) || /[a-z0-9_.-]+\/[a-z0-9_.-]+\.[a-z0-9]+$/i.test(cand))) {
+      out.push(cand.replace(/^\.\//, ''));
+    }
+  }
+  return [...new Set(out)];
+}
+
+function extractDirectiveReason(text, key) {
+  const escaped = String(key).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`^\\s*(?:[-*>]\\s*)?(?:\\*\\*)?${escaped}(?:\\*\\*)?\\s*:\\s*(?!\`)([^\`\\r\\n]{6,})$`, 'im');
+  const m = String(text ?? '').match(re);
+  if (!m) return null;
+  const val = m[1].trim();
+  if (!val || /^if\s+(?:coexistence|needed|required)\b/i.test(val)) return null;
+  return val;
+}
+
+/**
+ * Chekhov Guard 4 (Gandalf journal 0402 — Anti-Bloat & Monolith-Freeze Gate):
+ * - Any wave touching an existing monolith (>1,500 lines) must ALSO declare a focused
+ *   non-test companion module deliverable (keeping monolith edits <=180 net adapter lines)
+ *   OR document an explicit `monolith_override_reason:`.
+ * - Optionally bounds raw per-wave `doneWhen` prose (<=360 words before injected gates)
+ *   so Shark revisions replace weak clauses rather than concatenating unbounded checklists.
+ */
+export function checkMonolithAndContractBudget({
+  waves = [],
+  plan = '',
+  monoliths = [],
+  monolithOverrideReason = null,
+  enforceProseBudget = false,
+  maxDoneWhenWords = WAVE_DONE_WHEN_MAX_WORDS,
+} = {}) {
+  const inlineOverride = extractDirectiveReason(plan, 'monolith_override_reason');
+  const override = (typeof monolithOverrideReason === 'string' && monolithOverrideReason.trim())
+    ? monolithOverrideReason.trim()
+    : inlineOverride;
+
+  const monolithMap = new Map();
+  for (const m of monoliths || []) {
+    if (!m) continue;
+    const p = String(typeof m === 'string' ? m : (m.path || m.file || '')).replace(/\\/g, '/').replace(/^\.\//, '');
+    const lines = typeof m === 'object' && Number.isFinite(m.lines) ? m.lines : MONOLITH_FREEZE_LINES + 1;
+    if (p && lines > MONOLITH_FREEZE_LINES) monolithMap.set(p.toLowerCase(), { path: p, lines });
+  }
+
+  const violations = [];
+  const list = Array.isArray(waves) ? waves : [];
+
+  list.forEach((w, idx) => {
+    const wNum = w?.n ?? idx + 1;
+    const paths = extractDeliverablePaths(w?.deliverables);
+    if (!override && monolithMap.size > 0 && paths.length > 0) {
+      const touchedMonoliths = paths.filter((p) => monolithMap.has(p.toLowerCase()));
+      if (touchedMonoliths.length > 0) {
+        const companionModules = paths.filter((p) => {
+          const low = p.toLowerCase();
+          if (monolithMap.has(low)) return false;
+          if (/(^|\/)tests?\//i.test(low) || /(^|\/)test_[^/]*\.py$/i.test(low) || /\.(?:test|spec)\.[a-z]+$/i.test(low)) return false;
+          if (/\.(?:json|md|txt|ya?ml|toml)$/i.test(low)) return false;
+          if (/^vendor\//i.test(low)) return false;
+          return true;
+        });
+        if (companionModules.length === 0) {
+          const desc = touchedMonoliths.map((p) => {
+            const info = monolithMap.get(p.toLowerCase());
+            return `${info.path} (${info.lines} lines)`;
+          }).join(', ');
+          violations.push(
+            `Wave ${wNum} touches frozen monolith(s) >${MONOLITH_FREEZE_LINES} lines [${desc}] without declaring a focused companion module deliverable (<600 lines, keeping monolith adapter glue <=${MONOLITH_MAX_ADAPTER_DELTA_LINES} net lines) or an explicit \`monolith_override_reason:\`.`,
+          );
+        }
+      }
+    }
+
+    if (enforceProseBudget && !extractDirectiveReason(plan, 'prose_budget_override')) {
+      const rawDoneWhen = String(w?.doneWhen ?? '').replace(STRIP_INJECTED_GATE_SUFFIX_RE, '').trim();
+      const words = rawDoneWhen ? rawDoneWhen.split(/\s+/).filter(Boolean).length : 0;
+      if (words > maxDoneWhenWords) {
+        violations.push(
+          `Wave ${wNum} doneWhen prose is ${words} words (cap ${maxDoneWhenWords}); replace redundant clauses instead of appending Shark checklists.`,
+        );
+      }
+    }
+  });
+
+  return {
+    pass: violations.length === 0,
+    overrideReason: override,
+    violations,
+    detail: violations.length === 0
+      ? 'monolith-freeze & contract prose budgets satisfied'
+      : `Chekhov Anti-Bloat Budget FAILED: ${violations.join(' | ')}`,
+  };
+}
+
+/**
+ * Chekhov Guard 5 (Gandalf Anti-Bloat — Reuse-Before-Write & Sunset-Old-Version Gate):
+ * - Reuse-Before-Write: when the repository already exports canonical lock / atomic-write /
+ *   path-containment helpers (`reusablePrimitives`), blocks waves that re-implement bespoke
+ *   lock/atomic-write boilerplate without importing/reusing an existing helper module or
+ *   declaring `reuse_override_reason:`.
+ * - Sunset-Old-Version: when `intent`/`northStar` builds a newer `vN` (`N >= 2`) in a repo
+ *   that already carries `v1..v(N-1)` files/symbols (`versionedLayers`), requires the plan
+ *   to name superseded legacy shims to retire/consolidate or declare `sunset_override_reason:`.
+ */
+export function checkReuseAndSunsetDiscipline({
+  waves = [],
+  plan = '',
+  intent = '',
+  northStar = '',
+  reusablePrimitives = [],
+  versionedLayers = [],
+  reuseOverrideReason = null,
+  sunsetOverrideReason = null,
+} = {}) {
+  const planStr = String(plan ?? '');
+  const inlineReuseOverride = extractDirectiveReason(planStr, 'reuse_override_reason');
+  const effectiveReuseOverride = (typeof reuseOverrideReason === 'string' && reuseOverrideReason.trim())
+    ? reuseOverrideReason.trim()
+    : inlineReuseOverride;
+
+  const inlineSunsetOverride = extractDirectiveReason(planStr, 'sunset_override_reason');
+  const effectiveSunsetOverride = (typeof sunsetOverrideReason === 'string' && sunsetOverrideReason.trim())
+    ? sunsetOverrideReason.trim()
+    : inlineSunsetOverride;
+
+  const violations = [];
+  const list = Array.isArray(waves) ? waves : [];
+
+  // 5a. Reuse-Before-Write check
+  const prims = (Array.isArray(reusablePrimitives) ? reusablePrimitives : [])
+    .map((p) => {
+      if (!p) return null;
+      if (typeof p === 'string') {
+        const clean = p.replace(/\\/g, '/').replace(/^\.\//, '');
+        const stem = path.posix.basename(clean, path.posix.extname(clean));
+        return { path: clean, stem, exports: [] };
+      }
+      const clean = String(p.path || p.file || '').replace(/\\/g, '/').replace(/^\.\//, '');
+      if (!clean) return null;
+      const stem = path.posix.basename(clean, path.posix.extname(clean));
+      return { path: clean, stem, exports: Array.isArray(p.exports) ? p.exports.map(String) : [] };
+    })
+    .filter(Boolean);
+
+  if (!effectiveReuseOverride && prims.length > 0) {
+    const BESPOKE_INFRA_RE = /\b(?:re-?implement|implement|write|build|create|define)\b[^.;\n]{0,90}\b(?:exclusive[_\s-]?file[_\s-]?lock|atomic[_\s-]?write(?:_json)?|msvcrt\.locking|fcntl\.flock|bespoke\s+lock|custom\s+file\s+lock)\b|\b(?:msvcrt\.locking|fcntl\.flock)\b/i;
+    list.forEach((w, idx) => {
+      const wNum = w?.n ?? idx + 1;
+      const waveText = flattenWaveText(w);
+      if (!BESPOKE_INFRA_RE.test(waveText)) return;
+      const delPaths = extractDeliverablePaths(w?.deliverables).map((d) => d.toLowerCase());
+      const touchesExistingPrim = prims.some((p) => delPaths.includes(p.path.toLowerCase()));
+      if (touchesExistingPrim) return;
+      const citesExistingPrim = prims.some((p) => {
+        const pathMentioned = waveText.toLowerCase().includes(p.path.toLowerCase());
+        const stemRe = p.stem.length >= 3
+          ? new RegExp(`\\b(?:reuse|import|from|use|via|shared)\\b[^.;\\n]{0,60}\\b${p.stem.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b|\\b${p.stem.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.(?:py|m?js|ts)\\b`, 'i')
+          : null;
+        return pathMentioned || Boolean(stemRe && stemRe.test(waveText));
+      });
+      if (!citesExistingPrim) {
+        const sample = prims.slice(0, 4).map((p) => (p.exports.length ? `${p.path} (${p.exports.slice(0, 3).join(', ')})` : p.path)).join(', ');
+        violations.push(
+          `Wave ${wNum} proposes bespoke file-lock / atomic-write boilerplate instead of importing existing repo helper(s) [${sample}] (or declaring \`reuse_override_reason:\`).`,
+        );
+      }
+    });
+  }
+
+  // 5b. Sunset-Old-Version check (vN replaces v1..v(N-1))
+  const layers = (Array.isArray(versionedLayers) ? versionedLayers : []).map((x) => String(x || '').trim()).filter(Boolean);
+  if (!effectiveSunsetOverride && layers.length > 0) {
+    const goalText = `${intent || ''}\n${northStar || ''}`;
+    const targetVerMatches = [...goalText.matchAll(/\bv(\d{1,2})\b/gi)].map((m) => Number(m[1])).filter((n) => n >= 2);
+    const targetVer = targetVerMatches.length ? Math.max(...targetVerMatches) : 0;
+    if (targetVer >= 2) {
+      const legacyVers = new Set();
+      for (const l of layers) {
+        for (const m of l.matchAll(/(?:^|[/_.-])v(\d{1,2})(?:[/_.:-]|$)/gi)) {
+          const v = Number(m[1]);
+          if (v >= 1 && v < targetVer) legacyVers.add(v);
+        }
+      }
+      if (legacyVers.size > 0) {
+        const combinedPlanAndWaves = `${planStr}\n${list.map(flattenWaveText).join('\n')}`;
+        const hasSunsetAction = /\b(?:sunset|retire|remove|delete|strip|deprecate|consolidate|supersede|sunset_plan|sunset_targets)\b/i.test(combinedPlanAndWaves);
+        const namesLegacyTarget = [...legacyVers].some((v) => new RegExp(`\\bv${v}\\b`, 'i').test(combinedPlanAndWaves))
+          || layers.some((l) => {
+            const base = path.posix.basename(l.split(':')[0].replace(/\\/g, '/'));
+            return base && combinedPlanAndWaves.toLowerCase().includes(base.toLowerCase());
+          });
+        if (!(hasSunsetAction && namesLegacyTarget)) {
+          const legacyLabel = [...legacyVers].sort((a, b) => a - b).map((v) => `v${v}`).join('/');
+          violations.push(
+            `Plan targets v${targetVer} while repo carries legacy ${legacyLabel} layer(s) [${layers.slice(0, 4).join(', ')}] without naming superseded shims to retire/consolidate (or declaring \`sunset_override_reason:\` when coexistence is required).`,
+          );
+        }
+      }
+    }
+  }
+
+  return {
+    pass: violations.length === 0,
+    reuseOverrideReason: effectiveReuseOverride,
+    sunsetOverrideReason: effectiveSunsetOverride,
+    violations,
+    detail: violations.length === 0
+      ? 'reuse-before-write & version-sunset discipline satisfied'
+      : `Chekhov Reuse/Sunset Guard FAILED: ${violations.join(' | ')}`,
+  };
+}
+
 /**
  * Run all deterministic Chekhov plan-quality guards + portfolio skill detection in one pass.
  */
@@ -452,11 +735,35 @@ export function runChekhovPlanQualityLint({
   grasscatcher = [],
   eleganceCuts = [],
   pilotOverrideReason = null,
+  monoliths = [],
+  monolithOverrideReason = null,
+  enforceProseBudget = false,
+  reusablePrimitives = [],
+  versionedLayers = [],
+  reuseOverrideReason = null,
+  sunsetOverrideReason = null,
   gateBlock = null,
 } = {}) {
   const pilotSlice = checkWave1PilotSlice({ waves, plan, pilotOverrideReason });
   const callBudget = checkCallLatencyBudget({ waves, plan });
   const wordBudget = gateBlock != null ? checkApprovalBlockWordBudget(gateBlock) : { pass: true, words: 0, maxWords: APPROVAL_MAX_WORDS, detail: 'no gateBlock supplied' };
+  const monolithBudget = checkMonolithAndContractBudget({
+    waves,
+    plan,
+    monoliths,
+    monolithOverrideReason,
+    enforceProseBudget,
+  });
+  const reuseSunset = checkReuseAndSunsetDiscipline({
+    waves,
+    plan,
+    intent,
+    northStar,
+    reusablePrimitives,
+    versionedLayers,
+    reuseOverrideReason,
+    sunsetOverrideReason,
+  });
   const portfolioGates = detectPortfolioSkillGates({ intent, northStar, plan, waves });
   const deferredScopeText = extractPlainEnglishScopeCuts({ deferredScope, grasscatcher, eleganceCuts });
 
@@ -464,12 +771,16 @@ export function runChekhovPlanQualityLint({
   if (!pilotSlice.pass) issues.push(pilotSlice.detail);
   if (!callBudget.pass) issues.push(callBudget.detail);
   if (!wordBudget.pass) issues.push(wordBudget.detail);
+  if (!monolithBudget.pass) issues.push(monolithBudget.detail);
+  if (!reuseSunset.pass) issues.push(reuseSunset.detail);
 
   return {
     pass: issues.length === 0,
     pilotSlice,
     callBudget,
     wordBudget,
+    monolithBudget,
+    reuseSunset,
     deferredScopeText,
     portfolioGates,
     issues,

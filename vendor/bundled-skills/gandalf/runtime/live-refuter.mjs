@@ -51,6 +51,90 @@ import {
  *  independent refutation) for the reference W3 topology: Claude drafts, Gemini refutes. */
 export const DRAFTER_FAMILY = 'claude';
 export const REFUTER_FAMILY = 'gemini';
+export const CANONICAL_CLAUDE_REFUTER_MODEL = 'claude-fable-5-2';
+export const MAX_REFUTER_CONCURRENCY = 2;
+
+export class RefuterConcurrencyBoundError extends RangeError {
+  constructor(requested, bound = MAX_REFUTER_CONCURRENCY) {
+    super(
+      `BOUND_EXCEEDED_REFUSAL: GANDALF_REFUTER_CONCURRENCY=${JSON.stringify(requested)} is outside the allowed bound [1, ${bound}] (max_concurrency <= ${bound}).`
+    );
+    this.name = 'RefuterConcurrencyBoundError';
+    this.code = 'BOUND_EXCEEDED_REFUSAL';
+    this.requested = requested;
+    this.bound = bound;
+  }
+}
+
+export class ClaudeFableAttestationError extends Error {
+  constructor(servedModel, requestedModel = CANONICAL_CLAUDE_REFUTER_MODEL, label = 'refuter') {
+    super(
+      `Claude refuter attestation mismatch (${label}): requested ${requestedModel} with positive attestation, served ${JSON.stringify(servedModel ?? 'unattested')}`
+    );
+    this.name = 'ClaudeFableAttestationError';
+    this.code = 'ATTESTATION_MISMATCH';
+    this.status = 'attestation_mismatch';
+    this.requested_model = requestedModel;
+    this.model_served = servedModel ?? null;
+  }
+}
+
+export function resolveRefuterConcurrency({ maxConcurrency = undefined, env = process.env } = {}) {
+  const raw = maxConcurrency !== undefined && maxConcurrency !== null
+    ? maxConcurrency
+    : env?.GANDALF_REFUTER_CONCURRENCY;
+  if (raw === undefined || raw === null || String(raw).trim() === '') {
+    return MAX_REFUTER_CONCURRENCY;
+  }
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > MAX_REFUTER_CONCURRENCY) {
+    throw new RefuterConcurrencyBoundError(raw, MAX_REFUTER_CONCURRENCY);
+  }
+  return parsed;
+}
+
+const DATED_CLAUDE_FABLE_RE = /^claude-fable-5-2(?:-\d{8}|-\d{4}-\d{2}-\d{2})?$/;
+
+function normalizeClaudeFableId(modelId) {
+  if (typeof modelId !== 'string') return modelId;
+  const trimmed = modelId.trim();
+  return DATED_CLAUDE_FABLE_RE.test(trimmed) ? 'claude-fable-5-2' : trimmed;
+}
+
+function normalizeFamilyToken(family) {
+  const s = String(family || '').trim().toLowerCase();
+  if (!s) return null;
+  if (s === 'chatgpt' || s === 'codex') return 'openai';
+  return s;
+}
+
+export function verifyClaudeFableAttestation(receiptOrReply, {
+  requestedModel = CANONICAL_CLAUDE_REFUTER_MODEL,
+  label = 'refuter',
+} = {}) {
+  const rec = receiptOrReply?.served
+    ? {
+      model_served: receiptOrReply.served.model ?? null,
+      model_attested: receiptOrReply.served.model_attested === true,
+      family_attested: receiptOrReply.served.family_attested === true,
+    }
+    : receiptOrReply;
+  const rawServed = typeof rec?.model_served === 'string' && rec.model_served.trim()
+    ? rec.model_served.trim()
+    : null;
+  const served = rawServed ? normalizeClaudeFableId(rawServed) : null;
+  const normalizedRequested = normalizeClaudeFableId(requestedModel);
+  const attested = rec?.model_attested === true;
+  if (!attested || served !== normalizedRequested) {
+    throw new ClaudeFableAttestationError(rawServed, normalizedRequested, label);
+  }
+  return {
+    requested_model: normalizedRequested,
+    model_served: served,
+    model_attested: true,
+    family_attested: rec?.family_attested !== false,
+  };
+}
 
 /** Test/fixture only: historical Claude+Gemini table. Live production MUST omit routes
  *  (or call `buildDefaultRefuterRoutes`) so seats follow coding/review prefs — never pin Claude in launchers. */
@@ -61,16 +145,38 @@ export const DEFAULT_REFUTER_ROUTES = Object.freeze({
 
 /**
  * Prefs-aware Gandalf/Jumper route table: refuter → REVIEW_FAMILY; default/drafter → CODING_FAMILY.
- * Review model left unpinned so the gemini-cli TRIO_TIER ladder applies when family is gemini.
+ * When review family resolves to Claude, explicitly pin `claude-fable-5-2` (never `--model best`).
  * @param {object} [env=process.env]
  */
 export async function buildDefaultRefuterRoutes(env = process.env) {
-  const { buildRoutesFromFamilies } = await import('fil<path>');
-  return buildRoutesFromFamilies({
+  const { buildRoutesFromFamilies } = await import('../../drivers/index.mjs');
+  const { isVariableStrengthActive, resolveSkillStrength } = await import('../../drivers/model-policy.mjs');
+  const built = buildRoutesFromFamilies({
     env,
     codingRoles: [],
     reviewRoles: ['refuter'],
   });
+  if (built.reviewDriver === 'claude') {
+    const vsActive = isVariableStrengthActive({ settings: built.families, env });
+    const effStrength = vsActive
+      ? resolveSkillStrength({
+          skill: 'gandalf',
+          explicitStrength: env?.ANCHOR_STRENGTH ?? env?.TRIO_TIER,
+          inheritedStrength: env?.ANCHOR_INHERITED_STRENGTH,
+          cockpitStrength: env?.ANCHOR_COCKPIT_STRENGTH,
+          defaultStrength: built.families?.model_policy?.default_strength || 'standard',
+        })
+      : 'heavy';
+    const refuterClaudeModel = effStrength === 'heavy' ? CANONICAL_CLAUDE_REFUTER_MODEL : 'claude-opus-5-5';
+    return {
+      ...built,
+      routes: Object.freeze({
+        ...built.routes,
+        refuter: { driver: 'claude', model: refuterClaudeModel },
+      }),
+    };
+  }
+  return built;
 }
 
 /** The JSON-schema the refuter reply is asked to conform to: the NAMED defeater it attempted and an
@@ -165,7 +271,8 @@ export function defaultRefutePrompt(elevation) {
  *  boolean `survived` + a named `defeater` is rejected downstream (⇒ no provenance ⇒ SPECULATIVE). */
 export function extractRefuterVerdict(reply) {
   if (!isPlainObject(reply)) return { defeater: undefined, survived: undefined, verdict: undefined };
-  return { defeater: reply.defeater, survived: reply.survived, verdict: reply.verdict };
+  const payload = isPlainObject(reply.value) ? reply.value : reply;
+  return { defeater: payload.defeater, survived: payload.survived, verdict: payload.verdict };
 }
 
 /**
@@ -199,9 +306,11 @@ export async function runLiveRefutation(rawDraft, {
   agent,
   ledger,
   routes = null,
-  drafterFamily = DRAFTER_FAMILY,
-  refuterFamily = REFUTER_FAMILY,
+  drafterFamily = undefined,
+  refuterFamily = undefined,
   budget = REFUTER_BUDGET_R,
+  maxConcurrency = undefined,
+  env = process.env,
   refutePrompt = defaultRefutePrompt,
   role = 'refuter',
   log = () => {},
@@ -215,8 +324,20 @@ export async function runLiveRefutation(rawDraft, {
   if (typeof agent !== 'function') {
     throw new TypeError('runLiveRefutation: an injected role-routed agent(prompt, opts) is required');
   }
+  const effectiveDrafterFamily = String(
+    drafterFamily || agent._resolvedMeta?.drafterFamily || DRAFTER_FAMILY
+  ).trim().toLowerCase();
   // INVARIANT 3 — routing guard: a refuter role must resolve to a NON-drafter family (never self-review).
-  if (routes) assertCrossFamilyRouting({ routes, drafterFamily });
+  const routedFamily = routes
+    ? assertCrossFamilyRouting({ routes, drafterFamily: effectiveDrafterFamily })
+    : null;
+  const effectiveRefuterFamily = String(
+    refuterFamily || routedFamily || agent._resolvedMeta?.refuterFamily || REFUTER_FAMILY
+  ).trim().toLowerCase();
+  if (effectiveRefuterFamily === effectiveDrafterFamily) {
+    throw new SelfRefutationHalt(effectiveRefuterFamily, effectiveDrafterFamily, routes?.refuter?.driver || null);
+  }
+  const cap = resolveRefuterConcurrency({ maxConcurrency, env });
 
   const rawElevations = Array.isArray(rawDraft.elevations) ? rawDraft.elevations : [];
 
@@ -258,11 +379,10 @@ export async function runLiveRefutation(rawDraft, {
   // bounded cap instead of the old for-await serialization (which made the refuter
   // leg the second-longest stage of every real run: N × tens of seconds, serial).
   // Cap default 2 (agy OOMs above ~3 concurrent — the crucible/researchPrime caps
-  // encode the same host fact); GANDALF_REFUTER_CONCURRENCY overrides, ceiling 3.
+  // encode the same host fact); GANDALF_REFUTER_CONCURRENCY overrides, ceiling 2.
   // Determinism: results are placed by INDEX, dispatch is sorted by index, and the
   // ledger mints in-process — output is order-independent of completion order.
-  const capEnv = Number(process.env.GANDALF_REFUTER_CONCURRENCY);
-  const cap = Math.min(3, Number.isFinite(capEnv) && capEnv > 0 ? capEnv : 2);
+  const seatReceipts = [];
 
   const refuteOne = async (i) => {
     const raw = rawElevations[i];
@@ -270,25 +390,98 @@ export async function runLiveRefutation(rawDraft, {
     // returned draft, so elevationIdentity(bound) at mint === elevationIdentity(bound) at the gate.
     const bound = { ...raw };
     const label = `refuter:${raw.id ?? `e${i}`}`;
+    const claudeTargetModel = routes?.refuter?.model || CANONICAL_CLAUDE_REFUTER_MODEL;
+    const requestedModel = effectiveRefuterFamily === 'claude'
+      ? claudeTargetModel
+      : (routes?.refuter?.model ?? null);
+    let capturedReceipt = null;
     try {
-      const reply = await agent(refutePrompt(raw), { role, label, schema: REFUTER_REPLY_SCHEMA });
+      const callOpts = {
+        role,
+        label,
+        schema: REFUTER_REPLY_SCHEMA,
+        ...(effectiveRefuterFamily === 'claude' ? { model: claudeTargetModel } : {}),
+        onReceipt: (r) => { capturedReceipt = r; },
+      };
+      const reply = await agent(refutePrompt(raw), callOpts);
+      const receiptSource = capturedReceipt
+        ?? reply?.receipt
+        ?? reply?._receipt
+        ?? (isPlainObject(reply) && ('served' in reply || 'model_served' in reply || 'model_attested' in reply) ? reply : null);
+
+      let servedModel = receiptSource?.served?.model ?? receiptSource?.model_served ?? null;
+      let modelAttested = receiptSource?.served?.model_attested === true || receiptSource?.model_attested === true;
+      let familyAttested = receiptSource?.served?.family_attested === true
+        || receiptSource?.family_attested === true
+        || modelAttested;
+
+      if (effectiveRefuterFamily === 'claude') {
+        const verified = verifyClaudeFableAttestation(receiptSource, {
+          requestedModel: claudeTargetModel,
+          label,
+        });
+        servedModel = verified.model_served;
+        modelAttested = verified.model_attested;
+        familyAttested = verified.family_attested;
+      } else {
+        const rawServedFamily = receiptSource?.served?.family ?? receiptSource?.model_family ?? null;
+        const normServedFamily = normalizeFamilyToken(rawServedFamily);
+        if (normServedFamily) {
+          if (normServedFamily === normalizeFamilyToken(effectiveDrafterFamily)) {
+            throw new SelfRefutationHalt(rawServedFamily, effectiveDrafterFamily, routes?.refuter?.driver || null);
+          }
+          if (normServedFamily !== normalizeFamilyToken(effectiveRefuterFamily)) {
+            return {
+              index: i,
+              bound,
+              entry: {
+                index: i,
+                id: raw.id ?? null,
+                minted: false,
+                requested_model: requestedModel,
+                model_served: servedModel,
+                model_attested: modelAttested,
+                reason: `refuter family mismatch: expected ${effectiveRefuterFamily}, served ${rawServedFamily}`,
+              },
+            };
+          }
+        }
+      }
+
+      seatReceipts.push({
+        label,
+        family: effectiveRefuterFamily,
+        requested_model: requestedModel,
+        model_served: servedModel,
+        model_attested: modelAttested,
+        family_attested: familyAttested,
+      });
+
       const { defeater, survived, verdict } = extractRefuterVerdict(reply);
 
       // INVARIANT 4 — survived must be an EXPLICIT boolean and defeater a NAMED concrete defeater;
       // anything else ⇒ NO provenance ⇒ the host floors the elevation to SPECULATIVE (honest floor).
       if (typeof survived !== 'boolean' || !isNamedDefeater(defeater)) {
-        return { index: i, bound, entry: { index: i, id: raw.id ?? null, minted: false, reason: 'refuter returned no explicit survived boolean and/or no named concrete defeater' } };
+        return {
+          index: i,
+          bound,
+          entry: {
+            index: i,
+            id: raw.id ?? null,
+            minted: false,
+            requested_model: requestedModel,
+            model_served: servedModel,
+            model_attested: modelAttested,
+            reason: 'refuter returned no explicit survived boolean and/or no named concrete defeater',
+          },
+        };
       }
 
       const v = (verdict === undefined || verdict === null || verdict === '') ? null : String(verdict);
-      // The digest the commission is bound to — computed over THIS bound elevation's identity + the
-      // refuter content. composeRefutationProvenance recomputes the SAME digest from the SAME args
-      // (field parity: {defeater, survived, verdict} hashed == what the envelope stores), so the ledger
-      // tuple's result_digest === the provenance's result_digest === the gate's recomputed digest.
       const result_digest = computeResultDigest({ elevation: bound, defeater, survived, verdict: v });
       const commission_id = ledger.mintCommission({
-        drafter_family: drafterFamily,
-        refuter_family: refuterFamily,
+        drafter_family: effectiveDrafterFamily,
+        refuter_family: effectiveRefuterFamily,
         result_digest,
       });
       const provenance = composeRefutationProvenance({
@@ -296,39 +489,79 @@ export async function runLiveRefutation(rawDraft, {
         defeater,
         survived,
         verdict: v,
-        drafter_family: drafterFamily,
-        refuter_family: refuterFamily,
+        drafter_family: effectiveDrafterFamily,
+        refuter_family: effectiveRefuterFamily,
         commission_id,
       });
       bound.refutation_provenance = provenance;
 
       if (survived === false) {
-        // The named defeater LANDED — the claim is refuted. Only-REFUTED-drops: the host will drop it.
         bound.rung = 'REFUTED';
       } else {
-        // A surviving, cross-family refutation REQUESTS the GROUNDED tier; the gate (derived cross_family
-        // eligibility from the shared ledger) is the sole authority that grants or caps it.
         bound.tier = 'GROUNDED';
       }
-      return { index: i, bound, entry: { index: i, id: raw.id ?? null, minted: true, survived, commission_id } };
+      return {
+        index: i,
+        bound,
+        entry: {
+          index: i,
+          id: raw.id ?? null,
+          minted: true,
+          survived,
+          commission_id,
+          requested_model: requestedModel,
+          model_served: servedModel,
+          model_attested: modelAttested,
+        },
+      };
     } catch (err) {
-      // INVARIANT 4 (honest-HALT): the refuter errored / agy is down (W0 seam throws HaltError on a
-      // non-attested / substituted rec) / empty reply. The elevation gets NO provenance ⇒ SPECULATIVE ⇒
-      // cross_model NOT lifted. We NEVER fabricate a survived:true to manufacture a cross-family grant.
+      if (err instanceof SelfRefutationHalt || err instanceof ClaudeFableAttestationError) {
+        throw err;
+      }
+      if (
+        effectiveRefuterFamily === 'claude'
+        && (
+          err?.code === 'ATTESTATION_MISMATCH'
+          || err?.provider_status === 'attestation_mismatch'
+          || err?.seat_status === 'attestation_mismatch'
+          || /attestation_mismatch|attestation mismatch/i.test(String(err?.message || ''))
+        )
+      ) {
+        throw new ClaudeFableAttestationError(err?.served_model ?? null, claudeTargetModel, label);
+      }
       log(`!! ${label}: refuter failed (${err?.message ?? err}) — elevation stays SPECULATIVE (no provenance minted)`);
-      return { index: i, bound, entry: { index: i, id: raw.id ?? null, minted: false, reason: `refuter failed: ${err?.message ?? err}` } };
+      return {
+        index: i,
+        bound,
+        entry: {
+          index: i,
+          id: raw.id ?? null,
+          minted: false,
+          requested_model: requestedModel,
+          model_served: null,
+          model_attested: false,
+          reason: `refuter failed: ${err?.message ?? err}`,
+        },
+      };
     }
   };
 
-  // Bounded pool: `cap` workers drain the firing queue; per-elevation failures are
-  // handled INSIDE refuteOne (it never rejects), so one bad refuter cannot sink the batch.
+  // Bounded pool: `cap` workers drain the firing queue; per-elevation transport errors
+  // floor inside refuteOne, while fatal attestation / self-refutation errors halt all workers immediately.
   const queue = [...toRefute];
   const results = new Map(); // index -> { bound, entry }
+  let aborted = false;
   await Promise.all(Array.from({ length: Math.min(cap, queue.length) }, async () => {
-    while (queue.length) {
+    while (!aborted && queue.length) {
       const i = queue.shift();
-      const r = await refuteOne(i);
-      results.set(r.index, r);
+      try {
+        const r = await refuteOne(i);
+        results.set(r.index, r);
+      } catch (err) {
+        aborted = true;
+        queue.length = 0;
+        throw err;
+      }
     }
   }));
 
@@ -350,7 +583,19 @@ export async function runLiveRefutation(rawDraft, {
     dispatch.push(r.entry);
   }
 
-  return { draft: { ...rawDraft, elevations: outElevations }, dispatch };
+  const primaryServed = seatReceipts.find(s => s.model_served)?.model_served ?? null;
+  const allAttested = seatReceipts.length > 0 && seatReceipts.every(s => s.model_attested === true);
+  const receipt = {
+    drafter_family: effectiveDrafterFamily,
+    refuter_family: effectiveRefuterFamily,
+    max_concurrency: cap,
+    requested_model: effectiveRefuterFamily === 'claude' ? CANONICAL_CLAUDE_REFUTER_MODEL : (routes?.refuter?.model ?? null),
+    model_served: primaryServed,
+    model_attested: allAttested,
+    seats: seatReceipts,
+  };
+
+  return { draft: { ...rawDraft, elevations: outElevations }, dispatch, receipt };
 }
 
 /**
@@ -388,7 +633,7 @@ export function pickRefuterFamily({ families = {}, drafterFamily } = {}) {
 }
 
 export async function buildLiveRefuterAgent({ routes, drafterFamily, env = process.env } = {}) {
-  const { makeRoleRoutedAgent, buildRoutesFromFamilies, familyToDriverName } = await import('fil<path>');
+  const { makeRoleRoutedAgent, buildRoutesFromFamilies, familyToDriverName } = await import('../../drivers/index.mjs');
   const built = buildRoutesFromFamilies({
     env,
     codingRoles: [],
@@ -400,9 +645,30 @@ export async function buildLiveRefuterAgent({ routes, drafterFamily, env = proce
     // (2026-09-04) refuter = the configured non-drafter family; review_family first.
     const fam = pickRefuterFamily({ families: built.families || {}, drafterFamily: resolvedDrafter });
     const drv = fam ? familyToDriverName(fam) : null;
-    resolvedRoutes = drv ? { ...built.routes, refuter: { driver: drv } } : built.routes;
+    resolvedRoutes = drv
+      ? {
+        ...built.routes,
+        refuter: drv === 'claude'
+          ? { driver: drv, model: CANONICAL_CLAUDE_REFUTER_MODEL }
+          : { driver: drv },
+      }
+      : built.routes;
+  } else if (
+    resolvedRoutes.refuter?.driver === 'claude'
+    && (!resolvedRoutes.refuter.model || resolvedRoutes.refuter.model === 'best')
+  ) {
+    resolvedRoutes = {
+      ...resolvedRoutes,
+      refuter: { ...resolvedRoutes.refuter, model: CANONICAL_CLAUDE_REFUTER_MODEL },
+    };
   }
   // Fail-closed: a refuter that resolves to the drafter's family is a self-refutation HALT.
-  assertCrossFamilyRouting({ routes: resolvedRoutes, drafterFamily: resolvedDrafter });
-  return makeRoleRoutedAgent({ routes: resolvedRoutes, env: { ...env, CRUCIBLE_AGENT_LIVE: '1' } });
+  const verifiedRefuter = assertCrossFamilyRouting({ routes: resolvedRoutes, drafterFamily: resolvedDrafter });
+  const routedAgent = makeRoleRoutedAgent({ routes: resolvedRoutes, env: { ...env, CRUCIBLE_AGENT_LIVE: '1' } });
+  routedAgent._resolvedMeta = Object.freeze({
+    drafterFamily: resolvedDrafter,
+    refuterFamily: verifiedRefuter,
+    routes: resolvedRoutes,
+  });
+  return routedAgent;
 }

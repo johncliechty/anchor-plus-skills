@@ -7791,6 +7791,7 @@ def main():
         # spawnable.
         check_supervisor_live_probes(report)
         check_mothership_slowdown_and_polling_health(report)
+        check_variable_strength_and_anvil_surface(report)
 
         # rearch W18 (C7): the soak-gated join. The two walks still earning
         # their 20× green nightly soak (cookie/auth · relocated-data-dir) join
@@ -7863,6 +7864,100 @@ def main():
     if report.has_issues:
         sys.exit(1)
     sys.exit(0)
+
+
+def check_variable_strength_and_anvil_surface(report: Report):
+    """Hermetic zero-token check for Variable Strength routing + Unified Anvil boot contract."""
+    name = "Variable Strength & Unified Anvil"
+    steps = []
+    try:
+        import model_policy as _mp
+        from steward_cockpit import steward_routes as _sr
+
+        claude_cat = [
+            {"model": "claude-fable-5-2", "rank": 0, "efforts": ["low", "medium", "high", "max"]},
+            {"model": "claude-opus-5-5", "rank": 1, "efforts": ["low", "medium", "high", "max"]},
+            {"model": "claude-sonnet-4-6", "rank": 2, "efforts": ["low", "medium", "high"]},
+            {"model": "claude-haiku-4-5", "rank": 3, "efforts": ["low", "medium"]},
+            {"model": "best", "rank": 4, "efforts": ["low", "medium", "high", "max"]},
+        ]
+        gpt_cat = [
+            {"model": "gpt-6-luna", "rank": 0, "efforts": ["low", "medium", "high", "max"]},
+            {"model": "gpt-5.6-terra", "rank": 1, "efforts": ["low", "medium", "high", "xhigh"]},
+            {"model": "gpt-5.6-mini", "rank": 2, "efforts": ["low", "medium"]},
+        ]
+        gem_cat = [
+            {"model": "gemini-4-neon", "rank": 0, "efforts": ["low", "medium", "high", "xhigh"]},
+            {"model": "gemini-4-flash", "rank": 1, "efforts": ["low", "medium", "high"]},
+            {"model": "gemini-4-carbon", "rank": 2, "efforts": ["low", "medium", "high", "xhigh"]},
+        ]
+        grok_cat = [
+            {"model": "grok-4.7", "rank": 0, "efforts": ["low", "medium", "high", "xhigh"]},
+        ]
+
+        c_std = _mp.select_strength("claude", claude_cat, "standard")
+        c_hvy = _mp.select_strength("claude", claude_cat, "heavy")
+        g_std = _mp.select_strength("chatgpt", gpt_cat, "standard")
+        m_std = _mp.select_strength("gemini", gem_cat, "standard")
+        m_hvy = _mp.select_strength("gemini", gem_cat, "heavy")
+        k_std = _mp.select_strength("grok", grok_cat, "standard")
+        k_hvy = _mp.select_strength("grok", grok_cat, "heavy")
+
+        steps.append((
+            "4-family tier selection",
+            c_std.get("model") == "claude-opus-5-5" and c_std.get("effort") == "medium"
+            and c_hvy.get("model") == "claude-fable-5-2" and c_hvy.get("effort") == "max"
+            and g_std.get("model") == "gpt-5.6-terra" and g_std.get("effort") == "medium"
+            and m_std.get("model") == "gemini-4-carbon" and m_std.get("effort") == "medium"
+            and m_hvy.get("model") == "gemini-4-neon" and m_hvy.get("effort") == "xhigh"
+            and k_std.get("model") == "grok-4.7" and k_std.get("effort") == "medium"
+            and k_hvy.get("model") == "grok-4.7" and k_hvy.get("effort") == "xhigh",
+            f"claude={c_std.get('model')}@{c_std.get('effort')}, gemini={m_std.get('model')}@{m_std.get('effort')}",
+        ))
+
+        prec_ok = (
+            _mp.resolve_skill_strength(skill="gandalf") == "standard"
+            and _mp.resolve_skill_strength(skill="gandalf", explicit_strength="heavy") == "heavy"
+            and _mp.resolve_skill_strength(skill="anvil") == "heavy"
+            and _mp.resolve_skill_strength(skill="chekhov") == "heavy"
+            and _mp.resolve_skill_strength(skill="aegis") == "heavy"
+            and _mp.resolve_skill_strength(skill="superjump") == "heavy"
+            and _mp.resolve_skill_strength(skill="anvil", explicit_strength="light") == "light"
+            and _mp.resolve_skill_strength(skill="anvil", inherited_strength="light") == "light"
+        )
+        steps.append(("5-level precedence", prec_ok, "heavy defaults + light override"))
+
+        att_std = _mp.attest_claude_fable_receipt(
+            {"ok": True, "requested_model": "claude-opus-5-5", "model_served": "claude-opus-5-5", "model_attested": True},
+            role="review",
+            label="review:hc",
+            tier="standard",
+        )
+        att_bad = _mp.attest_claude_fable_receipt(
+            {"ok": True, "requested_model": "claude-opus-5-5", "model_served": "claude-haiku-4-5", "model_attested": True},
+            role="review",
+            label="review:hc",
+            tier="standard",
+        )
+        steps.append(("Claude Standard attestation", bool(att_std.get("ok")) and not bool(att_bad.get("ok")), str(att_bad.get("status"))))
+
+        body, _mime = _sr.serve_static("anvil.html")
+        html_txt = body.decode("utf-8", errors="replace") if isinstance(body, (bytes, bytearray)) else str(body or "")
+        anvil_ok = (
+            body is not None
+            and 'data-anvil-v6-enabled="1"' in html_txt
+            and "Anvil v5 · B3 Workbench" not in html_txt
+            and "Anvil · Process Workbench &amp; Scientific IDE" in html_txt
+        )
+        steps.append(("Unified Anvil zero-v5 boot HTML", anvil_ok, f"bytes={len(html_txt)}"))
+    except Exception as exc:
+        steps.append(("exception", False, f"{type(exc).__name__}: {exc}"))
+
+    failures = [f"{s}: {d}" for s, ok, d in steps if not ok]
+    if failures:
+        report.check(name, False, "; ".join(failures))
+    else:
+        report.check(name, True, f"{len(steps)} checks")
 
 
 def check_onboard_surface():

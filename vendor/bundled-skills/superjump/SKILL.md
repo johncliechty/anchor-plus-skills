@@ -7,6 +7,7 @@ description: >
   Use when Jumper's lean mode is not enough, when the user wants Super Jump /
   Superjump / /superjump, or when ideas must be judged in the brief's own terms
   and watched for real progress rather than cut off by a clock.
+  Variable Strength: Heavy by default (top-tier frontier model at highest effort; call 'Superjump Light' for 1-step-below-frontier at medium effort, configurable in Anchor Setup).
 icon: assets/superjump-icon.jpg
 ---
 
@@ -90,15 +91,13 @@ Gandalf-lite read, productive SCAMPER only, foreign-domain transfer with an
 inspectable trace, TRIZ resolution, a three-gate independent judge, and a
 proportionate unperformed fair test. It never stops a run on a clock.
 
-> **Tier definition + invocation discipline + run capture:** canonical in
-> Foundry `AGENTS.md`. Superjump-Heavy is the frontier of the coding family on
-> the read and leap seats; the independent review is the review family. Do not
-> re-define or deliberate any of it.
+> **Variable Strength (`Heavy` default · `Superjump Light` override) + invocation discipline + run capture:** canonical in
+> Foundry `AGENTS.md`. `Superjump` is one of the four `Heavy`-by-default skills (`Anvil`, `Chekhov`, `Aegis`, `Superjump`): plain `Superjump` runs the frontier model at highest supported effort on both the `coding_family` read/leap seats and the `review_family` Fit-Contract judge. Designating **`Superjump Light`** (`--tier light` or `ANCHOR_STRENGTH=light`) steps **both** read/leap and judge seats down to one generalist model below frontier at `medium` effort (for fast Fit-Contract tuning or exploratory analogical sweeps). Do not re-define or deliberate any of it.
 
 ## How to run — the engine, never an improvised pipeline
 
 ```
-node bin/superjump-run.mjs --input brief.txt --output out.json
+node bin/superjump-run.mjs --input brief.txt --output out.json [--tier heavy|light]
 node bin/superjump-run.mjs --problem "<brief>" --candidates 3
 node bin/superjump-run.mjs --reweight "human benefit 3; simplicity 1" --from out.json
 node bin/superjump-run.cmd --input brief.txt

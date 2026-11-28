@@ -85,6 +85,43 @@ def _session_file(cockpit_dir: str | Path) -> Path:
     return Path(cockpit_dir) / ".aegis" / "session.json"
 
 
+def read_aegis_strength(cockpit_dir: str | Path) -> str:
+    import model_policy as _mp
+    sf = Path(cockpit_dir) / ".aegis" / "strength.json"
+    try:
+        if sf.is_file():
+            doc = json.loads(sf.read_text(encoding="utf-8"))
+            if isinstance(doc, dict):
+                val = _mp.normalize_strength(doc.get("strength"), default=None)
+                if val in ("heavy", "light"):
+                    return val
+                if val == "standard":
+                    return "light"
+    except Exception:
+        pass
+    return _mp.resolve_skill_strength(skill="aegis")
+
+
+def set_aegis_strength(cockpit_dir: str | Path, strength: str) -> Dict[str, Any]:
+    import model_policy as _mp
+    cdir = Path(cockpit_dir).resolve()
+    norm = _mp.normalize_strength(strength, default="heavy")
+    eff = "light" if norm in ("light", "standard") else "heavy"
+    sf = cdir / ".aegis" / "strength.json"
+    sf.parent.mkdir(parents=True, exist_ok=True)
+    sf.write_text(json.dumps({"schema": "aegis-strength/v1", "strength": eff, "updated_at": _now_iso()}, indent=2), encoding="utf-8")
+    seating = _anvil_sess._read_model_seating_info(strength=eff, cdir=cdir, skill="aegis")
+    if _session_file(cdir).is_file():
+        state = get_cockpit_aegis_state(cdir, auto_init=False)
+        sess = dict(state.get("session") or {})
+        sess["model_seating"] = seating
+        sess["strength"] = eff
+        sess["updated_at"] = _now_iso()
+        _session_file(cdir).write_text(json.dumps(sess, indent=2), encoding="utf-8")
+        return _enrich_session_payload(cdir, sess)
+    return {"ok": True, "strength": eff, "model_seating": seating, "session": {"strength": eff, "model_seating": seating}}
+
+
 def _read_anvil_binding(cdir: Path) -> Dict[str, Any]:
     """Read the active Anvil session in this cockpit (if any) so Aegis binds to the same codebase."""
     sess = None
@@ -490,7 +527,7 @@ def _write_markdown_report(cdir: Path, state: Dict[str, Any]) -> Path:
 
 
 def _enrich_session_payload(cdir: Path, sess: Dict[str, Any]) -> Dict[str, Any]:
-    seating = _anvil_sess._read_model_seating_info()
+    seating = _anvil_sess._read_model_seating_info(cdir=cdir, skill="aegis")
     sess["model_seating"] = seating
     anvil_info = _read_anvil_binding(cdir)
     sess["anvil_binding"] = {
@@ -525,7 +562,7 @@ def _enrich_session_payload(cdir: Path, sess: Dict[str, Any]) -> Dict[str, Any]:
 def get_cockpit_aegis_state(cockpit_dir: str | Path, auto_init: bool = True) -> Dict[str, Any]:
     cdir = Path(cockpit_dir).resolve()
     sf = _session_file(cdir)
-    seating = _anvil_sess._read_model_seating_info()
+    seating = _anvil_sess._read_model_seating_info(cdir=cdir, skill="aegis")
     anvil_info = _read_anvil_binding(cdir)
 
     if sf.is_file():
@@ -592,7 +629,7 @@ def run_cockpit_aegis_scan(
     signed = list(dict.fromkeys((existing.get("signed_off_ids") or []) + (signed_off_ids or [])))
     scan_res = eng.scan_target(_effective_scan_target(target_path), signed_off_ids=signed)
     scan_res["target"] = str(target_path)
-    seating = _anvil_sess._read_model_seating_info()
+    seating = _anvil_sess._read_model_seating_info(cdir=cdir, skill="aegis")
 
     dialogue = existing.get("dialogue") if isinstance(existing.get("dialogue"), list) else []
     if not dialogue:
@@ -635,7 +672,7 @@ def run_cockpit_aegis_remediate(
     rem_res = eng.remediate_target(eff_target, apply=apply, rule_filter=rule_filter)
     scan_res = eng.scan_target(eff_target, signed_off_ids=existing.get("signed_off_ids") or [])
     scan_res["target"] = str(target_path)
-    seating = _anvil_sess._read_model_seating_info()
+    seating = _anvil_sess._read_model_seating_info(cdir=cdir, skill="aegis")
 
     dialogue = existing.get("dialogue") if isinstance(existing.get("dialogue"), list) else []
     sess: Dict[str, Any] = {

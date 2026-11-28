@@ -13,7 +13,7 @@ import { HaltError } from './crucible-lib.mjs';
 import { assessComplexity, runStage0 } from './stage0.mjs';
 import { runStage1 } from './stage1.mjs';
 import { runStage2 } from './stage2.mjs';
-import { runLiteFastPath, runMatrixFastTrack } from './matrix-fast-track.mjs';
+import { runLiteFastPath, runMatrixFastTrack, writeCrucibleRunRecord } from './matrix-fast-track.mjs';
 import { normalizeBandDepth } from './band-profile.mjs';
 
 export function resolveCliDepthFlag(argv = []) {
@@ -29,15 +29,21 @@ export function resolveCliDepthFlag(argv = []) {
 export async function runCrucible({
   agent,
   intent,
+  northStar = null,
   repoDir = null,
   outputDir,
   depth = null,
   approved = false,
+  pauseAtStage0Lock = false,
+  recordRun = false,
+  runsDir = null,
   spikeProbe = null,
   superjump = false,
   families = {},
   log = () => {},
 } = {}) {
+  const started = new Date().toISOString();
+  const t0 = Date.now();
   const explicitDepth = depth ? normalizeBandDepth(depth) : null;
   const triage = explicitDepth
     ? { depth: explicitDepth, nsDepth: explicitDepth, nsTier: explicitDepth === 'LITE' ? 'Standard' : 'Heavy' }
@@ -45,7 +51,7 @@ export async function runCrucible({
   const resolvedDepth = normalizeBandDepth(explicitDepth || triage.nsDepth || triage.depth);
 
   if (resolvedDepth === 'LITE') {
-    return runLiteFastPath({
+    const res = await runLiteFastPath({
       agent,
       task: intent,
       repoDir,
@@ -54,16 +60,36 @@ export async function runCrucible({
       tier: String(triage.nsTier || 'standard').toLowerCase(),
       log,
     });
+    if (recordRun || runsDir || process.env.CRUCIBLE_RUNS_DIR) {
+      writeCrucibleRunRecord({
+        band: 'LITE',
+        tier: triage.nsTier || 'Standard',
+        started,
+        input: intent,
+        params: { depth: 'LITE', calls: res.calls, max_calls: res.maxModelCalls },
+        output: res.files ? [res.files.plan, res.files.description, res.files.execution_log, res.files.config, res.files.review] : [],
+        result: `LITE_OK calls=${res.calls}`,
+        cross_model: res.cross_model === true,
+        family_attested: Boolean(res.provenance?.review?.family_attested),
+        models: res.provenance ? [res.provenance.draft, res.provenance.review, res.provenance.revise].filter(Boolean) : [],
+        duration_s: Math.max(0, Math.round((Date.now() - t0) / 1000)),
+      }, { runsDir });
+    }
+    return res;
   }
 
   if (resolvedDepth === 'MATRIX-FAST-TRACK') {
     return runMatrixFastTrack({
       agent,
       intent,
+      northStar,
       repoDir,
       outputDir,
       superjump,
       approved,
+      pauseAtStage0Lock,
+      recordRun,
+      runsDir,
       tier: triage.nsTier || 'Heavy',
       log,
     });
@@ -99,6 +125,21 @@ export async function runCrucible({
     approved,
     log,
   });
+  if (recordRun || runsDir || process.env.CRUCIBLE_RUNS_DIR) {
+    writeCrucibleRunRecord({
+      band: resolvedDepth,
+      tier: triage.nsTier || 'Heavy',
+      started,
+      input: intent,
+      params: { depth: resolvedDepth, approved },
+      output: s2?.docTrio ? [s2.docTrio.files.plan, s2.docTrio.files.description, s2.docTrio.files.execution_log] : [],
+      result: `CRUCIBLE_${resolvedDepth}_OK`,
+      cross_model: Boolean(s1?.cross_model || s2?.cross_model),
+      family_attested: Boolean(s1?.cross_model || s2?.cross_model),
+      models: [],
+      duration_s: Math.max(0, Math.round((Date.now() - t0) / 1000)),
+    }, { runsDir });
+  }
   return { band: resolvedDepth, stage0: s0, stage1: s1, stage2: s2 };
 }
 
@@ -141,10 +182,13 @@ if (isMain()) {
     const out = await runCrucible({
       agent: built.agent,
       intent,
+      northStar: flag('--north-star'),
       repoDir,
       outputDir,
       depth,
       approved,
+      pauseAtStage0Lock: argv.includes('--lock-north-star-first'),
+      recordRun: true,
       spikeProbe: flag('--spike-probe'),
       superjump: argv.includes('--superjump'),
       families: built.families,
@@ -154,6 +198,18 @@ if (isMain()) {
     process.exit(0);
   } catch (e) {
     if (e instanceof HaltError || e?.halt_for_human) {
+      if (!e?.candidatePlanPath) {
+        writeCrucibleRunRecord({
+          band: depth || 'AUTO',
+          tier: 'heavy',
+          input: intent,
+          params: { approved },
+          result: `GATE: ${e.pending_action || e.message || 'halt'}`,
+          cross_model: e?.cross_model === true || e?.slim?.provenance?.cross_model === true,
+          family_attested: Boolean(e?.provenance?.family_attested || e?.slim?.provenance?.review?.family_attested),
+          models: e?.provenance?.models || [],
+        });
+      }
       console.log(`GATE ${e.message}`);
       process.exit(3);
     }

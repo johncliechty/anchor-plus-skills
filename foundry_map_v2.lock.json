@@ -4,9 +4,25 @@
   "generated_from": {
     "schema": "foundry-map/v2",
     "map_version": 2,
-    "skill_count": 13
+    "skill_count": 20
   },
   "resolved": [
+    {
+      "ref": "skill:aegis",
+      "name": "aegis",
+      "version": "1.0.0",
+      "source": "skills/aegis",
+      "dependencies": [],
+      "closure": []
+    },
+    {
+      "ref": "skill:agy-dispatch",
+      "name": "agy-dispatch",
+      "version": "1.0.0",
+      "source": "skills/agy-dispatch",
+      "dependencies": [],
+      "closure": []
+    },
     {
       "ref": "skill:anvil",
       "name": "anvil",
@@ -48,6 +64,30 @@
       "closure": [
         "skill:foreman@2.0.0"
       ]
+    },
+    {
+      "ref": "skill:ecgberht",
+      "name": "ecgberht",
+      "version": "1.5.8",
+      "source": "C:/dev/ecgberht",
+      "dependencies": [],
+      "closure": []
+    },
+    {
+      "ref": "skill:einstein",
+      "name": "einstein",
+      "version": "1.0.0",
+      "source": "skills/einstein",
+      "dependencies": [],
+      "closure": []
+    },
+    {
+      "ref": "skill:figure-designer",
+      "name": "figure-designer",
+      "version": "1.0.0",
+      "source": "skills/figure-designer",
+      "dependencies": [],
+      "closure": []
     },
     {
       "ref": "skill:financial-analyst",
@@ -147,6 +187,31 @@
       "closure": [
         "skill:crucible@1.0.0",
         "skill:foreman@2.0.0"
+      ]
+    },
+    {
+      "ref": "skill:scribe",
+      "name": "scribe",
+      "version": "1.0.0",
+      "source": "skills/scribe",
+      "dependencies": [],
+      "closure": []
+    },
+    {
+      "ref": "skill:superjump",
+      "name": "superjump",
+      "version": "1.0.0",
+      "source": "skills/superjump",
+      "dependencies": [
+        {
+          "ref": "skill:gandalf",
+          "type": "compose",
+          "range": "^1.0.0",
+          "pinned": "1.2.0"
+        }
+      ],
+      "closure": [
+        "skill:gandalf@1.2.0"
       ]
     },
     {

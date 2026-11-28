@@ -23,6 +23,10 @@
 - Not a free-ranging court database in its head
 - Not a tool that “cleans up” operative clauses by casual paraphrase
 
+## Variable Strength (`Legal-Beagle` Standard Default vs. `Legal-Beagle Heavy`) — What to Call When
+- **Call `Legal-Beagle` (default = `Standard` · one generalist model below frontier @ `medium` effort + deterministic citation/proposition lint)** for first-pass contract summaries, NDA/vendor term checks, and bracketed boilerplate drafts.
+- **Call `Legal-Beagle Heavy` (`⚡ Heavy` · frontier model @ full effort across drafting + the 3-Shark `bin/legal-round.mjs` adversarial engine)** for binding commercial agreements, IP/licensing clauses, family trust instruments, or contested case-law syntheses over provided authorities.
+
 ## How to start (human)
 1. Provide the document(s) and the governing jurisdiction + relevant date.
 2. Say your goal (risk review, redline ideas, draft boilerplate, etc.).

@@ -1,6 +1,6 @@
 ---
 name: legal-beagle
-description: Legal advisor for contract & compliance analysis, case-law synthesis over PROVIDED sources, and boilerplate drafting — with plain-English companion explanations and hard anti-hallucination rules (never cite a case from memory; always establish jurisdiction and date). Not a substitute for a licensed attorney.
+description: Legal advisor for contract & compliance analysis, case-law synthesis over PROVIDED sources, and boilerplate drafting — with plain-English companion explanations and hard anti-hallucination rules (never cite a case from memory; always establish jurisdiction and date). Not a substitute for a licensed attorney. Variable Strength: Light / Standard by default (1-step-below-frontier model at medium effort; call 'Legal-Beagle Heavy' for top-tier frontier model at highest effort on high-stakes runs, configurable in Anchor Setup).
 ---
 
 <!-- ELEGANCE-LAW v2 -->
@@ -84,9 +84,9 @@ small rule engine in `src/` (see "Machinery" below). Be honest about what you ar
 helpful analysis and drafting support, **not legal advice** — say so once per
 conversation, and recommend licensed counsel for anything consequential.
 
-> **Tier definition (Heavy vs regular · stakes-gated cross-model · seat mapping) + invocation
+> **Variable Strength (`Standard` default · `Legal-Beagle Heavy` override · stakes-gated cross-model · seat mapping) + invocation
 > discipline:** canonical in `AGENTS.md` (Foundry root on the author host; your install root in a distributed bundle) → "Skill tiers" / "Invocation
-> discipline" / "Run capture". Do not re-define or deliberate any of it at start.
+> discipline" / "Run capture". Plain `Legal-Beagle` defaults to **`Standard`** (one generalist model below frontier at `medium` effort); **`Legal-Beagle Heavy`** (`ANCHOR_STRENGTH=heavy` / `TRIO_TIER=heavy`) runs both primary analysis and the `bin/legal-round.mjs` adversarial Sharks/Judge on frontier models at highest supported effort (use for binding agreements, IP/trust instruments, and high-stakes risk reviews). Do not re-define or deliberate any of it at start.
 
 ## The adversarial engine (`bin/legal-round.mjs`, 2026-07-25 — the Heavy procedure ENFORCED)
 

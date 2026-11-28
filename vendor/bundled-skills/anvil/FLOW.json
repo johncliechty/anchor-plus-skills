@@ -1,33 +1,94 @@
 {
-  "qualification": "Source-anchored Anvil v4 execution walkthrough (Zero-Execution Dual-Channel Process Map \u2192 Consented Trace & 4-Stage Smart Funnel \u2192 Pure-Core Refactor & Dual-Target Paper Crosswalk \u2192 Bounded 2-Seat Cross-Validator \u2192 Two-Posture Workbench & Atomic Receipt).",
+  "qualification": "Source-anchored 7-stage Anvil v6 execution map (Paper-Matched Scoping -> Topological L0-L3 Schematic -> Native MathML & Paper Crosswalk -> Pure-Core Crosswalk, 3-Tier Null Set & AST-vs-TeX Divergence -> Consented Scratch Tracer & Smart Funnel -> Fail-Closed 2-Seat XVal -> Pure-Shell Workbench & Replication Report).",
   "steps": [
     {
-      "id": "step-1-ingest-triage",
-      "title": "1. Path Containment & Zero-Execution Dual-Channel Process Map (L0\u2192L3)",
+      "id": "step-1-replication-scope-intake",
+      "title": "1. Paper-Matched Replication Scoping & Contained Repo Intake",
       "kind": "program",
-      "role": "Imperative Shell & Static AST Process Mapper",
-      "description": "Enforces canonical Path.resolve() containment (CWE-22) and synthesizes deterministic steady-coordinate S1..Sk macro stages, L2 sub-steps, L3 numbered source, and dashed static edges + dynamic blind spots with zero target code executed.",
+      "role": "Replication Scope Resolver & Path Guard (scripts/anvil_v4_process.py)",
+      "description": "Resolves canonical repo/manuscript paths (CWE-22), parses .tex/.md/.pdf table/figure targets and workflow manifests (--pipeline), and quarantines unreachable historical scripts.",
+      "code": {
+        "path": "scripts/anvil_v4_process.py",
+        "symbol": "def discover_paper_matched_scopes"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "## North Star"
+      },
+      "resource_ids": [
+        "anvil-mat-skill-md",
+        "anvil-tool-scripts-anvil-v4-process-py",
+        "anvil-tool-scripts-anvil-engine-py",
+        "anvil-peer-aegis"
+      ]
+    },
+    {
+      "id": "step-2-topological-process-map",
+      "title": "2. Zero-Execution Topological L0\u2013L3 Dual-Channel Process Schematic",
+      "kind": "program",
+      "role": "Polyglot Static AST & Call-Graph Mapper (scripts/anvil_v4_process.py)",
+      "description": "Synthesizes steady-coordinate S1..Sk macro stages in workflow topological order (L0 Scenarios -> L1 Stages -> L2 Sub-Steps -> L3 Code) with 0 target code executed.",
       "code": {
         "path": "scripts/anvil_v4_process.py",
         "symbol": "def build_process_map"
       },
       "instructions": {
         "path": "SKILL.md",
-        "heading": "# Anvil \u2014 Human-First Software Process Comprehension, Refactoring Crosswalk, Dual-Target Paper Mapper & Consented Scientific IDE Debugger Workbench"
+        "heading": "## 1. Mission & Core Architecture"
       },
       "resource_ids": [
-        "anvil-mat-skill-md",
-        "anvil-mat-north-star-md",
         "anvil-tool-scripts-anvil-v4-process-py",
-        "anvil-tool-scripts-anvil-engine-py"
+        "anvil-peer-literaturereview",
+        "anvil-peer-crucible",
+        "anvil-shared-tool-foreman-lib"
       ]
     },
     {
-      "id": "step-2-context-kb-load",
-      "title": "2. Consented Local Subprocess Trace & 4-Stage Smart Variable Funnel",
+      "id": "step-3-mathml-paper-crosswalk",
+      "title": "3. PyTorch/NumPy AST -> Native MathML & Dual-Target Paper Crosswalk",
       "kind": "program",
-      "role": "Consented Local Subprocess Tracer (consented_local_subprocess)",
-      "description": "When --approve-run (or UI Trace Consent) is granted, runs an EXECUTION_POLICY-validated argv array (shell=False) in an isolated temp worktree copy with scrubbed credentials, capturing O(1) safe sketches, NaN/Inf tripwires, 3-way verdicts, and monotonic 5-scope 4-Stage Smart Variable Funnel counts.",
+      "role": "Equation Compiler & Operator-Grounded Aligner (scripts/anvil_engine.py + anvil_v4_process.py)",
+      "description": "Compiles LaTeX/code idioms (einsum, logsumexp, log_softmax) into native <math> MathML, runs SCI-01..SCI-03 leakage/collinearity checks, and binds claims to S1..Sk and N1..Nk.",
+      "code": {
+        "path": "scripts/anvil_v4_process.py",
+        "symbol": "def build_software_architecture_paper_map"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "## 4. Dual-Target Paper \u21c4 Software Crosswalk, Replication Scoping & Scientific Validation Standard"
+      },
+      "resource_ids": [
+        "anvil-tool-scripts-anvil-engine-py",
+        "anvil-tool-scripts-anvil-v4-process-py",
+        "anvil-peer-ramanujan"
+      ]
+    },
+    {
+      "id": "step-4-pure-core-nullset-divergence",
+      "title": "4. Pure-Core Refactoring Crosswalk, 3-Tier Null Set & AST-vs-TeX Divergence",
+      "kind": "model",
+      "role": "Functional-Core Remapper & Divergence Detector (scripts/anvil_v4_refactor.py)",
+      "description": "Synthesizes N1..Nk Functional-Core / Imperative-Shell targets with 100% symbol conservation across 3 Null tiers, detects DIV-01..DIV-N divergences, and applies scope-safe LibCST rewrites.",
+      "code": {
+        "path": "scripts/anvil_v4_refactor.py",
+        "symbol": "def detect_manuscript_code_divergences"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "## The Elegance Law (locked by John \u2014 binding on this skill)"
+      },
+      "resource_ids": [
+        "anvil-tool-scripts-anvil-v4-refactor-py",
+        "anvil-tool-scripts-anvil-replication-audit-py",
+        "anvil-peer-researchprime"
+      ]
+    },
+    {
+      "id": "step-5-consented-trace-smart-funnel",
+      "title": "5. Consented Local Subprocess Tracer & 4-Stage Smart Variable Funnel",
+      "kind": "program",
+      "role": "Isolated Scratch Runner & O(1) Sketch Tracer (scripts/anvil_v4_trace.py)",
+      "description": "Executes only under explicit --approve-run consent on an isolated scratch copy (shell=False, scrubbed env), capturing O(1) tensor sketches, NaN/Inf tripwires, and monotonic 4-stage funnel state.",
       "code": {
         "path": "scripts/anvil_v4_trace.py",
         "symbol": "def run_consented_trace"
@@ -38,135 +99,97 @@
       },
       "resource_ids": [
         "anvil-tool-scripts-anvil-v4-trace-py",
-        "anvil-tool-tests-test-w1-process-trace",
-        "anvil-mat-human-md"
+        "anvil-peer-aegis"
       ]
     },
     {
-      "id": "step-3-core-execution",
-      "title": "3. Pure-Core N1..Nk Refactoring Crosswalk, 3-Tier Null Set & Stage Profiler",
-      "kind": "program",
-      "role": "Functional-Core Refactoring & Kernel Literature Engine",
-      "description": "Synthesizes N1..Nk Functional-Core / Imperative-Shell stages with 100% symbol conservation across null_proven, null_unexercised, and null_redundant, runs data-only Golden-Master stage-boundary equivalence replay, and separates I/O bottlenecks from precondition-checked kernel literature upgrades.",
-      "code": {
-        "path": "scripts/anvil_v4_refactor.py",
-        "symbol": "def build_refactor_map"
-      },
-      "instructions": {
-        "path": "SKILL.md",
-        "heading": "## 1. Mission & Core Architecture"
-      },
-      "resource_ids": [
-        "anvil-tool-scripts-anvil-v4-refactor-py",
-        "anvil-ref-researchprime-code-rewriting-tools",
-        "anvil-peer-researchprime"
-      ]
-    },
-    {
-      "id": "step-3b-paper-crosswalk",
-      "title": "3b. Dual-Target Companion Paper \u21c4 Software Crosswalk (Native MathML)",
-      "kind": "program",
-      "role": "Dual-Target Manuscript & MathML Mapper",
-      "description": "Returns has_paper: false cleanly when no manuscript is supplied; when present, compiles sections[], algorithms[].steps[], and native <math> MathML equations[] (zero raw LaTeX) onto BOTH maps_to_old (S1..Sk) and maps_to_new (N1..Nk) with VERIFIED-NUMERIC, VERIFIED-TRACE, and MAP_DRIFT stamps.",
-      "code": {
-        "path": "scripts/anvil_engine.py",
-        "symbol": "def paper_to_code_map"
-      },
-      "instructions": {
-        "path": "SKILL.md",
-        "heading": "## 4. Dual-Target Paper \u21c4 Software Crosswalk & Mandatory Pedagogical Report Standard"
-      },
-      "resource_ids": [
-        "anvil-tool-scripts-anvil-engine-py",
-        "anvil-journal-0008-polyglot-ast-paper-mathml",
-        "anvil-peer-ramanujan"
-      ]
-    },
-    {
-      "id": "step-4-adversarial-verify",
-      "title": "4. Bounded 2-Seat Cross-Family Validator & Aegis Security Gate",
+      "id": "step-6-failclosed-2seat-xval",
+      "title": "6. Fail-Closed 2-Seat Cross-Family Citation & Architecture Validator",
       "kind": "review",
-      "role": "Cross-Family Verification Seat & Aegis Auditor",
-      "description": "Batches repository claims into a <=32KB digest across <=2 concurrent cross-family Validator argv calls (60s process-tree timeout, honest DETERMINISTIC_FALLBACK when offline) alongside Aegis CWE taint/sink scanning before stamping atomic receipts.",
+      "role": "HMAC-Attested Cross-Family XVal Engine (scripts/anvil_v4_xval.py)",
+      "description": "Audits Manuscript-vs-Code divergences, conservation equations, and stage claims across <=2 independent subscription CLI seats (Claude Opus/Fable + Gemini via agy) with fail-closed attestation.",
       "code": {
         "path": "scripts/anvil_v4_xval.py",
         "symbol": "def run_xval_audit"
       },
       "instructions": {
         "path": "SKILL.md",
-        "heading": "## North Star"
-      },
-      "resource_ids": [
-        "anvil-tool-scripts-anvil-v4-xval-py",
-        "anvil-tool-tests-test-w2-refactor-paper-xval",
-        "anvil-peer-gandalf",
-        "anvil-peer-aegis"
-      ]
-    },
-    {
-      "id": "step-5-emit-journal",
-      "title": "5. Two-Posture Graphical Workbench, Scientific IDE Debugger & Atomic Receipt",
-      "kind": "terminal",
-      "role": "Imperative Shell (Loopback Workbench & Deliverable Emitter)",
-      "description": "Serves or exports the merged 48/52 Process Workbench + expandable 25/45/30 Open IDE Debugger on 127.0.0.1 (CSP + capability token + 5 distinct HTTP/UI failure states), keeping breakpoints, watches, and Steward dialogue synchronized via file-locked temp + fsync + rename JSON persistence.",
-      "code": {
-        "path": "scripts/anvil_engine.py",
-        "symbol": "def main"
-      },
-      "instructions": {
-        "path": "SKILL.md",
         "heading": "## 2. Programmatic CLI Usage (`scripts/anvil_engine.py`)"
       },
       "resource_ids": [
-        "anvil-mat-workbench-html",
+        "anvil-tool-scripts-anvil-v4-xval-py",
+        "anvil-peer-gandalf",
+        "anvil-peer-ramanujan"
+      ]
+    },
+    {
+      "id": "step-7-workbench-ide-report-emit",
+      "title": "7. Pure-Shell Workbench, 3-Column IDE Debugger & Replication Report Emit",
+      "kind": "terminal",
+      "role": "Lossless <1 MB IR Cache & Workbench Server (scripts/anvil_v4_workbench.py + anvil_replication_audit.py)",
+      "description": "Persists lossless <1 MB IR (<60 ms warm load), serves the 48%/52% Process Workbench + 25%/45%/30% IDE Debugger, exports published-table replication reports, and writes journal receipts.",
+      "code": {
+        "path": "scripts/anvil_v4_workbench.py",
+        "symbol": "def build_workbench_bundle"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "### Mandatory Pedagogical & Visual Report Standard (`ANVIL-REPORT.md` & Workbench)"
+      },
+      "resource_ids": [
         "anvil-tool-scripts-anvil-v4-workbench-py",
-        "anvil-tool-tests-test-w3-workbench-playwright",
-        "anvil-peer-figure-designer",
-        "anvil-kb-portfolio-triage-and-band-eval"
+        "anvil-tool-scripts-anvil-replication-audit-py",
+        "anvil-mat-human-md",
+        "anvil-journal-0015-one-click-wheel-deps-job-cont"
       ]
     }
   ],
   "edges": [
     {
-      "from": "step-1-ingest-triage",
-      "to": "step-2-context-kb-load",
-      "label": "Static L0->L3 map ready (or skip to 3 when unconsented)"
+      "from": "step-1-replication-scope-intake",
+      "to": "step-2-topological-process-map",
+      "label": "Active pipeline closure & paths verified"
     },
     {
-      "from": "step-1-ingest-triage",
-      "to": "step-3-core-execution",
-      "label": "Static-only path (no --approve-run)"
+      "from": "step-2-topological-process-map",
+      "to": "step-3-mathml-paper-crosswalk",
+      "label": "Topological S1..Sk schematic ready"
     },
     {
-      "from": "step-2-context-kb-load",
-      "to": "step-3-core-execution",
-      "label": "Consented trace & Smart Funnel persisted"
+      "from": "step-3-mathml-paper-crosswalk",
+      "to": "step-4-pure-core-nullset-divergence",
+      "label": "Native MathML & SCI-01..03 extracted"
     },
     {
-      "from": "step-3-core-execution",
-      "to": "step-3b-paper-crosswalk",
-      "label": "N1..Nk refactor map & 3-Tier Null Set conserved"
+      "from": "step-4-pure-core-nullset-divergence",
+      "to": "step-5-consented-trace-smart-funnel",
+      "label": "Optional --approve-run trace / Golden-Master"
     },
     {
-      "from": "step-3b-paper-crosswalk",
-      "to": "step-4-adversarial-verify",
-      "label": "Dual-target crosswalk & claims assembled"
+      "from": "step-4-pure-core-nullset-divergence",
+      "to": "step-6-failclosed-2seat-xval",
+      "label": "Static N1..Nk + DIV-01..N ready"
     },
     {
-      "from": "step-4-adversarial-verify",
-      "to": "step-3-core-execution",
-      "label": "Drift or blocker flagged for refinement"
+      "from": "step-5-consented-trace-smart-funnel",
+      "to": "step-6-failclosed-2seat-xval",
+      "label": "VERIFIED_TRACE & funnel sketches attached"
     },
     {
-      "from": "step-4-adversarial-verify",
-      "to": "step-5-emit-journal",
-      "label": "2-Seat validation & Aegis gates recorded"
+      "from": "step-6-failclosed-2seat-xval",
+      "to": "step-4-pure-core-nullset-divergence",
+      "label": "Citation or conservation blocker -> refine"
+    },
+    {
+      "from": "step-6-failclosed-2seat-xval",
+      "to": "step-7-workbench-ide-report-emit",
+      "label": "2-seat XVal & conservation attested"
     }
   ],
   "exits": [
-    "Anvil v4 Workbench live loopback session (127.0.0.1, never 8777) or standalone HTML export",
-    "Atomic file-locked JSON artifacts in .anvil/v4/ (process-map, trace, refactor-map, profile-lit, xval-receipt)",
-    "Validated ANVIL-REPORT.md and human-readable field lesson in journal/NNNN-<slug>.md when friction occurs"
+    "Interactive Anvil Workbench (48%/52% Process Schematic + 25%/45%/30% Scientific IDE Debugger) backed by <1 MB lossless IR",
+    "100%-conserved Pure-Core / Imperative-Shell Refactoring Crosswalk (S1..Sk <-> N1..Nk) + 3-Tier Null Set & LibCST plan",
+    "Operator-grounded Paper <-> Software Native MathML Crosswalk, DIV-01..N audit, and published-table Replication Report"
   ],
-  "deliverable": "Two-posture Anvil v4 Process Workbench + Scientific IDE Debugger, dual-target Paper/Refactor crosswalks, and 2-Seat Cross-Validator receipt."
+  "deliverable": "Source-grounded, adversarially verified Anvil work product + machine run receipt."
 }

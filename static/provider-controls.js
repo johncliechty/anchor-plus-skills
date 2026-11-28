@@ -174,6 +174,17 @@
       banner.onclick = e => open(e.currentTarget,{section:'providers'});
       summaries.append(banner);
     }
+    if (data.variable_strength && data.variable_strength.config) {
+      const vsc = data.variable_strength.config;
+      const hStep = (vsc.heavy && vsc.heavy.model_steps_below) ? ('-' + vsc.heavy.model_steps_below) : 'Top';
+      const lStep = (vsc.light && vsc.light.model_steps_below !== undefined) ? (vsc.light.model_steps_below === 0 ? 'Top' : '-' + vsc.light.model_steps_below) : '-1';
+      const vsBanner = document.createElement('div');
+      vsBanner.className = 'cave-vs-summary';
+      vsBanner.title = 'Variable Strength routing — click to configure Heavy & Light step-downs and per-skill defaults in Setup';
+      vsBanner.innerHTML = '<strong>⚡ Heavy (' + hStep + ') · 🪶 Light (' + lStep + ')</strong><span>' + ((vsc.heavy_skills || []).length) + ' Heavy skills · Edit →</span>';
+      vsBanner.onclick = e => open(e.currentTarget,{section:'providers',focus:'variable-strength'});
+      summaries.append(vsBanner);
+    }
     data.connections.forEach(connection=>{
       const row=document.createElement('div');
       const isSelected=connection.id===(data.preferences.accounts[connection.family] || connection.family+'-default');
@@ -329,8 +340,9 @@
     p.set('embed','1');
     if(opts && opts.section)p.set('section',opts.section);
     if(opts && opts.family)p.set('family',opts.family);
+    if(opts && opts.focus)p.set('focus',opts.focus);
     p.set('v',String(b));
-    return '/setup?'+p.toString();
+    return '/setup?'+p.toString()+(opts && opts.focus==='variable-strength'?'#variable-strength-card':'');
   }
   function open(from, opts){
     opening=from;
@@ -360,7 +372,7 @@
       if(!onSetupPage){
         iframe.src=buildSetupUrl(targetOpts);
       }else{
-        iframe.contentWindow.postMessage({type:'anchor-setup-open',section:targetOpts.section||'',family:targetOpts.family||''},location.origin);
+        iframe.contentWindow.postMessage({type:'anchor-setup-open',section:targetOpts.section||'',family:targetOpts.family||'',focus:targetOpts.focus||''},location.origin);
       }
     }
     if(!dialog.open)dialog.showModal();

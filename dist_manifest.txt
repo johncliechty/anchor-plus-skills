@@ -534,6 +534,7 @@ vendor/anchor-term/**
 # here so the deny-by-default stager keeps them. The generator itself ships too.
 vendor/bundled-skills/**
 vendor/foundry-page-maps/**
+vendor/foundry-gui-dist/**
 .claude/skills/onboard/**
 vendor_skills.py
 
@@ -541,6 +542,7 @@ vendor_skills.py
 # The collaborator's bring-up entry: COPY-default skill install, only-if-absent
 # scaffold, out-of-tree token. Ships so a fresh clone can `python onboard.py`.
 onboard.py
+anchor_onboard_agent.py
 
 # ── Starter Anchor templates (Wave 5; headers-only, zero data) ─────────────
 # A fresh, data-free Anchor to scaffold from: the 6 top-level markdown files +

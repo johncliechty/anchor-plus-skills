@@ -18,8 +18,8 @@ function emit(line) {
   try { fs.appendFileSync(STATUS_FILE, out); } catch { /* ignore */ }
 }
 
-const { runProject } = await import('fil<path>');
-const { makeForemanDriver } = await import('fil<path>');
+const { runProject } = await import('<path>');
+const { makeForemanDriver } = await import('../../drivers/index.mjs');
 
 try { fs.writeFileSync(STATUS_FILE, ''); } catch { /* ignore */ }
 emit(`=== LITERATURE REVIEW FOREMAN LIVE RUN ===`);

@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="256" height="256">
+  <!-- Dark slate background with rounded corners (brand convention) -->
+  <rect width="100" height="100" fill="#0f172a" rx="20"/>
+
+  <!-- Soft WHITE aura — "the White" (deliberately not the GWL green) -->
+  <circle cx="45" cy="50" r="31" fill="#f8fafc" opacity="0.13"/>
+
+  <!-- Wizard hat (smaller, less dominant) -->
+  <path d="M45 24 L31 53 L59 53 Z" fill="#f8fafc"/>
+  <!-- Hat brim -->
+  <ellipse cx="45" cy="53" rx="20" ry="4.5" fill="#e2e8f0"/>
+  <!-- Star on the hat -->
+  <path d="M43.5 38 l1.4 3 3.3 .3 -2.5 2.2 .7 3.2 -2.9 -1.6 -2.9 1.6 .7 -3.2 -2.5 -2.2 3.3 -.3 Z" fill="#cbd5e1"/>
+
+  <!-- Eyes (slate, in the face gap below the brim) -->
+  <circle cx="39" cy="59" r="1.9" fill="#0f172a"/>
+  <circle cx="51" cy="59" r="1.9" fill="#0f172a"/>
+
+  <!-- Long flowing white beard, tapering to a point -->
+  <path d="M33 57 Q33 82 45 90 Q57 82 57 57 Q45 64 33 57 Z" fill="#f8fafc"/>
+
+  <!-- Staff -->
+  <line x1="73" y1="42" x2="77" y2="84" stroke="#e2e8f0" stroke-width="3" stroke-linecap="round"/>
+  <!-- Glowing staff tip -->
+  <circle cx="72" cy="37" r="7.5" fill="#f8fafc" opacity="0.28"/>
+  <circle cx="72" cy="37" r="3.6" fill="#f8fafc"/>
+</svg>

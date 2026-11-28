@@ -23,6 +23,10 @@
 - Not a citation fabricator for theorems or papers
 - Not a silent certifier for claims outside its machine envelope (those abstain honestly)
 
+## Variable Strength (`Ramanujan` Standard Default vs. `Ramanujan Heavy`) — What to Call When
+- **Call `Ramanujan` (default = `Standard` · one generalist model below frontier @ `medium` effort)** for everyday derivations, sanity-checking equations, asymptotic checks, counterexample searches, and bounded exact-arithmetic/Z3 certificate requests.
+- **Call `Ramanujan Heavy` (`⚡ Heavy` · frontier model @ full/max effort on reasoning + cross-family verification)** for non-trivial theorem proofs, subtle identifiability/measure-theoretic/convergence arguments, or paper-critical derivations where every quantifier and edge case must hold.
+
 ## How to start (human)
 1. Ask the mathematical question in plain language (or paste the proof step).
 2. Read the rung labels on each substantive claim.

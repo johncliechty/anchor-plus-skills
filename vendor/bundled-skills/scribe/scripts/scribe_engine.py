@@ -41,10 +41,11 @@ import uuid
 
 try:
     import paths as _anchor_paths
-    _WRITE_LOCK = _anchor_paths.WRITE_LOCK
 except Exception:
     _anchor_paths = None
-    _WRITE_LOCK = threading.RLock()
+
+# Dedicated in-process lock for Scribe's own memory ledger, decoupled from paths.WRITE_LOCK (COMMS_LOCK).
+_WRITE_LOCK = threading.RLock()
 
 if _anchor_paths is not None and hasattr(_anchor_paths, "DisallowedUrlSchemeError"):
     DisallowedUrlSchemeError = _anchor_paths.DisallowedUrlSchemeError
@@ -97,6 +98,7 @@ SCRIBE_MAX_CONTEXT_BYTES: int = 256 * 1024  # 262,144 bytes (256KB)
 SCRIBE_FAILOVER_SEATS: tuple[str, ...] = ("gemini", "chatgpt", "grok", "claude")
 THREAD_TRUNCATION_MARKER = "[thread truncated at 256KB]"
 SCRIBE_MAX_CONCURRENT_LLM: int = 2
+SCRIBE_ASYNC_QUEUE_WAIT_SEC: float = 300.0
 _AGY_DISPATCH_SEMAPHORE = threading.BoundedSemaphore(SCRIBE_MAX_CONCURRENT_LLM)
 
 #: Sign-off name used before Scribe has mined the owner's real sign-off from sent mail.
@@ -2904,6 +2906,7 @@ def _invoke_scribe_cli_subprocess(
     output_file: Path | None = None,
     *,
     _sem_acquired: bool = False,
+    async_draft: bool = False,
 ) -> dict[str, Any]:
     """Invoke a subscription CLI with `shell=False`, `CREATE_NO_WINDOW`, the prompt on stdin, tree-kill on timeout,
     concurrency bounded by `SCRIBE_MAX_CONCURRENT_LLM`, and a hard timeout never above `SCRIBE_LLM_TIMEOUT_SEC` (90s)."""
@@ -2915,7 +2918,7 @@ def _invoke_scribe_cli_subprocess(
     base = {"shell": False, "creationflags": creationflags, "timeout_sec": bounded_timeout}
     own_sem = False
     if not _sem_acquired:
-        wait_sem = max(0.05, min(bounded_timeout * 0.2, 8.0))
+        wait_sem = SCRIBE_ASYNC_QUEUE_WAIT_SEC if async_draft else max(0.05, min(bounded_timeout * 0.2, 8.0))
         if not _AGY_DISPATCH_SEMAPHORE.acquire(timeout=wait_sem):
             return dict(
                 base,
@@ -2925,7 +2928,10 @@ def _invoke_scribe_cli_subprocess(
                 duration_ms=int((time.monotonic() - t0) * 1000),
             )
         own_sem = True
-        bounded_timeout = max(0.05, round(bounded_timeout - max(0.0, time.monotonic() - t0), 3))
+        if async_draft:
+            t0 = time.monotonic()
+        else:
+            bounded_timeout = max(0.05, round(bounded_timeout - max(0.0, time.monotonic() - t0), 3))
         base["timeout_sec"] = bounded_timeout
     proc: subprocess.Popen[str] | None = None
     try:
@@ -3042,6 +3048,9 @@ def _invoke_scribe_gemini_dispatch(
     seat_info: dict[str, Any],
     timeout_sec: float,
     default_family: str = "gemini",
+    *,
+    _sem_acquired: bool = False,
+    async_draft: bool = False,
 ) -> dict[str, Any]:
     """Call Gemini or Claude through the installed read-only agy-dispatch transport."""
     node = shutil.which("node") or shutil.which("node.exe")
@@ -3049,12 +3058,15 @@ def _invoke_scribe_gemini_dispatch(
     if not node or dispatch is None:
         return {"ok": False, "error_code": "dependency_missing", "stderr": "agy-dispatch or Node.js is unavailable"}
     total_budget = float(timeout_sec or SCRIBE_LLM_TIMEOUT_SEC)
+    own_sem = False
     sem_t0 = time.monotonic()
-    wait_sem = max(0.2, min(total_budget * 0.2, 8.0))
-    if not _AGY_DISPATCH_SEMAPHORE.acquire(timeout=wait_sem):
-        return {"ok": False, "error_code": "timeout_exceeded", "stderr": f"agy-dispatch concurrency cap ({SCRIBE_MAX_CONCURRENT_LLM}) busy"}
+    if not _sem_acquired:
+        wait_sem = SCRIBE_ASYNC_QUEUE_WAIT_SEC if async_draft else max(0.2, min(total_budget * 0.2, 8.0))
+        if not _AGY_DISPATCH_SEMAPHORE.acquire(timeout=wait_sem):
+            return {"ok": False, "error_code": "timeout_exceeded", "stderr": f"agy-dispatch concurrency cap ({SCRIBE_MAX_CONCURRENT_LLM}) busy"}
+        own_sem = True
     try:
-        sem_waited = max(0.0, time.monotonic() - sem_t0)
+        sem_waited = 0.0 if (async_draft or _sem_acquired) else max(0.0, time.monotonic() - sem_t0)
         eff_timeout = round(total_budget - sem_waited, 3)
         if eff_timeout < 5.0:
             return {"ok": False, "error_code": "timeout_exceeded", "stderr": f"insufficient budget ({eff_timeout:.2f}s) after semaphore wait"}
@@ -3089,7 +3101,7 @@ def _invoke_scribe_gemini_dispatch(
                 argv.extend(("--model", norm_model))
             att1_t0 = time.monotonic()
             res = _invoke_scribe_cli_subprocess(
-                argv, prompt="", timeout_sec=eff_timeout, output_file=result_path, _sem_acquired=True
+                argv, prompt="", timeout_sec=eff_timeout, output_file=result_path, _sem_acquired=True, async_draft=async_draft
             )
             if norm_model and not res.get("ok"):
                 err_text = f"{res.get('stdout', '')} {res.get('stderr', '')}"
@@ -3102,11 +3114,12 @@ def _invoke_scribe_gemini_dispatch(
                         "--out", str(result_path), "--readonly", "--timeout-min", retry_min_str, "--label", "scribe",
                     ]
                     res = _invoke_scribe_cli_subprocess(
-                        retry_argv, prompt="", timeout_sec=retry_budget, output_file=result_path, _sem_acquired=True
+                        retry_argv, prompt="", timeout_sec=retry_budget, output_file=result_path, _sem_acquired=True, async_draft=async_draft
                     )
             return res
     finally:
-        _AGY_DISPATCH_SEMAPHORE.release()
+        if own_sem:
+            _AGY_DISPATCH_SEMAPHORE.release()
 
 
 def _live_cli_allowed() -> bool:
@@ -3203,6 +3216,8 @@ def _try_llm_synthesize_reply(
     related_emails: list[dict[str, Any]] | None = None,
     instruction_rating: dict[str, Any] | None = None,
     constraint_bundle: dict[str, Any] | None = None,
+    *,
+    async_draft: bool = False,
 ) -> dict[str, Any]:
     """Stage 2 subscription-CLI synthesis harness.
 
@@ -3212,8 +3227,11 @@ def _try_llm_synthesize_reply(
     - Drivers, in order: per-seat runners / deterministic test hook, an explicit argv (`cli_argv` /
       `ANCHOR_SCRIBE_LLM_CMD`), then the installed seat CLI (never in hermetic contexts). Every subprocess runs with
       `shell=False` and `CREATE_NO_WINDOW`.
+    - When `async_draft=True`, waits on `_AGY_DISPATCH_SEMAPHORE` (`SCRIBE_MAX_CONCURRENT_LLM <= 2`) without the 8s
+      synchronous drop cap and starts the per-draft `timeout_sec` budget only after a worker slot is acquired.
     - No seat able to draft -> HTTP 503 `dependency-missing` (existing draft preserved)."""
     global LAST_SCRIBE_RUN
+    effective_async = bool(async_draft or msg.get("async_draft"))
     bundle = constraint_bundle if isinstance(constraint_bundle, dict) else build_scribe_constraint_bundle(
         email_obj=msg, instruction=instruction, tone=effective_tone, voice=voice, sched_prose=sched_prose,
         related_emails=related_emails, instruction_rating=instruction_rating,
@@ -3253,109 +3271,136 @@ def _try_llm_synthesize_reply(
     explicit_argv = [str(x) for x in raw_argv] if isinstance(raw_argv, (list, tuple)) else None
     live_ok = _live_cli_allowed()
 
-    trace: list[dict[str, Any]] = []
-    deadline = time.monotonic() + timeout_sec
-    saw_timeout = False
-    for idx, seat_info in enumerate(seat_chain):
-        seat, model, conn_id = seat_info["seat"], seat_info["model"], seat_info["connection_id"]
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            saw_timeout = True
-            trace.append({"seat": seat, "status": "timeout_exceeded", "error": f"{timeout_sec:g}s Scribe budget exhausted"})
-            break
-        if not seat_info.get("enabled", True):
-            trace.append({"seat": seat, "status": "disabled"})
-            continue
-        inj = str(seat_info.get("injected_error") or "")
-        if inj:
-            status = "timeout_exceeded" if "timeout" in inj.lower() else "auth_error"
-            trace.append({"seat": seat, "status": status, "error": inj})
-            if status == "timeout_exceeded":
+    outer_sem_held = False
+    if effective_async:
+        if not _AGY_DISPATCH_SEMAPHORE.acquire(timeout=SCRIBE_ASYNC_QUEUE_WAIT_SEC):
+            return _scribe_refusal(
+                "dependency-slow-or-killed", error_code="timeout_exceeded", status_code=504, prompt=prompt,
+                message=f"Scribe async queue wait exceeded {int(SCRIBE_ASYNC_QUEUE_WAIT_SEC)}s — existing manual draft preserved.",
+                timeout_sec=timeout_sec,
+            )
+        outer_sem_held = True
+
+    try:
+        trace: list[dict[str, Any]] = []
+        deadline = time.monotonic() + timeout_sec
+        saw_timeout = False
+        for idx, seat_info in enumerate(seat_chain):
+            seat, model, conn_id = seat_info["seat"], seat_info["model"], seat_info["connection_id"]
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
                 saw_timeout = True
+                trace.append({"seat": seat, "status": "timeout_exceeded", "error": f"{timeout_sec:g}s Scribe budget exhausted"})
                 break
-            continue
-
-        t0 = time.monotonic()
-        runner = seat_runners.get(seat) or hook
-        state, payload = "error", ""
-        extra: dict[str, Any] = {}
-        is_live_subprocess = (not callable(runner)) and (not explicit_argv)
-        later_enabled = sum(1 for s in seat_chain[idx + 1:] if s.get("enabled", True)) if is_live_subprocess else 0
-
-        if callable(runner):
-            try:
-                state, payload = _normalize_seat_output(
-                    runner(seat=seat, model=model, prompt=prompt, timeout_sec=remaining, bundle=bundle)
-                )
-            except (subprocess.TimeoutExpired, TimeoutError) as exc:
-                state, payload = "timeout", str(exc) or "timeout"
-            except Exception as exc:
-                err_s = str(exc)
-                state = "auth_error" if any(k in err_s.lower() for k in ("auth", "login", "sign-in", "quota", "rate_limit", "401")) else "error"
-                payload = err_s
-        elif explicit_argv:
-            sub = _invoke_scribe_cli_subprocess(explicit_argv, prompt=prompt, timeout_sec=remaining)
-            extra = {"creationflags": sub.get("creationflags", 0)}
-            state, payload = _normalize_seat_output(sub)
-        else:
-            if idx == 0 and seat == "gemini" and later_enabled > 0:
-                seat_timeout = min(remaining, max(12.0, min(42.0, timeout_sec - 30.0)))
-            elif seat in ("chatgpt", "grok") and later_enabled > 0:
-                seat_timeout = min(remaining, 8.0)
-            elif later_enabled > 0:
-                seat_timeout = min(remaining, max(8.0, timeout_sec * 0.45))
-            else:
-                seat_timeout = remaining
-            if live_ok and seat == "gemini":
-                sub = _invoke_scribe_gemini_dispatch(prompt, seat_info, timeout_sec=seat_timeout, default_family="gemini")
-            else:
-                argv = _seat_argv(seat_info, prompt=prompt) if live_ok else None
-                if not argv:
-                    if live_ok and seat == "claude" and (deadline - time.monotonic() >= 8.0) and (_agy_dispatch_script() is not None):
-                        sub = _invoke_scribe_gemini_dispatch(
-                            prompt,
-                            {**seat_info, "model": _normalize_agy_label_model(model or "opus", default_family="claude")},
-                            timeout_sec=deadline - time.monotonic(),
-                            default_family="claude",
-                        )
-                    else:
-                        trace.append({"seat": seat, "status": "unavailable"})
-                        continue
-                else:
-                    stdin_prompt = prompt if (seat != "grok" or len(prompt) > 12000) else ""
-                    sub = _invoke_scribe_cli_subprocess(argv, prompt=stdin_prompt, timeout_sec=seat_timeout)
-                    if live_ok and seat == "claude" and sub.get("error_code") in ("auth_error", "dependency_missing", "cli_error") and (deadline - time.monotonic() >= 8.0) and (_agy_dispatch_script() is not None):
-                        sub = _invoke_scribe_gemini_dispatch(
-                            prompt,
-                            {**seat_info, "model": _normalize_agy_label_model(model or "opus", default_family="claude")},
-                            timeout_sec=deadline - time.monotonic(),
-                            default_family="claude",
-                        )
-            extra = {"creationflags": sub.get("creationflags", 0)}
-            state, payload = _normalize_seat_output(sub)
-        dur_ms = int((time.monotonic() - t0) * 1000)
-        if state == "ok" and time.monotonic() > deadline:
-            state, payload = "timeout", f"seat answered after the {timeout_sec:g}s Scribe budget"
-        if state == "ok":
-            trace.append({"seat": seat, "status": "ok", "duration_ms": dur_ms})
-            res = dict(extra, ok=True, refused=False, text=payload.strip(), seat_used=seat, model_used=model,
-                       connection_id=conn_id, duration_ms=dur_ms, failover_trace=trace, prompt=prompt, shell=False,
-                       timeout_sec=timeout_sec)
-            LAST_SCRIBE_RUN = dict(res)
-            return res
-        trace.append({"seat": seat, "status": "timeout_exceeded" if state == "timeout" else state, "error": payload[:300]})
-        if state == "timeout":
-            saw_timeout = True
-            if is_live_subprocess and (deadline - time.monotonic() >= 8.0) and later_enabled > 0:
+            if not seat_info.get("enabled", True):
+                trace.append({"seat": seat, "status": "disabled"})
                 continue
-            break
+            inj = str(seat_info.get("injected_error") or "")
+            if inj:
+                status = "timeout_exceeded" if "timeout" in inj.lower() else "auth_error"
+                trace.append({"seat": seat, "status": status, "error": inj})
+                if status == "timeout_exceeded":
+                    saw_timeout = True
+                    break
+                continue
 
-    if saw_timeout:
-        return _scribe_refusal(
-            "dependency-slow-or-killed", error_code="timeout_exceeded", status_code=504, trace=trace, prompt=prompt,
-            message=f"Scribe CLI synthesis exceeded the {timeout_sec:g}s bound — existing manual draft preserved.", timeout_sec=timeout_sec,
-        )
-    return _scribe_refusal("dependency-missing", error_code="dependency_missing", trace=trace, prompt=prompt, timeout_sec=timeout_sec)
+            t0 = time.monotonic()
+            runner = seat_runners.get(seat) or hook
+            state, payload = "error", ""
+            extra: dict[str, Any] = {}
+            is_live_subprocess = (not callable(runner)) and (not explicit_argv)
+            later_enabled = sum(1 for s in seat_chain[idx + 1:] if s.get("enabled", True)) if is_live_subprocess else 0
+
+            if callable(runner):
+                try:
+                    state, payload = _normalize_seat_output(
+                        runner(seat=seat, model=model, prompt=prompt, timeout_sec=remaining, bundle=bundle)
+                    )
+                except (subprocess.TimeoutExpired, TimeoutError) as exc:
+                    state, payload = "timeout", str(exc) or "timeout"
+                except Exception as exc:
+                    err_s = str(exc)
+                    state = "auth_error" if any(k in err_s.lower() for k in ("auth", "login", "sign-in", "quota", "rate_limit", "401")) else "error"
+                    payload = err_s
+            elif explicit_argv:
+                sub = _invoke_scribe_cli_subprocess(
+                    explicit_argv, prompt=prompt, timeout_sec=remaining,
+                    _sem_acquired=outer_sem_held, async_draft=effective_async,
+                )
+                extra = {"creationflags": sub.get("creationflags", 0)}
+                state, payload = _normalize_seat_output(sub)
+            else:
+                if idx == 0 and seat == "gemini" and later_enabled > 0:
+                    seat_timeout = min(remaining, max(12.0, min(42.0, timeout_sec - 30.0)))
+                elif seat in ("chatgpt", "grok") and later_enabled > 0:
+                    seat_timeout = min(remaining, 8.0)
+                elif later_enabled > 0:
+                    seat_timeout = min(remaining, max(8.0, timeout_sec * 0.45))
+                else:
+                    seat_timeout = remaining
+                if live_ok and seat == "gemini":
+                    sub = _invoke_scribe_gemini_dispatch(
+                        prompt, seat_info, timeout_sec=seat_timeout, default_family="gemini",
+                        _sem_acquired=outer_sem_held, async_draft=effective_async,
+                    )
+                else:
+                    argv = _seat_argv(seat_info, prompt=prompt) if live_ok else None
+                    if not argv:
+                        if live_ok and seat == "claude" and (deadline - time.monotonic() >= 8.0) and (_agy_dispatch_script() is not None):
+                            sub = _invoke_scribe_gemini_dispatch(
+                                prompt,
+                                {**seat_info, "model": _normalize_agy_label_model(model or "opus", default_family="claude")},
+                                timeout_sec=deadline - time.monotonic(),
+                                default_family="claude",
+                                _sem_acquired=outer_sem_held,
+                                async_draft=effective_async,
+                            )
+                        else:
+                            trace.append({"seat": seat, "status": "unavailable"})
+                            continue
+                    else:
+                        stdin_prompt = prompt if (seat != "grok" or len(prompt) > 12000) else ""
+                        sub = _invoke_scribe_cli_subprocess(
+                            argv, prompt=stdin_prompt, timeout_sec=seat_timeout,
+                            _sem_acquired=outer_sem_held, async_draft=effective_async,
+                        )
+                        if live_ok and seat == "claude" and sub.get("error_code") in ("auth_error", "dependency_missing", "cli_error") and (deadline - time.monotonic() >= 8.0) and (_agy_dispatch_script() is not None):
+                            sub = _invoke_scribe_gemini_dispatch(
+                                prompt,
+                                {**seat_info, "model": _normalize_agy_label_model(model or "opus", default_family="claude")},
+                                timeout_sec=deadline - time.monotonic(),
+                                default_family="claude",
+                                _sem_acquired=outer_sem_held,
+                                async_draft=effective_async,
+                            )
+                extra = {"creationflags": sub.get("creationflags", 0)}
+                state, payload = _normalize_seat_output(sub)
+            dur_ms = int((time.monotonic() - t0) * 1000)
+            if state == "ok" and time.monotonic() > deadline:
+                state, payload = "timeout", f"seat answered after the {timeout_sec:g}s Scribe budget"
+            if state == "ok":
+                trace.append({"seat": seat, "status": "ok", "duration_ms": dur_ms})
+                res = dict(extra, ok=True, refused=False, text=payload.strip(), seat_used=seat, model_used=model,
+                           connection_id=conn_id, duration_ms=dur_ms, failover_trace=trace, prompt=prompt, shell=False,
+                           timeout_sec=timeout_sec, async_draft=effective_async)
+                LAST_SCRIBE_RUN = dict(res)
+                return res
+            trace.append({"seat": seat, "status": "timeout_exceeded" if state == "timeout" else state, "error": payload[:300]})
+            if state == "timeout":
+                saw_timeout = True
+                if is_live_subprocess and (deadline - time.monotonic() >= 8.0) and later_enabled > 0:
+                    continue
+                break
+
+        if saw_timeout:
+            return _scribe_refusal(
+                "dependency-slow-or-killed", error_code="timeout_exceeded", status_code=504, trace=trace, prompt=prompt,
+                message=f"Scribe CLI synthesis exceeded the {timeout_sec:g}s bound — existing manual draft preserved.", timeout_sec=timeout_sec,
+            )
+        return _scribe_refusal("dependency-missing", error_code="dependency_missing", trace=trace, prompt=prompt, timeout_sec=timeout_sec)
+    finally:
+        if outer_sem_held:
+            _AGY_DISPATCH_SEMAPHORE.release()
 
 
 # ── 9. Public drafting API ───────────────────────────────────────────────────
@@ -3366,6 +3411,8 @@ def synthesize_reply(
     tone: str = "",
     memory: dict[str, Any] | None = None,
     data_dir: Path | None = None,
+    *,
+    async_draft: bool = False,
 ) -> dict[str, Any]:
     """Synthesize a voice-faithful reply through the 3-stage harness. Never falls back to a template: a refused or
     invalid synthesis returns `ok: False` with the 5-state contract code/message and the existing draft unchanged."""
@@ -3373,6 +3420,7 @@ def synthesize_reply(
     mem = memory if isinstance(memory, dict) else load_scribe_memory(data_dir)
     proper_names = dict(mem.get("proper_names") or DEFAULT_PROPER_NAMES)
     msg = email_obj if isinstance(email_obj, dict) else {}
+    effective_async = bool(async_draft or msg.get("async_draft"))
     raw_subj = sanitize_email_text(msg.get("subject") or "(no subject)", max_chars=200)
     clean_subj = re.sub(r"^(?:re|fwd|fw)\s*:\s*", "", raw_subj, flags=re.I).strip() or "your note"
     clean_body = strip_quoted_headers_and_history(msg.get("body") or msg.get("snippet") or "")
@@ -3412,6 +3460,7 @@ def synthesize_reply(
         msg=msg, clean_subj=clean_subj, clean_body=clean_body, attachments=attachments, voice=voice,
         instruction=instr_without_tone, effective_tone=effective_tone, sched_prose=sched_prose,
         related_emails=related_emails, instruction_rating=instruction_rating, constraint_bundle=constraint_bundle,
+        async_draft=effective_async,
     )
     reply_subj = apply_proper_name_lexicon(raw_subj if raw_subj.lower().startswith("re:") else f"Re: {clean_subj}", proper_names)
     payload: dict[str, Any] = {
@@ -3427,6 +3476,7 @@ def synthesize_reply(
         "failover_trace": llm_res.get("failover_trace") or [],
         "related_emails_count": len(related_emails),
         "cockpit_context_count": len(instruction_rating.get("cockpit_context") or []),
+        "async_draft": effective_async,
     }
 
     if llm_res.get("refused") or not llm_res.get("ok"):
@@ -3490,6 +3540,8 @@ def transform_draft(
     instruction: str = "",
     memory: dict[str, Any] | None = None,
     data_dir: Path | None = None,
+    *,
+    async_draft: bool = False,
 ) -> str:
     """Transform a draft across Scribe's 5 modes (`warmer`, `more_formal`, `simpler`, `more_detail`, `redraft`) through
     the same Stage 1-3 harness. On refusal or validation failure the ORIGINAL draft is returned unchanged
@@ -3499,13 +3551,17 @@ def transform_draft(
     mem = memory if isinstance(memory, dict) else load_scribe_memory(data_dir)
     proper_names = dict(mem.get("proper_names") or DEFAULT_PROPER_NAMES)
     msg = email_obj if isinstance(email_obj, dict) else {}
+    effective_async = bool(async_draft or msg.get("async_draft"))
     m = str(mode or "").strip().lower()
     m = _TRANSFORM_ALIASES.get(m, m)
     original = str(body_text or "").replace("\r\n", "\n").strip()
     if m == "redraft" or not original:
         redraft_msg = {**msg, "current_draft": original or str(msg.get("current_draft") or ""),
                        "preserve_manual_draft": True}
-        res = synthesize_reply(redraft_msg, instruction=instruction, tone="" if m == "redraft" else m, memory=mem, data_dir=data_dir)
+        res = synthesize_reply(
+            redraft_msg, instruction=instruction, tone="" if m == "redraft" else m,
+            memory=mem, data_dir=data_dir, async_draft=effective_async,
+        )
         return str(res.get("body") or original) if res.get("ok") else original
 
     proper_names.update(learn_proper_names_from_text(f"{msg.get('subject') or ''}\n{original}\n{instruction}", proper_names))
@@ -3530,6 +3586,7 @@ def transform_draft(
         instruction=directive,
         effective_tone=m,
         constraint_bundle=bundle,
+        async_draft=effective_async,
     )
     if llm_res.get("refused") or not llm_res.get("ok"):
         return original

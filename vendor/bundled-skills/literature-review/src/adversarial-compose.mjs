@@ -11,11 +11,11 @@
 
 import {
   LIT_REVIEW_SAFETY_FLOOR,
-} from 'fil<path>';
+} from '<path>';
 
 const TRIAGE_RP_WIRE =
-  'fil<path>';
-const GOVERNOR_URL = 'fil<path>';
+  '<path>';
+const GOVERNOR_URL = '<path>';
 
 /**
  * Sole production entry for the literature-review final adversarial stage.

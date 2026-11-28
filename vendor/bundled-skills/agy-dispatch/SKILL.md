@@ -1,11 +1,11 @@
 ---
 name: agy-dispatch
-description: Route token-heavy read/investigate/review/edit work to Gemini via the agy CLI (~5:1 Gemini:Claude spend) — the cross-family transport underpinning every skill's adversarial review. Real label model ids only (refuses phantoms, attests substitutions), auth expiry surfaced with a remedy, no-shell steer (no PowerShell popups). Use for "dispatch to Gemini", "agy", or before any long cross-family run (--selftest answers "is agy healthy?" in one command).
+description: Route token-heavy read/investigate/review/edit work to Gemini via the agy CLI (~5:1 Gemini:Claude spend) — the cross-family transport underpinning every skill's adversarial review. Real label model ids only (refuses phantoms, attests substitutions), auth expiry surfaced with a remedy, no-shell steer (no PowerShell popups). Use for "dispatch to Gemini", "agy", or before any long cross-family run (--selftest answers "is agy healthy?" in one command). Variable Strength: Light / Standard by default (1-step-below-frontier model at medium effort; call 'agy-dispatch Heavy' for top-tier frontier model at highest effort on high-stakes runs, configurable in Anchor Setup).
 ---
 
 ## North Star (LOCKED — John, 2026-08-25)
 
-Be the BORING, HONEST transport: deliver a prompt to Gemini via the agy CLI and bring back the reply — with every failure mode SURFACED to the caller as a typed reason, and zero classes of silent degradation. (Full six refusal-criteria: NORTH-STAR.md in this folder. Sizing/tiers are the CALLER's job — deliberately.)
+Be the BORING, HONEST transport: deliver a prompt to Gemini via the agy CLI and bring back the reply — with every failure mode SURFACED to the caller as a typed reason, and zero classes of silent degradation. (Full six refusal-criteria: NORTH-STAR.md in this folder. Sizing/tiers are the CALLER's job — under Variable Strength in `AGENTS.md`, callers pass Gemini's resolved `Standard`/`Light` tier model `gemini-4-carbon` @ `medium` or `Heavy` frontier model `gemini-4-neon` @ `xhigh`, and `agy-dispatch` enforces real label IDs + substitution attestation without overriding caller tier.)
 
 
 <!-- ELEGANCE-LAW v2 -->

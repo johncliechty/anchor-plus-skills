@@ -69,6 +69,7 @@ export function isReadonlyRole({ role, label } = {}) {
 const TIER_GEMINI_MODELS = {
   heavy: GEMINI_HEAVY_MODEL,
   standard: GEMINI_STANDARD_MODEL,
+  light: GEMINI_STANDARD_MODEL,
 };
 
 export function resolveGeminiModel({ model, role, env = process.env } = {}) {
@@ -313,6 +314,7 @@ export function defaultRunGeminiCli(fullPrompt, label, {
   target = process.cwd(),
   model,
   role,
+  tier = null,
   approvalMode,
   timeoutMs = DEFAULT_GEMINI_TIMEOUT_MS,
   idleTimeoutMs = undefined,
@@ -336,10 +338,10 @@ export function defaultRunGeminiCli(fullPrompt, label, {
 
   let mdl;
   if (typeof policyResolver === 'function') {
-    const selection = policyResolver('gemini', { env });
+    const selection = policyResolver('gemini', tier ? { env, tier } : { env });
     mdl = selection.model && /\s/.test(selection.model) ? selection.model : modelLaunchArgs(selection)[1];
   } else if (processRunner === runCloseBoundProcess) {
-    const selection = resolveModelPolicy('gemini', { env });
+    const selection = resolveModelPolicy('gemini', { env, role, label, tier });
     mdl = modelLaunchArgs(selection)[1];
   } else {
     mdl = resolveGeminiModel({ model, role, env });

@@ -2270,18 +2270,22 @@ const Proto = (() => {
     };
     renderStatus._lastRefreshEta = () => {
       if (isStatusFixture) return;
+      const partsSig = JSON.stringify([rawEtaVal, computeMilestoneEtaParts(rawEtaVal)]);
       const td = document.querySelector('.blk.status.latest td[data-status-fact="eta"]');
-      if (td) {
+      if (td && td.dataset.etaDomSig !== partsSig) {
         const node = formatMilestoneEta(rawEtaVal);
         if (node && node.nodeType) {
           td.textContent = "";
           td.classList.remove("dim");
           td.appendChild(node);
+          td.dataset.etaDomSig = partsSig;
         }
       }
       const oldMBox = document.querySelector('.blk.status.latest .eta-milestone-box');
-      if (oldMBox && oldMBox.parentElement) {
-        oldMBox.parentElement.replaceChild(buildEtaMilestoneBox(rawEtaVal), oldMBox);
+      if (oldMBox && oldMBox.parentElement && oldMBox.dataset.etaDomSig !== partsSig) {
+        const nextMBox = buildEtaMilestoneBox(rawEtaVal);
+        nextMBox.dataset.etaDomSig = partsSig;
+        oldMBox.parentElement.replaceChild(nextMBox, oldMBox);
       }
       if (typeof renderStatus._syncReviewNote === "function") {
         try { renderStatus._syncReviewNote(); } catch (e) {}
@@ -6841,13 +6845,34 @@ const Proto = (() => {
   }
 
   let epoch = null;
+  let _pollErrorStreak = 0;
+  let _pollIssueNotice = "";
   async function poll() {
     for (;;) {
       if (parked) { await new Promise(res => { _unpark = res; }); continue; }
+      const t0 = Date.now();
       try {
         _pollAbort = new AbortController();
         const r = await fetch(api("/api/events?since=" + seq), { signal: _pollAbort.signal });
-        const j = await r.json();
+        let j = null;
+        try { j = await r.json(); } catch (_je) { j = null; }
+        if (!r.ok || !j || !Array.isArray(j.events)) {
+          _pollErrorStreak += 1;
+          if ((r.status === 401 || r.status === 403) && _pollIssueNotice !== "auth") {
+            _pollIssueNotice = "auth";
+            addLine("sys", "— this browser is not logged in to Anchor; live stream paused —");
+          } else if (r.status === 404 && _pollErrorStreak >= 2 && _pollIssueNotice !== "missing") {
+            _pollIssueNotice = "missing";
+            addLine("sys", "— this effort folder was renamed or archived; live stream paused —");
+          }
+          const backoffMs = r.status === 404 && _pollErrorStreak >= 3
+            ? 30000
+            : Math.min(30000, 3000 * Math.pow(2, Math.min(_pollErrorStreak - 1, 3)));
+          await new Promise(res => setTimeout(res, backoffMs));
+          continue;
+        }
+        _pollErrorStreak = 0;
+        _pollIssueNotice = "";
         // engine restarted/rebuilt: its seq counter reset, so our `since` is
         // stale - reset and replay history rather than go silent forever
         const ep = j.state && j.state.epoch;
@@ -6861,7 +6886,8 @@ const Proto = (() => {
         }
         if (ep !== undefined) epoch = ep;
         if (j.gap) addLine("sys", "— some output scrolled past (buffer limit) —");
-        (j.events || []).forEach(ev => { seq = Math.max(seq, ev.seq); handle(ev); });
+        const evList = j.events || [];
+        evList.forEach(ev => { seq = Math.max(seq, ev.seq); handle(ev); });
         updateState(j.state);
         if (j.stamp && j.stamp !== stamp) {
           const was = stamp;
@@ -6870,9 +6896,14 @@ const Proto = (() => {
           if (!TILE && !TALK) await loadPlan();
           if (was) tileSay("stamp", { stamp: stamp });
         }
+        if (!evList.length && (Date.now() - t0) < 150) {
+          await new Promise(res => setTimeout(res, 250));
+        }
       } catch (e) {
         if (parked) continue;   // the park cut the long-poll; nothing failed
-        await new Promise(res => setTimeout(res, 3000));
+        _pollErrorStreak += 1;
+        const backoffMs = Math.min(30000, 3000 * Math.pow(2, Math.min(_pollErrorStreak - 1, 3)));
+        await new Promise(res => setTimeout(res, backoffMs));
       }
     }
   }
@@ -6967,12 +6998,16 @@ const Proto = (() => {
   async function stampPoll() {
     let _wasWorkingPoll = false;
     let _inconsistentRetriedStamp = null;
+    let _stateErrStreak = 0;
     for (;;) {
-      await new Promise(res => setTimeout(res, 3500));
-      if (parked) continue;
+      const waitMs = _stateErrStreak > 0 ? Math.min(30000, 3500 * Math.pow(2, Math.min(_stateErrStreak, 3))) : 3500;
+      await new Promise(res => setTimeout(res, waitMs));
+      if (parked || (typeof document !== "undefined" && document.visibilityState === "hidden")) continue;
       try {
         const r = await fetch(api("/api/state"));
+        if (!r.ok) { _stateErrStreak += 1; continue; }
         const j = await r.json();
+        _stateErrStreak = 0;
         updateState(j);
         const workingNow = Boolean(j && (j.busy || j.working_bg || (j.alive && j.queued)));
         const workingChanged = workingNow !== _wasWorkingPoll;
@@ -7054,6 +7089,7 @@ const Proto = (() => {
     renderNextStepsTile();
   }
 
+  let _lastPostedStateSig = "";
   function updateState(st) {
     if (st) lastState = st;
     st = lastState;
@@ -7061,20 +7097,24 @@ const Proto = (() => {
     const computedColor = stateColor(st);
     const computedWord = stateWord(st) || "";
     const readyNow = computedColor === "orange";
-    tileSay("state", { light: computedColor, ready: readyNow, reason: computedWord, busy: !!st.busy, alive: !!st.alive, queued: st.queued || 0, word: computedWord });
-    if (window.parent && window.parent !== window) {
-      try {
-        window.parent.postMessage({
-          proto: "anchor-cockpit-state",
-          pid: PARAMS.get("pid") || window.STEWARD_PID || "",
-          dir: DIR || "",
-          general: !!GENERAL,
-          term: TERM || "",
-          light: computedColor,
-          ready: readyNow,
-          reason: computedWord
-        }, location.origin);
-      } catch (e) {}
+    const postSig = [computedColor, readyNow ? "1" : "0", computedWord, st.busy ? "1" : "0", st.alive ? "1" : "0", st.queued || 0].join("|");
+    if (postSig !== _lastPostedStateSig) {
+      _lastPostedStateSig = postSig;
+      tileSay("state", { light: computedColor, ready: readyNow, reason: computedWord, busy: !!st.busy, alive: !!st.alive, queued: st.queued || 0, word: computedWord });
+      if (window.parent && window.parent !== window) {
+        try {
+          window.parent.postMessage({
+            proto: "anchor-cockpit-state",
+            pid: PARAMS.get("pid") || window.STEWARD_PID || "",
+            dir: DIR || "",
+            general: !!GENERAL,
+            term: TERM || "",
+            light: computedColor,
+            ready: readyNow,
+            reason: computedWord
+          }, location.origin);
+        } catch (e) {}
+      }
     }
     if(_answerQuestionId && !(st.pending_questions||[]).some(q=>q.id===_answerQuestionId))_answerQuestionId=null;
     const busy = $("[data-busy]");
@@ -7245,10 +7285,14 @@ const Proto = (() => {
           : isDepMissing
             ? ("Unpriced \u00b7 " + (tokensTotal ? compactTok : "0") + " tok" + compactDur + " \u25be")
             : "No spend recorded yet";
-      spend.textContent = "";
-      spend.appendChild(el("span", "spend-pill-main", pillMainText));
-      const srSpan = el("span", "spend-sr", " " + legacySpendText);
-      spend.appendChild(srSpan);
+      const pillDomSig = pillMainText + "\n" + legacySpendText;
+      if (spend._lastPillDomSig !== pillDomSig || !spend.childElementCount) {
+        spend._lastPillDomSig = pillDomSig;
+        spend.textContent = "";
+        spend.appendChild(el("span", "spend-pill-main", pillMainText));
+        const srSpan = el("span", "spend-sr", " " + legacySpendText);
+        spend.appendChild(srSpan);
+      }
       if (!effortUsage) spend.title = "Session: " + sessionCostText + sessionTokensText;
       if (jobsText) spend.title += " · Delegated jobs" + jobsText.replace(/^ · /, ": ") + " · " + recordedTokenText(jobsUsage);
       if (kidsText) spend.title += " · Sub-agents" + kidsText.replace(/^ · /, ": ");
@@ -7394,6 +7438,17 @@ const Proto = (() => {
     }
     const wake = $("[data-wake]");
     if (wake) wake.textContent = st.alive ? "Sleep" : "Wake";
+    const strPill = $("[data-strength-pill]");
+    if (strPill) {
+      const isHeavy = String(st.cockpit_strength || "standard").toLowerCase() === "heavy";
+      strPill.textContent = isHeavy ? "⚡ Heavy" : "Standard";
+      strPill.dataset.strength = isHeavy ? "heavy" : "standard";
+      strPill.style.borderColor = isHeavy ? "rgba(245,158,11,0.65)" : "";
+      strPill.style.color = isHeavy ? "#fbbf24" : "";
+      strPill.title = isHeavy
+        ? "Cockpit Variable Strength: ⚡ Heavy (frontier @ max effort) · Click to switch to Standard"
+        : "Cockpit Variable Strength: Standard (one below frontier @ medium effort) · Click to switch to ⚡ Heavy";
+    }
     const drive = $("[data-drive]");
     if (drive) {
       drive.textContent = st.drive ? "⏸ Pause" : "▶ Go";
@@ -7872,6 +7927,9 @@ const Proto = (() => {
     if (sort === "name") rows.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
     else if (sort === "type") rows.sort((a, b) => (a.name.split(".").pop() || "").toLowerCase().localeCompare((b.name.split(".").pop() || "").toLowerCase()) || a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
     else rows.sort((a, b) => b.i - a.i);   // "date": newest produced first
+    const filesDomSig = JSON.stringify([rows.map(r => r.f), files.length, q, sort]);
+    if (list.dataset.filesDomSig === filesDomSig && list.childElementCount > 0) return;
+    list.dataset.filesDomSig = filesDomSig;
     list.textContent = "";
     rows.forEach(({ f, name }) => {
       const row = el("div", "frow");
@@ -8527,16 +8585,24 @@ const Proto = (() => {
     const grow = () => {
       const minimum = parseFloat(getComputedStyle(ta).minHeight) || 46;
       const prevScroll = ta.scrollTop;
+      const sc = scrollEl();
+      const preserveChatScroll = sc && sc._follow === false ? sc.scrollTop : null;
+      const comp = ta.parentElement;
+      const prevCompMin = comp ? comp.style.minHeight : "";
       if (!_composing) {
+        if (comp && comp.offsetHeight) comp.style.minHeight = comp.offsetHeight + "px";
+        const curH = parseFloat(ta.style.height) || ta.offsetHeight || 0;
         ta.style.height = "auto";
         const target = Math.max(minimum, Math.min(ta.scrollHeight + 2, innerHeight * 0.4));
-        ta.style.height = target + "px";
-        if (prevScroll) ta.scrollTop = prevScroll;
+        ta.style.height = (Math.abs(curH - target) > 0.5 ? target : curH || target) + "px";
+        if (comp) comp.style.minHeight = prevCompMin;
+        if (prevScroll > 0) ta.scrollTop = prevScroll;
       } else if (ta.scrollHeight > ta.clientHeight) {
         const targetC = Math.max(minimum, Math.min(ta.scrollHeight + 2, innerHeight * 0.4));
         if (targetC > (parseFloat(ta.style.height) || 0)) ta.style.height = targetC + "px";
       }
       ta.style.overflowY = ta.scrollHeight > ta.clientHeight ? "auto" : "hidden";
+      if (preserveChatScroll !== null && sc) sc.scrollTop = preserveChatScroll;
     };
     ta.addEventListener("input", grow);
     // Wave 3 (2026-11-20): Crash-durable unified composer drafts across full AI cockpit (/steward/v1)
@@ -9204,6 +9270,24 @@ const Proto = (() => {
       await post("/api/engine", { action: on ? "drive_off" : "drive_on" });
       if (!on && !(lastState && lastState.alive)) await post("/api/say", { text: "go", clear_draft: false });
     };
+    const strPill = $("[data-strength-pill]");
+    if (strPill) strPill.onclick = async () => {
+      const cur = strPill.dataset.strength || ((lastState && lastState.cockpit_strength) || "standard");
+      const next = cur === "heavy" ? "standard" : "heavy";
+      const r = await post("/api/strength", { strength: next });
+      try {
+        const j = await r.json();
+        if (j && j.ok) {
+          const applied = String(j.cockpit_strength || next).toLowerCase();
+          if (lastState) lastState.cockpit_strength = applied;
+          const isHeavy = applied === "heavy";
+          strPill.textContent = isHeavy ? "⚡ Heavy" : "Standard";
+          strPill.dataset.strength = applied;
+          strPill.style.borderColor = isHeavy ? "rgba(245,158,11,0.65)" : "";
+          strPill.style.color = isHeavy ? "#fbbf24" : "";
+        }
+      } catch (_) {}
+    };
     const mini = $("[data-min]");
     const app = $(".app");
     if (mini) mini.onclick = () => {
@@ -9350,12 +9434,21 @@ const Proto = (() => {
     poll();
     stampPoll();
     setInterval(() => {
+      if (parked || (typeof document !== "undefined" && document.visibilityState === "hidden")) return;
       updateState(null);
-      if (!parked && wantPanes && (!_mapLoaded || !_planLoaded || !_histLoaded || !_statusLoaded || !_delivLoaded)) {
+      if (wantPanes && (!_mapLoaded || !_planLoaded || !_histLoaded || !_statusLoaded || !_delivLoaded)) {
         ensureCockpitDataLoaded();
       }
     }, 2500);
-    setInterval(() => updateState(null), 1000); // busy clock repaint
+    setInterval(() => {
+      if (parked || (typeof document !== "undefined" && document.visibilityState === "hidden")) return;
+      updateState(null);
+    }, 1000); // busy clock repaint
+    if (typeof document !== "undefined" && document.addEventListener) {
+      document.addEventListener("visibilitychange", () => {
+        if (!parked && document.visibilityState === "visible") updateState(null);
+      });
+    }
   }
 
   window.addEventListener("anchor-notebooks-changed", () => {

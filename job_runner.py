@@ -1004,8 +1004,9 @@ def launch(lane: str, cwd=None, extra_args=None, env=None,
     # ChatGPT always uses its receipt-bearing adapter, even with this seam set.
     runner_override = (backend != BACKEND_CHATGPT
                        and bool(os.environ.get(RUNNER_CMD_ENV, "").strip()))
+    eff_job_tier = (env or {}).get("ANCHOR_STRENGTH") or (env or {}).get("TRIO_TIER") or os.environ.get("ANCHOR_STRENGTH") or os.environ.get("TRIO_TIER") or None
     selection = (None if command or runner_override
-                 else _provider_setup.resolve_quality(backend, settings_snapshot, provider_connection, surface="jobs"))
+                 else _provider_setup.resolve_quality(backend, settings_snapshot, provider_connection, surface="jobs", tier=eff_job_tier))
     job_id = job_id or uuid.uuid4().hex
     # Pin this job's storage dir for its lifetime (resolved now, once).
     pinned = jobs_dir()
@@ -2840,6 +2841,7 @@ def _finalize(job_id: str, exit_code, result_envelope=None) -> None:
                         "model_attested": bool(result_envelope.get("model_attested") is True or served_mdl),
                     },
                     role=rec.get("lane"),
+                    tier=req_policy.get("requested_strength"),
                 )
                 if not att_res.get("ok"):
                     claude_attestation_ok = False

@@ -228,6 +228,93 @@
     return hit;
   }
 
+  function mountWizardVariableStrength(box, vsState){
+    if(!box || !vsState)return;
+    const cfg=vsState.config||{top_effort:'highest',heavy:{model_steps_below:0,effort_steps_below:0},light:{model_steps_below:1,effort_steps_below:2},heavy_skills:['anvil','chekhov','aegis','superjump']};
+    const skills=Array.isArray(vsState.skills)?vsState.skills:[];
+    const draft={
+      top_effort:cfg.top_effort||'highest',
+      heavy:{model_steps_below:Number(cfg.heavy&&cfg.heavy.model_steps_below||0),effort_steps_below:Number(cfg.heavy&&cfg.heavy.effort_steps_below||0)},
+      light:{model_steps_below:Number(cfg.light&&cfg.light.model_steps_below!==undefined?cfg.light.model_steps_below:1),effort_steps_below:Number(cfg.light&&cfg.light.effort_steps_below!==undefined?cfg.light.effort_steps_below:2)},
+      heavy_skills:Array.isArray(cfg.heavy_skills)?[...cfg.heavy_skills]:['anvil','chekhov','aegis','superjump']
+    };
+    box.innerHTML=`
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+        <strong style="font-size:15px;color:#fde68a">⚡ Variable Strength — Choose What <code>Heavy</code> &amp; <code>Light</code> Mean for Skills</strong>
+        <span class="pill" style="background:#451a03;color:#fde68a">Relative Steps Below Your Subscription Top Tier</span>
+      </div>
+      <p class="muted" style="margin:0 0 10px;font-size:12.5px">Anchor queries your signed-in subscriptions for their newest top-tier model and effort. Define <strong>Heavy</strong> and <strong>Light</strong> in steps below that ceiling, and click any skill below to set its default.</p>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:10px;margin-bottom:10px">
+        <div>
+          <label style="font-size:12px">Highest Effort Ceiling (0 Steps Below)</label>
+          <select data-wvs="top_effort">
+            <option value="highest">Auto Highest (Ultra / Max / XHigh / High)</option>
+            <option value="ultra">Ultra</option>
+            <option value="max">Max</option>
+            <option value="xhigh">XHigh</option>
+            <option value="high">High</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:12px">⚡ Heavy (Model / Effort Steps Below Top)</label>
+          <div style="display:flex;gap:6px">
+            <select data-wvs="heavy_m"><option value="0">Top Tier (0)</option><option value="1">-1 Model</option><option value="2">-2 Model</option></select>
+            <select data-wvs="heavy_e"><option value="0">Top Effort (0)</option><option value="1">-1 Effort (High)</option><option value="2">-2 Effort (Med)</option></select>
+          </div>
+        </div>
+        <div>
+          <label style="font-size:12px">🪶 Light / Standard (Model / Effort Steps Below Top)</label>
+          <div style="display:flex;gap:6px">
+            <select data-wvs="light_m"><option value="1">-1 Model (Default)</option><option value="2">-2 Model</option><option value="0">Top Tier (0)</option></select>
+            <select data-wvs="light_e"><option value="2">-2 Effort (Med)</option><option value="1">-1 Effort (High)</option><option value="3">-3 Effort (Low)</option><option value="0">Top Effort (0)</option></select>
+          </div>
+        </div>
+      </div>
+      <div data-wvs-skills="1" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button type="button" class="btn primary" data-wvs-save="1">✓ Save Heavy / Light &amp; Skill Defaults</button>
+        <span class="muted" data-wvs-msg="1" style="font-size:12px"></span>
+      </div>
+    `;
+    const q=sel=>box.querySelector(sel);
+    q('[data-wvs="top_effort"]').value=draft.top_effort;
+    q('[data-wvs="heavy_m"]').value=String(draft.heavy.model_steps_below);
+    q('[data-wvs="heavy_e"]').value=String(draft.heavy.effort_steps_below);
+    q('[data-wvs="light_m"]').value=String(draft.light.model_steps_below);
+    q('[data-wvs="light_e"]').value=String(draft.light.effort_steps_below);
+    const sWrap=q('[data-wvs-skills="1"]');
+    function drawPills(){
+      sWrap.replaceChildren();
+      const hSet=new Set(draft.heavy_skills);
+      skills.forEach(sk=>{
+        const on=hSet.has(sk.id);
+        const b=document.createElement('button');
+        b.type='button';
+        b.className='btn';
+        b.style.cssText='padding:4px 9px;font-size:12px;border-radius:999px;border:1px solid '+(on?'#f59e0b':'#334155')+';background:'+(on?'rgba(245,158,11,0.16)':'#0b111d')+';color:'+(on?'#fde68a':'#cbd5e1');
+        b.textContent=(on?'⚡ ':'🪶 ')+sk.label;
+        b.onclick=()=>{
+          if(hSet.has(sk.id))hSet.delete(sk.id);else hSet.add(sk.id);
+          draft.heavy_skills=skills.filter(x=>hSet.has(x.id)).map(x=>x.id);
+          drawPills();
+        };
+        sWrap.append(b);
+      });
+    }
+    drawPills();
+    q('[data-wvs-save="1"]').onclick=async()=>{
+      draft.top_effort=q('[data-wvs="top_effort"]').value;
+      draft.heavy={model_steps_below:Number(q('[data-wvs="heavy_m"]').value||0),effort_steps_below:Number(q('[data-wvs="heavy_e"]').value||0)};
+      draft.light={model_steps_below:Number(q('[data-wvs="light_m"]').value||1),effort_steps_below:Number(q('[data-wvs="light_e"]').value||2)};
+      const msg=q('[data-wvs-msg="1"]');
+      msg.textContent='Saving…';
+      try{
+        const res=await postWizardAction('save_variable_strength',{variable_strength:draft});
+        msg.textContent='✓ '+(res.message||'Saved Variable Strength settings!');
+      }catch(e){msg.textContent='⚠ '+e.message;}
+    };
+  }
+
   /* -----------------------------------------------------------------------
    * 3. Hard-Drive Folder Checkmark Tree + Gandalf Drag-Merge / Split Workbench
    * --------------------------------------------------------------------- */
@@ -800,6 +887,9 @@
     }
     if(b.email_status){
       updateEmailBadge(b.email_status);
+    }
+    if(b.variable_strength && $('wizVariableStrengthCard')){
+      mountWizardVariableStrength($('wizVariableStrengthCard'), b.variable_strength);
     }
 
     const savedProposals=(b.state && b.state.projects && b.state.projects.gandalf_proposals)||[];

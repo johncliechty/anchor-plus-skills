@@ -4,7 +4,7 @@
 // tidyIdyKnobs → knobsForSkill('tidy-idy') → BAND_MAPPINGS['tidy-idy'].
 // No path-local depth→number tables. Shared by debate, remove, and launch.
 
-import { tidyIdyKnobs } from 'fil<path>';
+import { tidyIdyKnobs } from '<path>';
 
 /**
  * First non-empty string token (trim). Empty / whitespace → null.

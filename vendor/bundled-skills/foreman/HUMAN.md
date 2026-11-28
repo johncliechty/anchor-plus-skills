@@ -25,6 +25,10 @@
 - Not a silent scope-creeper; ambiguity is a stop, not a guess
 - Not a green light for empty work (vacuous “pass” when tests prove nothing is refused)
 
+## Variable Strength (`Foreman` Standard Default vs. `Foreman Heavy`) — What to Call When
+- **Call `Foreman` (default = `Standard` · one generalist model below frontier @ `medium` effort on wave executors, cross-family reviewers, and elegance seat)** for well-specified feature waves, UI/API wiring, and standard test-gated builds.
+- **Call `Foreman Heavy` (`⚡ Heavy` · frontier model @ full/max effort on every wave executor and cross-family reviewer — say `"Foreman Heavy"`, set `TRIO_TIER=heavy`, or toggle `⚡ Heavy` on your AI Cockpit)** for security-critical, concurrency/lock-sensitive, or subtle numerical/compiler multi-wave builds.
+
 ## How to start (human)
 1. Put description, implementation plan (with `## Wave N` sections and optional `### Wave N.k` sub-waves declaring disjoint `Writes:` and `Depends-On:`), and test command in the project.
 2. Confirm the contract Foreman reads back before build starts.

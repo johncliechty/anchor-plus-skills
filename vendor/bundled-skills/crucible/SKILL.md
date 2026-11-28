@@ -12,7 +12,7 @@ description: >-
   Deep-Think Synthesizer (steers, never decides) and decided by a context-free
   Judge plus the user (the convergence authority). A Node engine that IMPORTS
   Foreman's durability/git/driver modules (never forks) and SPAWNS
-  locate-plan.mjs as the machine well-formedness gate. STATUS (2026-08-24): engine
+  locate-plan.mjs as the machine well-formedness gate. Variable Strength: Light / Standard by default (1-step-below-frontier model at medium effort; call 'Crucible Heavy' for top-tier frontier model at highest effort on high-stakes runs, configurable in Anchor Setup). STATUS (2026-08-24): engine
   LIVE and in regular use (depth bands, Speaking-Law decision asks, first-dry stop);
   current verified status lives in the foundry PLAN.md, never in this line.
 ---
@@ -105,7 +105,7 @@ heavyweight planner that turns an intent — or a messy existing project — int
 **vetted, gold-standard, Foreman-ready implementation plan**, while **never
 drifting** from the project's locked objective.
 
-> **Tier definition (Heavy vs regular · always-cross-model · seat mapping):** canonical in `AGENTS.md` (Foundry root on the author host; your install root in a distributed bundle) → "Skill tiers". A `-Heavy` run uses top-frontier models on EVERY seat regardless of the base session (delegate the frontier seat to a frontier-pinned sub-agent if the base session isn't frontier); foundry skills are ALWAYS true cross-model. Do not re-define tiers locally.
+> **Variable Strength (`Standard` default · `Crucible Heavy` override · always-cross-model · seat mapping):** canonical in `AGENTS.md` (Foundry root on the author host; your install root in a distributed bundle) → "Skill tiers". Plain `Crucible` defaults to **`Standard`** (one generalist model below frontier at `medium` effort across Synthesizer, Sharks, and Judge); **`Crucible Heavy`** (`TRIO_TIER=heavy` / `ANCHOR_STRENGTH=heavy` / Cockpit `⚡ Heavy`) routes EVERY seat to the frontier model at highest supported effort (use for cross-repo/security/concurrency architectures, novel `SPIKE-FIRST` designs, and high-cost multi-wave plans). Do not re-define tiers locally.
 
 > **Status (2026-08-24, elegance sweep): the engine is LIVE and in regular use.** The
 > three-stage pipeline, Shark-Tank round engine, Synthesizer + Judge, two-gate

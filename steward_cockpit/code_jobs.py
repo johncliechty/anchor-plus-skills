@@ -882,14 +882,55 @@ def _remove_foreman_config(wt):
         pass
 
 
-def _job_attribution_env(cdir, job_id, repo=None, *, source="code-job") -> dict:
-    """Build child attribution + real ANCHOR_DATA_DIR env for code-job workers and reviewers."""
+def _read_cockpit_strength_raw(cdir) -> str | None:
+    """Return explicit persisted cockpit strength ('heavy'|'standard') if .ecgberht/strength.json exists, else None."""
+    if not cdir:
+        return None
+    try:
+        p = Path(str(cdir)) / ".ecgberht" / "strength.json"
+        if p.is_file():
+            data = json.loads(p.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                raw = str(data.get("strength") or "").strip().lower()
+                if raw in ("heavy", "standard", "light"):
+                    return raw
+    except Exception:
+        pass
+    return None
+
+
+def _resolve_code_job_strength(cdir, *, brief="", skill="", worker="coder") -> str | None:
+    """Resolve Variable Strength tier ('standard'|'heavy'|'light') when variable_strength policy or explicit qualifier is active."""
+    try:
+        import anchor_settings as _aset
+        import model_policy as _mp
+        settings = _aset.get_launch_settings()
+        qual = _mp.parse_leading_skill_qualifier(brief)
+        ckp_raw = _read_cockpit_strength_raw(cdir)
+        if not (_mp.is_variable_strength_active(settings=settings) or qual.get("strength") or ckp_raw):
+            return None
+        eff_skill = skill or qual.get("skill") or ("foreman" if worker == "foreman" else None)
+        return _mp.resolve_skill_strength(
+            skill=eff_skill,
+            explicit_strength=qual.get("strength"),
+            cockpit_strength=ckp_raw,
+        )
+    except Exception:
+        return None
+
+
+def _job_attribution_env(cdir, job_id, repo=None, *, source="code-job", strength=None) -> dict:
+    """Build child attribution + real ANCHOR_DATA_DIR + Variable Strength env for code-job workers and reviewers."""
     out_env = {}
     try:
         import paths as _paths
         out_env["ANCHOR_DATA_DIR"] = str(_paths.data_dir())
     except Exception:
         pass
+    if strength in ("standard", "heavy", "light"):
+        out_env["TRIO_TIER"] = strength
+        out_env["ANCHOR_STRENGTH"] = strength
+        out_env["ANCHOR_ALLOW_HEAVY_QUOTA_STEPDOWN"] = "1"
     try:
         import usage_capture as _uc
         eff = str(cdir) if cdir else None
@@ -930,7 +971,7 @@ def _start_foreman(cdir, job, wt, plan_text, profile, settings_dir):
     }), encoding="utf-8")
     env = {k: v for k, v in os.environ.items() if not k.startswith(("TRIO_DRIVER_", "TRIO_MODEL_", "CLAUDE_MODEL_"))}
     env.pop("ANTHROPIC_API_KEY", None)          # subscription billing, as every skill launcher does
-    env.update(_job_attribution_env(cdir, jid, job.get("repo"), source="code-job"))
+    env.update(_job_attribution_env(cdir, jid, job.get("repo"), source="code-job", strength=job.get("strength")))
     import paths as _paths
     env.update(
         CRUCIBLE_AGENT_LIVE="1",
@@ -1320,7 +1361,7 @@ def run_command(job, tree, argv, *, output_limit=128 * 1024):
     with log.open("wb") as output:
         fatal_launch = None
         cmd_env = dict(os.environ)
-        cmd_env.update(_job_attribution_env(cdir, job.get("id"), job.get("repo"), source="code-job"))
+        cmd_env.update(_job_attribution_env(cdir, job.get("id"), job.get("repo"), source="code-job", strength=job.get("strength")))
         try:
             run = _popen_contained(argv, str(tree), cmd_env, output)
         except _Uncontained as exc:
@@ -1880,18 +1921,25 @@ def run_review(job, tree, head, delta_from=""):
         and str(rec.get("family") or "").strip().lower() == "claude"
         and rec.get("model") != "delta-noop"
         and rec.get("served_via") != "agy-dispatch"
-        and (not seam or rec.get("requested_model") == "claude-fable-5-2")
+        and (not seam or rec.get("requested_model") in ("claude-fable-5-2", "claude-opus-5-5"))
     ):
         import model_policy as _mp
+        _job_strength = job.get("strength")
+        _default_req = (
+            _mp.CANONICAL_CLAUDE_STANDARD_MODEL
+            if _job_strength in ("standard", "light")
+            else _mp.CANONICAL_CLAUDE_FABLE_MODEL
+        )
         attested_rev = _mp.attest_claude_fable_receipt(
             {
                 "ok": True,
-                "requested_model": rec.get("requested_model") or _mp.CANONICAL_CLAUDE_FABLE_MODEL,
+                "requested_model": rec.get("requested_model") or _default_req,
                 "model_served": rec.get("model"),
                 "model_attested": bool(rec.get("model_attested")),
             },
             role="review",
             label="review:code-job",
+            tier=_job_strength,
         )
         if not attested_rev.get("ok"):
             rec.update(ok=False, status="attestation_mismatch", error=attested_rev.get("error"))
@@ -2261,12 +2309,15 @@ def start(cdir, repo, brief, check="", engine_factory=None, steward="", coder=""
             seeded_untracked = {}
             if not installed and not non_git_source_dir:
                 seeded_untracked = _seed_untracked_inputs(root, wt, work_dir)
+            eff_strength = _resolve_code_job_strength(cdir, brief=brief, skill=skill, worker=worker)
             job = {"id": job_id, "repo": str(root), "branch": branch, "worktree": str(wt), "base": base, "brief": brief,
                    "work_dir": work_dir, "attempt": 1, "phase": "producing", "phase_at": time.time(),
                    "repo_dirt": served_dirt,
                    "check": check, "status": "running", "started": time.strftime("%Y-%m-%d %H:%M:%S"), "land_to": land_to, "outputs": outputs,
                    "steward_dir": str(cdir), "steward": steward, "worker": worker, "coder_family": family,
                    "started_by": str(actor or "the steward"), "size": size, "tier": tier_note}
+            if eff_strength:
+                job["strength"] = eff_strength
             job.setdefault("steward_dir", str(cdir))
             if reviewer:
                 job["reviewer_family"] = reviewer
@@ -2360,9 +2411,10 @@ def start(cdir, repo, brief, check="", engine_factory=None, steward="", coder=""
         if eng is None:
             raise RuntimeError("no engine slot for the coder")
         eng.code_job = {"cdir": str(cdir), "id": job_id, "repo": str(root),
-                        "worktree": str(wt), "work_dir": work_dir, "outputs": outputs}
+                        "worktree": str(wt), "work_dir": work_dir, "outputs": outputs,
+                        **({"strength": job["strength"]} if job.get("strength") else {})}
         try:
-            eng.attribution_env = _job_attribution_env(cdir, job_id, root, source="code-job")
+            eng.attribution_env = _job_attribution_env(cdir, job_id, root, source="code-job", strength=job.get("strength"))
         except Exception:
             pass
         eng.job_observation = {}

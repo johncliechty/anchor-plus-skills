@@ -96,8 +96,7 @@ def account_env(connection):
 
 
 def executable(family):
-    name = {"chatgpt": "codex", "claude": "claude", "grok": "grok", "gemini": "agy"}[family]
-    return shutil.which(name + (".exe" if os.name == "nt" else ""))
+    return model_policy.resolve_cli_executable(family)
 
 
 class HiddenProcess:
@@ -109,7 +108,11 @@ class HiddenProcess:
         self.events = queue.Queue(maxsize=256)
         self.stop = threading.Event()
         self.total = 0
-        self.proc = subprocess.Popen(argv, env=env, cwd=str(Path(__file__).parent),
+        try:
+            safe_argv = model_policy.safe_cli_argv(argv[0], argv[1:], env=env) if argv else list(argv)
+        except ValueError:
+            raise NativeError() from None
+        self.proc = subprocess.Popen(safe_argv, env=env, cwd=str(Path(__file__).parent),
                                      stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                      shell=False, creationflags=NO_WINDOW,
                                      start_new_session=os.name != "nt")
@@ -470,9 +473,12 @@ class NativeProviders:
             try:
                 account = client.rpc("account/read", {"refreshToken": False}).get("account")
                 subscription = isinstance(account, dict) and account.get("type") == "chatgpt"
+                plan_type = str(account.get("planType") or "").strip() if isinstance(account, dict) else ""
                 out = {"auth": "signed_in" if subscription else "different_billing_mode" if account else "signed_out",
                        "test": "passed" if subscription else "not_tested", "auth_source": "Codex account/read",
                        "account_identity": masked_identity(account.get("email")) if subscription else None,
+                       "plan": f"ChatGPT {plan_type.title()}" if (subscription and plan_type) else ("ChatGPT Subscription" if subscription else ""),
+                       "subscription_type": plan_type.lower() if subscription and plan_type else "",
                        "allowance": {"state": "unknown", "source": "Codex account/rateLimits/read", "windows": []},
                        "provider_usage": {"state": "unknown", "source": "Codex account/usage/read", "tokens": None}}
                 if subscription:
@@ -513,8 +519,21 @@ class NativeProviders:
                     raise NativeError("unsupported")
             subscription = account.get("loggedIn") is True and account.get("authMethod") == "claude.ai"
             state = "signed_in" if subscription and code == 0 else "different_billing_mode" if account.get("loggedIn") else "signed_out" if code in (0, 1) else "error"
+            sub_type = str(account.get("subscriptionType") or "").strip()
+            plan_tier = str(account.get("planTier") or "").strip()
+            plan_label = ""
+            if state == "signed_in":
+                if sub_type and plan_tier and plan_tier.lower() != sub_type.lower():
+                    plan_label = f"Claude {sub_type.title()} ({plan_tier})"
+                elif sub_type:
+                    plan_label = f"Claude {sub_type.title()}"
+                else:
+                    plan_label = "Claude Subscription"
             return {"auth": state, "test": "passed" if state == "signed_in" else "not_tested", "auth_source": "claude auth status",
                     "account_identity": masked_identity(account.get("email")),
+                    "plan": plan_label,
+                    "subscription_type": sub_type.lower(),
+                    "plan_tier": plan_tier.lower(),
                     "allowance": {"state": "unsupported", "source": "Account-qualified Claude rate_limit_event", "windows": []},
                     "provider_usage": {"state": "unsupported", "source": "Native CLI", "tokens": None}}
         if family == "grok":

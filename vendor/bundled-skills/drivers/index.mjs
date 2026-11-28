@@ -17,7 +17,13 @@ import path from 'node:path';
 import { HaltError } from '../foreman/bin/foreman-lib.mjs';
 import { makeReliableAgent, classifyFault } from './reliability.mjs';
 import { claudeDriver } from './claude.mjs';
-import { loadPolicyPrefs, resolveModelPolicy, policyEnvironment } from './model-policy.mjs';
+import {
+  loadPolicyPrefs,
+  resolveModelPolicy,
+  policyEnvironment,
+  isClaudeVerificationSeat,
+  normalizeClaudeFableModel,
+} from './model-policy.mjs';
 import { geminiCliDriver } from './gemini-cli.mjs';
 import { geminiDriver } from './gemini.mjs';
 import { openaiDriver } from './openai.mjs';
@@ -379,9 +385,12 @@ function servedFromRaw(raw, driverName, { accepted = false } = {}) {
   const familyAttested = (nested?.family_attested === true || raw.family_attested === true)
     && RECEIPT_FAMILIES.has(normalizedFamily);
   const modelValue = nested?.model ?? raw.model_served ?? null;
-  const normalizedModel = typeof modelValue === 'string' && modelValue.trim()
+  const rawTrimmedModel = typeof modelValue === 'string' && modelValue.trim()
     ? modelValue.trim().slice(0, 240)
     : null;
+  const normalizedModel = rawTrimmedModel && normalizedFamily === 'claude'
+    ? normalizeClaudeFableModel(rawTrimmedModel)
+    : rawTrimmedModel;
   const modelAttested = (nested?.model_attested === true || raw.model_attested === true)
     && normalizedModel !== null;
   if (!accepted && !familyAttested && !modelAttested) return null;
@@ -528,6 +537,7 @@ async function runDispatcherAttempt(driver, opts, ordinal, kind) {
     ));
   const last = transportAttempts.at(-1);
   const verification = isVerificationRole({ role: opts.role, label: opts.label });
+  const claudeVerification = isClaudeVerificationSeat({ role: opts.role, label: opts.label });
   let status;
   let served = null;
   let error = null;
@@ -557,6 +567,19 @@ async function runDispatcherAttempt(driver, opts, ordinal, kind) {
   } else if (verification && !last.served?.family_attested) {
     status = 'seat_unavailable';
     error = errorInfo('served_unattested', 'verification requires an attested served family');
+  } else if (
+    claudeVerification
+    && requested.family === 'claude'
+    && (normalizeClaudeFableModel(requested.model) === 'claude-fable-5-2'
+        || normalizeClaudeFableModel(requested.model) === 'claude-opus-5-5')
+    && (last.served?.model_attested !== true
+        || normalizeClaudeFableModel(last.served?.model) !== normalizeClaudeFableModel(requested.model))
+  ) {
+    status = 'seat_unavailable';
+    error = errorInfo(
+      'attestation_mismatch',
+      `verification seat requested ${normalizeClaudeFableModel(requested.model)} but served ${last.served?.model ?? 'unattested'}`,
+    );
   } else {
     // (John, 2026-09-05) a verification seat whose FAMILY is attested but whose served MODEL
     // is not (the Codex CLI names no model; Grok plain output did not) is ACCEPTED with the

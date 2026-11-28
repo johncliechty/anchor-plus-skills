@@ -49,7 +49,16 @@ import {
   runFastHygieneGate,
   captureAegisBaseline,
   runFastAegisGate,
+  runFastPortfolioCertifierGate,
   runFastAnvilAstGate,
+  captureFileLinesBaseline,
+  captureFileContentBaseline,
+  discoverReusableRepoHelpers,
+  runFastBloatGate,
+  buildWaveEleganceElements,
+  verifySymbolEleganceRemoval,
+  extractTier0Targets,
+  buildTier0Command,
   checkHunkScopedTestEdits,
 } from './fast-gates.mjs';
 
@@ -176,7 +185,7 @@ export function preGateSyntaxSmoke(projectDir, changedFiles = []) {
         return `syntax smoke failed for ${rel}: ${(r.stderr || r.stdout || '').trim().slice(0, 300)}`;
       }
     } else if (/\.py$/i.test(rel)) {
-      const r = spawnSync('python', ['-m', 'py_compile', abs], {
+      const r = spawnSync('python', ['-B', '-c', 'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_bytes(), sys.argv[1], "exec")', abs], {
         encoding: 'utf8', windowsHide: true, timeout: 15_000,
       });
       if (r.status !== 0) {
@@ -1092,7 +1101,7 @@ function countTestEvents(text) {
   return { pass, fail };
 }
 
-export async function runGate({ projectDir, testCommand, foremanDir, wave, iteration, heartbeat = null }) {
+export async function runGate({ projectDir, testCommand, commandSpec = null, foremanDir, wave, iteration, heartbeat = null, timeoutMsOverride = null, artifactSuffix = 'gate' }) {
   // Gate-integrity hardening (Phase 1 finding M): run in a SANITIZED environment
   // so an inherited test-runner context cannot poison the ground truth. If the
   // orchestrator is itself spawned under `node --test`, the child inherits
@@ -1106,7 +1115,7 @@ export async function runGate({ projectDir, testCommand, foremanDir, wave, itera
   // longer, which read as a spurious RED the fix loop then chased — on a big
   // target that is pure vacuous churn. A killed gate is still RED (never GREEN).
   let gateTimeout = 1200000;
-  const _t = Number(process.env.FOREMAN_GATE_TIMEOUT_MS);
+  const _t = Number(timeoutMsOverride ?? process.env.FOREMAN_GATE_TIMEOUT_MS);
   if (Number.isFinite(_t) && _t > 0) gateTimeout = _t;
   const _gateT0 = Date.now(); // SPIKE(foreman-parallel): gate wall-clock
   // P1 2026-07-25 (0078 T1/T4/T8): ASYNC spawn, not spawnSync. spawnSync froze the
@@ -1119,12 +1128,19 @@ export async function runGate({ projectDir, testCommand, foremanDir, wave, itera
   let stdout = '';
   let stderr = '';
   let timedOut = false;
-  const child = spawn(testCommand, {
-    cwd: projectDir,
-    shell: true,
-    windowsHide: true,
-    env,
-  });
+  const child = commandSpec && commandSpec.file
+    ? spawn(commandSpec.file, Array.isArray(commandSpec.args) ? commandSpec.args : [], {
+        cwd: projectDir,
+        shell: false,
+        windowsHide: true,
+        env,
+      })
+    : spawn(testCommand, {
+        cwd: projectDir,
+        shell: true,
+        windowsHide: true,
+        env,
+      });
   child.stdout.on('data', (d) => { stdout += d; });
   child.stderr.on('data', (d) => { stderr += d; });
   const killTree = () => {
@@ -1284,7 +1300,7 @@ export async function runGate({ projectDir, testCommand, foremanDir, wave, itera
     stderr,
   };
   fs.mkdirSync(foremanDir, { recursive: true });
-  const file = path.join(foremanDir, `wave-${wave?.n ?? 0}-gate.json`);
+  const file = path.join(foremanDir, `wave-${wave?.n ?? 0}-${artifactSuffix}.json`);
   fs.writeFileSync(file, JSON.stringify(artifact, null, 2) + '\n');
   artifact.artifact_path = file;
   // SPIKE(foreman-parallel): passive phase-timing sink. The gate is NOT an agent()
@@ -1375,13 +1391,20 @@ function reproStrength(repro) {
     + (Number.isInteger(repro.exit_code) && repro.exit_code !== 0 ? 1 : 0);
 }
 
+const PROXIMITY_MERGE_LINE_WINDOW = 40;
+
+function normalizeFindingFileForProximity(rawFile) {
+  if (typeof rawFile !== 'string') return '';
+  const f = rawFile.trim().replace(/\\/g, '/').replace(/^\.\//, '');
+  if (!f || f === '?') return '';
+  return process.platform === 'win32' ? f.toLowerCase() : f;
+}
+
 /** Merge per-reviewer findings into deduped findings with an agreement count. */
 export function collectFindings(reviews) {
   const byId = new Map();
   reviews.forEach((rv, idx) => {
     for (const f of rv.findings || []) {
-      // Only this established rule describes the whole current wave. Ordinary
-      // defects retain their exact identities; no fuzzy semantic voting.
       const id = f.rule === 'wave-not-implemented' ? 'wave-not-implemented' : f.id || findingId(f);
       if (!byId.has(id)) {
         byId.set(id, { ...f, id, status: f.status || 'open', reviewers: new Set(), agreement: 0, evidence: [] });
@@ -1399,11 +1422,65 @@ export function collectFindings(reviews) {
       }
     }
   });
-  return [...byId.values()].map((f) => {
-    const agreement = f.reviewers.size;
-    const { reviewers, ...rest } = f;
-    return { ...rest, reviewer_ids: [...reviewers], agreement };
-  });
+
+  // Journals 0168/0169 + Gandalf 0402 (empirically verified over 27 two-reviewer rounds,
+  // 51/54 true cross-slug agreements, 0 false blocks): order-independently cluster open
+  // BLOCKER/MAJOR findings from DISTINCT reviewers when they target the exact same file
+  // with numeric lines within <=40 lines. Same-reviewer nearby findings, MINOR/NIT,
+  // null-line findings, and cross-file findings stay strictly separate.
+  const entries = [...byId.values()];
+  const severityRank = ['NIT', 'MINOR', 'MAJOR', 'BLOCKER'];
+  const eligible = entries
+    .map((e, i) => ({
+      e,
+      i,
+      normFile: normalizeFindingFileForProximity(e.file),
+      hasLine: Number.isFinite(e.line),
+      isBlockingSev: e.severity === 'BLOCKER' || e.severity === 'MAJOR',
+    }))
+    .filter((x) => x.e.rule !== 'wave-not-implemented' && x.isBlockingSev && x.normFile && x.hasLine)
+    .sort((a, b) => (
+      a.normFile.localeCompare(b.normFile)
+      || (Number(a.e.line) - Number(b.e.line))
+      || String(a.e.id).localeCompare(String(b.e.id))
+    ));
+
+  const absorbed = new Set();
+  for (let aIdx = 0; aIdx < eligible.length; aIdx++) {
+    const primary = eligible[aIdx];
+    if (absorbed.has(primary.i)) continue;
+    for (let bIdx = aIdx + 1; bIdx < eligible.length; bIdx++) {
+      const cand = eligible[bIdx];
+      if (absorbed.has(cand.i)) continue;
+      if (cand.normFile !== primary.normFile) break;
+      if (Math.abs(Number(cand.e.line) - Number(primary.e.line)) > PROXIMITY_MERGE_LINE_WINDOW) continue;
+      // Only cluster across distinct reviewers (never inflate a single reviewer's two findings).
+      const hasDistinctReviewer = [...cand.e.reviewers].some((r) => !primary.e.reviewers.has(r));
+      if (!hasDistinctReviewer) continue;
+
+      for (const r of cand.e.reviewers) primary.e.reviewers.add(r);
+      primary.e.evidence.push(...cand.e.evidence);
+      if (cand.e.message && cand.e.message !== primary.e.message && !String(primary.e.message || '').includes(cand.e.message)) {
+        primary.e.message = `${primary.e.message || primary.e.id} [corroborated/nearby ${cand.e.id}: ${cand.e.message}]`;
+      }
+      if (reproStrength(cand.e.repro) > reproStrength(primary.e.repro)) {
+        primary.e.repro = { ...cand.e.repro };
+      }
+      if (severityRank.indexOf(cand.e.severity) > severityRank.indexOf(primary.e.severity)) {
+        primary.e.severity = cand.e.severity;
+      }
+      if (!cand.e.status || cand.e.status === 'open') primary.e.status = 'open';
+      absorbed.add(cand.i);
+    }
+  }
+
+  return entries
+    .filter((_, idx) => !absorbed.has(idx))
+    .map((f) => {
+      const agreement = f.reviewers.size;
+      const { reviewers, ...rest } = f;
+      return { ...rest, reviewer_ids: [...reviewers], agreement };
+    });
 }
 
 /** A missing/malformed review is a failed transport, never an empty approval. */
@@ -1538,6 +1615,10 @@ export async function runWave(o) {
   // with FOREMAN_NO_PROGRESS_STOP=1). Standard keeps one new rule: a one-wave job is not given the terminal-wave panel.
   const profile = String(o.profile || process.env.FOREMAN_PROFILE || 'standard').toLowerCase();
   const slim = profile === 'slim';
+  const requireCompletedReview =
+    process.env.FOREMAN_ALLOW_UNREVIEWED_GO === '1'
+      ? false
+      : (Boolean(o.requireCompletedReview) || process.env.FOREMAN_REQUIRE_REVIEW === '1');
   let prevFailing = null;
   // S3 (2026-10-10, slim plan; final review 10-10 finding 1): a wave that DECLARES itself non-code (`kind:` docs |
   // landing | verification | render | data, plus `outputs:`) is proven by its declared outputs - but the label alone
@@ -1552,7 +1633,9 @@ export async function runWave(o) {
   try { planText = fs.readFileSync(planPath, 'utf8'); } catch { /* missing plan is a higher-level HALT */ }
   const sliceTargets = [...new Set([...(wave.writes || []), ...namedWavePaths(planText, wave.n)])];
   const anvilSlice = sliceTargets.length ? buildAnvilSlice(projectDir, sliceTargets) : '';
-  const ctx = { projectDir, wave, foremanDir, testCommand, log, planPath, planText, profile, eleganceInReview: slim, anvilSlice };
+  const reusableHelpers = declaredNonCode ? '' : discoverReusableRepoHelpers(projectDir);
+  const isIntermediateMultiWave = Number(totalWaves) > 1 && Number(wave?.n) < Number(totalWaves);
+  const ctx = { projectDir, wave, foremanDir, testCommand, log, planPath, planText, profile, eleganceInReview: slim || isIntermediateMultiWave, anvilSlice, reusableHelpers };
 
   // §5 anti-test-weakening: snapshot inventory + file hashes BEFORE any change.
   // P2 2026-07-25 (0035 monorepo half): when the plan declares a wave-scoped gate,
@@ -1626,17 +1709,32 @@ export async function runWave(o) {
   }
   const hashStart = (!declaredNonCode && (git || gitDiffBaseline)) ? null : snapshotHashes(projectDir, foremanDir, declaredNonCode);
   // Pre-capture pre-wave content of existing Python slice targets for non-git Aegis baseline accuracy
+  // and pre-wave line counts across existing source files for deterministic anti-bloat fast-gate (0402).
   const preWavePyContents = new Map();
-  for (const rel of sliceTargets) {
-    if (String(rel).toLowerCase().endsWith('.py')) {
+  const preWaveSourceContents = new Map();
+  const preWaveLineCounts = new Map();
+  for (const abs of listFiles(projectDir, foremanDir, false)) {
+    const rel = path.relative(projectDir, abs).split(path.sep).join('/');
+    if (/\.(?:py|mjs|cjs|js|jsx|ts|tsx|html|css|go|rs|java|cs)$/i.test(rel)) {
       try {
-        const abs = path.join(projectDir, rel);
-        if (fs.statSync(abs).isFile()) preWavePyContents.set(rel, fs.readFileSync(abs, 'utf8'));
+        const st = fs.statSync(abs);
+        if (st.isFile() && st.size <= 4_000_000) {
+          const txt = fs.readFileSync(abs, 'utf8');
+          preWaveLineCounts.set(rel, txt ? txt.split(/\r?\n/).length : 0);
+          if (st.size <= 512_000 && /\.(?:py|m?js|cjs)$/i.test(rel)) {
+            preWaveSourceContents.set(rel, txt);
+          }
+          if (rel.toLowerCase().endsWith('.py') && sliceTargets.includes(rel)) {
+            preWavePyContents.set(rel, txt);
+          }
+        }
       } catch { /* ignore */ }
     }
   }
   const rawAegisBaseline = captureAegisBaseline(projectDir);
   const getAegisBaseline = (rel) => rawAegisBaseline(rel, preWavePyContents.get(rel) ?? null);
+  const getBeforeLines = captureFileLinesBaseline(projectDir, preWaveLineCounts);
+  const getBeforeContent = captureFileContentBaseline(projectDir, preWaveSourceContents);
   // S3: the declared outputs' own wave-start snapshot - "created or changed by this wave" is measured on them
   const outputsStart = declaredNonCode ? snapshotPaths(projectDir, wave.outputs) : null;
 
@@ -1675,6 +1773,7 @@ export async function runWave(o) {
     writeReviewEvidence(reviewEvidencePath(), reviewEvidence);
   };
   let lastGate = null;
+  let lastTier1Gate = null;
   let lastChanged = [];   // Phase 3c: the wave's changed files (for the GO commit)
   let lastCitation = null;
   let exec = { note: 'done', citation: null };
@@ -1949,11 +2048,13 @@ export async function runWave(o) {
       log(`delta-coverage: skip (non-fatal) — ${deltaErr?.message || deltaErr}`);
     }
 
-    // ----- Deterministic Pre-Review Fast-Gates (Tidy-Idy Hygiene + Aegis CWE + Anvil AST) -----
+    // ----- Deterministic Pre-Review Fast-Gates (Tidy-Idy Hygiene + Aegis CWE + Anvil AST + Anti-Bloat + Certifiers) -----
     const hygiene = runFastHygieneGate(curChanged, [...(wave.outputs || []), ...(wave.writes || [])]);
     const aegis = nonCode ? { pass: true, findings: [] } : runFastAegisGate(projectDir, curChanged, getAegisBaseline);
     const anvilAst = nonCode ? { pass: true, findings: [] } : runFastAnvilAstGate(projectDir, curChanged);
-    const fastFindings = [...hygiene.findings, ...aegis.findings, ...anvilAst.findings];
+    const bloat = nonCode ? { pass: true, findings: [] } : runFastBloatGate(projectDir, curChanged, getBeforeLines, { planText, getBeforeContent });
+    const certifiers = runFastPortfolioCertifierGate(projectDir, waveSectionOf(planText, wave.n), curChanged);
+    const fastFindings = [...hygiene.findings, ...aegis.findings, ...anvilAst.findings, ...bloat.findings, ...certifiers.findings];
     try {
       fs.mkdirSync(foremanDir, { recursive: true });
       fs.writeFileSync(
@@ -1965,6 +2066,8 @@ export async function runWave(o) {
           hygiene: hygiene.findings,
           aegis: aegis.findings,
           anvil_ast: anvilAst.findings,
+          bloat: bloat.findings,
+          certifiers: certifiers.findings,
           at: new Date().toISOString(),
         }, null, 2) + '\n',
         'utf8',
@@ -2028,12 +2131,20 @@ export async function runWave(o) {
     return { action: 'ok' };
   }
 
-  async function applyEleganceCutsAndFastClose({ stepLabel, cutFindings, releasedTests, allowedPaths }) {
+  async function applyEleganceCutsAndFastClose({ stepLabel, cutFindings, releasedTests, allowedPaths, symbolCuts = [] }) {
     const beforeTestContents = {};
     for (const rel of releasedTests) {
       const abs = path.join(projectDir, rel);
       try {
         if (fs.existsSync(abs)) beforeTestContents[rel] = fs.readFileSync(abs, 'utf8');
+      } catch { /* ignore */ }
+    }
+    const beforeSymbolContents = {};
+    for (const sc of symbolCuts) {
+      if (!sc?.rel || beforeSymbolContents[sc.rel] !== undefined) continue;
+      const abs = path.join(projectDir, sc.rel);
+      try {
+        if (fs.existsSync(abs)) beforeSymbolContents[sc.rel] = fs.readFileSync(abs, 'utf8');
       } catch { /* ignore */ }
     }
     const beforeTree = captureTreeState();
@@ -2109,6 +2220,31 @@ export async function runWave(o) {
     if (outOfScope.length > 0) {
       log(`elegance touch-scope: modified out-of-scope file(s) (${outOfScope.join(', ')}) — re-entering full review loop`);
       return { action: 'continue' };
+    }
+
+    // 3b. For symbol-level cuts (`file::symbol`), strictly verify that ONLY the named top-level
+    // symbol(s) were removed and file line count shrank; otherwise do not fast-close unreviewed edits.
+    if (symbolCuts.length > 0) {
+      const byRel = new Map();
+      for (const sc of symbolCuts) {
+        if (!sc?.rel || !sc?.symbol) continue;
+        if (!byRel.has(sc.rel)) byRel.set(sc.rel, []);
+        byRel.get(sc.rel).push(sc.symbol);
+      }
+      for (const [rel, syms] of byRel.entries()) {
+        const abs = path.join(projectDir, rel);
+        let afterTxt = '';
+        try { afterTxt = fs.existsSync(abs) ? fs.readFileSync(abs, 'utf8') : ''; } catch { afterTxt = ''; }
+        const beforeTxt = String(beforeSymbolContents[rel] ?? '');
+        // Sequential removal check when multiple symbols in the same file were cut
+        const allOk = syms.length === 1
+          ? verifySymbolEleganceRemoval(beforeTxt, afterTxt, rel, syms[0])
+          : syms.every((s) => beforeTxt.includes(s) && !afterTxt.includes(s)) && afterTxt.split(/\r?\n/).length < beforeTxt.split(/\r?\n/).length;
+        if (!allOk) {
+          log(`elegance symbol-cut verification failed for ${rel} (${syms.join(', ')}) — re-entering full review loop instead of fast-closing`);
+          return { action: 'continue' };
+        }
+      }
     }
 
     // 4. Re-measure & re-run orchestrator gate + deterministic fast-gates; fast-close GO if all green!
@@ -2240,18 +2376,82 @@ export async function runWave(o) {
       });
     }
 
-    // ----- ORCHESTRATOR GATE (ground truth) -----
+    // ----- ORCHESTRATOR GATE (ground truth, with Tier-0 fail-fast targeted pre-check on fix iterations) -----
+    // Safety & Gate-Integrity Laws (Opus 5.5 audit):
+    //   1. Tier-0 uses `shell: false` argv execution (`commandSpec`) — zero shell injection from test node IDs.
+    //   2. Allow at most ONE Tier-0 bounce in a row (`!lastGate.tier0_fast_fail`): next iter MUST run full Tier-1.
+    //   3. Extract targets ONLY from `lastTier1Gate` and short-circuit ONLY when Tier-0 failing test IDs are a
+    //      non-empty subset of `lastTier1Gate`'s failing test IDs (preventing wrapper-env false REDs).
+    //   4. Keep Tier-0 artifact in `wave-N-tier0-gate.json`, never overwriting `wave-N-gate.json`.
+    let tier0ShortCircuited = false;
+    if (
+      iteration > 0 &&
+      !nonCode &&
+      lastGate &&
+      !lastGate.tier0_fast_fail &&
+      lastTier1Gate &&
+      !lastTier1Gate.green &&
+      !lastTier1Gate.timed_out &&
+      !lastTier1Gate.vacuous_reason &&
+      process.env.FOREMAN_DISABLE_TIER0_GATE !== '1'
+    ) {
+      const tier0Info = extractTier0Targets(lastTier1Gate, projectDir);
+      const tier0Spec = buildTier0Command(waveTestCommand, tier0Info, projectDir, process.env);
+      if (tier0Spec) {
+        const tier0Timeout = Number(process.env.FOREMAN_TIER0_TIMEOUT_MS) > 0
+          ? Number(process.env.FOREMAN_TIER0_TIMEOUT_MS)
+          : 90_000;
+        const t0Gate = await agentWait('gate-tier0', () => runGate({
+          projectDir,
+          testCommand: tier0Spec.display,
+          commandSpec: tier0Spec,
+          foremanDir,
+          wave,
+          iteration,
+          timeoutMsOverride: tier0Timeout,
+          artifactSuffix: 'tier0-gate',
+        }));
+        const tier1FailSet = new Set(failingTests(lastTier1Gate));
+        const t0Failing = failingTests(t0Gate);
+        const subsetOfTier1 = tier1FailSet.size > 0 && t0Failing.length > 0 && t0Failing.every((f) => tier1FailSet.has(f));
+        const genuineTier0Failure =
+          !t0Gate.green &&
+          !t0Gate.timed_out &&
+          !t0Gate.vacuous_reason &&
+          Number.isInteger(t0Gate.tap?.fail) &&
+          t0Gate.tap.fail > 0 &&
+          subsetOfTier1;
+        if (genuineTier0Failure) {
+          lastGate = {
+            ...t0Gate,
+            tier: 0,
+            tier0_fast_fail: true,
+            tier0_targets: tier0Info.targets,
+            full_command: waveTestCommand,
+          };
+          tier0ShortCircuited = true;
+          steps.push(`▸ gate tier-0 fast-fail (${Math.round((t0Gate.gate_ms ?? 0) / 100) / 10}s): ${t0Gate.tap.fail} previously failing target(s) still RED — skipping full suite`);
+          log(`gate tier-0 (iter ${iteration}): FAST-FAIL in ${t0Gate.gate_ms}ms (${t0Gate.tap.fail} failing target(s) still RED) — bouncing to fix without full suite`);
+        } else {
+          log(`gate tier-0 (iter ${iteration}): ${t0Gate.green ? 'PASS' : 'inconclusive'} in ${t0Gate.gate_ms}ms — running full ground-truth gate`);
+        }
+      }
+    }
+
     // Async + heartbeat (0078 T4/T8): the gate now emits `gate running · t+Nm · last:
     // <line>` and updates waiting-on.json every minute — during a gate the operator can
     // finally tell hung from working.
-    lastGate = await agentWait('gate', async () => (nonCode
-      // S3: a non-code wave's gate is its declared outputs, each created or changed by this wave
-      ? outputsGate({ projectDir, foremanDir, wave, iteration, changed: changedPre, before: outputsStart })
-      : runGate({
-        projectDir, testCommand: waveTestCommand, foremanDir, wave, iteration,
-        heartbeat: ({ elapsedMs, lastLine }) =>
-          log(`gate running · t+${Math.max(1, Math.round(elapsedMs / 60000))}m · last: ${lastLine || '(no output yet)'}`),
-      })));
+    if (!tier0ShortCircuited) {
+      lastGate = await agentWait('gate', async () => (nonCode
+        // S3: a non-code wave's gate is its declared outputs, each created or changed by this wave
+        ? outputsGate({ projectDir, foremanDir, wave, iteration, changed: changedPre, before: outputsStart })
+        : runGate({
+          projectDir, testCommand: waveTestCommand, foremanDir, wave, iteration,
+          heartbeat: ({ elapsedMs, lastLine }) =>
+            log(`gate running · t+${Math.max(1, Math.round(elapsedMs / 60000))}m · last: ${lastLine || '(no output yet)'}`),
+        })));
+      lastTier1Gate = lastGate;
+    }
     if (lastGate.timed_out) {
       // 0078 T1: a killed gate proved NOTHING — never a "0 pass 0 fail" RED for the
       // FIX loop to chase. HALT with the honest class + progress and a scoping steer.
@@ -2318,7 +2518,7 @@ export async function runWave(o) {
         invWholeRepoBefore,
         inventory(projectDir, foremanDir),
         lastCitation,
-        (lastGate.tap && lastGate.tap.skipped) || 0,
+        lastGate.tier0_fast_fail ? 0 : ((lastGate.tap && lastGate.tap.skipped) || 0),
       );
       if (wholeRepoWeak) {
         const reason = `test-integrity HALT: ${wholeRepoWeak}`;
@@ -2329,7 +2529,7 @@ export async function runWave(o) {
       invBeforeScope = curScope;
       invBefore = invNow;
     }
-    const weak = checkTestWeakening(invBefore, invNow, lastCitation, (lastGate.tap && lastGate.tap.skipped) || 0);
+    const weak = checkTestWeakening(invBefore, invNow, lastCitation, lastGate.tier0_fast_fail ? 0 : ((lastGate.tap && lastGate.tap.skipped) || 0));
     if (weak) {
       const reason = `test-integrity HALT: ${weak}`;
       steps.push(`✗ ${reason}`);
@@ -2393,6 +2593,9 @@ export async function runWave(o) {
     const reviewChanged = nonCode ? [...new Set([...baseReviewChanged, ...changedOutputsSince(projectDir, outputsStart)])] : baseReviewChanged;
     const skipReview = !lastGate.green && process.env.FOREMAN_REVIEW_ON_RED !== '1' && iteration < fixIterCap;
     const diffPatch = skipReview ? '' : buildBoundedGitDiff(projectDir, reviewChanged);
+    const reviewEleganceMeta = skipReview || nonCode
+      ? { elements: [], locSummary: '' }
+      : buildWaveEleganceElements(projectDir, reviewChanged, getBeforeLines, getBeforeContent);
     reviewEvidence = {
       version: 1, written_by: 'orchestrator', wave: wave.n, iteration, round_id: crypto.randomUUID(),
       phase: skipReview ? 'skipped' : 'pending', review_status: skipReview ? 'skipped-red-gate' : 'pending',
@@ -2404,7 +2607,7 @@ export async function runWave(o) {
     const receiveReview = async (r) => {
       const seat = `reviewer-${r}`;
       let raw;
-      try { raw = await driver.review({ ...ctx, reviewerIndex: r, changed: reviewChanged, oracles: oracleTrace, diffPatch }, lastGate); }
+      try { raw = await driver.review({ ...ctx, reviewerIndex: r, changed: reviewChanged, oracles: oracleTrace, diffPatch, locSummary: reviewEleganceMeta.locSummary }, lastGate); }
       catch (error) { raw = { transport_failed: true, note: `reviewer call rejected (${error?.message || error})` }; }
       const valid = validReview(raw);
       const rv = valid ? { ...raw, reviewer: raw.reviewer ?? seat } : {
@@ -2469,15 +2672,16 @@ export async function runWave(o) {
     const transportFailed = reviews.filter((rv) => rv && rv.transport_failed);
     if (transportFailed.length) {
       if (transportFailed.length === reviews.length && reviews.length > 0) {
-        if (slim && lastGate && lastGate.green) {
-          // S4 review r1: the slim profile's ONE review is its adversarial and elegance check together - a wave with
-          // no completed review never reaches GO there (standard keeps its degraded-GO policy)
-          const reason = `[taxonomy:review-unavailable] HALT: the slim profile's one reviewer did not complete (${transportFailed.map((rv) => rv.note).filter(Boolean).join(' · ') || 'no answer'}) — a slim wave never passes unreviewed`;
+        if ((slim || requireCompletedReview) && lastGate && lastGate.green) {
+          // S4 + Journal 0176 fail-closed review policy: live runs (requireCompletedReview) and slim runs
+          // never commit a wave with 0 completed adversarial reviews unless FOREMAN_ALLOW_UNREVIEWED_GO=1 is set.
+          const reason = `[taxonomy:review-unavailable] HALT: ALL ${reviews.length} reviewer(s) failed transport (${transportFailed.map((rv) => rv.note).filter(Boolean).join(' · ') || 'no answer'}) — refusing to commit an unreviewed wave`;
           steps.push(`✗ ${reason}`);
           return finishHalt({ reason, recommend:
-            `[taxonomy:review-unavailable] check the reviewer seat (the other family), then re-invoke wave ${wave.n}` });
+            `[taxonomy:review-unavailable] check the review seat / subscription CLI quota, then re-invoke wave ${wave.n} with --resume` });
         }
         if (lastGate && lastGate.green) {
+          reviewEvidence.degraded_zero_reviewers = true;
           steps.push(
             `▸ review degraded: ALL ${reviews.length} reviewer(s) transport-failed; ` +
             `gate GREEN — proceeding (review:degraded; orchestrator gate is ground truth §5)`,
@@ -2497,15 +2701,18 @@ export async function runWave(o) {
         steps.push(`▸ review degraded: ${transportFailed.length} reviewer(s) dropped (transport failure) — proceeding with ${reviews.length - transportFailed.length}`);
         log(`review: ${transportFailed.length} transport-failed reviewer(s) dropped — ${transportFailed.map((rv) => rv.note).join(' · ')}`);
         reviews = reviews.filter((rv) => !(rv && rv.transport_failed));
+        if (reviews.length === 1 && effectiveReviewers >= 2) {
+          reviewEvidence.degraded_single_reviewer = true;
+        }
       }
     }
 
-    // S4 review r2: slim's GO needs ONE COMPLETED review, however it came to have none (zero scheduled included)
-    if (slim && lastGate && lastGate.green && !skipReview && !reviewEvidence.completed_reviewers.length) {
-      const reason = `[taxonomy:review-unavailable] HALT: no review completed for this slim wave — a slim wave never passes unreviewed`;
+    // S4 + Journal 0176: when completed review is required, 0 completed reviewers (even if 0 scheduled) is a HALT
+    if ((slim || requireCompletedReview) && lastGate && lastGate.green && !skipReview && !reviewEvidence.completed_reviewers.length) {
+      const reason = `[taxonomy:review-unavailable] HALT: no review completed for wave ${wave.n} — refusing to pass unreviewed`;
       steps.push(`✗ ${reason}`);
       return finishHalt({ reason, recommend:
-        `[taxonomy:review-unavailable] run slim with one reviewer of the other family, then re-invoke wave ${wave.n}` });
+        `[taxonomy:review-unavailable] verify at least one healthy cross-family review seat, then re-invoke wave ${wave.n}` });
     }
 
     // Ambiguity gate (§4.7): any reviewer answering "no" is a HALT. UNCHANGED —
@@ -2558,17 +2765,20 @@ export async function runWave(o) {
     const judgeFindings = (slim && !eleganceDone)
       ? findings.filter((f) => !(f && /^elegance$/i.test(String(f.rule || ''))))
       : findings;
-    const minAgree = effectiveReviewers <= 1 ? 1 : 2;
+    // Journal 0163 + 0176 fix: when 1 of 2 reviewers failed transport (`reviews.length === 1`),
+    // `panelSize` MUST reflect surviving completed reviewers (`activePanelSize === 1`), otherwise
+    // `agreement >= 2` is mathematically unreachable and silently discards a real BLOCKER!
+    const activePanelSize = reviews.length > 0 ? reviews.length : effectiveReviewers;
+    const minAgree = activePanelSize <= 1 ? 1 : 2;
     const openBlockers = judgeFindings.filter((f) =>
       (f.severity === 'BLOCKER' || f.severity === 'MAJOR') && f.status === 'open' && f.agreement >= minAgree);
     if (reviews.length) log(`review: ${reviews.length} reviewers · ${openBlockers.length} agreed BLOCKER/MAJOR`);
 
     // ----- JUDGE (reads only the gate artifact for pass/fail of record) -----
-    // Failed seats never reduce a configured two-vote requirement to one vote.
     // In slim profile before eleganceDone, rule:"elegance" findings are routed to the
     // dedicated folded elegance fast-close block below (which releases reviewer-named
     // test files from testBaseline) rather than blocking judge() into frozen-test fix().
-    const verdict = judge(lastGate, judgeFindings, { panelSize: effectiveReviewers });
+    const verdict = judge(lastGate, judgeFindings, { panelSize: activePanelSize });
     reviewEvidence.phase = skipReview ? 'skipped' : 'complete';
     persistReview(verdict);
 
@@ -2616,8 +2826,17 @@ export async function runWave(o) {
       if (typeof driver.elegance === 'function' && !eleganceDone) {
         eleganceDone = true;
         let ep = null;
+        let elegMeta = { elements: [], locSummary: '' };
         try {
-          ep = await agentWait('elegance', () => driver.elegance({ ...ctx, changed: lastChanged }, lastGate));
+          elegMeta = nonCode
+            ? { elements: [], locSummary: '' }
+            : buildWaveEleganceElements(projectDir, lastChanged, getBeforeLines, getBeforeContent);
+          ep = await agentWait('elegance', () => driver.elegance({
+            ...ctx,
+            changed: lastChanged,
+            eleganceElements: elegMeta.elements,
+            locSummary: elegMeta.locSummary,
+          }, lastGate));
         } catch (e) {
           log(`elegance review failed (non-fatal — said aloud, wave proceeds): ${e?.message || e}`);
         }
@@ -2625,21 +2844,44 @@ export async function runWave(o) {
           try { fs.writeFileSync(path.join(foremanDir, `wave-${wave.n}-elegance.md`), String(ep.markdown || ''), 'utf8'); } catch { /* best-effort */ }
           eleganceHolds = ep.verdicts.filter((v) => v.verdict === 'HOLD')
             .map((v) => `[${v.id}] ${v.text} — ${v.trigger || v.needed_because || 'trigger to be named'}`);
-          const cuts = ep.verdicts.filter((v) => v.verdict === 'CUT');
+          const validSymTexts = new Set(
+            (elegMeta.elements || [])
+              .map((e) => String(e?.text || ''))
+              .filter((t) => t.includes('::')),
+          );
+          const cuts = ep.verdicts
+            .filter((v) => v && v.verdict === 'CUT')
+            .filter((v) => {
+              const t = String(v.text ?? v.target_file ?? '');
+              if (!t.includes('::')) return true;
+              const fp = t.split('::')[0].replace(/\\/g, '/').replace(/^\.\//, '');
+              return !isTestFile(fp) && validSymTexts.has(t);
+            });
           steps.push(`▸ elegance review: keep ${ep.keeps?.length ?? 0} · hold ${eleganceHolds.length} · cut ${cuts.length}` +
             (cuts.length ? ' (confirmed by the second seat)' : ' · nothing cut'));
           log(`elegance review: cut ${cuts.length} · hold ${eleganceHolds.length} · keep ${ep.keeps?.length ?? 0}`);
           if (cuts.length && iteration < fixIterCap) {
-            const cutFindings = cuts.map((v) => ({
-              id: `rabbit-hole:${v.id}`, severity: 'MAJOR', file: v.text, line: null, rule: 'RC-1', status: 'open', agreement: 2,
-              message: `[taxonomy:rabbit-hole] REMOVE ${v.text} — ${v.rc2 || v.need || 'no independent need'}; keep the gate green`,
-            }));
+            const cutFindings = cuts.map((v) => {
+              const rawTarget = String(v.text || v.target_file || '');
+              const filePart = rawTarget.includes('::') ? rawTarget.split('::')[0] : rawTarget;
+              return {
+                id: `rabbit-hole:${v.id}`, severity: 'MAJOR', file: filePart, line: null, rule: 'RC-1', status: 'open', agreement: 2,
+                message: `[taxonomy:rabbit-hole] REMOVE ${rawTarget} — ${v.rc2 || v.need || v.reason || 'no independent need'}; keep the gate green`,
+              };
+            });
             const releasedEleganceTests = [];
             const allowedPaths = [];
+            const symbolCuts = [];
             for (const v of cuts) {
-              const rel = String(v.text || '').replace(/\\/g, '/').replace(/^\.\//, '');
+              const rawTarget = String(v.text || v.target_file || '');
+              const isSymCut = rawTarget.includes('::');
+              const filePart = isSymCut ? rawTarget.split('::')[0] : rawTarget;
+              const rel = filePart.replace(/\\/g, '/').replace(/^\.\//, '');
               if (rel) allowedPaths.push(rel);
-              if (rel && rel in testBaseline) {
+              if (isSymCut && rel) {
+                symbolCuts.push({ rel, symbol: rawTarget.slice(rawTarget.indexOf('::') + 2) });
+              }
+              if (!isSymCut && rel && rel in testBaseline) {
                 delete testBaseline[rel];
                 releasedEleganceTests.push(rel);
                 log(`elegance: ${rel} released from the test-immutability baseline (confirmed cut)`);
@@ -2650,6 +2892,7 @@ export async function runWave(o) {
               cutFindings,
               releasedTests: releasedEleganceTests,
               allowedPaths,
+              symbolCuts,
             });
             if (ef.action === 'go' || ef.action === 'halt') return ef.res;
             if (ef.action === 'continue') continue;

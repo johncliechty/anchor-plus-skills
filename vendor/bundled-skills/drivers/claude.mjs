@@ -24,7 +24,20 @@ import { attestStamp } from './attest.mjs';
 import { isVerificationRole, normalizeRole } from './roles.mjs';
 import { runCliSchemaAttempts } from './cli-schema.mjs';
 import { runCloseBoundProcess } from './subscription-process.mjs';
-import { resolveModelPolicy, policyEnvironment, modelLaunchArgs } from './model-policy.mjs';
+import {
+  resolveModelPolicy,
+  policyEnvironment,
+  modelLaunchArgs,
+  isClaudeVerificationSeat,
+  normalizeClaudeFableModel,
+  normalizeStrength,
+  isVariableStrengthActive,
+  loadPolicyPrefs,
+  effectiveVariableStrengthConfig,
+  resolveSkillStrength,
+  selectStrength,
+  CLAUDE_CATALOG_MODELS,
+} from './model-policy.mjs';
 import { classifySubscriptionOutcome } from './subscription-outcome.mjs';
 
 const BASE_ARGS = [
@@ -81,11 +94,94 @@ export function extractJson(text) {
  * @param {?number}[meta.cli_status] process exit code
  * @returns {{ text:string, rec:object }}
  */
+export const CANONICAL_FABLE_MODEL = 'claude-fable-5-2';
+export const CANONICAL_STANDARD_CLAUDE_MODEL = 'claude-opus-5-5';
+const CLAUDE_MOVING_ALIASES = new Set(['best', 'opus', 'sonnet', 'haiku']);
+
 const CLAUDE_ENTITLEMENT_FALLBACK_LADDER = Object.freeze({
   best: Object.freeze(['opus', 'sonnet']),
   'claude-fable-5-2': Object.freeze(['claude-opus-5-5', 'opus', 'sonnet']),
   opus: Object.freeze(['sonnet']),
 });
+
+const CLAUDE_QUOTA_WALL_RE = /\b(?:hit\s+your\s+limit|weekly\s+limit|usage\s+limit\s+reached|rate_limit_error|quota\s+exceeded)\b/i;
+
+export function isClaudeQuotaWall(rec, finalEnv = null, result = null) {
+  if (!rec || rec.ok) return false;
+  if (Number(rec.tools) > 0) return false;
+  if (rec.status === 'rate_limit') return true;
+  const combined = [
+    rec.error,
+    typeof finalEnv?.result === 'string' ? finalEnv.result : '',
+    typeof result?.stderr === 'string' ? result.stderr : '',
+  ].filter(Boolean).join(' ');
+  return CLAUDE_QUOTA_WALL_RE.test(combined);
+}
+
+/**
+ * Positive served-model attestation gate for `claude-fable-5-2` (and `claude-opus-5-5`
+ * on Standard/Light verification seats under Variable Strength).
+ * Refuses silent substitution or unattested replies fail-closed unless a legitimate
+ * non-verification credit-gate fallback recorded `fallback_from_model` or an explicit
+ * quota-wall Heavy->Light step-down recorded `quota_stepdown_from`.
+ */
+export function attestClaudeFableReceipt(rec, {
+  requestedModel = rec?.requested_model ?? null,
+  label = rec?.label ?? '(unlabeled)',
+  role = rec?.role ?? null,
+} = {}) {
+  if (!rec || typeof rec !== 'object' || rec.ok !== true) return rec;
+  const verification = isClaudeVerificationSeat({ role, label });
+  const normalizedReq = normalizeClaudeFableModel(requestedModel);
+  const normalizedServed = typeof rec.model_served === 'string'
+    ? normalizeClaudeFableModel(rec.model_served)
+    : null;
+  if (normalizedReq === 'sonnet' && verification) {
+    const isSonnet = normalizedServed === 'sonnet' || /^claude-sonnet-\d/i.test(String(normalizedServed || ''));
+    if (rec.model_attested === true && isSonnet) {
+      return rec;
+    }
+    const servedDesc = rec.model_attested === true && rec.model_served ? rec.model_served : 'unattested';
+    rec.ok = false;
+    rec.status = 'attestation_mismatch';
+    rec.replay_safe = false;
+    rec.error = `Claude positive attestation failed (${label}): requested sonnet but served ${servedDesc}`;
+    return rec;
+  }
+  if (normalizedReq === CANONICAL_STANDARD_CLAUDE_MODEL && verification) {
+    if (rec.model_attested === true && normalizedServed === CANONICAL_STANDARD_CLAUDE_MODEL) {
+      rec.model_served = CANONICAL_STANDARD_CLAUDE_MODEL;
+      return rec;
+    }
+    const servedDesc = rec.model_attested === true && rec.model_served ? rec.model_served : 'unattested';
+    rec.ok = false;
+    rec.status = 'attestation_mismatch';
+    rec.replay_safe = false;
+    rec.error = `Claude positive attestation failed (${label}): requested ${CANONICAL_STANDARD_CLAUDE_MODEL} but served ${servedDesc}`;
+    return rec;
+  }
+  if (normalizedReq !== CANONICAL_FABLE_MODEL) return rec;
+  if (!verification && rec.fallback_from_model === CANONICAL_FABLE_MODEL) return rec;
+  if (rec.allow_quota_stepdown === true
+      && rec.quota_stepdown_from === CANONICAL_FABLE_MODEL
+      && rec.model_attested === true
+      && normalizedServed === CANONICAL_STANDARD_CLAUDE_MODEL) {
+    rec.model_served = CANONICAL_STANDARD_CLAUDE_MODEL;
+    return rec;
+  }
+  if (rec.model_attested === true && normalizedServed === CANONICAL_FABLE_MODEL) {
+    rec.model_served = CANONICAL_FABLE_MODEL;
+    return rec;
+  }
+  const servedDesc = rec.model_attested === true && rec.model_served
+    ? rec.model_served
+    : 'unattested';
+  rec.ok = false;
+  rec.status = 'attestation_mismatch';
+  rec.replay_safe = false;
+  rec.error = `Claude positive attestation failed (${label}): requested ${CANONICAL_FABLE_MODEL} but served ${servedDesc}`;
+  return rec;
+}
 
 const CLAUDE_CREDIT_GATE_RE = /\b(?:requires?\s+(?:extra\s+)?usage\s+credits|credits_required|model_requires_usage_credits|switch\s+to\s+another\s+model|not\s+entitled\s+to\s+model|model\s+is\s+not\s+available\s+on\s+your\s+plan)\b/i;
 
@@ -159,7 +255,7 @@ export function parseClaudeFrames(stdout, {
     ...(envError ? { error: String(envError).trim().slice(0, 500) } : {}),
     ...(apiErrorCode ? { api_error_code: apiErrorCode } : {}),
     ...(apiErrorStatus !== null ? { api_error_status: apiErrorStatus } : {}),
-    ...attestStamp(servedModel), // SR-5 served-model stamp
+    ...attestStamp(servedModel ? normalizeClaudeFableModel(servedModel) : null), // SR-5 served-model stamp
   };
   rec.model_family = rec.ok ? 'claude' : null;
   rec.family_attested = rec.ok;
@@ -193,6 +289,7 @@ const TIER_CLAUDE_MODELS = {
   heavy: 'claude-fable-5-2',
   // one notch below frontier (2026-11-19): Opus 5.5 — below Fable 5.2
   standard: 'claude-opus-5-5',
+  light: 'claude-opus-5-5',
 };
 
 /** The Claude model ONE NOTCH BELOW frontier (the `standard` tier) — the failover target when a
@@ -200,10 +297,18 @@ const TIER_CLAUDE_MODELS = {
  * the ladder as frontier ships forward; never hard-coded at the call site (John 2026-07-17). */
 export function belowFrontierClaudeModel() { return TIER_CLAUDE_MODELS.standard; }
 
-export function resolveClaudeModel({ model, role, label, env = process.env } = {}) {
-  if (model) return model;
-  const tier = String(env.TRIO_TIER || '').trim().toLowerCase();
-  if (tier && TIER_CLAUDE_MODELS[tier]) return TIER_CLAUDE_MODELS[tier];
+export function resolveClaudeModel({ model, role, label, tier = null, env = process.env, variableStrength = false } = {}) {
+  const verificationSeat = isClaudeVerificationSeat({ role, label });
+  if (model && !verificationSeat) return model;
+  if (model && verificationSeat && model !== 'best' && model !== 'latest_supported') return model;
+  const rawTier = String(tier || env.ANCHOR_STRENGTH || env.TRIO_TIER || '').trim().toLowerCase();
+  const effTier = rawTier === 'regular' ? 'standard' : rawTier;
+  if (effTier && TIER_CLAUDE_MODELS[effTier]) {
+    if (effTier === 'light' || (variableStrength && effTier === 'standard')) {
+      return TIER_CLAUDE_MODELS[effTier];
+    }
+    return verificationSeat ? TIER_CLAUDE_MODELS.heavy : TIER_CLAUDE_MODELS[effTier];
+  }
   const key = normalizeRole({ role, label }) || '';
   const roleKey = key ? `CLAUDE_MODEL_${key.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}` : null;
   return (roleKey && env[roleKey]) || env.CLAUDE_MODEL || null;
@@ -288,6 +393,7 @@ export function defaultRunClaude(fullPrompt, label, {
   allowedTools = DEFAULT_ALLOWED_TOOLS,
   model = null,
   role = null,
+  tier = null,
   sandbox = null,
   repairOnly = false,
   timeoutMs = (Number(env.CLAUDE_CALL_TIMEOUT_MS) || 20 * 60000),
@@ -308,27 +414,97 @@ export function defaultRunClaude(fullPrompt, label, {
     );
   }
   const baseArgs = [...BASE_ARGS, '--allowedTools', allowedTools];
+  const verificationSeat = isClaudeVerificationSeat({ role, label });
   if (repairOnly || allowedTools === '') {
     const modeIndex = baseArgs.indexOf('--permission-mode');
     if (modeIndex !== -1) baseArgs[modeIndex + 1] = 'plan';
     const toolsIndex = baseArgs.indexOf('--allowedTools');
     if (toolsIndex !== -1) baseArgs[toolsIndex + 1] = '';
-  } else if (sandbox === 'read-only' || isVerificationRole({ role, label })) {
+    if (!baseArgs.includes('--tools=') && !baseArgs.includes('--tools')) {
+      baseArgs.push('--tools=');
+    }
+  } else if (sandbox === 'read-only' || verificationSeat) {
     const modeIndex = baseArgs.indexOf('--permission-mode');
     if (modeIndex !== -1) baseArgs[modeIndex + 1] = 'plan';
     const toolsIndex = baseArgs.indexOf('--allowedTools');
     if (toolsIndex !== -1) baseArgs[toolsIndex + 1] = 'Read,Glob,Grep';
   }
+  const explicitCallModel = typeof model === 'string' && model.trim() ? model.trim() : null;
+  const effectiveTier = tier ?? env.ANCHOR_STRENGTH ?? env.TRIO_TIER ?? null;
+  const normTier = normalizeStrength(effectiveTier, null);
+  const heavyTier = normTier === 'heavy';
+  let loadedPrefs = null;
+  try { loadedPrefs = loadPolicyPrefs(env); } catch { loadedPrefs = null; }
+  const vsActive = isVariableStrengthActive({ settings: loadedPrefs, env, tier: effectiveTier });
+  const explicitResolved = resolveClaudeModel({
+    model: verificationSeat ? explicitCallModel : explicitCallModel,
+    role,
+    label,
+    env,
+    variableStrength: vsActive,
+  });
+  const vsCfg = vsActive ? effectiveVariableStrengthConfig(loadedPrefs?.model_policy) : null;
   let selection;
   if (typeof policyResolver === 'function') {
-    selection = policyResolver('claude', { env });
+    selection = policyResolver('claude', {
+      env,
+      role,
+      label,
+      model: verificationSeat ? null : explicitCallModel,
+      tier: effectiveTier,
+      skill: env.ANCHOR_SKILL || null,
+    });
   } else if (processRunner === runCloseBoundProcess) {
-    selection = resolveModelPolicy('claude', { env });
-  } else {
+    selection = resolveModelPolicy('claude', {
+      env,
+      role,
+      label,
+      model: verificationSeat ? null : (vsActive ? explicitCallModel : explicitResolved),
+      tier: effectiveTier,
+      skill: env.ANCHOR_SKILL || null,
+    });
+    if (!verificationSeat && !vsActive && !(heavyTier && !explicitCallModel)
+        && explicitResolved && explicitResolved !== 'best' && selection.model !== explicitResolved) {
+      selection = {
+        ...selection,
+        model: explicitResolved,
+        selection_evidence: 'explicit_role_model',
+      };
+    }
+  } else if (vsActive) {
+    const resolvedTier = normTier || resolveSkillStrength({
+      skill: env.ANCHOR_SKILL,
+      explicitStrength: effectiveTier,
+      inheritedStrength: env.ANCHOR_INHERITED_STRENGTH,
+      cockpitStrength: env.ANCHOR_COCKPIT_STRENGTH,
+      defaultStrength: vsCfg?.default_strength || 'standard',
+      settings: loadedPrefs,
+      env,
+    });
+    const fallbackRows = CLAUDE_CATALOG_MODELS.map((m, idx) => ({
+      model: m,
+      efforts: ['low', 'medium', 'high', 'max'],
+      rank: idx,
+    }));
+    const vsPick = selectStrength('claude', fallbackRows, resolvedTier, loadedPrefs?.model_policy);
     selection = {
       family: 'claude',
-      model: resolveClaudeModel({ model, role, label, env }),
-      effort: null,
+      model: (!verificationSeat && explicitCallModel && explicitCallModel !== 'best') ? explicitCallModel : vsPick.model,
+      effort: vsPick.effort,
+      requested_strength: resolvedTier,
+      selection_evidence: resolvedTier === 'heavy' && vsCfg?.heavy?.model_steps_below === 0
+        ? 'heavy_review_fable_pin'
+        : vsPick.selection_evidence,
+    };
+  } else {
+    const pinnedHeavyOrReview = verificationSeat || (heavyTier && !explicitCallModel);
+    selection = {
+      family: 'claude',
+      model: pinnedHeavyOrReview
+        ? TIER_CLAUDE_MODELS.heavy
+        : (explicitResolved || null),
+      effort: pinnedHeavyOrReview ? 'max' : null,
+      ...(pinnedHeavyOrReview ? { selection_evidence: 'heavy_review_fable_pin' } : {}),
     };
   }
   const mdl = selection.model;
@@ -374,7 +550,10 @@ export function defaultRunClaude(fullPrompt, label, {
     const modelArgs = activeSelection.effort
       ? modelLaunchArgs(activeSelection)
       : (activeSelection.model ? ['--model', activeSelection.model] : []);
-    const launchArgs = [...baseArgs, ...modelArgs];
+    const pinArgs = activeSelection.model && !CLAUDE_MOVING_ALIASES.has(activeSelection.model)
+      ? ['--settings', '{"switchModelsOnFlag":false}']
+      : [];
+    const launchArgs = [...baseArgs, ...modelArgs, ...pinArgs];
     return processRunner({
       command: cmdName,
       args: launchArgs,
@@ -407,10 +586,16 @@ export function defaultRunClaude(fullPrompt, label, {
       rec.status = result.terminal;
       rec.error = result.error || result.stderr.slice(0, 500);
     }
+    if (rec.ok && (
+      normalizeClaudeFableModel(activeModel) === CANONICAL_FABLE_MODEL
+      || (verificationSeat && normalizeClaudeFableModel(activeModel) === CANONICAL_STANDARD_CLAUDE_MODEL)
+    )) {
+      attestClaudeFableReceipt(rec, { requestedModel: activeModel, label, role });
+    }
     rec.timed_out = result.terminal === 'timeout';
     rec.requested_effort = activeSelection.effort;
     rec.model_policy = activeSelection;
-    rec.highest_effort_verified = true;
+    rec.highest_effort_verified = activeSelection.effort === 'max' || !activeSelection.requested_strength || activeSelection.requested_strength === 'heavy';
     rec.aborted = result.terminal === 'aborted';
     rec.kill_status = result.kill_status;
     if (!_finalEnv) {
@@ -422,7 +607,37 @@ export function defaultRunClaude(fullPrompt, label, {
   return invokeModel(selection).then(async (initialResult) => {
     const initial = evaluateResult(initialResult, selection);
     if (
+      !initial.rec.ok
+      && initialResult.terminal === 'closed'
+      && !signal?.aborted
+      && env.ANCHOR_ALLOW_HEAVY_QUOTA_STEPDOWN === '1'
+      && normalizeClaudeFableModel(mdl) === CANONICAL_FABLE_MODEL
+      && isClaudeQuotaWall(initial.rec, initial._finalEnv, initialResult)
+    ) {
+      log(`   !! ${label}: Claude frontier model '${mdl}' hit subscription quota wall — stepping down once to '${CANONICAL_STANDARD_CLAUDE_MODEL}' @ medium (degraded:true)`);
+      const quotaStepdownSelection = {
+        ...selection,
+        model: CANONICAL_STANDARD_CLAUDE_MODEL,
+        effort: 'medium',
+        requested_strength: 'light',
+        quota_stepdown_from: CANONICAL_FABLE_MODEL,
+        selection_evidence: `${selection.selection_evidence || 'heavy_review_fable_pin'}+quota_wall_stepdown`,
+      };
+      const stepRaw = await invokeModel(quotaStepdownSelection);
+      const stepEval = evaluateResult(stepRaw, quotaStepdownSelection);
+      if (stepEval.rec.ok) {
+        stepEval.rec.degraded = true;
+        stepEval.rec.allow_quota_stepdown = true;
+        stepEval.rec.quota_stepdown_from = CANONICAL_FABLE_MODEL;
+        stepEval.rec.effective_strength = 'light';
+        stepEval.rec.initial_requested_model = mdl;
+        return { text: stepEval.text, rec: stepEval.rec };
+      }
+    }
+    const blockSameFamilyStepdown = (verificationSeat || heavyTier) && mdl === CANONICAL_FABLE_MODEL;
+    if (
       initial.rec.ok
+      || blockSameFamilyStepdown
       || initialResult.terminal !== 'closed'
       || signal?.aborted
       || !isClaudeModelCreditGate(initial.rec, initial._finalEnv, initialResult)
@@ -455,6 +670,7 @@ export function defaultRunClaude(fullPrompt, label, {
       lastAttempt = retryEval;
       if (retryEval.rec.ok) {
         retryEval.rec.fallback_from_model = mdl;
+        retryEval.rec.initial_requested_model = mdl;
         retryEval.rec.attempted_models = attemptedModels;
         return { text: retryEval.text, rec: retryEval.rec };
       }
@@ -471,6 +687,8 @@ export function defaultRunClaude(fullPrompt, label, {
     } else if (primaryError) {
       lastAttempt.rec.error = primaryError;
     }
+    lastAttempt.rec.requested_model = mdl;
+    lastAttempt.rec.initial_requested_model = mdl;
     lastAttempt.rec.attempted_models = attemptedModels;
     return { text: lastAttempt.text, rec: lastAttempt.rec };
   });

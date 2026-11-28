@@ -11,12 +11,223 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawnSync as nodeSpawnSync } from 'node:child_process';
 import { reconcileCodexCatalog } from './codex-catalog.mjs';
+import { isVerificationRole, normalizeRole } from './roles.mjs';
+
+const EXTRA_CLAUDE_VERIFICATION_ROLES = new Set(['verifier', 'adversarial']);
+const DATED_CLAUDE_FABLE_RE = /^claude-fable-5-2(?:-\d{8}|-\d{4}-\d{2}-\d{2})?$/;
+const DATED_CLAUDE_OPUS_55_RE = /^claude-opus-5-5(?:-\d{8}|-\d{4}-\d{2}-\d{2})?$/;
+const DATED_CLAUDE_SONNET_RE = /^claude-sonnet-\d+(?:-\d+)*(?:-\d{8}|-\d{4}-\d{2}-\d{2})?$/;
+const CLAUDE_MOVING_ALIAS_SET = new Set(['best', 'opus', 'sonnet', 'haiku']);
+const CLAUDE_DUPLICATE_ALIAS_SET = new Set(['best', 'opus']);
+const SMALL_OR_WRAPPER_TOKENS = ['flash', 'lite', 'nano', 'mini', 'haiku', 'spark', 'orchestrator'];
+
+export const STRENGTH_TIERS = Object.freeze(['standard', 'heavy', 'light']);
+export const TOP_EFFORT_CHOICES = Object.freeze(['highest', 'ultra', 'max', 'xhigh', 'high']);
+export const DEFAULT_HEAVY_SPEC = Object.freeze({ model_steps_below: 0, effort_steps_below: 0 });
+export const DEFAULT_LIGHT_SPEC = Object.freeze({ model_steps_below: 1, effort_steps_below: 2 });
+export const HEAVY_DEFAULT_SKILLS = Object.freeze(new Set(['anvil', 'chekhov', 'aegis', 'superjump']));
+export const VARIABLE_STRENGTH_POLICY = Object.freeze({
+  mode: 'variable_strength',
+  default_strength: 'standard',
+});
+
+const SKILL_ALIASES = Object.freeze({
+  anvil: 'anvil',
+  chekhov: 'chekhov',
+  checkov: 'chekhov',
+  aegis: 'aegis',
+  agies: 'aegis',
+  sentinel: 'aegis',
+  superjump: 'superjump',
+  'super-jump': 'superjump',
+  gandalf: 'gandalf',
+  researchprime: 'researchprime',
+  'research-prime': 'researchprime',
+  crucible: 'crucible',
+  foreman: 'foreman',
+  jumper: 'jumper',
+  ramanujan: 'ramanujan',
+  scribe: 'scribe',
+  einstein: 'einstein',
+  'legal-beagle': 'legal-beagle',
+  legalbeagle: 'legal-beagle',
+  'financial-analyst': 'financial-analyst',
+  financialanalyst: 'financial-analyst',
+  'doctor-seuss': 'doctor-seuss',
+  'literature-review': 'literature-review',
+  'figure-designer': 'figure-designer',
+  figuredesigner: 'figure-designer',
+  'tidy-idy': 'tidy-idy',
+  tidyidy: 'tidy-idy',
+  'zombie-hunter': 'zombie-hunter',
+  zombiehunter: 'zombie-hunter',
+  'agy-dispatch': 'agy-dispatch',
+  agydispatch: 'agy-dispatch',
+});
+
+const LEADING_SKILL_QUALIFIER_RE = /^\s*(?:(?:please\s+)?(?:run|use|launch|start|invoke)\s+|\/)?(?<skill>super\s+jump|super-jump|superjump|research\s*prime|research-prime|legal[-\s]+beagle|financial[-\s]+analyst|doctor[-\s]+seuss|literature[-\s]+review|figure[-\s]+designer|tidy[-\s]+idy|zombie[-\s]+hunter|agy[-\s]+dispatch|anvil|chekhov|checkov|aegis|agies|sentinel|gandalf|crucible|foreman|jumper|ramanujan|scribe|einstein)(?:\s+(?<strength>heavy|light|standard|regular))?(?=$|[\s:.,;\-—/!?])/i;
+
+export function normalizeStrength(value, fallback = 'standard') {
+  if (typeof value !== 'string') return fallback;
+  const tok = value.trim().toLowerCase();
+  if (tok === 'regular') return 'standard';
+  if (STRENGTH_TIERS.includes(tok)) return tok;
+  return fallback;
+}
+
+export function canonicalSkillName(skill) {
+  if (typeof skill !== 'string' || !skill.trim()) return null;
+  const cleaned = skill.trim().toLowerCase().replace(/[\s_]+/g, '-').replace(/^\/+|\/+$/g, '');
+  return SKILL_ALIASES[cleaned] ?? SKILL_ALIASES[cleaned.replace(/-/g, '')] ?? null;
+}
+
+export function parseLeadingSkillQualifier(text) {
+  if (typeof text !== 'string' || !text.trim()) return { skill: null, strength: null };
+  const m = LEADING_SKILL_QUALIFIER_RE.exec(text);
+  if (!m?.groups) return { skill: null, strength: null };
+  return {
+    skill: canonicalSkillName(m.groups.skill),
+    strength: normalizeStrength(m.groups.strength, null),
+  };
+}
+
+function normalizeStepSpec(raw, fallback) {
+  if (!object(raw)) fail(null, 'Strength tier spec must be an object.', 'settings_invalid');
+  const allowed = new Set(['model_steps_below', 'effort_steps_below']);
+  if (Object.keys(raw).some(k => !Object.hasOwn(raw, k) || !allowed.has(k))) {
+    fail(null, 'Strength tier spec contains unsupported keys.', 'settings_invalid');
+  }
+  const mSteps = raw.model_steps_below === undefined ? fallback.model_steps_below : raw.model_steps_below;
+  const eSteps = raw.effort_steps_below === undefined ? fallback.effort_steps_below : raw.effort_steps_below;
+  if (!Number.isSafeInteger(mSteps) || mSteps < 0 || mSteps > 3) {
+    fail(null, 'model_steps_below must be an integer between 0 and 3.', 'settings_invalid');
+  }
+  if (!Number.isSafeInteger(eSteps) || eSteps < 0 || eSteps > 3) {
+    fail(null, 'effort_steps_below must be an integer between 0 and 3.', 'settings_invalid');
+  }
+  return { model_steps_below: mSteps, effort_steps_below: eSteps };
+}
+
+function normalizeHeavySkills(raw) {
+  if (!Array.isArray(raw)) fail(null, 'heavy_skills must be an array of skill names.', 'settings_invalid');
+  const out = [];
+  for (const item of raw) {
+    if (typeof item !== 'string') fail(null, 'heavy_skills entries must be strings.', 'settings_invalid');
+    const canon = canonicalSkillName(item);
+    if (!canon) fail(null, `Unknown skill in heavy_skills: ${item}`, 'settings_invalid');
+    if (!out.includes(canon)) out.push(canon);
+  }
+  return out;
+}
+
+export function effectiveVariableStrengthConfig(policyOrSettings = null) {
+  const polRaw = object(policyOrSettings)
+    ? (Object.hasOwn(policyOrSettings, 'model_policy') ? policyOrSettings.model_policy : policyOrSettings)
+    : null;
+  const pol = object(polRaw) && polRaw.mode === 'variable_strength' ? polRaw : {};
+  const defStr = normalizeStrength(pol.default_strength, 'standard');
+  const topRaw = typeof pol.top_effort === 'string' ? pol.top_effort.trim().toLowerCase() : 'highest';
+  const topEff = TOP_EFFORT_CHOICES.includes(topRaw) ? topRaw : 'highest';
+  let heavySpec = { ...DEFAULT_HEAVY_SPEC };
+  if (object(pol.heavy)) {
+    try { heavySpec = normalizeStepSpec(pol.heavy, DEFAULT_HEAVY_SPEC); } catch { heavySpec = { ...DEFAULT_HEAVY_SPEC }; }
+  }
+  let lightSpec = { ...DEFAULT_LIGHT_SPEC };
+  if (object(pol.light)) {
+    try { lightSpec = normalizeStepSpec(pol.light, DEFAULT_LIGHT_SPEC); } catch { lightSpec = { ...DEFAULT_LIGHT_SPEC }; }
+  }
+  let heavySkills = [...HEAVY_DEFAULT_SKILLS];
+  if (Array.isArray(pol.heavy_skills)) {
+    try { heavySkills = normalizeHeavySkills(pol.heavy_skills); } catch { heavySkills = [...HEAVY_DEFAULT_SKILLS]; }
+  }
+  return {
+    mode: 'variable_strength',
+    default_strength: defStr,
+    top_effort: topEff,
+    heavy: heavySpec,
+    light: lightSpec,
+    heavy_skills: heavySkills,
+  };
+}
+
+function configuredHeavySkillsSet({ settings = null, heavySkills = null, env = null } = {}) {
+  if (Array.isArray(heavySkills)) {
+    try { return new Set(normalizeHeavySkills(heavySkills)); } catch { return HEAVY_DEFAULT_SKILLS; }
+  }
+  if (object(settings) && Array.isArray(settings.model_policy?.heavy_skills)) {
+    try { return new Set(normalizeHeavySkills(settings.model_policy.heavy_skills)); } catch { /* fall through */ }
+  }
+  if (env && (env.ANCHOR_SETTINGS_DIR || env.ANCHOR_DATA_DIR)) {
+    try {
+      const prefs = loadPolicyPrefs(env);
+      if (Array.isArray(prefs?.model_policy?.heavy_skills)) {
+        return new Set(normalizeHeavySkills(prefs.model_policy.heavy_skills));
+      }
+    } catch { /* fall through */ }
+  }
+  return HEAVY_DEFAULT_SKILLS;
+}
+
+export function resolveSkillStrength({
+  skill = null,
+  explicitStrength = null,
+  inheritedStrength = null,
+  cockpitStrength = null,
+  defaultStrength = 'standard',
+  settings = null,
+  heavySkills = null,
+  env = null,
+} = {}) {
+  const exp = normalizeStrength(explicitStrength, null);
+  if (exp !== null) return exp;
+  const inh = normalizeStrength(inheritedStrength, null);
+  if (inh !== null) return inh;
+  const ckp = normalizeStrength(cockpitStrength, null);
+  if (ckp === 'heavy' || ckp === 'light') return ckp;
+  const canon = canonicalSkillName(skill);
+  const heavySet = configuredHeavySkillsSet({ settings, heavySkills, env });
+  if (canon && heavySet.has(canon)) return 'heavy';
+  return normalizeStrength(defaultStrength, 'standard');
+}
+
+export function isVariableStrengthActive({ settings = null, env = process.env, tier = null, skill = null } = {}) {
+  const mode = settings?.model_policy?.mode;
+  if (mode === 'variable_strength') return true;
+  if (normalizeStrength(tier, null) === 'light') return true;
+  if (normalizeStrength(env?.ANCHOR_STRENGTH, null) !== null) return true;
+  if (normalizeStrength(env?.TRIO_TIER, null) === 'light') return true;
+  if (env?.ANCHOR_VARIABLE_STRENGTH === '1') return true;
+  if (canonicalSkillName(skill || env?.ANCHOR_SKILL) && mode !== 'latest_supported') return true;
+  return false;
+}
+
+export function isClaudeVerificationSeat({ role, label } = {}) {
+  if (isVerificationRole({ role, label })) return true;
+  const r = normalizeRole({ role, label });
+  return Boolean(r && EXTRA_CLAUDE_VERIFICATION_ROLES.has(r));
+}
+
+export function normalizeClaudeFableModel(modelIdValue) {
+  if (typeof modelIdValue !== 'string') return modelIdValue;
+  const trimmed = modelIdValue.trim();
+  if (DATED_CLAUDE_FABLE_RE.test(trimmed)) return 'claude-fable-5-2';
+  if (DATED_CLAUDE_OPUS_55_RE.test(trimmed)) return 'claude-opus-5-5';
+  return trimmed;
+}
 
 export const DEFAULT_POLICY = Object.freeze({
   mode: 'latest_supported',
   effort: 'highest_supported',
 });
 export const POLICY_VERSION = 1;
+export const CLAUDE_CATALOG_MODELS = Object.freeze([
+  'claude-fable-5-2',
+  'claude-opus-5-5',
+  'best',
+  'opus',
+  'sonnet',
+  'haiku',
+]);
 const FAMILIES = new Set(['claude', 'chatgpt', 'grok', 'gemini']);
 const EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
 const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/;
@@ -59,7 +270,33 @@ function familyName(family) {
 }
 
 export function validatePolicy(policy = DEFAULT_POLICY) {
-  if (!object(policy) || Object.keys(policy).some(key => !Object.hasOwn(DEFAULT_POLICY, key))
+  if (!object(policy)) {
+    fail(null, 'The model policy must request latest_supported and highest_supported or variable_strength.', 'settings_invalid');
+  }
+  if (policy.mode === 'variable_strength') {
+    const allowed = new Set(['mode', 'default_strength', 'top_effort', 'heavy', 'light', 'heavy_skills']);
+    if (Object.keys(policy).some(key => !Object.hasOwn(policy, key) || !allowed.has(key))) {
+      fail(null, 'The variable_strength model policy contains unsupported keys.', 'settings_invalid');
+    }
+    const rawDef = policy.default_strength === undefined ? 'standard' : policy.default_strength;
+    const normDef = normalizeStrength(rawDef, null);
+    if (typeof rawDef !== 'string' || normDef === null) {
+      fail(null, 'The variable_strength default_strength must be standard, heavy, or light.', 'settings_invalid');
+    }
+    const out = { mode: 'variable_strength', default_strength: normDef };
+    if (policy.top_effort !== undefined) {
+      const te = typeof policy.top_effort === 'string' ? policy.top_effort.trim().toLowerCase() : '';
+      if (!TOP_EFFORT_CHOICES.includes(te)) {
+        fail(null, 'The variable_strength top_effort must be highest, ultra, max, xhigh, or high.', 'settings_invalid');
+      }
+      out.top_effort = te;
+    }
+    if (policy.heavy !== undefined) out.heavy = normalizeStepSpec(policy.heavy, DEFAULT_HEAVY_SPEC);
+    if (policy.light !== undefined) out.light = normalizeStepSpec(policy.light, DEFAULT_LIGHT_SPEC);
+    if (policy.heavy_skills !== undefined) out.heavy_skills = normalizeHeavySkills(policy.heavy_skills);
+    return out;
+  }
+  if (Object.keys(policy).some(key => !Object.hasOwn(DEFAULT_POLICY, key))
       || policy.mode !== DEFAULT_POLICY.mode || policy.effort !== DEFAULT_POLICY.effort) {
     fail(null, 'The model policy must request latest_supported and highest_supported.', 'settings_invalid');
   }
@@ -292,11 +529,23 @@ export function normalizeCatalog(family, raw) {
     evidence = 'provider_catalog_order';
   } else {
     const efforts = claudeEfforts(raw);
-    entries = normalizedRows(family, ['best', 'opus', 'sonnet', 'haiku'].map((alias, index) => ({
-      model: alias,
-      efforts,
-      rank: index,
-    })));
+    const explicitModels = Array.isArray(raw?.models) && raw.models.length > 0
+      ? raw.models.map((item, index) => (typeof item === 'string'
+        ? { model: item, efforts, rank: index }
+        : {
+          model: item.model ?? item.slug ?? item.id,
+          efforts: item.efforts ?? efforts,
+          rank: item.rank ?? index,
+          upgrade: item.upgrade,
+        }))
+      : ((raw?.include_frontier === true || raw?.canonical === true)
+        ? CLAUDE_CATALOG_MODELS
+        : ['best', 'opus', 'sonnet', 'haiku']).map((alias, index) => ({
+        model: alias,
+        efforts,
+        rank: index,
+      }));
+    entries = normalizedRows(family, explicitModels);
     evidence = 'provider_moving_alias';
   }
   if (family === 'grok') {
@@ -331,6 +580,147 @@ export function selectModel(family, catalog) {
   return {
     family, model: selected.model, effort: highestEffort(selected.efforts, family),
     selection_evidence: upgraded ? `${normalized.selection_evidence}+provider_upgrade` : normalized.selection_evidence,
+    model_attested: false,
+    ...(normalized.warning ? { warning: normalized.warning } : {}),
+  };
+}
+
+const SMALL_OR_WRAPPER_TOKEN_SET = new Set(SMALL_OR_WRAPPER_TOKENS);
+
+function isSmallOrWrapperModel(modelId) {
+  const segs = String(modelId || '').toLowerCase().split(/[-_./:\s]+/);
+  return segs.some(seg => SMALL_OR_WRAPPER_TOKEN_SET.has(seg));
+}
+
+function geminiGeneralistSortKey(entry, origIndex) {
+  const name = String(entry.model || '').toLowerCase();
+  const segs = name.split(/[-_./:\s]+/);
+  const isSmall = segs.some(s => s === 'flash' || s === 'lite' || s === 'nano') ? 1 : 0;
+  const isInternal = segs.includes('orchestrator') ? 1 : 0;
+  const m = /^gemini-(\d+(?:\.\d+)*)/.exec(name);
+  const ver = m ? m[1].split('.').map(x => -Number(x)) : [1];
+  return { isSmall, isInternal, ver, origIndex };
+}
+
+function compareGeminiKeys(a, b) {
+  if (a.isSmall !== b.isSmall) return a.isSmall - b.isSmall;
+  if (a.isInternal !== b.isInternal) return a.isInternal - b.isInternal;
+  const maxLen = Math.max(a.ver.length, b.ver.length);
+  for (let i = 0; i < maxLen; i++) {
+    const av = a.ver[i] ?? 0;
+    const bv = b.ver[i] ?? 0;
+    if (av !== bv) return av - bv;
+  }
+  return a.origIndex - b.origIndex;
+}
+
+function resolveEffortForSteps(values, family, effortStepsBelow = 0, topEffort = 'highest') {
+  const supported = effortValues(values, family);
+  const ordered = EFFORTS.filter(value => supported.includes(value));
+  const capName = ['ultra', 'max', 'xhigh', 'high'].includes(topEffort) ? topEffort : 'ultra';
+  const capIdx = EFFORTS.indexOf(capName);
+  const capped = ordered.filter(e => EFFORTS.indexOf(e) <= capIdx);
+  const pool = capped.length ? capped : [ordered[0]];
+  const topRung = topEffort === 'high' ? 2 : 3;
+  const targetRung = Math.max(0, topRung - Math.max(0, Number(effortStepsBelow) || 0));
+  if (targetRung >= 3) return pool.at(-1);
+  if (targetRung === 2) {
+    if (pool.includes('high')) return 'high';
+    const le = pool.filter(e => EFFORTS.indexOf(e) <= EFFORTS.indexOf('high'));
+    return le.length ? le.at(-1) : pool[0];
+  }
+  if (targetRung === 1) {
+    if (pool.includes('medium')) return 'medium';
+    const le = pool.filter(e => EFFORTS.indexOf(e) <= EFFORTS.indexOf('medium'));
+    return le.length ? le.at(-1) : pool[0];
+  }
+  if (pool.includes('low')) return 'low';
+  const le = pool.filter(e => EFFORTS.indexOf(e) <= EFFORTS.indexOf('low'));
+  return le.length ? le.at(-1) : pool[0];
+}
+
+function standardEffortForLevels(values, family) {
+  return resolveEffortForSteps(values, family, 2, 'highest');
+}
+
+function generalistLadder(family, ranked) {
+  let generalist;
+  if (family === 'claude') {
+    const hasVersioned = ranked.some(r => !CLAUDE_MOVING_ALIAS_SET.has(r.model));
+    generalist = hasVersioned
+      ? ranked.filter(r => !CLAUDE_DUPLICATE_ALIAS_SET.has(r.model) && !isSmallOrWrapperModel(r.model))
+      : ranked.filter(r => !r.model.toLowerCase().includes('haiku'));
+  } else {
+    generalist = ranked.filter(r => !isSmallOrWrapperModel(r.model));
+  }
+  return generalist.length ? generalist : ranked;
+}
+
+export function selectStrength(family, catalog, strength = 'standard', policy = null) {
+  const effStrength = normalizeStrength(strength, 'standard');
+  const cfg = effectiveVariableStrengthConfig(policy);
+  const spec = effStrength === 'heavy' ? cfg.heavy : cfg.light;
+  const mSteps = Number(spec.model_steps_below) || 0;
+  const eSteps = Number(spec.effort_steps_below) || 0;
+  const topEff = cfg.top_effort || 'highest';
+  const alreadyNormalizedRows = Array.isArray(catalog)
+    && catalog.length > 0
+    && catalog.every(r => r && typeof r === 'object' && typeof r.model === 'string' && Array.isArray(r.efforts));
+  const normalized = alreadyNormalizedRows
+    ? {
+      schema_version: 1,
+      family,
+      models: normalizedRows(family, catalog),
+      selection_evidence: 'normalized_catalog',
+    }
+    : normalizeCatalog(family, catalog);
+  let ranked = [...normalized.models].sort((left, right) => left.rank - right.rank);
+  if (family === 'gemini') {
+    ranked = ranked
+      .map((entry, idx) => ({ entry, key: geminiGeneralistSortKey(entry, idx) }))
+      .sort((a, b) => compareGeminiKeys(a.key, b.key))
+      .map(item => item.entry);
+  }
+  if (family === 'chatgpt' && ranked.length > 1 && ranked[0].rank === ranked[1].rank) {
+    fail(family, 'Latest model ranking is ambiguous; refresh subscription capabilities.');
+  }
+  if (effStrength === 'heavy' && mSteps === 0 && eSteps === 0 && topEff === 'highest') {
+    const byId = new Map(ranked.map(entry => [entry.model, entry]));
+    const visited = new Set();
+    let selected = ranked[0];
+    let upgraded = false;
+    while (selected.upgrade) {
+      if (visited.has(selected.model)) fail(family, 'The model upgrade links contain a cycle.');
+      visited.add(selected.model);
+      const successor = byId.get(selected.upgrade);
+      if (!successor) fail(family, 'The advertised model upgrade target is absent or unavailable.');
+      selected = successor;
+      upgraded = true;
+    }
+    return {
+      family,
+      model: selected.model,
+      effort: highestEffort(selected.efforts, family),
+      requested_strength: 'heavy',
+      selection_evidence: upgraded ? `${normalized.selection_evidence}+provider_upgrade` : normalized.selection_evidence,
+      model_attested: false,
+      ...(normalized.warning ? { warning: normalized.warning } : {}),
+    };
+  }
+  const generalist = generalistLadder(family, ranked);
+  const idx = Math.min(Math.max(0, mSteps), generalist.length - 1);
+  const chosen = generalist[idx];
+  const stepSuffix = mSteps === 0
+    ? (eSteps > 0 || topEff !== 'highest' ? '+frontier_step0' : '')
+    : (generalist.length === 1
+      ? '+single_model_catalog_effort_stepdown'
+      : (idx === 1 ? '+one_below_frontier' : `+${idx}_below_frontier`));
+  return {
+    family,
+    model: chosen.model,
+    effort: resolveEffortForSteps(chosen.efforts, family, eSteps, topEff),
+    requested_strength: effStrength,
+    selection_evidence: `${normalized.selection_evidence}${stepSuffix}`,
     model_attested: false,
     ...(normalized.warning ? { warning: normalized.warning } : {}),
   };
@@ -437,7 +827,12 @@ export function preflightSubscriptionCli(family, {
     try { parsed = JSON.parse(String(run.stdout || '').trim()); } catch { parsed = null; }
     if (parsed && typeof parsed === 'object') {
       if (parsed.loggedIn === true) {
-        return { ok: true, family, status: 'ready', login_required: false, subscription_auth: true };
+        const subType = typeof parsed.subscriptionType === 'string' ? parsed.subscriptionType.trim().toLowerCase() : '';
+        const planTier = typeof parsed.planTier === 'string' ? parsed.planTier.trim().toLowerCase() : '';
+        return {
+          ok: true, family, status: 'ready', login_required: false, subscription_auth: true,
+          subscriptionType: subType || null, planTier: planTier || null,
+        };
       }
       return {
         ok: false, family, status: 'auth_expired', login_required: true,
@@ -513,13 +908,20 @@ export function discoverModelCapabilities(family, { env = process.env, executabl
     return normalizeCatalog(family, raw);
   }
   if (family === 'claude') {
+    let restrictFrontier = false;
     if (env.TRIO_SKIP_AUTH_PREFLIGHT !== '1') {
       const auth = preflightSubscriptionCli('claude', { env, executable });
       if (!auth.ok && (auth.status === 'auth_expired' || auth.login_required)) {
         fail('claude', 'Claude subscription CLI is not authenticated (run `claude auth login`).', 'auth_expired');
       }
+      restrictFrontier = auth.ok && (auth.subscriptionType === 'pro' || auth.subscriptionType === 'free');
     }
-    return normalizeCatalog(family, probe(family, executable, ['--help'], env));
+    return normalizeCatalog(family, {
+      help: probe(family, executable, ['--help'], env),
+      models: restrictFrontier
+        ? ['claude-opus-5-5', 'opus', 'sonnet', 'haiku']
+        : CLAUDE_CATALOG_MODELS,
+    });
   }
   const version = semver(probe(family, executable, ['--version'], env));
   if (!version) fail(family, 'The installed Grok version could not be verified.');
@@ -571,6 +973,7 @@ export function clearModelPolicyCache() {
 /** Resolve once per seat/turn boundary; callers persist this frozen receipt. */
 export function resolveModelPolicy(family, {
   env = process.env, settings, force = false, discoverer = discoverModelCapabilities,
+  role = null, label = null, tier = null, skill = null, model = null,
 } = {}) {
   familyName(family);
   const prefs = settings === undefined ? loadPolicyPrefs(env) : validatePrefs(settings);
@@ -581,13 +984,91 @@ export function resolveModelPolicy(family, {
   let key = keyFor();
   let entry = force ? null : cache.get(key);
   if (!entry || Date.now() - entry.at > TTL_MS || Date.now() < entry.at) {
-    const catalog = normalizeCatalog(family, discoverer(family, { env: policyEnvironment(env), executable }));
+    let rawDiscovered = discoverer(family, { env: policyEnvironment(env), executable });
+    if (family === 'claude' && rawDiscovered?.schema_version !== 1 && !Array.isArray(rawDiscovered?.models)) {
+      rawDiscovered = object(rawDiscovered)
+        ? { ...rawDiscovered, models: CLAUDE_CATALOG_MODELS }
+        : { help: rawDiscovered, models: CLAUDE_CATALOG_MODELS };
+    }
+    const catalog = normalizeCatalog(family, rawDiscovered);
     const at = Date.now();
     entry = { catalog, at, discovered_at: new Date(at).toISOString() };
     // Discovery may refresh a provider cache or authentication/config metadata.
     key = keyFor();
     cache.set(key, entry);
     if (cache.size > 64) cache.delete(cache.keys().next().value);
+  }
+  const vsActive = isVariableStrengthActive({ settings: prefs, env, tier, skill });
+  if (vsActive) {
+    const vsCfg = effectiveVariableStrengthConfig(prefs.model_policy?.mode === 'variable_strength' ? prefs.model_policy : prefs);
+    const effStrength = resolveSkillStrength({
+      skill: skill || env?.ANCHOR_SKILL,
+      explicitStrength: tier ?? env?.ANCHOR_STRENGTH ?? env?.TRIO_TIER,
+      inheritedStrength: env?.ANCHOR_INHERITED_STRENGTH,
+      cockpitStrength: env?.ANCHOR_COCKPIT_STRENGTH,
+      defaultStrength: vsCfg.default_strength || 'standard',
+      settings: prefs,
+      env,
+    });
+    let resolvedVs = selectStrength(family, entry.catalog, effStrength, vsCfg);
+    if (family === 'claude') {
+      const explicitTrimmed = typeof model === 'string' && model.trim() ? model.trim() : null;
+      const reviewEnvOverride = typeof env?.TRIO_CLAUDE_REVIEW_MODEL === 'string' && env.TRIO_CLAUDE_REVIEW_MODEL.trim()
+        ? env.TRIO_CLAUDE_REVIEW_MODEL.trim()
+        : null;
+      const verificationSeat = isClaudeVerificationSeat({ role, label });
+      if (reviewEnvOverride) {
+        const matchedEnv = entry.catalog.models.find(row => row.model === reviewEnvOverride);
+        if (matchedEnv) {
+          const requestedEff = typeof env?.CLAUDE_EFFORT === 'string' ? env.CLAUDE_EFFORT.trim().toLowerCase() : '';
+          resolvedVs = {
+            ...resolvedVs,
+            model: matchedEnv.model,
+            effort: (requestedEff && matchedEnv.efforts.includes(requestedEff))
+              ? requestedEff
+              : resolvedVs.effort,
+            selection_evidence: 'explicit_review_env_override',
+          };
+        }
+      } else if (!verificationSeat && explicitTrimmed && explicitTrimmed !== 'best' && explicitTrimmed !== 'latest_supported') {
+        const matchedExplicit = entry.catalog.models.find(row => row.model === explicitTrimmed);
+        if (matchedExplicit) {
+          const spec = effStrength === 'heavy' ? vsCfg.heavy : vsCfg.light;
+          resolvedVs = {
+            ...resolvedVs,
+            model: matchedExplicit.model,
+            effort: resolveEffortForSteps(matchedExplicit.efforts, family, spec.effort_steps_below, vsCfg.top_effort),
+            selection_evidence: 'explicit_call_model',
+          };
+        }
+      } else if (
+        effStrength === 'heavy'
+        && vsCfg.heavy.model_steps_below === 0
+        && (
+          entry.catalog.models.some(row => row.model === 'claude-fable-5-2')
+          || entry.catalog.models.every(row => CLAUDE_MOVING_ALIAS_SET.has(row.model))
+        )
+      ) {
+        const fableRow = entry.catalog.models.find(row => row.model === 'claude-fable-5-2');
+        resolvedVs = {
+          ...resolvedVs,
+          model: 'claude-fable-5-2',
+          effort: fableRow
+            ? resolveEffortForSteps(fableRow.efforts, family, vsCfg.heavy.effort_steps_below, vsCfg.top_effort)
+            : resolvedVs.effort,
+          selection_evidence: 'heavy_review_fable_pin',
+        };
+      }
+    }
+    return {
+      ...resolvedVs,
+      policy_version: POLICY_VERSION,
+      requested_policy: prefs.model_policy?.mode === 'variable_strength'
+        ? { ...prefs.model_policy }
+        : { ...VARIABLE_STRENGTH_POLICY },
+      settings_revision: prefs.settings_revision,
+      discovered_at: entry.discovered_at,
+    };
   }
   const baseSelection = selectModel(family, entry.catalog);
   const qualityChoice = prefs.provider_preferences?.quality?.[family];
@@ -610,6 +1091,47 @@ export function resolveModelPolicy(family, {
           selection_evidence: 'explicit_setup_choice',
         };
       }
+    }
+  }
+  if (family === 'claude') {
+    const explicitTrimmed = typeof model === 'string' && model.trim() ? model.trim() : null;
+    const reviewEnvOverride = typeof env?.TRIO_CLAUDE_REVIEW_MODEL === 'string' && env.TRIO_CLAUDE_REVIEW_MODEL.trim()
+      ? env.TRIO_CLAUDE_REVIEW_MODEL.trim()
+      : null;
+    const verificationSeat = isClaudeVerificationSeat({ role, label });
+    const heavyTier = String(tier ?? env?.TRIO_TIER ?? '').trim().toLowerCase() === 'heavy';
+    const heavyOrReview = verificationSeat || heavyTier;
+    if (reviewEnvOverride) {
+      const matchedEnv = entry.catalog.models.find(row => row.model === reviewEnvOverride);
+      if (matchedEnv) {
+        const requestedEff = typeof env?.CLAUDE_EFFORT === 'string' ? env.CLAUDE_EFFORT.trim().toLowerCase() : '';
+        resolvedSelection = {
+          ...resolvedSelection,
+          model: matchedEnv.model,
+          effort: (requestedEff && matchedEnv.efforts.includes(requestedEff))
+            ? requestedEff
+            : highestEffort(matchedEnv.efforts, family),
+          selection_evidence: 'explicit_review_env_override',
+        };
+      }
+    } else if (!verificationSeat && explicitTrimmed && explicitTrimmed !== 'best' && explicitTrimmed !== 'latest_supported') {
+      const matchedExplicit = entry.catalog.models.find(row => row.model === explicitTrimmed);
+      if (matchedExplicit) {
+        resolvedSelection = {
+          ...resolvedSelection,
+          model: matchedExplicit.model,
+          effort: highestEffort(matchedExplicit.efforts, family),
+          selection_evidence: 'explicit_call_model',
+        };
+      }
+    } else if (heavyOrReview) {
+      const fableRow = entry.catalog.models.find(row => row.model === 'claude-fable-5-2');
+      resolvedSelection = {
+        ...resolvedSelection,
+        model: 'claude-fable-5-2',
+        effort: fableRow ? highestEffort(fableRow.efforts, family) : resolvedSelection.effort,
+        selection_evidence: 'heavy_review_fable_pin',
+      };
     }
   }
   return {

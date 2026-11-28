@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { getGitignorePatterns, isIgnored } from './context-sizer.mjs';
-import { makeGeminiCliSeam, resolveGeminiModel } from 'fil<path>';
+import { makeGeminiCliSeam, resolveGeminiModel } from '../../drivers/gemini-cli.mjs';
 
 /**
  * Generates a lightweight, indented .txt tree representation of the codebase,

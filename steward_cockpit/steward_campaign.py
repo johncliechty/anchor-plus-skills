@@ -6773,6 +6773,49 @@ def discover_efforts(root_dir: str):
     return [dict(x) for x in efforts]
 
 
+_JOBS_STAMP_CACHE: dict[str, tuple[int, int, str]] = {}
+_JOBS_VOLATILE_NESTED_KEYS = frozenset(("observed_at", "activity_at", "last_activity", "heartbeat_at"))
+
+
+def _jobs_semantic_stamp(fpath: Path) -> str:
+    """Stable stamp for code-jobs.json / skill-jobs.json that ignores 30s supervision heartbeat timestamps."""
+    try:
+        st = fpath.stat()
+    except OSError:
+        return "0"
+    key = os.path.normcase(str(fpath))
+    cached = _JOBS_STAMP_CACHE.get(key)
+    if cached is not None and cached[0] == st.st_mtime_ns and cached[1] == st.st_size:
+        return cached[2]
+    try:
+        raw = json.loads(fpath.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            sig = str(st.st_mtime_ns)
+        else:
+            cleaned = {}
+            for jid in sorted(raw.keys(), key=str):
+                item = raw[jid]
+                if not isinstance(item, dict):
+                    cleaned[str(jid)] = item
+                    continue
+                entry = {}
+                for k, v in item.items():
+                    if k in _JOBS_VOLATILE_NESTED_KEYS:
+                        continue
+                    if k in ("supervision", "process", "command") and isinstance(v, dict):
+                        entry[k] = {sk: sv for sk, sv in v.items() if sk not in _JOBS_VOLATILE_NESTED_KEYS}
+                    else:
+                        entry[k] = v
+                cleaned[str(jid)] = entry
+            sig = hashlib.sha256(json.dumps(cleaned, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:16]
+    except Exception:
+        sig = str(st.st_mtime_ns)
+    if len(_JOBS_STAMP_CACHE) > 512:
+        _JOBS_STAMP_CACHE.clear()
+    _JOBS_STAMP_CACHE[key] = (st.st_mtime_ns, st.st_size, sig)
+    return sig
+
+
 def map_stamp(campaign_dir: str):
     """Cheap change detector: mtimes of the files the map and status are painted from."""
     root = Path(campaign_dir)
@@ -6780,12 +6823,13 @@ def map_stamp(campaign_dir: str):
     for rel in ("ECGBERHT.md", "roadmap.json", "strip.json", "DELIVERABLES.md", "plan-proposal.json",
                 ".ecgberht/attention.json", ".ecgberht/dismissed-deliverables.json",
                 ".ecgberht/plan-proposal.json", ".ecgberht/plan-history.json",
-                ".ecgberht/wave-state.json", ".ecgberht/deliverable-batches.json",
-                ".ecgberht/code-jobs.json", ".ecgberht/skill-jobs.json"):
+                ".ecgberht/wave-state.json", ".ecgberht/deliverable-batches.json"):
         try:
             stamp.append((root / rel).stat().st_mtime_ns)
         except OSError:
             stamp.append(0)
+    for jrel in (".ecgberht/code-jobs.json", ".ecgberht/skill-jobs.json"):
+        stamp.append(_jobs_semantic_stamp(root / jrel))
     try:   # W2d: a guide the steward wrote reloads the page that shows it
         for gp in sorted((root / "goals").glob("*/GUIDE.md")):
             stamp.append(gp.stat().st_mtime_ns)

@@ -23,6 +23,10 @@
 - Not free to invent quotes — fabricated quotes are rejected
 - Not a substitute for reading the papers that matter most to you
 
+## Variable Strength (`Literature-Review` Standard Default vs. `Literature-Review Heavy`) — What to Call When
+- **Call `Literature-Review` (default = `Standard` · one generalist model below frontier @ `medium` effort on extraction, synthesis, and review)** when mapping a new topic around a seed paper, building a working comparison matrix, or screening candidate citations quickly.
+- **Call `Literature-Review Heavy` (`⚡ Heavy` · frontier model @ full effort across synthesis and the governed `researchPrime` adversarial round)** when producing a publication-bound related-work section, grant narrative, or contested clinical/scientific synthesis where subtle methodological distinctions matter.
+
 ## How to start (human)
 1. Provide a seed PDF or Semantic Scholar link and what columns you care about.
 2. Review the ranked candidate list; approve or reject before extraction.

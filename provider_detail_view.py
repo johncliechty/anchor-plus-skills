@@ -14,7 +14,7 @@ MAX_POST_BODY_BYTES, PROBE_TIMEOUT_S = 32 * 1024, 2.0
 STATE_FILENAME, LOCK_FILENAME = "provider_detail_state.json", "provider_detail_state.lock"
 FAMILY_META = {
     "claude": ("Claude (Anthropic)", "claude-code", "claude-fable-5-2 · max", "Primary Coding & Steward Seat"),
-    "gemini": ("Gemini (Google Antigravity / agy)", "agy CLI", "gemini-4-neon · high", "Cross-Family Adversarial Reviewer & Heavy Reader"),
+    "gemini": ("Gemini (Google Antigravity / agy)", "agy CLI", "gemini-4-hydrogen · high", "Cross-Family Adversarial Reviewer & Heavy Reader"),
     "chatgpt": ("ChatGPT / Codex (OpenAI)", "codex CLI", "gpt-6-luna · ultra", "Synthesis & Secondary Shark Seat"),
     "grok": ("Grok (xAI)", "grok CLI", "grok-4.7 · xhigh", "Independent 3rd-Family Shark & Refuter"),
 }

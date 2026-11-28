@@ -1,0 +1,342 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "anvil-comprehension-schema/v1",
+  "title": "Anvil Unified Semantic Comprehension Schema",
+  "description": "Frozen schema for Pass 1 (Scoping Map-Reduce + Gandalf Critique) and Pass 2 (Workbench Process Schematic, Causal Triptychs, Paper-Code Crosswalk, Ramanujan Bidirectional Math Audit, and Refactoring Proposals). Model-proposed rungs are strictly bounded to CLAIMED or CONJECTURAL; OBSERVED is minted exclusively by deterministic host code from signed execution receipts.",
+  "$defs": {
+    "modelRung": {
+      "type": "string",
+      "enum": ["CLAIMED", "CONJECTURAL"]
+    },
+    "evidenceRef": {
+      "type": "object",
+      "required": ["kind", "target"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["code", "paper", "bib", "workflow"]
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 260
+        },
+        "start_line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "end_line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "token_hint": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "eq_label": {
+          "type": "string",
+          "maxLength": 120
+        }
+      }
+    },
+    "l2Step": {
+      "type": "object",
+      "required": ["step_id", "title", "symbol", "file", "start_line", "end_line", "summary", "rung", "evidence_refs"],
+      "additionalProperties": false,
+      "properties": {
+        "step_id": { "type": "string", "pattern": "^S[1-8]\\.[1-9][0-9]*$" },
+        "title": { "type": "string", "minLength": 2, "maxLength": 140 },
+        "symbol": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "file": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "start_line": { "type": "integer", "minimum": 1 },
+        "end_line": { "type": "integer", "minimum": 1 },
+        "summary": { "type": "string", "minLength": 4, "maxLength": 600 },
+        "math_tex": { "type": "string", "maxLength": 800 },
+        "wall_share_pct": { "const": "unmeasured" },
+        "rung": { "$ref": "#/$defs/modelRung" },
+        "evidence_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/evidenceRef" }
+        }
+      }
+    },
+    "ramanujanFinding": {
+      "type": "object",
+      "required": ["finding_id", "direction", "severity", "verdict", "title", "paper_claim", "code_reality", "impact", "rung", "evidence_refs"],
+      "additionalProperties": false,
+      "properties": {
+        "finding_id": { "type": "string", "minLength": 2, "maxLength": 64 },
+        "direction": { "type": "string", "enum": ["paper_to_code", "code_to_paper", "kernel_precondition"] },
+        "severity": { "type": "string", "enum": ["blocker", "major", "minor", "info"] },
+        "verdict": {
+          "type": "string",
+          "enum": ["STATIC_MATCH", "DIVERGENCE_SUSPECTED", "UNDOCUMENTED_CODE_BEHAVIOR", "PRECONDITION_RISK", "UNBOUND_IN_SLICE"]
+        },
+        "title": { "type": "string", "minLength": 3, "maxLength": 180 },
+        "eq_label": { "type": "string", "maxLength": 120 },
+        "paper_tex": { "type": "string", "maxLength": 1200 },
+        "paper_claim": { "type": "string", "minLength": 3, "maxLength": 900 },
+        "code_symbol": { "type": "string", "maxLength": 220 },
+        "code_reality": { "type": "string", "minLength": 3, "maxLength": 900 },
+        "impact": { "type": "string", "minLength": 3, "maxLength": 700 },
+        "slice_truncated": { "type": "boolean" },
+        "rung": { "$ref": "#/$defs/modelRung" },
+        "evidence_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/evidenceRef" }
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "title": "Pass1ScopingEnvelope",
+      "type": "object",
+      "required": ["schema", "pass", "scope_sha256", "atom_coverage_pct", "modules", "gandalf_critique"],
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "anvil-comprehension-pass1/v1" },
+        "pass": { "const": "pass1_scoping" },
+        "scope_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "atom_coverage_pct": { "type": "number", "minimum": 0, "maximum": 100 },
+        "modules": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "required": ["module_id", "title", "role", "summary", "atom_ids", "rung", "evidence_refs"],
+            "additionalProperties": false,
+            "properties": {
+              "module_id": { "type": "string", "pattern": "^[a-z0-9_-]+$" },
+              "title": { "type": "string", "minLength": 3, "maxLength": 120 },
+              "role": {
+                "type": "string",
+                "enum": ["core_estimator", "estimation_pipeline", "table_replicators", "simulation", "data_etl", "tests_historical", "unscoped_plumbing", "sibling_repo"]
+              },
+              "summary": { "type": "string", "minLength": 6, "maxLength": 500 },
+              "atom_ids": {
+                "type": "array",
+                "items": { "type": "string", "pattern": "^[0-9a-f]{16}$" }
+              },
+              "paper_targets": {
+                "type": "array",
+                "items": { "type": "string", "maxLength": 120 }
+              },
+              "rung": { "$ref": "#/$defs/modelRung" },
+              "evidence_refs": {
+                "type": "array",
+                "items": { "$ref": "#/$defs/evidenceRef" }
+              }
+            }
+          }
+        },
+        "gandalf_critique": {
+          "type": "object",
+          "required": ["what_is_really_going_on", "missing_or_wrong", "coming_problems", "rung", "evidence_refs"],
+          "additionalProperties": false,
+          "properties": {
+            "what_is_really_going_on": { "type": "string", "minLength": 10, "maxLength": 1200 },
+            "missing_or_wrong": { "type": "string", "minLength": 6, "maxLength": 1200 },
+            "coming_problems": { "type": "string", "minLength": 6, "maxLength": 1200 },
+            "rung": { "$ref": "#/$defs/modelRung" },
+            "evidence_refs": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/evidenceRef" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "Pass2ComprehensionEnvelope",
+      "type": "object",
+      "required": [
+        "schema",
+        "pass",
+        "scope_sha256",
+        "epoch",
+        "l0_scenarios",
+        "l1_stages",
+        "edges",
+        "causal_triptych",
+        "story_diff_rows",
+        "paper_aligned_rows",
+        "null_set",
+        "ramanujan_audit",
+        "refactor_candidates"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "anvil-comprehension-pass2/v1" },
+        "pass": { "const": "pass2_comprehension" },
+        "scope_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "epoch": { "type": "integer", "minimum": 1 },
+        "l0_scenarios": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "required": ["scenario_id", "title", "entrypoint", "summary", "stage_ids"],
+            "additionalProperties": false,
+            "properties": {
+              "scenario_id": { "type": "string", "minLength": 2, "maxLength": 64 },
+              "title": { "type": "string", "minLength": 2, "maxLength": 140 },
+              "entrypoint": { "type": "string", "maxLength": 240 },
+              "summary": { "type": "string", "maxLength": 500 },
+              "paper_targets": { "type": "array", "items": { "type": "string", "maxLength": 120 } },
+              "stage_ids": { "type": "array", "minItems": 1, "items": { "type": "string", "pattern": "^S[1-8]$" } }
+            }
+          }
+        },
+        "l1_stages": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "required": ["stage_id", "title", "subtitle", "kind", "files", "symbols", "wall_share_pct", "l2_steps", "rung", "evidence_refs"],
+            "additionalProperties": false,
+            "properties": {
+              "stage_id": { "type": "string", "pattern": "^S[1-8]$" },
+              "title": { "type": "string", "minLength": 2, "maxLength": 120 },
+              "subtitle": { "type": "string", "minLength": 2, "maxLength": 220 },
+              "kind": { "type": "string", "enum": ["ingest", "prep", "kernel", "optimize", "evaluate", "output", "orchestrate"] },
+              "files": { "type": "array", "minItems": 1, "items": { "type": "string", "maxLength": 240 } },
+              "symbols": { "type": "array", "minItems": 1, "items": { "type": "string", "maxLength": 240 } },
+              "inputs": { "type": "array", "items": { "type": "string", "maxLength": 120 } },
+              "outputs": { "type": "array", "items": { "type": "string", "maxLength": 120 } },
+              "eq_labels": { "type": "array", "items": { "type": "string", "maxLength": 120 } },
+              "refactor_target_id": { "type": "string", "pattern": "^N[1-8]$" },
+              "wall_share_pct": { "const": "unmeasured" },
+              "l2_steps": { "type": "array", "minItems": 1, "maxItems": 8, "items": { "$ref": "#/$defs/l2Step" } },
+              "rung": { "$ref": "#/$defs/modelRung" },
+              "evidence_refs": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/evidenceRef" } }
+            }
+          }
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["from", "to", "label", "kind", "witnessed"],
+            "additionalProperties": false,
+            "properties": {
+              "from": { "type": "string", "pattern": "^S[1-8]$" },
+              "to": { "type": "string", "pattern": "^S[1-8]$" },
+              "label": { "type": "string", "maxLength": 120 },
+              "kind": { "type": "string", "enum": ["forward", "skip", "feedback_loop"] },
+              "witnessed": { "const": false }
+            }
+          }
+        },
+        "causal_triptych": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["stage_id", "chapter_title", "why_needed", "transform_mechanism", "downstream_handoff", "rung", "evidence_refs"],
+            "additionalProperties": false,
+            "properties": {
+              "stage_id": { "type": "string", "pattern": "^S[1-8]$" },
+              "chapter_title": { "type": "string", "minLength": 3, "maxLength": 160 },
+              "why_needed": { "type": "string", "minLength": 6, "maxLength": 700 },
+              "transform_mechanism": { "type": "string", "minLength": 6, "maxLength": 900 },
+              "downstream_handoff": { "type": "string", "minLength": 6, "maxLength": 700 },
+              "math_tex": { "type": "string", "maxLength": 1000 },
+              "rung": { "$ref": "#/$defs/modelRung" },
+              "evidence_refs": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/evidenceRef" } }
+            }
+          }
+        },
+        "story_diff_rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["from_stage_id", "to_node_id", "today_title", "today_detail", "pure_core_title", "pure_core_detail", "disposition", "rung", "evidence_refs"],
+            "additionalProperties": false,
+            "properties": {
+              "from_stage_id": { "type": "string", "pattern": "^S[1-8]$" },
+              "to_node_id": { "type": "string", "pattern": "^(N[1-8]|NULL)$" },
+              "today_title": { "type": "string", "maxLength": 160 },
+              "today_detail": { "type": "string", "maxLength": 600 },
+              "pure_core_title": { "type": "string", "maxLength": 160 },
+              "pure_core_detail": { "type": "string", "maxLength": 600 },
+              "disposition": { "type": "string", "enum": ["preserve_pure", "extract_pure_core", "isolate_io_shell", "quarantine_null_set"] },
+              "rung": { "$ref": "#/$defs/modelRung" },
+              "evidence_refs": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/evidenceRef" } }
+            }
+          }
+        },
+        "paper_aligned_rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["row_id", "eq_label", "section", "paper_tex", "code_symbol", "code_file", "start_line", "end_line", "verdict", "rationale", "rung", "evidence_refs"],
+            "additionalProperties": false,
+            "properties": {
+              "row_id": { "type": "string", "minLength": 2, "maxLength": 64 },
+              "stage_id": { "type": "string", "pattern": "^S[1-8]$" },
+              "eq_label": { "type": "string", "minLength": 1, "maxLength": 120 },
+              "eq_number": { "type": "string", "maxLength": 32 },
+              "section": { "type": "string", "maxLength": 180 },
+              "paper_tex": { "type": "string", "maxLength": 1500 },
+              "code_symbol": { "type": "string", "maxLength": 220 },
+              "code_file": { "type": "string", "maxLength": 240 },
+              "start_line": { "type": "integer", "minimum": 1 },
+              "end_line": { "type": "integer", "minimum": 1 },
+              "verdict": { "type": "string", "enum": ["STATIC_MATCH", "DIVERGENCE_SUSPECTED", "UNBOUND_IN_SLICE"] },
+              "rationale": { "type": "string", "minLength": 4, "maxLength": 900 },
+              "rung": { "$ref": "#/$defs/modelRung" },
+              "evidence_refs": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/evidenceRef" } }
+            }
+          }
+        },
+        "null_set": {
+          "type": "object",
+          "required": ["tier1_dead", "tier2_plumbing", "tier3_io_harness"],
+          "additionalProperties": false,
+          "properties": {
+            "tier1_dead": { "type": "array", "items": { "type": "string", "maxLength": 240 } },
+            "tier2_plumbing": { "type": "array", "items": { "type": "string", "maxLength": 240 } },
+            "tier3_io_harness": { "type": "array", "items": { "type": "string", "maxLength": 240 } }
+          }
+        },
+        "ramanujan_audit": {
+          "type": "object",
+          "required": ["pass2a_paper_to_code", "pass2b_code_to_paper", "kernel_preconditions"],
+          "additionalProperties": false,
+          "properties": {
+            "pass2a_paper_to_code": { "type": "array", "items": { "$ref": "#/$defs/ramanujanFinding" } },
+            "pass2b_code_to_paper": { "type": "array", "items": { "$ref": "#/$defs/ramanujanFinding" } },
+            "kernel_preconditions": { "type": "array", "items": { "$ref": "#/$defs/ramanujanFinding" } }
+          }
+        },
+        "refactor_candidates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["refactor_id", "title", "category", "direction", "target_file", "target_symbol", "summary", "wrong_side_warning", "rung", "evidence_refs"],
+            "additionalProperties": false,
+            "properties": {
+              "refactor_id": { "type": "string", "minLength": 2, "maxLength": 64 },
+              "title": { "type": "string", "minLength": 3, "maxLength": 180 },
+              "category": { "type": "string", "enum": ["pure_core_extraction", "numerical_stability", "paper_code_reconciliation", "dead_code_quarantine"] },
+              "direction": { "type": "string", "enum": ["preserve_behavior_pure_refactor", "reconcile_code_to_paper", "reconcile_paper_to_code", "needs_author_intent_decision"] },
+              "target_file": { "type": "string", "maxLength": 240 },
+              "target_symbol": { "type": "string", "maxLength": 220 },
+              "summary": { "type": "string", "minLength": 6, "maxLength": 900 },
+              "wrong_side_warning": { "type": "string", "maxLength": 700 },
+              "rung": { "$ref": "#/$defs/modelRung" },
+              "evidence_refs": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/evidenceRef" } }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

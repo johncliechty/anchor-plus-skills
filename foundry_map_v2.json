@@ -3,6 +3,26 @@
   "map_version": 2,
   "skills": [
     {
+      "ref": "skill:aegis",
+      "name": "aegis",
+      "source": "skills/aegis",
+      "status": "4 - Beta",
+      "tier": "standard",
+      "version": "1.0.0",
+      "edges": [],
+      "note": "defensive software security vulnerability scanner and AST/LibCST auto-remediation engine across 6 CWE/OWASP families"
+    },
+    {
+      "ref": "skill:agy-dispatch",
+      "name": "agy-dispatch",
+      "source": "skills/agy-dispatch",
+      "status": "5 - Production/Stable",
+      "tier": "standard",
+      "version": "1.0.0",
+      "edges": [],
+      "note": "cross-family Antigravity CLI (agy) model-verified dispatch transport underpinning adversarial review"
+    },
+    {
       "ref": "skill:anvil",
       "name": "anvil",
       "source": "skills/anvil",
@@ -45,6 +65,36 @@
         }
       ],
       "note": "canonical-external pointer (trio monorepo); the Foundry records the location, holds no copy"
+    },
+    {
+      "ref": "skill:ecgberht",
+      "name": "ecgberht",
+      "source": "C:/dev/ecgberht",
+      "status": "5 - Production/Stable",
+      "tier": "standard",
+      "version": "1.5.8",
+      "edges": [],
+      "note": "portfolio and project Steward campaign-memory engine driving Cave of Wonders, Star Chart, and AI Cockpits"
+    },
+    {
+      "ref": "skill:einstein",
+      "name": "einstein",
+      "source": "skills/einstein",
+      "status": "4 - Beta",
+      "tier": "standard",
+      "version": "1.0.0",
+      "edges": [],
+      "note": "guided interactive self-study and course pack generator with verified worked solutions"
+    },
+    {
+      "ref": "skill:figure-designer",
+      "name": "figure-designer",
+      "source": "skills/figure-designer",
+      "status": "4 - Beta",
+      "tier": "standard",
+      "version": "1.0.0",
+      "edges": [],
+      "note": "scientific publication figure, architecture schematic, and multi-panel diagram design skill"
     },
     {
       "ref": "skill:financial-analyst",
@@ -147,6 +197,33 @@
         }
       ],
       "note": "stable ref differs from the display name on purpose — the ref survives a rename"
+    },
+    {
+      "ref": "skill:scribe",
+      "name": "scribe",
+      "source": "skills/scribe",
+      "status": "5 - Production/Stable",
+      "tier": "standard",
+      "version": "1.0.0",
+      "edges": [],
+      "note": "correspondence intelligence, voice-faithful email drafting, and durable interest/priority memory engine"
+    },
+    {
+      "ref": "skill:superjump",
+      "name": "superjump",
+      "source": "skills/superjump",
+      "status": "4 - Beta",
+      "tier": "standard",
+      "version": "1.0.0",
+      "edges": [
+        {
+          "type": "compose",
+          "to": "skill:gandalf",
+          "range": "^1.0.0",
+          "note": "structured analogical-leap ideation with cross-family Fit-Contract evaluation"
+        }
+      ],
+      "note": "structured high-divergence ideation engine with inspectable analogical transfer traces"
     },
     {
       "ref": "skill:tidy-idy",

@@ -16,7 +16,7 @@ import {
   LIT_REVIEW_SAFETY_FLOOR,
   LIT_REVIEW_PARTIAL_OVERRIDE_REFUSED,
   LIT_REVIEW_UNKNOWN_DEPTH,
-} from 'fil<path>';
+} from '<path>';
 
 export {
   literatureReviewKnobs,

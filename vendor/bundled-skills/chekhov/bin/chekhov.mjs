@@ -44,6 +44,26 @@ function fail(msg, code) {
 }
 
 async function main(argv) {
+  const tierVal = flagValue(argv, '--tier');
+  if (tierVal !== null) {
+    const normT = String(tierVal).trim().toLowerCase();
+    if (!['heavy', 'light', 'standard', 'regular'].includes(normT)) {
+      fail('--tier must be Heavy, Light, or Standard', 2);
+    }
+    const effT = normT === 'regular' ? 'standard' : normT;
+    process.env.TRIO_TIER = effT;
+    process.env.ANCHOR_STRENGTH = effT;
+    const stripped = [];
+    for (let i = 0; i < argv.length; i++) {
+      if (argv[i] === '--tier') { i++; continue; }
+      stripped.push(argv[i]);
+    }
+    argv = stripped;
+  } else if (!process.env.ANCHOR_STRENGTH && !process.env.TRIO_TIER) {
+    process.env.TRIO_TIER = 'heavy';
+    process.env.ANCHOR_STRENGTH = 'heavy';
+  }
+  process.env.ANCHOR_SKILL = 'chekhov';
   const [cmd, ...rest] = argv;
   if (!cmd) {
     if (process.stdin.isTTY === true) fail(USAGE, 2);

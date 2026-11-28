@@ -6,8 +6,8 @@ import {
   recommendForSkill,
   resolveSkillLock,
   knobsAfterLock,
-} from 'fil<path>';
-import { knobsForSkill } from 'fil<path>';
+} from '<path>';
+import { knobsForSkill } from '<path>';
 
 /**
  * First non-empty string token (trim). Empty / whitespace → null.

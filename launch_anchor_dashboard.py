@@ -157,7 +157,27 @@ def main(argv=None) -> int:
         default=DEFAULT_RETRIES,
         help="Re-probe attempts after start",
     )
+    p.add_argument(
+        "--restart-after-pid",
+        type=int,
+        default=0,
+        help="Wait up to 15s for old server PID to release the port before starting",
+    )
+    p.add_argument(
+        "--post-update-rebind",
+        action="store_true",
+        help="Set ANCHOR_POST_UPDATE_REBIND=1 so the replacement server retries bind for up to 20s",
+    )
     args = p.parse_args(argv)
+
+    if args.restart_after_pid and args.restart_after_pid > 0:
+        deadline = time.monotonic() + 15.0
+        while time.monotonic() < deadline:
+            if not sob.probe_local_dashboard(args.url).get("ok"):
+                break
+            time.sleep(0.35)
+    if args.post_update_rebind:
+        os.environ["ANCHOR_POST_UPDATE_REBIND"] = "1"
 
     # v1.1.3: resolve the onboard-minted token so (a) a spawned server gets it
     # in its env (mutating APIs + terminals gated by default) and (b) the

@@ -1,0 +1,1 @@
+Built from Anchor foundry-gui Vite SPA bundle (vendored for collaborator visual /foundry parity).

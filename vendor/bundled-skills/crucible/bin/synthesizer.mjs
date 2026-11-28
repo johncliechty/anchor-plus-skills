@@ -101,6 +101,8 @@ function directionPrompt({ northStar, lastRound, journal, research }) {
     `Emit: lean (lockable|not-lockable|unknown), openDisputes, riskRegister, probingBrief`,
     `(what the next round must press hardest on), suggestions (Oranges: what's missing /`,
     `needed two steps ahead).`,
+    `ANTI-BLOAT LAW: steer revisions to CONSOLIDATE/REPLACE weak clauses (keeping per-wave doneWhen <=360 words),`,
+    `reuse existing repo helpers instead of inventing parallel lock/CLI frameworks, and reject speculative scope accretion.`,
   ].join('\n');
 }
 

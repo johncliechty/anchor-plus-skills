@@ -299,16 +299,41 @@ def settle_stopped_finalizer(cdir, job):
     return stopped
 
 
+_LAST_SUPERVISION_CHECK: dict[tuple[str, str, int], float] = {}
+_VOLATILE_SUPERVISION_KEYS = frozenset(("observed_at", "activity_at"))
+
+
+def _supervision_semantic_view(sup: dict | None) -> dict:
+    if not isinstance(sup, dict):
+        return {}
+    return {k: v for k, v in sup.items() if k not in _VOLATILE_SUPERVISION_KEYS}
+
+
 def refresh_supervision(cdir, *, engine=None):
     """The existing steward ticker takes one cheap sample per live job; no worker/model is started."""
     now = time.time()
+    cdir_key = cj._norm(cdir)
     for job in cj.read_jobs(cdir).values():
         if settle_stopped_finalizer(cdir, job) is not None:
             continue
-        if job.get("status") not in cj.LIVE or now - (job.get("supervision") or {}).get("observed_at", 0) < 30:
+        if job.get("status") not in cj.LIVE:
             continue
+        attempt = int(job.get("attempt", 1) or 1)
+        skey = (cdir_key, str(job["id"]), attempt)
+        persisted_obs = float((job.get("supervision") or {}).get("observed_at") or 0.0)
+        mem_obs = _LAST_SUPERVISION_CHECK.get(skey, 0.0)
+        if mem_obs > now:
+            mem_obs = 0.0
+        last_obs = max(persisted_obs, mem_obs)
+        if now - last_obs < 30:
+            continue
+        if len(_LAST_SUPERVISION_CHECK) > 512:
+            _LAST_SUPERVISION_CHECK.clear()
+        _LAST_SUPERVISION_CHECK[skey] = now
         observation = supervise(job, now=now)
-        cj._transition(cdir, job["id"], cj.LIVE, expect_attempt=job.get("attempt", 1), supervision=observation)
+        prev_sup = job.get("supervision")
+        if not isinstance(prev_sup, dict) or _supervision_semantic_view(prev_sup) != _supervision_semantic_view(observation):
+            cj._transition(cdir, job["id"], cj.LIVE, expect_attempt=attempt, supervision=observation)
         if (job.get("status") == "running" and job.get("phase") in (None, "producing")
                 and not job.get("finalizer_active") and observation.get("liveness") == "dead"
                 and now - float(job.get("phase_at") or 0) >= 15

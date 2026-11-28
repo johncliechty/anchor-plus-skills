@@ -839,6 +839,7 @@ export async function runProject(o) {
       git: gitCtx, // Phase 3c: commit-on-GO + §6.3 stash live in runWave (null = no git)
       gitDiff: o.gitDiff,
       profile: o.profile,
+      requireCompletedReview: o.requireCompletedReview,
       executeRunner: hasSubwaves
         ? (ctx) => executeSubwaveDag({
             ...ctx,

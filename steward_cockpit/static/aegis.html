@@ -675,6 +675,7 @@
     </div>
 
     <div class="header-actions">
+      <button type="button" class="btn" id="btnAegisStrengthPill" title="Aegis Variable Strength (⚡ Heavy default · click to toggle 🪶 Light)">⚡ Heavy</button>
       <button type="button" class="btn btn-emerald" id="btnRescan">▶ Re-Scan Bound Codebase</button>
       <button type="button" class="btn btn-cyan" id="btnRemediate">🛠 Auto-Remediate Fixable Issues</button>
       <button type="button" class="btn" id="btnOpenReport">📄 Open AEGIS-SECURITY-REPORT.md</button>
@@ -781,8 +782,8 @@
           <button type="button" class="btn" id="btnToggleCockpitStream" style="padding:2px 8px;font-size:10.5px" title="Switch between the Aegis Steward Chat and the live AI Cockpit stream">💬 Cockpit Stream</button>
         </div>
         <div class="seating-bar" id="seatingBar">
-          <span>Coding: <strong>gemini-4-argon · high</strong></span>
-          <span>Review: <strong>claude-fable-5-1 · max</strong></span>
+          <span>Coding: <strong>gemini-4-neon · xhigh</strong></span>
+          <span>Review: <strong>claude-fable-5-2 · max</strong></span>
         </div>
       </div>
 
@@ -1074,11 +1075,21 @@
       });
     }
 
-    // Seating bar
+    // Seating bar & Variable Strength pill
+    const aegisStr = String(seating.strength || data.strength || "heavy").toLowerCase();
+    const aegisPill = document.getElementById("btnAegisStrengthPill");
+    if (aegisPill) {
+      const isLight = aegisStr === "light";
+      aegisPill.dataset.strength = isLight ? "light" : "heavy";
+      aegisPill.textContent = isLight ? "🪶 Light" : "⚡ Heavy";
+      aegisPill.title = isLight
+        ? "Aegis Variable Strength: 🪶 Light (one below frontier @ medium) · Click to switch to ⚡ Heavy"
+        : "Aegis Variable Strength: ⚡ Heavy (frontier @ max default) · Click to switch to 🪶 Light";
+    }
     if (seating.coding_model_id) {
       document.getElementById("seatingBar").innerHTML =
-        "<span>Coding: <strong>" + seating.coding_model_id + " · " + (seating.coding_effort || "high") + "</strong></span>" +
-        "<span>Review: <strong>" + (seating.review_model_id || "claude-fable-5-1") + " · " + (seating.review_effort || "max") + "</strong></span>";
+        "<span>Coding: <strong>" + seating.coding_model_id + " · " + (seating.coding_effort || "xhigh") + "</strong></span>" +
+        "<span>Review: <strong>" + (seating.review_model_id || "claude-fable-5-2") + " · " + (seating.review_effort || "max") + "</strong></span>";
     }
 
     // Verdict badge
@@ -1200,6 +1211,27 @@
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;");
+  }
+
+  // Variable Strength toggle (⚡ Heavy ⇄ 🪶 Light)
+  const btnAegisStrengthPill = document.getElementById("btnAegisStrengthPill");
+  if (btnAegisStrengthPill) {
+    btnAegisStrengthPill.addEventListener("click", async () => {
+      const cur = btnAegisStrengthPill.dataset.strength || "heavy";
+      const next = cur === "light" ? "heavy" : "light";
+      btnAegisStrengthPill.disabled = true;
+      try {
+        await fetch(apiUrl("aegis"), {
+          method: "POST",
+          headers: headers(),
+          body: JSON.stringify({ action: "set_strength", strength: next, dir, pid }),
+        });
+        const r = await fetch(apiUrl("aegis"), { headers: headers() });
+        renderState(await r.json());
+      } finally {
+        btnAegisStrengthPill.disabled = false;
+      }
+    });
   }
 
   // Initial load — auto-binds to Anvil's active codebase and renders immediately

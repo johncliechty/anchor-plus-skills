@@ -170,8 +170,26 @@ def _foundry_root(root=None) -> Path:
 
 
 def _source_dir(source, root) -> Path:
-    p = Path(str(source))
-    return p if p.is_absolute() else root / p
+    s_raw = str(source or "")
+    is_win_abs = bool(s_raw and len(s_raw) >= 3 and s_raw[1] == ":" and s_raw[2] in ("/", "\\"))
+    p = Path(s_raw)
+    primary = p if (p.is_absolute() or is_win_abs) else Path(root) / p
+    if primary.is_dir():
+        return primary
+    # On collaborator laptops where DEFAULT_FOUNDRY_ROOT / C:/dev/trio is absent and no custom
+    # root override was injected, resolve bundled/installed skill copies under Anchor.
+    if (
+        str(root).replace("\\", "/").rstrip("/").lower() == "c:/dev/skill foundry"
+        and not (os.environ.get(FOUNDRY_ROOT_ENV) or "").strip()
+    ):
+        anchor_dir = Path(__file__).resolve().parent
+        leaf = Path(s_raw.replace("\\", "/")).name
+        for base_alt in (anchor_dir / "vendor" / "bundled-skills", anchor_dir.parent / "skills"):
+            for cand_leaf in dict.fromkeys((leaf, leaf.lower())):
+                cand = base_alt / cand_leaf
+                if cand.is_dir():
+                    return cand
+    return primary
 
 
 def gate_target_existence(map_doc=None, root=None) -> dict:

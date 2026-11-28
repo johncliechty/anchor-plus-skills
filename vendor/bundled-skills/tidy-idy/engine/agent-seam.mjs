@@ -2,7 +2,7 @@
 //
 // Wave-0 coupling inventory, three records (analyze/debate/compress,
 // kind=hardcoded-path): each stage defaulted its agent to a dynamic import of
-// `fil<path> — an absolute, machine-local
+// `../../drivers/gemini-cli.mjs` — an absolute, machine-local
 // path outside the package. On any machine without that exact directory every
 // real run failed at the driver import.
 //
@@ -31,7 +31,7 @@ export class AgentSeamUnavailable extends Error {
 
 /**
  * Convert a driver path/URL into a string `import()` will accept.
- * Critical on Windows: `<path> must become `fil<path> not be
+ * Critical on Windows: `<path> must become `<path> not be
  * treated as a `c:` URL scheme.
  */
 export function driverImportSpec(driverPath) {

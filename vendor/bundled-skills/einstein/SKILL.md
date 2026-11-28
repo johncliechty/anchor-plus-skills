@@ -2,6 +2,7 @@
 name: einstein
 description: >-
   Create coherent, beginner-accessible course or self-study learning packs from source materials: illustrated guides, problem hints, visual flashcards, guided interactive examples, checked worked solutions and relevant Python/R software. Use for recurring study materials or a topic-learning sequence; compose with Steward for campaign continuity.
+  Variable Strength: Light / Standard by default (1-step-below-frontier model at medium effort; call 'Einstein Heavy' for top-tier frontier model at highest effort on high-stakes runs, configurable in Anchor Setup).
 ---
 
 # Einstein — build the understanding
@@ -10,7 +11,9 @@ Help the learner see, explain, retain and apply a difficult idea. Start with the
 
 ## Begin from the actual learner
 
-Before production, record complexity, stakes, the necessary checks, and the current Anchor-selected author/review families. A small illustrative calculation may be light; a reusable course pack with proofs and solutions requires substantive mathematical and teaching review. Choose bounded commissions using the canonical Foundry tiers; do not create another model policy.
+Before production, record complexity, stakes, the necessary checks, and the current Anchor-selected author/review families. A small illustrative calculation may be light; a reusable course pack with proofs and solutions requires substantive mathematical and teaching review. Choose bounded commissions using the canonical Foundry Variable Strength tiers (`AGENTS.md`):
+- **Call `Einstein` (default = `Standard` · one generalist model below frontier @ `medium` effort on author and review seats)** for weekly study guides, concept refreshers, flashcard decks, worked practice sets, and iterative unit revisions.
+- **Call `Einstein Heavy` (`⚡ Heavy` · frontier model @ full effort on author, composed Ramanujan/Gandalf passes, and cross-family reviewer)** for flagship graduate/MBA course packs, subtle multi-step proof derivations, or student-release exam/solution keys where a mathematical or pedagogical slip is high-consequence. Do not create another model policy.
 
 Recover Steward's campaign memory, current roadmap, source inventory, previous feedback and actual assignments. Read course-specific AGENTS.md. Unless evidence says otherwise, assume the learner is new to the subject. A course prerequisite listed on a syllabus does not establish remembered knowledge. State the small baseline you use and supply a brief concrete refresher where needed; do not assume vocabulary such as set, cover, neighborhood, limit or hypothesis.
 

@@ -4,7 +4,7 @@
 // Ceremony MUST NEVER gate or early-return the reaper decision / proof-of-death path
 // (that lives in reaper-path.mjs).
 
-import { ceremonyLevelOrdinal } from 'fil<path>';
+import { ceremonyLevelOrdinal } from '<path>';
 import { resolveZombieHunterBand } from './triage-band.mjs';
 
 /**

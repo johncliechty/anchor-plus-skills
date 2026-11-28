@@ -22,6 +22,10 @@
 - Not a code builder or product planner
 - Not a guarantee of perfect truth — it reports what was verified and what wasn’t
 
+## Variable Strength (`researchPrime` Standard Default vs. `researchPrime Heavy`) — What to Call When
+- **Call `researchPrime` (default = `Standard` · one generalist model below frontier @ `medium` effort across planning, execution, and Phase-3 adversarial reviewers)** for everyday technical investigations, tool/library evaluations, background synthesis, and working-level fact checks.
+- **Call `researchPrime Heavy` (`⚡ Heavy` · frontier model @ full/max effort across every seat — say `"researchPrime Heavy"`, set `TRIO_TIER=heavy`, or toggle `⚡ Heavy` on your AI Cockpit)** for contested scientific claims, clinical/legal/financial decisions, journal papers, or irreversible strategic bets.
+
 ## How to start (human)
 1. Open researchPrime in Skill Foundry (or ask the agent for a deep research run).
 2. State the question and what a wrong answer would cost you.

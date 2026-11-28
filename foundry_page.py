@@ -32,8 +32,8 @@ ICON_NAMES = (
     ('legalbeagle', 'legal-beagle-icon.jpg'), ('literaturereview', 'literature-review-icon.jpg'),
     ('ramanujan', 'ramanujan-icon.jpg'), ('tidyidy', 'tidy-idy-icon.jpg'),
     ('zombiehunter', 'zombie-hunter-radar.jpg'), ('superjump', 'superjump-icon.jpg'), ('scribe', 'scribe-icon.jpg'))
-DISPLAY_NAMES = {'aegis': 'Aegis', 'anvil': 'Anvil', 'researchprime': 'researchPrime', 'gandalf': 'Gandalf', 'crucible': 'Crucible',
-                 'foreman': 'Foreman', 'chekhov': 'Chekhov', 'einstein': 'Einstein',
+DISPLAY_NAMES = {'aegis': 'Aegis', 'agydispatch': 'agy-dispatch', 'anvil': 'Anvil', 'researchprime': 'researchPrime', 'gandalf': 'Gandalf', 'crucible': 'Crucible',
+                 'foreman': 'Foreman', 'chekhov': 'Chekhov', 'ecgberht': 'Ecgberht', 'einstein': 'Einstein', 'figuredesigner': 'Figure-Designer',
                  'financialanalyst': 'Financial-Analyst', 'jumper': 'Jumper', 'legalbeagle': 'Legal-Beagle',
                  'literaturereview': 'Literature-Review', 'ramanujan': 'Ramanujan',
                  'tidyidy': 'Tidy-Idy', 'zombiehunter': 'Zombie-Hunter', 'superjump': 'Superjump', 'scribe': 'Scribe'}

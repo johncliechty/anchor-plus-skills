@@ -23,6 +23,10 @@
 - Not a complete suite of every deal structure out of the box (templates are starting points)
 - Not a free pass for qualitative valuation claims without sources you provide
 
+## Variable Strength (`Financial-Analyst` Standard Default vs. `Financial-Analyst Heavy`) — What to Call When
+- **Call `Financial-Analyst` (default = `Standard` · one generalist model below frontier @ `medium` effort + exact-Decimal engine)** for exploratory deal comps, sensitivity tables, internal cap-table checks, and template modeling.
+- **Call `Financial-Analyst Heavy` (`⚡ Heavy` · frontier model @ full effort on custom formula architecture + cross-family adversarial review + exact-Decimal tie-out)** for live term-sheet negotiations, bespoke multi-tier LP/GP waterfalls, board/LP deliverables, or valuation disputes.
+
 ## How to start (human)
 1. Say which deal type and the key inputs (valuations, cash flows, ownership splits).
 2. Confirm whether you need full deliverables (Excel/Python/report) or a quick model check.

@@ -533,6 +533,8 @@ export function writeDocTrio({
   log = () => {},
   /** When true (default), assert+inject journal-0080 property gates before write. */
   enforceHardening = true,
+  /** When false (default, journal 0127), preserve any pre-existing custom scripts/run-all-tests.mjs. */
+  overwriteTestRunner = false,
   addsSurface = false,
   propertyGates = {},
 } = {}) {
@@ -571,13 +573,15 @@ export function writeDocTrio({
   fs.writeFileSync(files.plan, planText);
   fs.writeFileSync(files.execution_log, draftToText(executionLog));
 
-  // Sleep 0076 package 4: always emit Windows-safe expanding gate helper so
-  // DEFAULT_TEST_COMMAND (`node scripts/run-all-tests.mjs`) is runnable at handoff
-  // without a manual scaffold. Idempotent overwrite with the canonical body.
+  // Sleep 0076 package 4 + Journal 0127 guard: emit Windows-safe expanding gate helper when
+  // absent so DEFAULT_TEST_COMMAND (`node scripts/run-all-tests.mjs`) is runnable out of the box,
+  // while NEVER clobbering an existing custom polyglot runner unless overwriteTestRunner === true.
   const scriptsDir = path.join(dir, 'scripts');
   fs.mkdirSync(scriptsDir, { recursive: true });
   const runAllPath = path.join(scriptsDir, 'run-all-tests.mjs');
-  fs.writeFileSync(runAllPath, RUN_ALL_TESTS_SCRIPT, 'utf8');
+  if (!fs.existsSync(runAllPath) || overwriteTestRunner) {
+    fs.writeFileSync(runAllPath, RUN_ALL_TESTS_SCRIPT, 'utf8');
+  }
 
   // Handoff triage emit (Wave 3) — Foreman reads triage_track as a string depth band.
   let emit = handoffTriage && typeof handoffTriage === 'object' && handoffTriage.triage_track
@@ -760,6 +764,12 @@ export async function runStage2({
   propertyGates = {},
   enforceChekhovQuality = false,
   pilotOverrideReason = null,
+  monoliths = [],
+  monolithOverrideReason = null,
+  reusablePrimitives = [],
+  versionedLayers = [],
+  reuseOverrideReason = null,
+  sunsetOverrideReason = null,
   intent = '',
   deferredScope = [],
   log = () => {},
@@ -896,6 +906,13 @@ export async function runStage2({
         northStar,
         deferredScope,
         pilotOverrideReason,
+        monoliths,
+        monolithOverrideReason,
+        enforceProseBudget: true,
+        reusablePrimitives,
+        versionedLayers,
+        reuseOverrideReason,
+        sunsetOverrideReason,
       });
       if (!chekhov.pass) {
         throw haltForHuman(

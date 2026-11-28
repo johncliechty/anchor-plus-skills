@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Anvil v4 · Process Workbench &amp; Expandable Scientific IDE Debugger</title>
+<title>Anvil v5 · Process Workbench &amp; Expandable Scientific IDE Debugger</title>
 <style>
   :root {
     --bg-canvas: #FAF8F5;
@@ -397,6 +397,80 @@
   .rail-l2-btn.active { border-color: var(--c-compute); background: #EEF5FC; font-weight: 700; }
   .rail-l2-btn.fault { border-color: var(--c-fault); background: #FFF3EE; color: #7F1D1D; font-weight: 700; }
 
+  /* ── 3-Layer Scoped Comprehension View (Estimator / Replicators / Plumbing) ── */
+  .three-layer-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .three-layer-stamp-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 7px 11px;
+    border-radius: 7px;
+    background: #F4EFE4;
+    border: 1px solid var(--border-strong);
+    font-size: 11.5px;
+    color: var(--ink);
+  }
+  .three-layer-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    padding: 9px 11px;
+    font-size: 12px;
+  }
+  .three-layer-card.layer1 { border-left: 4px solid var(--c-compute); }
+  .three-layer-card.layer2 { border-left: 4px solid #4FA869; }
+  .three-layer-details {
+    background: var(--bg-subtle);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    padding: 7px 11px;
+    font-size: 12px;
+  }
+  .three-layer-details > summary {
+    cursor: pointer;
+    font-weight: 800;
+    font-size: 12px;
+    color: var(--ink);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    list-style: none;
+  }
+  .three-layer-details > summary::-webkit-details-marker { display: none; }
+  .layer-subcard {
+    margin-top: 6px;
+    padding: 7px 9px;
+    border-radius: 6px;
+    background: var(--bg-canvas);
+    border: 1px solid var(--border);
+    font-size: 11.5px;
+  }
+  .layer-subcard.unmatched {
+    background: #FFF6EE;
+    border-color: #D4A858;
+  }
+  .reach-pill {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 999px;
+    border: 1px solid var(--border-strong);
+    background: #EBF4FD;
+    color: #1C4A78;
+  }
+  .reach-pill.uncertain { background: #FDF4E3; color: #7A4B08; border-color: #D4A858; }
+  .reach-pill.unreached { background: #F1EFEA; color: #5A6573; }
+
   /* ── Center 45% Full Scientific IDE Debugger ──────────────────────── */
   .full-ide-pane {
     display: flex;
@@ -604,6 +678,126 @@
   }
   .card-block.active-card { border-color: var(--c-compute); box-shadow: var(--shadow-sm); }
   .card-block.fault-card { border-color: var(--c-fault); background: #FFF7F4; }
+  .divergence-panel {
+    border: 1.5px solid #B5542B;
+    background: #FFF9F5;
+    box-shadow: var(--shadow-sm);
+    max-height: 260px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    flex-shrink: 0;
+  }
+  .div-item-card {
+    margin-top: 8px;
+    padding: 8px 10px;
+    border-radius: 7px;
+    border: 1px solid #E5C7B8;
+    background: #FFFFFF;
+    font-size: 12px;
+    overflow-wrap: anywhere;
+  }
+  .divergence-panel .small-btn {
+    max-width: 100%;
+    white-space: normal;
+    word-break: break-word;
+    text-align: left;
+  }
+  @media (max-width: 760px) {
+    html, body {
+      height: auto;
+      min-height: 100%;
+      overflow-y: auto;
+    }
+    .b3-workbench-split,
+    .b3-workbench-split.ide-debugger-open {
+      grid-template-columns: 1fr;
+      height: auto;
+      overflow: visible;
+    }
+    .left-map-pane {
+      border-right: none;
+      border-bottom: 1px solid var(--border-strong);
+      overflow-y: auto;
+      max-height: 210px;
+    }
+    .full-ide-pane,
+    .right-workbench-pane {
+      border-right: none;
+      border-bottom: 1px solid var(--border-strong);
+      overflow: visible;
+      max-height: none;
+    }
+    .inspector-shell,
+    .b3-workbench-split.ide-debugger-open .inspector-shell,
+    .copilot-shell {
+      flex: 0 0 auto;
+      max-height: none;
+    }
+    .kv-grid {
+      grid-template-columns: 1fr;
+    }
+    .funnel-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .divergence-panel {
+      max-height: 200px;
+    }
+    .div-cat-pill, .div-ms-pill, .small-btn, .consent-run-btn, .xval-top-badge, .ide-posture-btn, .lens-tab, .prog-pill, .l0-pill {
+      white-space: normal;
+      word-break: break-word;
+      max-width: 100%;
+    }
+  }
+  .div-cat-pill {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 800;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: #FBE6DC;
+    color: #7A1E0A;
+    border: 1px solid #DDA48D;
+  }
+  .div-ms-pill {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 800;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: #F4EFE6;
+    color: #4A3818;
+    border: 1px solid #D3C4AA;
+  }
+  .div-ms-pill.contradicted {
+    background: #FEE2E2;
+    color: #7F1D1D;
+    border-color: #E5989B;
+  }
+  .div-code-snip {
+    margin-top: 5px;
+    padding: 5px 8px;
+    border-radius: 5px;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--ink);
+  }
+  .div-ms-box {
+    margin-top: 5px;
+    padding: 5px 8px;
+    border-radius: 5px;
+    background: #FAF6EE;
+    border-left: 3px solid #B5542B;
+    font-size: 11.5px;
+    color: var(--ink-soft);
+  }
+  .divergence-panel code {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+  }
 
   .funnel-grid {
     display: grid;
@@ -791,6 +985,83 @@
     font-size: 13px;
   }
 
+  .analysis-switcher-select {
+    font-family: var(--font-sans);
+    font-size: 11.5px;
+    font-weight: 700;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    border: 1.5px solid var(--c-compute);
+    background: var(--bg-card);
+    color: var(--ink);
+    max-width: min(270px, 88vw);
+    cursor: pointer;
+  }
+  .analysis-switcher-select option {
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .guided-intake-dock {
+    flex: 0 0 auto;
+    background: var(--bg-card);
+    border-bottom: 1.5px solid var(--c-compute);
+    padding: 10px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .guided-intake-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .intake-label {
+    display: block;
+    font-size: 11.5px;
+    font-weight: 800;
+    color: var(--ink);
+    margin-bottom: 3px;
+  }
+  .intake-field {
+    width: 100%;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    padding: 5px 8px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-strong);
+    background: var(--bg-canvas);
+    color: var(--ink);
+  }
+  .intake-pipe-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border-strong);
+  }
+  .intake-refusal-box {
+    padding: 6px 9px;
+    border-radius: var(--radius-sm);
+    background: var(--c-fault-fill);
+    border: 1px solid var(--c-fault);
+    color: #7A1E0A;
+    font-size: 11.5px;
+    font-weight: 700;
+  }
+  @media (max-width: 760px) {
+    .guided-intake-grid {
+      grid-template-columns: 1fr;
+    }
+    .analysis-switcher-select {
+      max-width: 100%;
+      flex: 1 1 170px;
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; animation: none !important; }
   }
@@ -801,9 +1072,13 @@
   <div class="deck-row">
     <div class="brand-cluster">
       <span class="brand-badge">
-        <span>Anvil v4</span>
+        <span>Anvil v5</span>
         <span class="brand-tag">B3 Workbench + Scientific IDE</span>
       </span>
+      <select id="analysisSwitcherSelect" data-analysis-switcher class="analysis-switcher-select" aria-label="Analyzed Software Switcher">
+        <option value="primary">Primary Repository [STATIC_AST]</option>
+      </select>
+      <button type="button" id="btnNewAnvilAnalysis" class="consent-run-btn">+ New Analysis</button>
       <span id="repo-badge" class="repo-pill">Repository</span>
       <span id="provenance-stamp" class="prov-tag">STATIC_AST</span>
     </div>
@@ -814,7 +1089,7 @@
     </div>
   </div>
   <div class="deck-row">
-    <nav class="lens-tabs" role="tablist" aria-label="Anvil v4 Analytical Lenses">
+    <nav class="lens-tabs" role="tablist" aria-label="Anvil v5 Analytical Lenses">
       <button type="button" id="lens-tab-understand" class="lens-tab active" data-lens="understand">1. Understand (L0–L3)</button>
       <button type="button" id="lens-tab-refactor" class="lens-tab" data-lens="refactor">2. Refactor &amp; ∅ Null Set</button>
       <button type="button" id="lens-tab-paper" class="lens-tab" data-lens="paper" style="display: none;">3. Paper ⇄ Code (MathML)</button>
@@ -834,6 +1109,46 @@
   </div>
   <button type="button" id="btn-retry-state" class="small-btn">↻ Retry State Read</button>
 </div>
+
+<section id="anvilGuidedIntake" data-anvil-intake-dialogue="true" class="guided-intake-dock" aria-label="Guided Mapping and Direction Dialogue" hidden>
+  <div class="deck-row">
+    <div class="selector-group">
+      <strong>Anvil v5 · Guided Mapping &amp; Direction Dialogue</strong>
+      <span id="wbIntakeModePill" class="prov-tag">New Analysis Scope (Preserves Existing)</span>
+    </div>
+    <button type="button" id="btnCancelGuidedIntake" class="small-btn">↩ Close Dialogue</button>
+  </div>
+  <div id="wbStandaloneOfflineNotice" data-standalone-offline-notice="true" class="card-block" hidden>
+    <strong>Standalone HTML Snapshot</strong> — Launch Anvil inside an Anchor AI Cockpit or via <code>anvil_engine.py workbench --serve</code> to map and validate an additional repository or manuscript.
+  </div>
+  <div class="guided-intake-grid">
+    <div>
+      <label class="intake-label" for="wbIntakeRepoSelect">Code Repository / Sub-Folder</label>
+      <select id="wbIntakeRepoSelect" data-intake-repo-select class="intake-field"></select>
+    </div>
+    <div>
+      <label class="intake-label" for="wbIntakePaperSelect">Companion Manuscript (.tex / .md / .pdf / Overleaf)</label>
+      <select id="wbIntakePaperSelect" data-intake-manuscript-select class="intake-field"></select>
+    </div>
+  </div>
+  <div class="selector-group">
+    <span style="font-size:11.5px; font-weight:800;">Pipelines &amp; Package:</span>
+    <div id="wbIntakePipelines" data-intake-pipelines class="selector-group"></div>
+    <label class="intake-pipe-chip"><input type="checkbox" id="wbIntakeReplToggle" data-intake-replication-toggle checked /> Standalone replication_package/</label>
+    <span class="prov-tag">max_concurrency &le; 2</span>
+  </div>
+  <div>
+    <div class="deck-row" style="margin-bottom:3px;">
+      <label class="intake-label" for="wbIntakeDirection" style="margin-bottom:0;">Plain-English Direction (&le; 16 KB / 16,384 UTF-8 bytes)</label>
+      <span id="wbIntakeByteBadge" class="prov-tag">0 / 16,384 B</span>
+    </div>
+    <textarea id="wbIntakeDirection" data-intake-direction rows="2" class="intake-field" placeholder="Specify stages, tables, or replication checks to prioritize..."></textarea>
+    <div id="wbIntakeError" data-intake-direction-error class="intake-refusal-box" role="alert" hidden></div>
+  </div>
+  <div class="deck-row" style="justify-content:flex-end;">
+    <button type="button" id="btnSubmitGuidedIntake" data-intake-submit class="consent-run-btn">✓ Add &amp; Switch Analysis</button>
+  </div>
+</section>
 
 <main id="main-workbench-split" class="b3-workbench-split">
   <!-- LEFT 48% (Posture 1) / 25% Live Rail (Posture 2) -->
@@ -978,12 +1293,82 @@
 
   const BOOT = parseBootstrap();
   const CAPABILITY_TOKEN = typeof BOOT.capability_token === "string" ? BOOT.capability_token : "";
+  const MAX_DIRECTION_BYTES = 16384;
+
+  function utf8Bytes(raw) {
+    const str = String(raw == null ? "" : raw);
+    if (typeof TextEncoder === "function") {
+      return new TextEncoder().encode(str).length;
+    }
+    return unescape(encodeURIComponent(str)).length;
+  }
+
+  function normalizeBootAnalyses(bootObj, currentBundle) {
+    const bObj = (bootObj && typeof bootObj === "object") ? bootObj : {};
+    const activeId = String(bObj.active_analysis_id || bObj.analysis_id || "").trim();
+    const rawList = Array.isArray(bObj.analyses) ? bObj.analyses : [];
+    const live = rawList.filter(function (it) {
+      return it && typeof it === "object" && !it.archived && it.analysis_id;
+    });
+    if (live.length > 0) {
+      return live.map(function (it) {
+        const aid = String(it.analysis_id);
+        const itemBundle = (it.bundle && typeof it.bundle === "object")
+          ? it.bundle
+          : ((aid === activeId || live.length === 1) ? currentBundle : null);
+        const vStat = String(
+          it.validation_status ||
+          ((itemBundle && itemBundle.xval_receipt && itemBundle.xval_receipt.cross_family_attested) ? "CROSS_FAMILY_VALIDATED" :
+            ((itemBundle && itemBundle.has_trace) ? "TRACED" : (it.mode === "paper" ? "PAPER_MAPPED" : "STATIC_AST")))
+        );
+        return {
+          analysis_id: aid,
+          title: String(it.title || it.software_spec || aid),
+          validation_status: vStat,
+          mode: String(it.mode || "code"),
+          software_spec: String(it.software_spec || "."),
+          paper_spec: String(it.paper_spec || ""),
+          active_pipeline: String(it.active_pipeline || ""),
+          direction: String(it.direction || ""),
+          bundle: itemBundle
+        };
+      });
+    }
+    if (currentBundle && typeof currentBundle === "object") {
+      return [{
+        analysis_id: activeId || "primary",
+        title: String(currentBundle.repo_name || "Primary Repository"),
+        validation_status: currentBundle.has_trace ? "TRACED" : "STATIC_AST",
+        mode: (currentBundle.paper_map && currentBundle.paper_map.has_paper) ? "paper" : "code",
+        software_spec: ".",
+        paper_spec: "",
+        active_pipeline: String((currentBundle.session && currentBundle.session.active_pipeline) || ""),
+        direction: "",
+        bundle: currentBundle
+      }];
+    }
+    return [];
+  }
+
+  const initialAnalyses = normalizeBootAnalyses(BOOT, BOOT.bundle || null);
+  const initialUnknown = Boolean(BOOT.unknown_state) || Boolean(BOOT.surface_state && BOOT.surface_state.status_kind === "backing-store-unreadable");
+  const initialEmptyIntake = Boolean(
+    !BOOT.bundle &&
+    !initialUnknown &&
+    (!BOOT.surface_state || Number(BOOT.surface_state.http_status || 200) === 200) &&
+    Array.isArray(BOOT.analyses) &&
+    BOOT.analyses.length === 0
+  );
 
   const state = {
     mode: BOOT.mode || "standalone",
-    bundle: BOOT.bundle || null,
+    bundle: BOOT.bundle || (initialAnalyses[0] && initialAnalyses[0].bundle) || null,
+    analyses: initialAnalyses,
+    activeAnalysisId: String(BOOT.active_analysis_id || (initialAnalyses[0] && initialAnalyses[0].analysis_id) || ""),
+    candidates: (BOOT.candidates && typeof BOOT.candidates === "object") ? BOOT.candidates : {},
+    intakeOpen: initialEmptyIntake,
     surfaceState: BOOT.surface_state || (BOOT.bundle && BOOT.bundle.surface_state) || null,
-    unknownState: Boolean(BOOT.unknown_state) || Boolean(BOOT.surface_state && BOOT.surface_state.status_kind === "backing-store-unreadable"),
+    unknownState: initialUnknown,
     lens: "understand",
     inspectorTab: "story",
     activeScenarioIdx: 0,
@@ -1010,6 +1395,7 @@
     pollCount: 0,
     abortedCount: 0,
     failureStreak: 0,
+    idleStreak: 0,
     lastBackoffMs: 0,
     pausedForVisibility: false
   };
@@ -1052,6 +1438,7 @@
     if (isFault) return { stroke: "#C44F2A", fill: "#FBE0D0", tag: "FAULT" };
     const k = String(kind || "compute").toLowerCase();
     if (k.indexOf("ingest") >= 0) return { stroke: "#4FA869", fill: "#DAEEDC", tag: "INGEST" };
+    if (k.indexOf("simulat") >= 0) return { stroke: "#6B4FA8", fill: "#EAE3F8", tag: "SIMULATION" };
     if (k.indexOf("emit") >= 0 || k.indexOf("loop") >= 0) return { stroke: "#D4A858", fill: "#F8E8C8", tag: k.indexOf("loop") >= 0 ? "LOOP" : "EMIT" };
     if (k.indexOf("infra") >= 0 || k.indexOf("null") >= 0) return { stroke: "#5A6573", fill: "#E0E4E9", tag: "INFRA" };
     return { stroke: "#4A7DB0", fill: "#DCE8F5", tag: "COMPUTE" };
@@ -1174,14 +1561,19 @@
       }
 
       if (resp.ok && data && data.ok) {
+        const prevFp = (state.bundle && (state.bundle.state_fingerprint || state.bundle.repo_fingerprint)) || "";
+        const nextFp = String(data.state_fingerprint || data.repo_fingerprint || "");
+        const changed = Boolean(!prevFp || !nextFp || prevFp !== nextFp);
         window.__anvilSyncStats.failureStreak = 0;
         window.__anvilSyncStats.lastBackoffMs = 0;
+        window.__anvilSyncStats.idleStreak = changed ? 0 : Math.min(4, (window.__anvilSyncStats.idleStreak || 0) + 1);
+        const nextIdleMs = changed ? HEALTHY_POLL_MS : Math.min(60000, HEALTHY_POLL_MS * Math.pow(2, window.__anvilSyncStats.idleStreak - 1));
         state.unknownState = false;
         state.surfaceState = data.surface_state || null;
         hydrateFromBundle(data, false);
         if (pill) pill.textContent = "Sync: Live (200)";
         renderAll();
-        scheduleNextStateSync(HEALTHY_POLL_MS);
+        scheduleNextStateSync(nextIdleMs);
       } else {
         const idx = Math.min(window.__anvilSyncStats.failureStreak, BACKOFF_STEPS_MS.length - 1);
         const backoff = BACKOFF_STEPS_MS[idx];
@@ -1263,9 +1655,91 @@
     } catch (_e) {}
   }
 
-  /* ── Top Deck & 5-State Failure Banner ─────────────────────────────── */
+  /* ── Top Deck, Multi-Analysis Switcher & 5-State Failure Banner ──── */
+  function populateGuidedIntakeControls() {
+    const repoSel = document.getElementById("wbIntakeRepoSelect");
+    const paperSel = document.getElementById("wbIntakePaperSelect");
+    const pipesBox = document.getElementById("wbIntakePipelines");
+    const modePill = document.getElementById("wbIntakeModePill");
+    const offlineNotice = document.getElementById("wbStandaloneOfflineNotice");
+    const submitBtn = document.getElementById("btnSubmitGuidedIntake");
+    const isOfflineStandalone = (state.mode !== "live");
+
+    if (offlineNotice) {
+      offlineNotice.hidden = !isOfflineStandalone;
+    }
+    if (submitBtn) {
+      submitBtn.disabled = isOfflineStandalone;
+      submitBtn.textContent = isOfflineStandalone
+        ? "Unavailable in Standalone Snapshot"
+        : "✓ Add & Switch Analysis";
+    }
+    if (modePill) {
+      if (isOfflineStandalone) {
+        modePill.textContent = "Standalone Snapshot · Read-Only";
+      } else {
+        modePill.textContent = state.analyses.length > 0
+          ? ("New Analysis #" + (state.analyses.length + 1) + " · Preserves " + state.analyses.length + " Existing")
+          : "Initial Guided Analysis Setup";
+      }
+    }
+    if (repoSel && repoSel.options.length === 0) {
+      const swCands = Array.isArray(state.candidates && state.candidates.software) && state.candidates.software.length > 0
+        ? state.candidates.software
+        : [{ path: ".", label: (state.bundle && state.bundle.repo_name) || "Current Repository (.)" }];
+      repoSel.innerHTML = swCands.map(function (it, idx) {
+        const p = typeof it === "string" ? it : (it.path || ".");
+        const lbl = typeof it === "string" ? it : (it.label || p);
+        return '<option value="' + esc(p) + '"' + (idx === 0 ? " selected" : "") + '>' + esc(lbl + " (" + p + ")") + '</option>';
+      }).join("");
+    }
+    if (paperSel && paperSel.options.length === 0) {
+      const pCands = Array.isArray(state.candidates && state.candidates.papers) ? state.candidates.papers : [];
+      const noneSel = pCands.length === 0 ? " selected" : "";
+      paperSel.innerHTML = '<option value=""' + noneSel + '>None (Software-only map)</option>' + pCands.map(function (it, idx) {
+        const p = typeof it === "string" ? it : (it.path || "");
+        const lbl = typeof it === "string" ? it : (it.label || p);
+        return '<option value="' + esc(p) + '"' + (idx === 0 ? " selected" : "") + '>' + esc(lbl) + '</option>';
+      }).join("");
+    }
+    if (pipesBox && !pipesBox.hasChildNodes()) {
+      const bScopes = state.bundle && state.bundle.process_map && state.bundle.process_map.paper_matched_scopes;
+      const pipeList = (Array.isArray(state.candidates && state.candidates.pipelines) && state.candidates.pipelines.length > 0)
+        ? state.candidates.pipelines
+        : ((bScopes && Array.isArray(bScopes.available_pipelines) && bScopes.available_pipelines.length > 0)
+          ? bScopes.available_pipelines
+          : [{ id: "all_paper_matched", title: "All Matched Stages" }]);
+      pipesBox.innerHTML = pipeList.slice(0, 6).map(function (pp, idx) {
+        const pidVal = String(pp.path || pp.id || pp.pipeline_id || ("pipe-" + (idx + 1)));
+        const pLbl = String(pp.title || pp.label || pidVal);
+        return '<label class="intake-pipe-chip"><input type="checkbox" data-wb-pipe="' + esc(pidVal) + '"' + (idx === 0 ? " checked" : "") + ' /> ' + esc(pLbl) + '</label>';
+      }).join("");
+    }
+  }
+
   function renderTopDeckAndBanner() {
     const b = state.bundle;
+    const switcher = document.getElementById("analysisSwitcherSelect");
+    if (switcher) {
+      if (state.analyses.length === 0) {
+        switcher.innerHTML = '<option value="">0 Analyses — Guided Setup</option>';
+      } else {
+        const targetId = state.activeAnalysisId || state.analyses[0].analysis_id;
+        switcher.innerHTML = state.analyses.map(function (item) {
+          const sel = item.analysis_id === targetId ? " selected" : "";
+          const label = item.title + " [" + (item.validation_status || "STATIC_AST") + "]";
+          return '<option value="' + esc(item.analysis_id) + '"' + sel + '>' + esc(label) + '</option>';
+        }).join("");
+      }
+    }
+    const intakeEl = document.getElementById("anvilGuidedIntake");
+    if (intakeEl) {
+      intakeEl.hidden = !state.intakeOpen;
+      if (state.intakeOpen) {
+        populateGuidedIntakeControls();
+      }
+    }
+
     const repoBadge = document.getElementById("repo-badge");
     const provStamp = document.getElementById("provenance-stamp");
     if (state.unknownState) {
@@ -1677,7 +2151,7 @@
         detailCard.hidden = false;
         detailCard.innerHTML =
           '<div class="deck-row">' +
-            '<div><strong>' + esc(actStage.id) + '</strong> · ' + esc(stripDollarTokens(actStage.title || actStage.id)) + '</div>' +
+            '<div><strong>' + esc(actStage.id) + '</strong> · ' + esc(stripDollarTokens(String(actStage.title || actStage.id).replace(/^S\d+\s*[·:-]?\s*/i, ""))) + '</div>' +
             '<span class="prov-tag">' + esc(actStage.verdict || "STATIC_ONLY") + '</span>' +
           '</div>' +
           '<div style="margin-top:4px; color:var(--ink-soft);">' + esc(stripDollarTokens(actStage.purpose || "")) + '</div>' +
@@ -1730,6 +2204,43 @@
     }).join("");
   }
 
+  const lazySourceInFlight = new Set();
+
+  async function ensureLazySourceLoaded(filePath) {
+    if (state.mode !== "live" || !filePath || lazySourceInFlight.has(filePath)) return;
+    const filesMap = (state.bundle && state.bundle.files_source_map) || {};
+    const fObj = filesMap[filePath];
+    if (fObj && Array.isArray(fObj.lines) && fObj.lines.length > 0 && !fObj.needs_lazy_fetch) return;
+    lazySourceInFlight.add(filePath);
+    try {
+      const resp = await window.fetch("/api/anvil/v4/source?file=" + encodeURIComponent(filePath), {
+        method: "GET",
+        headers: { "Accept": "application/json" },
+        cache: "no-store"
+      });
+      if (!resp.ok) return;
+      const data = await resp.json();
+      if (!data || !data.ok) return;
+      const srcStr = typeof data.content === "string" ? data.content : (typeof data.raw_source === "string" ? data.raw_source : "");
+      const hydratedLines = Array.isArray(data.lines) && data.lines.length > 0
+        ? data.lines
+        : srcStr.split(/\r?\n/).map(function (ln, idx) { return [idx + 1, ln]; });
+      if (state.bundle) {
+        if (!state.bundle.files_source_map) state.bundle.files_source_map = {};
+        state.bundle.files_source_map[filePath] = Object.assign({}, fObj || { file: filePath, stage_id: state.activeStageId, exec_line: 1, ghost_values: {} }, {
+          lines: hydratedLines,
+          watchable_tokens: Array.isArray(data.watchable_tokens) ? data.watchable_tokens : ((fObj && fObj.watchable_tokens) || []),
+          needs_lazy_fetch: false
+        });
+      }
+      renderFullIdePane();
+      if (state.inspectorTab === "ide") renderInspector();
+    } catch (_e) {
+    } finally {
+      lazySourceInFlight.delete(filePath);
+    }
+  }
+
   function renderFullIdePane() {
     const pane = document.getElementById("full-ide-pane");
     if (!state.ideOpen) {
@@ -1766,6 +2277,9 @@
 
     if (!filesMap[state.activeFile]) state.activeFile = fileKeys[0];
     const fObj = filesMap[state.activeFile];
+    if (fObj && (!Array.isArray(fObj.lines) || fObj.lines.length === 0 || fObj.needs_lazy_fetch)) {
+      ensureLazySourceLoaded(fObj.file);
+    }
     const activeLn = state.activeLine || fObj.exec_line || 1;
 
     execBadge.textContent = fObj.file + " · ▶ L" + activeLn + (fObj.has_fault ? " (⚡ TRIPWIRE)" : "");
@@ -1831,13 +2345,142 @@
   }
 
   /* ── Smart Variable Funnel, Paper MathML, Profile, XVal & Story ────── */
+  const ALLOWED_MATHML_TAGS = new Set([
+    "math", "mrow", "mi", "mn", "mo", "mfrac", "msup", "msub", "msubsup",
+    "msqrt", "mroot", "munderover", "munder", "mover", "mtext", "mspace",
+    "mtable", "mtr", "mtd"
+  ]);
+
   function safeMathMlHtml(rawMml, fallbackTitle) {
     const clean = stripDollarTokens(rawMml || "").trim();
-    if (clean.indexOf("<math") >= 0) {
-      return clean.replace(/<script[\s\S]*?<\/script>/gi, "");
+    if (clean.indexOf("<math") >= 0 && typeof DOMParser !== "undefined") {
+      try {
+        const doc = new DOMParser().parseFromString(clean, "text/html");
+        const mathRoot = doc.querySelector("math");
+        if (mathRoot) {
+          const walkSanitize = function (node) {
+            if (node.nodeType === 3) return esc(node.nodeValue || "");
+            if (node.nodeType !== 1) return "";
+            const tag = node.tagName.toLowerCase();
+            if (!ALLOWED_MATHML_TAGS.has(tag)) return esc(node.textContent || "");
+            let attrs = "";
+            if (tag === "math") attrs = ' xmlns="http://www.w3.org/1998/Math/MathML" display="block"';
+            else if (tag === "mfrac" && node.getAttribute("linethickness") === "0") attrs = ' linethickness="0"';
+            let inner = "";
+            for (let i = 0; i < node.childNodes.length; i++) inner += walkSanitize(node.childNodes[i]);
+            return "<" + tag + attrs + ">" + inner + "</" + tag + ">";
+          };
+          return walkSanitize(mathRoot);
+        }
+      } catch (_e) {}
     }
     return '<math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><mrow><mtext>' +
       esc(stripDollarTokens(fallbackTitle || "Equation")) + '</mtext></mrow></math>';
+  }
+
+  function renderThreeLayerViewHtml() {
+    const b = state.bundle || {};
+    if (!b.anvil_v6_enabled) return "";
+    const tlv = (b.three_layer_view && typeof b.three_layer_view === "object") ? b.three_layer_view : null;
+    if (!tlv || state.unknownState) return "";
+    const sa = tlv.static_audit || {};
+    const l1 = tlv.layer1_estimator || {};
+    const l2 = tlv.layer2_replicators || {};
+    const l3 = tlv.layer3_plumbing || {};
+    const stampText = sa.stamp || "3 static pattern classes checked; semantic math audit not run in this wave";
+    const stampDetail = sa.detail || "Static AST pattern scan only — semantic audit not run in this wave.";
+    const l1Syms = Array.isArray(l1.symbols) ? l1.symbols : [];
+    const l1Eqs = Array.isArray(l1.equations) ? l1.equations : [];
+    const l2Cards = Array.isArray(l2.cards) ? l2.cards : [];
+    const l3Files = Array.isArray(l3.plumbing_files) ? l3.plumbing_files : [];
+    const l3Imports = Array.isArray(l3.load_time_imported_files) ? l3.load_time_imported_files : [];
+    const l3Unreached = Array.isArray(l3.unreached_symbols) ? l3.unreached_symbols : [];
+    const unreachedTotal = Number(l3.unreached_count || l3Unreached.length || 0);
+
+    return (
+      '<div class="three-layer-stack" data-three-layer-view="true">' +
+        '<div class="three-layer-stamp-bar" data-static-audit-stamp="true">' +
+          '<div><strong>Static Pattern Check:</strong> ' + esc(stampText) + '</div>' +
+          '<div style="color:var(--ink-soft);">' + esc(stampDetail) + '</div>' +
+        '</div>' +
+        '<section id="anvil-layer1-estimator" class="three-layer-card layer1" aria-label="Layer 1 Core Mathematical Estimator">' +
+          '<div class="deck-row">' +
+            '<strong>' + esc(l1.title || "Layer 1 · Core Mathematical Estimator & Equations") + '</strong>' +
+            '<span class="prov-tag">' + l1Syms.length + ' active symbol(s) · ' + l1Eqs.length + ' equation(s)</span>' +
+          '</div>' +
+          (l1Syms.length > 0
+            ? '<div style="margin-top:6px; display:flex; flex-wrap:wrap; gap:6px;">' +
+                l1Syms.slice(0, 14).map(function (s) {
+                  const bCls = s.badge === "uncertain" ? "reach-pill uncertain" : "reach-pill";
+                  return '<span class="' + bCls + '" data-reach-badge="' + esc(s.badge || "reached") + '">' +
+                    esc((s.symbol || s.short_name || "") + " [" + (s.badge || "reached") + "]") +
+                    (s.file ? ' <button type="button" class="small-btn" style="padding:1px 6px; font-size:11.5px;" data-jump-file="' + esc(s.file) + '" data-jump-line="' + Number(s.lineno || 1) + '">' + esc(basename(s.file) + ":L" + (s.lineno || 1)) + '</button>' : '') +
+                  '</span>';
+                }).join("") +
+              '</div>'
+            : '<div class="layer-subcard">0 active estimator symbols in current slice.</div>') +
+          (l1Eqs.length > 0
+            ? l1Eqs.slice(0, 6).map(function (eq) {
+                const mfs = Array.isArray(eq.matched_functions) ? eq.matched_functions : [];
+                return '<div class="layer-subcard">' +
+                  '<div class="deck-row">' +
+                    '<strong>Eq (' + esc(eq.number || eq.id) + ')' + (eq.label ? ' · <code>' + esc(eq.label) + '</code>' : '') + '</strong>' +
+                    '<span class="prov-tag">' + esc(eq.verification_stamp || "STATIC_ALIGNED") + '</span>' +
+                  '</div>' +
+                  '<div class="mathml-wrap" style="margin-top:4px;">' + safeMathMlHtml(eq.mathml, eq.label || eq.id) + '</div>' +
+                  (mfs.length > 0
+                    ? '<div style="margin-top:4px;">Bound to: ' + mfs.map(function (mf) {
+                        return '<code>' + esc((mf.file || "") + ":" + (mf.qualname || "")) + '</code> <span class="reach-pill ' + (mf.badge === "uncertain" ? "uncertain" : "") + '">' + esc(mf.badge || "reached") + '</span>';
+                      }).join(", ") + '</div>'
+                    : '<div style="margin-top:4px; color:var(--ink-soft);">Unbound in scoped call graph (statically unreached symbols excluded).</div>') +
+                '</div>';
+              }).join("")
+            : '') +
+        '</section>' +
+        '<section id="anvil-layer2-replicators" class="three-layer-card layer2" aria-label="Layer 2 Paper Table and Figure Replicators">' +
+          '<div class="deck-row">' +
+            '<strong>' + esc(l2.title || "Layer 2 · Paper Table & Figure Replicators") + '</strong>' +
+            '<span class="prov-tag">' + Number(l2.matched_count || 0) + ' matched · ' + Number(l2.unmatched_count || 0) + ' unmatched</span>' +
+          '</div>' +
+          (l2Cards.length > 0
+            ? l2Cards.map(function (c) {
+                const isMatched = Boolean(c.matched);
+                return '<div class="layer-subcard ' + (isMatched ? "" : "unmatched") + '" data-replicator-matched="' + String(isMatched) + '">' +
+                  '<div class="deck-row">' +
+                    '<strong>' + esc(stripDollarTokens(c.title || c.artifact_ref || "No replicator script matched")) + '</strong>' +
+                    (isMatched && c.script
+                      ? '<button type="button" class="small-btn" data-jump-file="' + esc(c.script) + '" data-jump-line="1"><code>' + esc(c.script) + '</code> ⤢</button>'
+                      : '<span class="reach-pill uncertain">' + esc(c.badge || "No replicator script matched") + '</span>') +
+                  '</div>' +
+                  (c.caption ? '<div style="margin-top:3px; color:var(--ink-soft);">' + esc(stripDollarTokens(c.caption)) + '</div>' : '') +
+                  (c.section ? '<div style="margin-top:2px; color:var(--ink-light);">Section: ' + esc(stripDollarTokens(c.section)) + '</div>' : '') +
+                '</div>';
+              }).join("")
+            : '<div class="layer-subcard unmatched" data-replicator-matched="false"><strong>No replicator script matched</strong> — 0 manuscript Table/Figure replicator scripts matched in this scope.</div>') +
+        '</section>' +
+        '<details id="anvil-layer3-plumbing" class="three-layer-details">' +
+          '<summary>' +
+            '<span>▸ ' + esc(l3.title || "Layer 3 · Data Plumbing, Utilities & Unreached Symbols") + '</span>' +
+            '<span class="prov-tag">' + l3Files.length + ' plumbing file(s) · ' + unreachedTotal + ' unreached symbol(s)</span>' +
+          '</summary>' +
+          '<div style="margin-top:8px;">' +
+            '<div class="layer-subcard"><strong>Plumbing &amp; Load-Time Imported Modules:</strong> ' +
+              (l3Files.length > 0 ? '<code>' + esc(l3Files.join(", ")) + '</code>' : 'None') +
+              (l3Imports.length > 0 ? '<div style="margin-top:3px; color:var(--ink-soft);">Load-time imports retained in replication closure: <code>' + esc(l3Imports.join(", ")) + '</code></div>' : '') +
+            '</div>' +
+            '<div class="layer-subcard"><strong>Disclosed Statically Unreached Symbols (' + unreachedTotal + '):</strong> ' +
+              (l3Unreached.length > 0
+                ? '<div style="margin-top:4px; display:flex; flex-wrap:wrap; gap:5px;">' +
+                    l3Unreached.slice(0, 40).map(function (u) {
+                      return '<span class="reach-pill unreached" data-reach-badge="unreached">' + esc((u.file ? u.file + ":" : "") + (u.symbol || "")) + '</span>';
+                    }).join("") +
+                  '</div>'
+                : '<span style="color:var(--ink-soft);">0 unreached symbols in scoped files.</span>') +
+            '</div>' +
+          '</div>' +
+        '</details>' +
+      '</div>'
+    );
   }
 
   function renderSmartFunnelView(body) {
@@ -1958,6 +2601,96 @@
     bindPinAndJumpButtons(body);
   }
 
+  function getDivergences() {
+    const b = state.bundle || {};
+    if (Array.isArray(b.divergences)) return b.divergences;
+    const pm = (b.paper_map && typeof b.paper_map === "object") ? b.paper_map : {};
+    if (Array.isArray(pm.divergences)) return pm.divergences;
+    return [];
+  }
+
+  function renderDivergencePanelHtml() {
+    const b = state.bundle || {};
+    const pm = (b.paper_map && typeof b.paper_map === "object") ? b.paper_map : {};
+    const rep = (pm && typeof pm.divergence_report === "object" && pm.divergence_report)
+      || (b && typeof b.divergence_report === "object" && b.divergence_report)
+      || null;
+    const reportFailed = Boolean(rep && rep.ok === false);
+    if (state.unknownState || reportFailed) {
+      const errMsg = (rep && rep.error)
+        ? String(rep.error)
+        : "Divergence audit status UNKNOWN — backing store unreadable or detector did not complete cleanly.";
+      return (
+        '<section data-divergence-panel="true" data-divergence-status="UNKNOWN" class="card-block divergence-panel fault-card" aria-label="Manuscript vs Code Divergence Audit">' +
+          '<div class="deck-row">' +
+            '<strong>⚖ Manuscript ⇄ Code Ground-Truth Divergence Audit</strong>' +
+            '<span class="div-cat-pill">UNKNOWN</span>' +
+          '</div>' +
+          '<div style="margin-top:6px; font-size:12px; color:#7A1E0A; font-weight:700;">' + esc(stripDollarTokens(errMsg)) + '</div>' +
+        '</section>'
+      );
+    }
+    const divs = getDivergences();
+    const hasPaper = Boolean(b.has_paper || pm.has_paper || divs.length > 0);
+    if (!hasPaper) return "";
+    const hasEvaluatedArray = Array.isArray(b.divergences) || Array.isArray(pm.divergences);
+    if (!hasEvaluatedArray) {
+      return (
+        '<section data-divergence-panel="true" data-divergence-status="UNKNOWN" class="card-block divergence-panel fault-card" aria-label="Manuscript vs Code Divergence Audit">' +
+          '<div class="deck-row">' +
+            '<strong>⚖ Manuscript ⇄ Code Ground-Truth Divergence Audit</strong>' +
+            '<span class="div-cat-pill">UNKNOWN</span>' +
+          '</div>' +
+          '<div style="margin-top:6px; font-size:12px; color:#7A1E0A; font-weight:700;">Divergence audit status UNKNOWN — divergence array has not been evaluated for this manuscript bundle.</div>' +
+        '</section>'
+      );
+    }
+    const nonDivCount = Number((rep && rep.documented_non_divergence_count) || 0);
+    const statusAttr = divs.length === 0 ? "CLEAN" : "DIVERGENCES_FOUND";
+    return (
+      '<section data-divergence-panel="true" data-divergence-status="' + statusAttr + '" class="card-block divergence-panel" aria-label="Manuscript vs Code Divergence Audit">' +
+        '<div class="deck-row">' +
+          '<strong>⚖ Manuscript ⇄ Code Ground-Truth Divergence Audit</strong>' +
+          '<div class="selector-group">' +
+            '<span class="div-cat-pill">' + divs.length + ' divergence(s)</span>' +
+            (nonDivCount > 0 ? '<span class="prov-tag traced">' + nonDivCount + ' documented aligned</span>' : '') +
+          '</div>' +
+        '</div>' +
+        (divs.length === 0
+          ? '<div style="margin-top:6px; font-size:12px; color:var(--ink-soft);">0 undocumented or contradicted estimation mechanisms detected between primary pipeline AST and manuscript.</div>'
+          : divs.map(function (d) {
+              const isContra = d.manuscript_status === "contradicted_in_manuscript";
+              const msPillCls = "div-ms-pill" + (isContra ? " contradicted" : "");
+              const msStatusLbl = isContra ? "CONTRADICTED IN MANUSCRIPT" : "ABSENT FROM MANUSCRIPT";
+              const codeCite = d.code_citation || ((d.code_file || "") + ":L" + (d.code_line || 1));
+              const sr = d.search_record || {};
+              const srFiles = Array.isArray(sr.searched_files) ? sr.searched_files.join(", ") : (d.manuscript_entry || "manuscript");
+              const srQueries = Array.isArray(sr.queries) ? sr.queries.slice(0, 3).join("; ") : "";
+              const msCitationTxt = d.manuscript_root_citation || d.manuscript_citation || "";
+              return (
+                '<article class="div-item-card" data-divergence-id="' + esc(d.id || "") + '" data-divergence-category="' + esc(d.category || "") + '">' +
+                  '<div class="deck-row">' +
+                    '<div class="selector-group">' +
+                      '<span class="div-cat-pill">' + esc(d.id || "DIV") + ' · ' + esc(d.category || "") + '</span>' +
+                      '<span class="' + msPillCls + '">' + esc(msStatusLbl) + '</span>' +
+                    '</div>' +
+                    (d.code_file
+                      ? '<button type="button" class="small-btn" data-jump-file="' + esc(d.code_file) + '" data-jump-line="' + Number(d.code_line || 1) + '"><code>' + esc(codeCite) + '</code> ⤢</button>'
+                      : '') +
+                  '</div>' +
+                  '<div style="margin-top:5px; font-weight:800; font-size:12px;">' + esc(stripDollarTokens(d.title || d.category_label || "")) + '</div>' +
+                  '<div style="margin-top:3px; color:var(--ink-soft); font-size:11.5px;">' + esc(stripDollarTokens(d.summary || "")) + '</div>' +
+                  (d.code_snippet ? '<div class="div-code-snip">' + esc(d.code_snippet) + '</div>' : '') +
+                  (isContra
+                    ? '<div class="div-ms-box"><strong>Manuscript (' + esc(msCitationTxt) + '):</strong> "' + esc(stripDollarTokens(d.manuscript_passage || "")) + '"</div>'
+                    : '<div class="div-ms-box"><strong>Search Record (<code>absent_from_manuscript</code>):</strong> Searched <code>' + esc(srFiles) + '</code> for [' + esc(stripDollarTokens(srQueries)) + '] · Closest section: <code>' + esc(stripDollarTokens(sr.closest_section || "")) + '</code></div>') +
+                '</article>'
+              );
+            }).join("")) +
+      '</section>'
+    );
+  }
+
   function renderPaperLensView(body) {
     const pm = (state.bundle && state.bundle.paper_map) || {};
     const sciVal = (state.bundle && state.bundle.scientific_validation) || pm.scientific_validation || null;
@@ -1966,6 +2699,7 @@
     const secs = pm.sections || [];
     const algs = pm.algorithms || [];
     const eqs = pm.equations || [];
+    const divHtml = renderDivergencePanelHtml();
     const sciHtml = (sciFindings.length > 0 || sciProp) ? (
       '<div class="card-block ' + (sciFindings.length > 0 ? "fault-card" : "") + '">' +
         '<div class="deck-row"><strong>🔬 Scientific Statistical &amp; Numerical Audit</strong>' +
@@ -1993,6 +2727,8 @@
         '<span class="prov-tag traced">Native MathML · Dual Crosswalk (S* &amp; N*)</span></div>' +
         '<div style="margin-top:4px; color:var(--ink-soft);">Sections: ' + secs.length + ' · Algorithms: ' + algs.length + ' · Equations: ' + eqs.length + '</div>' +
       '</div>' +
+      renderThreeLayerViewHtml() +
+      divHtml +
       sciHtml +
       secs.map(function (sec) {
         return '<div class="card-block"><strong>Section ' + esc(sec.number || sec.id) + ': ' + esc(stripDollarTokens(sec.title || "")) + '</strong>' +
@@ -2051,11 +2787,15 @@
       '</div>' +
       '<div class="card-block"><strong>Precondition-Checked Functional-Core Kernel Literature Upgrades (' + coreUps.length + ')</strong>' +
         (coreUps.map(function (up) {
-          return '<div style="margin-top:5px;">• <strong>' + esc(stripDollarTokens(up.algorithm || up.title || up.symbol || "Kernel Upgrade")) + '</strong> — ' + esc(stripDollarTokens(up.citation || up.rationale || "")) + '</div>';
+          const loc = up.citation_loc || (up.file ? (up.file + ":L" + (up.line || 1)) : "");
+          return '<div style="margin-top:5px;">• ' + (loc ? '<code>' + esc(loc) + '</code> · ' : '') + '<strong>' + esc(stripDollarTokens(up.algorithm || up.title || up.symbol || "Kernel Upgrade")) + '</strong> — ' + esc(stripDollarTokens(up.citation || up.rationale || "")) + '</div>';
         }).join("") || '<div style="margin-top:4px; color:var(--ink-soft);">No precondition-verified kernel replacements needed.</div>') +
       '</div>' +
       (rejUps.length > 0 ? '<div class="card-block"><strong>Refused Upgrades (Failed Structural Preconditions: ' + rejUps.length + ')</strong>' +
-        rejUps.map(function (rj) { return '<div style="margin-top:4px; color:var(--ink-soft);">• ' + esc(stripDollarTokens(rj.algorithm || rj.symbol || "Candidate")) + ': ' + esc(stripDollarTokens(rj.refusal_reason || rj.reason || "Precondition unmet")) + '</div>'; }).join("") + '</div>' : "");
+        rejUps.map(function (rj) {
+          const rloc = rj.citation_loc || (rj.file ? (rj.file + ":L" + (rj.line || 1)) : "");
+          return '<div style="margin-top:4px; color:var(--ink-soft);">• ' + (rloc ? '<code>' + esc(rloc) + '</code> · ' : '') + esc(stripDollarTokens(rj.candidate_upgrade || rj.algorithm || rj.symbol || "Candidate")) + ': ' + esc(stripDollarTokens(rj.refusal_reason || rj.reason || "Precondition unmet")) + '</div>';
+        }).join("") + '</div>' : "");
 
     const pBtn = document.getElementById("btn-run-profile");
     if (pBtn) pBtn.addEventListener("click", function () { openConsentModal("profile"); });
@@ -2100,9 +2840,10 @@
     if (state.inspectorTab === "xval") {
       const xv = (state.bundle && state.bundle.xval_receipt) || {};
       const findings = xv.findings || [];
+      const qualVerdict = xv.verdict_qualified || xv.verdict || "PASS";
       body.innerHTML =
         '<div class="card-block active-card"><div class="deck-row"><strong>2-Seat Orchestrator ⇄ Validator Receipt</strong><span class="prov-tag">' + esc(xv.mode || "DETERMINISTIC_FALLBACK") + '</span></div>' +
-          '<div style="margin-top:6px;">Verdict: <strong>' + esc(xv.verdict || "PASS") + '</strong> · Cross-Family HMAC Attested: <strong>' + String(Boolean(xv.cross_family_attested)) + '</strong></div>' +
+          '<div style="margin-top:6px;">Verdict: <strong>' + esc(xv.verdict || "PASS") + '</strong>' + (qualVerdict !== (xv.verdict || "PASS") ? ' (<code>' + esc(qualVerdict) + '</code>)' : '') + ' · Cross-Family HMAC Attested: <strong>' + String(Boolean(xv.cross_family_attested)) + '</strong></div>' +
           '<div style="margin-top:4px; font-family:var(--font-mono); font-size:11px;">Digest: ' + (xv.digest_bytes || 0) + ' B · sha256=' + esc(String(xv.digest_sha256 || "").slice(0, 24)) + '</div>' +
           (xv.attestation_reason || xv.fallback_reason ? '<div style="margin-top:4px; color:var(--ink-soft);">' + esc(xv.attestation_reason || xv.fallback_reason) + '</div>' : "") +
         '</div>' +
@@ -2136,16 +2877,19 @@
     }
 
     const stages = getStages();
+    const threeLayerHtml = state.lens === "understand" ? renderThreeLayerViewHtml() : "";
+    const topDivHtml = renderDivergencePanelHtml();
     if (stages.length === 0) {
-      body.innerHTML = '<div class="card-block"><strong>EMPTY</strong> · Repository parsed cleanly with 0 matched items.</div>';
+      body.innerHTML = threeLayerHtml + topDivHtml + '<div class="card-block"><strong>EMPTY</strong> · Repository parsed cleanly with 0 matched items.</div>';
+      bindPinAndJumpButtons(body);
       return;
     }
-    body.innerHTML = stages.map(function (st) {
+    body.innerHTML = threeLayerHtml + topDivHtml + stages.map(function (st) {
       const isAct = st.id === state.activeStageId;
       const steps = st.l2_steps || [];
       const lead = steps[0] && steps[0].code_ref ? steps[0].code_ref : null;
       return '<div class="card-block ' + (isAct ? "active-card" : "") + '">' +
-        '<div class="deck-row"><strong>' + esc(st.id) + ' · ' + esc(stripDollarTokens(st.title || st.id)) + '</strong>' +
+        '<div class="deck-row"><strong>' + esc(st.id) + ' · ' + esc(stripDollarTokens(String(st.title || st.id).replace(/^S\d+\s*[·:-]?\s*/i, ""))) + '</strong>' +
           '<div class="selector-group"><span class="prov-tag">' + esc(st.verdict || "STATIC_ONLY") + '</span>' +
           (lead ? '<button type="button" class="small-btn" data-jump-file="' + esc(lead.file) + '" data-jump-line="' + Number(lead.start_line || 1) + '">💻 Open in IDE ⤢</button>' : "") +
           '</div></div>' +
@@ -2181,13 +2925,20 @@
     if (!q) return;
     if (state.mode === "live") {
       try {
-        const res = await apiPost("/api/anvil/v4/chat", {
+        const rawFam = String((state.bundle && state.bundle.xval_receipt && state.bundle.xval_receipt.orchestrator_family) || "").trim().toLowerCase();
+        const mappedFam = rawFam === "anthropic" ? "claude" : (rawFam === "google" ? "gemini" : rawFam);
+        const chatBody = {
           question: q,
-          active_stage_id: state.activeStageId,
-          active_file: state.activeFile,
-          active_line: state.activeLine,
-          ide_open: state.ideOpen
-        });
+          active_stage_id: state.activeStageId || "S1",
+          active_file: state.activeFile || "",
+          active_line: Math.max(1, parseInt(state.activeLine, 10) || 1),
+          ide_open: Boolean(state.ideOpen),
+          live: true
+        };
+        if (mappedFam === "claude" || mappedFam === "gemini" || mappedFam === "chatgpt" || mappedFam === "grok") {
+          chatBody.preferred_family = mappedFam;
+        }
+        const res = await apiPost("/api/anvil/v4/chat", chatBody);
         if (res && res.ok && res.data && Array.isArray(res.data.dialogue_turns)) {
           state.dialogueTurns = res.data.dialogue_turns.slice();
           renderChatMessages();
@@ -2387,6 +3138,159 @@
       }
     }
   });
+
+  const switcherEl = document.getElementById("analysisSwitcherSelect");
+  if (switcherEl) {
+    switcherEl.addEventListener("change", function () {
+      window.__anvilLastSwitchMs = null;
+      const t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+      const nextId = switcherEl.value || "";
+      const found = state.analyses.find(function (a) { return a.analysis_id === nextId; });
+      if (found) {
+        state.activeAnalysisId = found.analysis_id;
+        state.intakeOpen = false;
+        state.pinnedWatches = new Set();
+        state.breakpoints = new Set();
+        state.dialogueTurns = [];
+        state.recommendedArgv = ["pytest", "-q"];
+        state.activePipeline = "";
+        state.activeScenarioIdx = 0;
+        if (found.bundle) {
+          hydrateFromBundle(found.bundle, true);
+        }
+        renderAll();
+      }
+      const t1 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+      window.__anvilLastSwitchMs = Math.max(0.01, t1 - t0);
+    });
+  }
+
+  const newAnalysisBtn = document.getElementById("btnNewAnvilAnalysis");
+  if (newAnalysisBtn) {
+    newAnalysisBtn.addEventListener("click", function () {
+      state.intakeOpen = !state.intakeOpen;
+      const errBox = document.getElementById("wbIntakeError");
+      if (errBox) {
+        errBox.hidden = true;
+        errBox.textContent = "";
+      }
+      renderTopDeckAndBanner();
+    });
+  }
+
+  const cancelIntakeBtn = document.getElementById("btnCancelGuidedIntake");
+  if (cancelIntakeBtn) {
+    cancelIntakeBtn.addEventListener("click", function () {
+      state.intakeOpen = false;
+      renderTopDeckAndBanner();
+    });
+  }
+
+  const wbDirInput = document.getElementById("wbIntakeDirection");
+  if (wbDirInput) {
+    wbDirInput.addEventListener("input", function () {
+      const bytes = utf8Bytes(wbDirInput.value || "");
+      const badge = document.getElementById("wbIntakeByteBadge");
+      const errBox = document.getElementById("wbIntakeError");
+      if (badge) badge.textContent = bytes + " / 16,384 B";
+      if (errBox) {
+        if (bytes > MAX_DIRECTION_BYTES) {
+          errBox.hidden = false;
+          errBox.textContent = "BOUND_EXCEEDED_REFUSAL: Plain-English direction exceeds 16,384 UTF-8 bytes (observed " + bytes + " bytes).";
+        } else {
+          errBox.hidden = true;
+          errBox.textContent = "";
+        }
+      }
+    });
+  }
+
+  const submitIntakeBtn = document.getElementById("btnSubmitGuidedIntake");
+  if (submitIntakeBtn) {
+    submitIntakeBtn.addEventListener("click", async function () {
+      const dirVal = wbDirInput ? (wbDirInput.value || "") : "";
+      const bytes = utf8Bytes(dirVal);
+      const errBox = document.getElementById("wbIntakeError");
+      if (bytes > MAX_DIRECTION_BYTES) {
+        if (errBox) {
+          errBox.hidden = false;
+          errBox.textContent = "BOUND_EXCEEDED_REFUSAL: Plain-English direction exceeds 16,384 UTF-8 bytes (observed " + bytes + " bytes).";
+        }
+        return;
+      }
+      if (state.mode !== "live") {
+        const offlineNotice = document.getElementById("wbStandaloneOfflineNotice");
+        if (offlineNotice) offlineNotice.hidden = false;
+        submitIntakeBtn.disabled = true;
+        return;
+      }
+      if (errBox) {
+        errBox.hidden = true;
+        errBox.textContent = "";
+      }
+      const repoSel = document.getElementById("wbIntakeRepoSelect");
+      const paperSel = document.getElementById("wbIntakePaperSelect");
+      const replToggle = document.getElementById("wbIntakeReplToggle");
+      const swSpec = (repoSel && repoSel.value) ? repoSel.value : ".";
+      const paperSpec = (paperSel && paperSel.value) ? paperSel.value : "";
+      const replChecked = replToggle ? Boolean(replToggle.checked) : true;
+      const selPipes = [];
+      document.querySelectorAll("input[data-wb-pipe]:checked").forEach(function (cb) {
+        const pv = cb.getAttribute("data-wb-pipe") || "";
+        if (pv) selPipes.push(pv);
+      });
+      const endpoint = (typeof BOOT.multi_analysis_api === "string" && BOOT.multi_analysis_api)
+        ? BOOT.multi_analysis_api
+        : "/api/anvil/v4/analyses";
+      try {
+        const res = await apiPost(endpoint, {
+          software_target: swSpec,
+          paper_target: paperSpec,
+          selected_pipelines: selPipes,
+          materialize_replication_package: replChecked,
+          direction: dirVal
+        });
+        if (res && res.ok && res.data && res.data.bundle && res.data.analysis_id) {
+          const createdBundle = res.data.bundle;
+          const createdId = String(res.data.analysis_id);
+          const createdEntry = {
+            analysis_id: createdId,
+            title: String(res.data.title || createdBundle.repo_name || createdId),
+            validation_status: String(res.data.validation_status || (createdBundle.has_trace ? "TRACED" : "STATIC_AST")),
+            mode: (createdBundle.paper_map && createdBundle.paper_map.has_paper) ? "paper" : "code",
+            software_spec: swSpec,
+            paper_spec: paperSpec,
+            selected_pipelines: selPipes,
+            materialize_replication_package: replChecked,
+            direction: dirVal,
+            bundle: createdBundle
+          };
+          state.analyses = state.analyses.filter(function (a) { return a.analysis_id !== createdId; }).concat([createdEntry]);
+          state.activeAnalysisId = createdId;
+          state.intakeOpen = false;
+          state.pinnedWatches = new Set();
+          state.breakpoints = new Set();
+          state.dialogueTurns = [];
+          hydrateFromBundle(createdBundle, true);
+          if (wbDirInput) wbDirInput.value = "";
+          const badge = document.getElementById("wbIntakeByteBadge");
+          if (badge) badge.textContent = "0 / 16,384 B";
+          renderAll();
+          return;
+        }
+        if (errBox) {
+          errBox.hidden = false;
+          errBox.textContent = (res && res.data && (res.data.message || res.data.error)) ||
+            "Single-repo loopback server does not expose multi-analysis creation; open Anvil inside an Anchor AI Cockpit.";
+        }
+      } catch (e) {
+        if (errBox) {
+          errBox.hidden = false;
+          errBox.textContent = "Unable to create analysis over loopback API: " + (e && e.message ? e.message : "network error");
+        }
+      }
+    });
+  }
 
   if (state.bundle) {
     hydrateFromBundle(state.bundle, true);

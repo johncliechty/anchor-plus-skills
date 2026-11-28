@@ -5,6 +5,7 @@ description: >-
   directory), open the decision panel for removals/SAVE/reorg/secrets, and Apply
   once per run via reversible Trash (+ optional git commit). Anchor's button is a
   thin caller of the same CLI. Capability token stays in browser memory only.
+  Variable Strength: Light / Standard by default (1-step-below-frontier model at medium effort; call 'Tidy-Idy Heavy' for top-tier frontier model at highest effort on high-stakes runs, configurable in Anchor Setup).
 ---
 
 ## North Star (LOCKED — John, 2026-08-25)

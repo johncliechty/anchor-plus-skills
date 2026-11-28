@@ -138,6 +138,58 @@
           };
         }
       }
+      // Guard & self-heal the permanent Cave of Wonders base tile (#stage iframe.pane[0]) in already-open Anchor shells
+      // if an earlier in-place navigation hijacked the Cave frame onto /steward/v1 or /project/*.
+      var topDoc = topWin.document;
+      var caveTileEl = topDoc && topDoc.querySelector("#strip .tile.cave");
+      var paneFrames = topDoc && topDoc.querySelectorAll("#stage iframe.pane");
+      var caveFrame = (caveTileEl && paneFrames && paneFrames.length) ? paneFrames[0] : null;
+      if (caveFrame) {
+        var healCaveBaseFrame = function (fromLoadEvent) {
+          try {
+            if (caveFrame.__anchorRestoringCave) return;
+            var cw = caveFrame.contentWindow;
+            if (!cw || !cw.location) return;
+            var href = cw.location.href || "";
+            if (!href || href === "about:blank") return;
+            var u = new URL(href, topWin.location.href);
+            if (u.origin !== topWin.location.origin || !/^https?:$/.test(u.protocol)) return;
+            var isCaveRoute = (u.pathname === "/" || u.pathname === "/high-seat") && !u.searchParams.has("view");
+            if (isCaveRoute) return;
+            caveFrame.__anchorRestoringCave = true;
+            var strayHref = u.href;
+            var caveWasShown = caveTileEl.classList.contains("shown");
+            caveFrame.src = "/";
+            setTimeout(function () { caveFrame.__anchorRestoringCave = false; }, 2500);
+            if (fromLoadEvent && typeof topWin.ANCHOR_APP.open === "function") {
+              topWin.ANCHOR_APP.open(strayHref, "_blank", topWin);
+            } else if (!fromLoadEvent && typeof topWin.ANCHOR_APP.open === "function") {
+              topWin.ANCHOR_APP.open(strayHref, "_blank", topWin);
+              if (caveWasShown) {
+                setTimeout(function () { try { caveTileEl.click(); } catch (_ec) {} }, 30);
+              }
+            }
+          } catch (_eh) {
+            caveFrame.__anchorRestoringCave = false;
+          }
+        };
+        if (!topWin.__anchorCaveBaseGuard20261128) {
+          topWin.__anchorCaveBaseGuard20261128 = true;
+          caveFrame.addEventListener("load", function () {
+            try {
+              var cw2 = caveFrame.contentWindow;
+              var p2 = cw2 && cw2.location ? cw2.location.pathname : "";
+              if (p2 === "/" || p2 === "/high-seat") {
+                caveFrame.__anchorRestoringCave = false;
+                return;
+              }
+            } catch (_e2) {}
+            healCaveBaseFrame(true);
+          });
+          caveTileEl.addEventListener("click", function () { healCaveBaseFrame(false); });
+        }
+        healCaveBaseFrame(window === caveFrame.contentWindow);
+      }
     }
   } catch (_eTop) {}
 

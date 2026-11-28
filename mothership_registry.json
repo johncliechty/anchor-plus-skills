@@ -1,7 +1,7 @@
 {
   "schema": "anchor.mothership.registry.v1",
-  "latest_version": "1.5.7",
+  "latest_version": "1.5.8",
   "canonical_github_repo": "https://github.com/johncliechty/ghostworldlabs-anchor",
-  "updated_at": "2026-11-26T23:55:00Z",
+  "updated_at": "2026-11-28T13:55:00Z",
   "motherships": []
 }
